@@ -1,0 +1,55 @@
+version: '3.8'
+
+services:
+  luas-app:
+    build:
+      context: .
+      dockerfile: Dockerfile
+    container_name: luas-api
+    restart: always
+    ports:
+      - "8025:8025"
+    environment:
+      - APP_ENV=production
+      - SERVER_PORT=8025
+      - DB_DRIVER=postgres
+      - DB_HOST=luas-db
+      - DB_PORT=5432
+      - DB_NAME=luas
+      - DB_USERNAME=luas_user
+      - DB_PASSWORD=luas_pass
+      - JWT_SECRET=${JWT_SECRET:-change_me_in_production}
+      - TZ=Asia/Shanghai
+    depends_on:
+      luas-db:
+        condition: service_healthy
+    networks:
+      - luas-network
+
+  luas-db:
+    image: postgres:14-alpine
+    container_name: luas-postgres
+    restart: always
+    environment:
+      - POSTGRES_DB=luas
+      - POSTGRES_USER=luas_user
+      - POSTGRES_PASSWORD=luas_pass
+      - TZ=Asia/Shanghai
+    ports:
+      - "5432:5432"
+    volumes:
+      - luas_db_data:/var/lib/postgresql/data
+    healthcheck:
+      test: [ "CMD-SHELL", "pg_isready -U luas_user -d luas" ]
+      interval: 10s
+      timeout: 5s
+      retries: 5
+    networks:
+      - luas-network
+
+networks:
+  luas-network:
+    driver: bridge
+
+volumes:
+  luas_db_data:
