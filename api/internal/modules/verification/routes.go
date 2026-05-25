@@ -1,0 +1,12 @@
+package verification
+
+import "github.com/zgiai/luas/api/internal/infra/router"
+
+func (h *Handler) RegisterRoutes(r *router.Router) {
+	r.Group("", func(auth *router.Router) {
+		auth.WithMiddleware("auth")
+
+		auth.GET("/pr-nodes/:id/fix-attempts", h.ListFixAttempts).Name("specforge.pr_nodes.fix_attempts.index").WhereNumber("id")
+		auth.POST("/pr-nodes/:id/fix-attempts", h.CreateFixAttempt).Name("specforge.pr_nodes.fix_attempts.store").WhereNumber("id")
+	})
+}

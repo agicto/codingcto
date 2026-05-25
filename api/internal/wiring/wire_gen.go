@@ -21,6 +21,7 @@ import (
 	"github.com/zgiai/luas/api/internal/modules/planning"
 	"github.com/zgiai/luas/api/internal/modules/repocontext"
 	"github.com/zgiai/luas/api/internal/modules/user"
+	"github.com/zgiai/luas/api/internal/modules/verification"
 	"github.com/zgiai/luas/api/internal/starter"
 )
 
@@ -59,12 +60,15 @@ func InitApplication() (*app.Application, error) {
 	githubintegrationRepository := githubintegration.NewRepository(db)
 	githubintegrationService := githubintegration.NewService(githubintegrationRepository)
 	githubintegrationHandler := githubintegration.NewHandler(githubintegrationService)
+	verificationRepository := verification.NewRepository(db)
+	verificationService := verification.NewService(verificationRepository)
+	verificationHandler := verification.NewHandler(verificationService)
 	userRepository := user.NewRepository(db)
 	jwtService := jwt.NewService(configConfig)
 	userMailer := user.NewUserMailer(service)
 	userService := user.NewService(userRepository, userRepository, jwtService, eventBus, userMailer)
 	userHandler := user.NewHandler(userService, userService, userService, jwtService, userMailer)
-	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, userHandler)
+	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, verificationHandler, userHandler)
 	if err != nil {
 		return nil, err
 	}
@@ -108,12 +112,15 @@ func InitApplicationWithConfig(cfg *config.Config) (*app.Application, error) {
 	githubintegrationRepository := githubintegration.NewRepository(db)
 	githubintegrationService := githubintegration.NewService(githubintegrationRepository)
 	githubintegrationHandler := githubintegration.NewHandler(githubintegrationService)
+	verificationRepository := verification.NewRepository(db)
+	verificationService := verification.NewService(verificationRepository)
+	verificationHandler := verification.NewHandler(verificationService)
 	userRepository := user.NewRepository(db)
 	jwtService := jwt.NewService(cfg)
 	userMailer := user.NewUserMailer(service)
 	userService := user.NewService(userRepository, userRepository, jwtService, eventBus, userMailer)
 	userHandler := user.NewHandler(userService, userService, userService, jwtService, userMailer)
-	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, userHandler)
+	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, verificationHandler, userHandler)
 	if err != nil {
 		return nil, err
 	}
