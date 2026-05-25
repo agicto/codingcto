@@ -173,7 +173,7 @@ func TestRecordWebhookUpdatesPRNodeFromWorkflowRun(t *testing.T) {
 	require.Equal(t, domain.PRNodeStatusBlocked, planningRepo.nodes[0].Status)
 }
 
-func TestRecordWebhookReappliesExistingDeliveryToPRNode(t *testing.T) {
+func TestRecordWebhookDoesNotReapplyExistingDeliveryToPRNode(t *testing.T) {
 	repo := &memoryRepo{}
 	planningRepo := &memoryPlanningRepo{
 		nodes: []*domain.SpecForgePRNode{
@@ -210,8 +210,8 @@ func TestRecordWebhookReappliesExistingDeliveryToPRNode(t *testing.T) {
 	})
 
 	require.NoError(t, err)
-	require.NotNil(t, planningRepo.nodes[0].GitHubPRNumber)
-	require.Equal(t, 42, *planningRepo.nodes[0].GitHubPRNumber)
+	require.Nil(t, planningRepo.nodes[0].GitHubPRNumber)
+	require.Equal(t, domain.PRNodeStatusPlanned, planningRepo.nodes[0].Status)
 	require.Len(t, repo.webhookEvents, 1)
 }
 
