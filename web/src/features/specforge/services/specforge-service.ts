@@ -51,6 +51,11 @@ export interface RuntimeSweepPayload {
   stale_seconds?: number;
 }
 
+export interface StaleTaskSweepPayload {
+  dispatch_timeout_seconds?: number;
+  running_timeout_seconds?: number;
+}
+
 export interface RetryTaskPayload {
   force_fresh_session?: boolean;
 }
@@ -270,6 +275,10 @@ export interface SpecForgeRuntimeSweepResultDTO {
   failed_tasks: SpecForgeExecutionBundleDTO["tasks"];
 }
 
+export interface SpecForgeTaskSweepResultDTO {
+  failed_tasks: SpecForgeExecutionBundleDTO["tasks"];
+}
+
 export interface SpecForgeExecutionBundleDTO {
   run: {
     id: number;
@@ -368,6 +377,12 @@ export const specForgeService = {
   sweepStaleRuntimes: (payload?: RuntimeSweepPayload) =>
     request.post<SpecForgeRuntimeSweepResultDTO, RuntimeSweepPayload | undefined>(
       `/runtimes/sweep`,
+      payload
+    ),
+
+  sweepStaleTasks: (payload?: StaleTaskSweepPayload) =>
+    request.post<SpecForgeTaskSweepResultDTO, StaleTaskSweepPayload | undefined>(
+      `/tasks/sweep`,
       payload
     ),
 

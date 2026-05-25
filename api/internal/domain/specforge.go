@@ -196,6 +196,11 @@ type SpecForgeRuntimeSweepResult struct {
 	FailedTasks     []*SpecForgeAgentTask `json:"failed_tasks"`
 }
 
+// SpecForgeTaskSweepResult summarizes stale task cleanup work.
+type SpecForgeTaskSweepResult struct {
+	FailedTasks []*SpecForgeAgentTask `json:"failed_tasks"`
+}
+
 // SpecForgeExecutionBundle is the delivery state returned to run pages.
 type SpecForgeExecutionBundle struct {
 	Run   *SpecForgeExecutionRun `json:"run"`
@@ -266,6 +271,7 @@ type SpecForgeExecutionRepository interface {
 	UpsertRuntime(ctx context.Context, runtime *SpecForgeRuntime) error
 	MarkStaleRuntimesOffline(ctx context.Context, staleBefore time.Time) ([]*SpecForgeRuntime, error)
 	FailTasksForOfflineRuntimes(ctx context.Context) ([]*SpecForgeAgentTask, error)
+	FailStaleAgentTasks(ctx context.Context, dispatchBefore, runningBefore time.Time) ([]*SpecForgeAgentTask, error)
 	CancelActiveTasksByRunID(ctx context.Context, runID uint) ([]*SpecForgeAgentTask, error)
 	CreateRetryAgentTask(ctx context.Context, parent *SpecForgeAgentTask, status string, forceFreshSession bool) (*SpecForgeAgentTask, error)
 	HasClaimableAgentTask(ctx context.Context, runtimeID, executor string) (bool, error)

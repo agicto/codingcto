@@ -14,6 +14,7 @@ import {
   type RuntimeHeartbeatPayload,
   type RuntimeSweepPayload,
   type StartRunPayload,
+  type StaleTaskSweepPayload,
   type SubmitTaskResultPayload,
   type UpsertSkillPayload,
   specForgeService,
@@ -162,6 +163,17 @@ export function useSweepSpecForgeRuntimes() {
 
   return useMutation({
     mutationFn: (payload?: RuntimeSweepPayload) => specForgeService.sweepStaleRuntimes(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: specForgeKeys.all });
+    },
+  });
+}
+
+export function useSweepSpecForgeTasks() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload?: StaleTaskSweepPayload) => specForgeService.sweepStaleTasks(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: specForgeKeys.all });
     },

@@ -765,6 +765,49 @@ func TestSweepStaleRuntimesMarksRuntimeOfflineAndFailsTasks(t *testing.T) {
 	require.Equal(t, "runtime_offline", result.FailedTasks[0].FailureReason)
 }
 
+func TestSweepStaleTasksFailsTimedOutTasks(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{})
+	require.NoError(t, err)
+	oldDispatchedAt := time.Now().Add(-10 * time.Minute)
+	oldStartedAt := time.Now().Add(-3 * time.Hour)
+	freshStartedAt := time.Now()
+	dispatched.Tasks[0].Status = domain.AgentTaskStatusDispatched
+	dispatched.Tasks[0].DispatchedAt = &oldDispatchedAt
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), dispatched.Tasks[0]))
+	dispatched.Tasks[1].Status = domain.AgentTaskStatusRunning
+	dispatched.Tasks[1].StartedAt = &oldStartedAt
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), dispatched.Tasks[1]))
+	runRepo.bundle.Tasks = append(runRepo.bundle.Tasks, &domain.SpecForgeAgentTask{
+		ID:            99,
+		RunID:         dispatched.Run.ID,
+		PRNodeID:      99,
+		Executor:      ExecutorNameCodexCLI,
+		Status:        domain.AgentTaskStatusRunning,
+		AttemptNumber: 1,
+		StartedAt:     &freshStartedAt,
+	})
+
+	result, err := svc.SweepStaleTasks(context.Background(), &StaleTaskSweepRequest{
+		DispatchTimeoutSeconds: 300,
+		RunningTimeoutSeconds:  7200,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, result.FailedTasks, 2)
+	require.Equal(t, "dispatch_timeout", result.FailedTasks[0].FailureReason)
+	require.Equal(t, "execution_timeout", result.FailedTasks[1].FailureReason)
+	updated, err := svc.GetRun(context.Background(), dispatched.Run.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.AgentTaskStatusFailed, updated.Tasks[0].Status)
+	require.Equal(t, domain.AgentTaskStatusFailed, updated.Tasks[1].Status)
+	require.Equal(t, domain.AgentTaskStatusRunning, updated.Tasks[2].Status)
+}
+
 type memoryExecutionRepo struct {
 	nextID   uint
 	bundle   *domain.SpecForgeExecutionBundle
@@ -887,6 +930,33 @@ func (r *memoryExecutionRepo) FailTasksForOfflineRuntimes(ctx context.Context) (
 		task.FailureReason = "runtime_offline"
 		task.FinishedAt = &now
 		task.ErrorLog = appendLogLine(task.ErrorLog, "runtime went offline")
+		copied := *task
+		out = append(out, &copied)
+	}
+	return out, nil
+}
+
+func (r *memoryExecutionRepo) FailStaleAgentTasks(ctx context.Context, dispatchBefore, runningBefore time.Time) ([]*domain.SpecForgeAgentTask, error) {
+	if r.bundle == nil {
+		return []*domain.SpecForgeAgentTask{}, nil
+	}
+	out := make([]*domain.SpecForgeAgentTask, 0)
+	now := time.Now()
+	for _, task := range r.bundle.Tasks {
+		switch {
+		case task.Status == domain.AgentTaskStatusDispatched && task.DispatchedAt != nil && task.DispatchedAt.Before(dispatchBefore):
+			task.Status = domain.AgentTaskStatusFailed
+			task.FailureReason = "dispatch_timeout"
+			task.FinishedAt = &now
+			task.ErrorLog = appendLogLine(task.ErrorLog, "task dispatch timed out")
+		case task.Status == domain.AgentTaskStatusRunning && task.StartedAt != nil && task.StartedAt.Before(runningBefore):
+			task.Status = domain.AgentTaskStatusFailed
+			task.FailureReason = "execution_timeout"
+			task.FinishedAt = &now
+			task.ErrorLog = appendLogLine(task.ErrorLog, "task execution timed out")
+		default:
+			continue
+		}
 		copied := *task
 		out = append(out, &copied)
 	}

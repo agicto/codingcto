@@ -142,6 +142,53 @@ func TestRepositorySweepsOfflineRuntimesAndFailsActiveTasks(t *testing.T) {
 	require.NotNil(t, failedTasks[0].FinishedAt)
 }
 
+func TestRepositoryFailsStaleDispatchedAndRunningTasks(t *testing.T) {
+	repo := newTestExecutionRepository(t)
+	oldDispatchedAt := time.Now().Add(-10 * time.Minute)
+	freshDispatchedAt := time.Now()
+	oldStartedAt := time.Now().Add(-3 * time.Hour)
+	freshStartedAt := time.Now()
+	bundle := &domain.SpecForgeExecutionBundle{
+		Run: &domain.SpecForgeExecutionRun{
+			PlanID:    1,
+			Status:    domain.ExecutionRunStatusRunning,
+			StartedBy: 7,
+			StartedAt: time.Now(),
+		},
+		Tasks: []*domain.SpecForgeAgentTask{
+			{PRNodeID: 10, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusDispatched, DispatchedAt: &oldDispatchedAt, AttemptNumber: 1},
+			{PRNodeID: 11, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusRunning, StartedAt: &oldStartedAt, AttemptNumber: 1},
+			{PRNodeID: 12, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusDispatched, DispatchedAt: &freshDispatchedAt, AttemptNumber: 1},
+			{PRNodeID: 13, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusRunning, StartedAt: &freshStartedAt, AttemptNumber: 1},
+			{PRNodeID: 14, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusCompleted, StartedAt: &oldStartedAt, AttemptNumber: 1},
+		},
+	}
+	require.NoError(t, repo.CreateExecutionBundle(context.Background(), bundle))
+
+	failedTasks, err := repo.FailStaleAgentTasks(context.Background(), time.Now().Add(-5*time.Minute), time.Now().Add(-2*time.Hour))
+
+	require.NoError(t, err)
+	require.Len(t, failedTasks, 2)
+	require.Equal(t, bundle.Tasks[0].ID, failedTasks[0].ID)
+	require.Equal(t, domain.AgentTaskStatusFailed, failedTasks[0].Status)
+	require.Equal(t, "dispatch_timeout", failedTasks[0].FailureReason)
+	require.Contains(t, failedTasks[0].ErrorLog, "task dispatch timed out")
+	require.NotNil(t, failedTasks[0].FinishedAt)
+	require.Equal(t, bundle.Tasks[1].ID, failedTasks[1].ID)
+	require.Equal(t, domain.AgentTaskStatusFailed, failedTasks[1].Status)
+	require.Equal(t, "execution_timeout", failedTasks[1].FailureReason)
+	require.Contains(t, failedTasks[1].ErrorLog, "task execution timed out")
+	require.NotNil(t, failedTasks[1].FinishedAt)
+
+	found, err := repo.FindExecutionBundleByRunID(context.Background(), bundle.Run.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.AgentTaskStatusFailed, found.Tasks[0].Status)
+	require.Equal(t, domain.AgentTaskStatusFailed, found.Tasks[1].Status)
+	require.Equal(t, domain.AgentTaskStatusDispatched, found.Tasks[2].Status)
+	require.Equal(t, domain.AgentTaskStatusRunning, found.Tasks[3].Status)
+	require.Equal(t, domain.AgentTaskStatusCompleted, found.Tasks[4].Status)
+}
+
 func TestRepositoryCancelsActiveTasksByRunID(t *testing.T) {
 	repo := newTestExecutionRepository(t)
 	bundle := &domain.SpecForgeExecutionBundle{

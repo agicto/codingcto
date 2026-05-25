@@ -19,6 +19,7 @@ type Service interface {
 	CancelRun(ctx context.Context, runID uint) (*domain.SpecForgeExecutionBundle, error)
 	HeartbeatRuntime(ctx context.Context, req *RuntimeHeartbeatRequest) (*RuntimeHeartbeatResponse, error)
 	SweepStaleRuntimes(ctx context.Context, req *RuntimeSweepRequest) (*domain.SpecForgeRuntimeSweepResult, error)
+	SweepStaleTasks(ctx context.Context, req *StaleTaskSweepRequest) (*domain.SpecForgeTaskSweepResult, error)
 	ClaimTask(ctx context.Context, runtimeID string, req *ClaimAgentTaskRequest) (*ClaimAgentTaskResponse, error)
 	RetryTask(ctx context.Context, taskID uint, req *RetryAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	PinTaskSession(ctx context.Context, taskID uint, req *PinAgentTaskSessionRequest) (*domain.SpecForgeExecutionBundle, error)
@@ -217,6 +218,29 @@ func (s *service) SweepStaleRuntimes(ctx context.Context, req *RuntimeSweepReque
 		OfflineRuntimes: runtimes,
 		FailedTasks:     tasks,
 	}, nil
+}
+
+func (s *service) SweepStaleTasks(ctx context.Context, req *StaleTaskSweepRequest) (*domain.SpecForgeTaskSweepResult, error) {
+	dispatchTimeoutSeconds := 300
+	runningTimeoutSeconds := 9000
+	if req != nil {
+		if req.DispatchTimeoutSeconds > 0 {
+			dispatchTimeoutSeconds = req.DispatchTimeoutSeconds
+		}
+		if req.RunningTimeoutSeconds > 0 {
+			runningTimeoutSeconds = req.RunningTimeoutSeconds
+		}
+	}
+	now := time.Now()
+	tasks, err := s.repo.FailStaleAgentTasks(
+		ctx,
+		now.Add(-time.Duration(dispatchTimeoutSeconds)*time.Second),
+		now.Add(-time.Duration(runningTimeoutSeconds)*time.Second),
+	)
+	if err != nil {
+		return nil, fmt.Errorf("fail stale agent tasks: %w", err)
+	}
+	return &domain.SpecForgeTaskSweepResult{FailedTasks: tasks}, nil
 }
 
 func (s *service) ClaimTask(ctx context.Context, runtimeID string, req *ClaimAgentTaskRequest) (*ClaimAgentTaskResponse, error) {
