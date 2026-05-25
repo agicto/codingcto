@@ -33,7 +33,10 @@ type RuntimeHeartbeatResponse struct {
 }
 
 type ClaimAgentTaskResponse struct {
-	Task *ClaimedAgentTask `json:"task,omitempty"`
+	Task             *ClaimedAgentTask            `json:"task,omitempty"`
+	PRNode           *ClaimedTaskPRNode           `json:"pr_node,omitempty"`
+	Prompt           *ClaimedTaskPrompt           `json:"prompt,omitempty"`
+	ExecutionContext *ClaimedTaskExecutionContext `json:"execution_context,omitempty"`
 }
 
 type ClaimedAgentTask struct {
@@ -46,6 +49,33 @@ type ClaimedAgentTask struct {
 	AttemptNumber int    `json:"attempt_number"`
 	SessionID     string `json:"session_id,omitempty"`
 	Workdir       string `json:"workdir,omitempty"`
+}
+
+type ClaimedTaskPRNode struct {
+	ID                 uint     `json:"id"`
+	NodeKey            string   `json:"node_key"`
+	Title              string   `json:"title"`
+	Type               string   `json:"type"`
+	Goal               string   `json:"goal"`
+	DependsOn          []string `json:"depends_on"`
+	ExpectedFiles      []string `json:"expected_files"`
+	NonGoals           []string `json:"non_goals"`
+	AcceptanceCriteria []string `json:"acceptance_criteria"`
+	TestCommands       []string `json:"test_commands"`
+	BranchName         string   `json:"branch_name"`
+}
+
+type ClaimedTaskPrompt struct {
+	ID         uint   `json:"id"`
+	Version    string `json:"version"`
+	Type       string `json:"type"`
+	PromptText string `json:"prompt_text"`
+	PromptHash string `json:"prompt_hash"`
+}
+
+type ClaimedTaskExecutionContext struct {
+	RepositoryID string `json:"repository_id"`
+	BranchName   string `json:"branch_name"`
 }
 
 type ExecuteAgentTaskRequest struct {

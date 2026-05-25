@@ -146,7 +146,7 @@ func TestHeartbeatRuntimeRecordsRuntimeAndReportsPendingClaim(t *testing.T) {
 }
 
 func TestClaimTaskBindsRuntimeAndMarksTaskRunning(t *testing.T) {
-	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	planningRepo := memoryPlanningRepoWithPrompt()
 	runRepo := &memoryExecutionRepo{}
 	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
 	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
@@ -167,6 +167,15 @@ func TestClaimTaskBindsRuntimeAndMarksTaskRunning(t *testing.T) {
 	require.Equal(t, "session_123", claim.Task.SessionID)
 	require.Equal(t, "/tmp/specforge/runtime_123/task", claim.Task.Workdir)
 	require.Equal(t, domain.AgentTaskStatusRunning, claim.Task.Status)
+	require.NotNil(t, claim.PRNode)
+	require.Equal(t, dispatched.Tasks[0].PRNodeID, claim.PRNode.ID)
+	require.Equal(t, "specforge/pr-001", claim.PRNode.BranchName)
+	require.NotNil(t, claim.Prompt)
+	require.Equal(t, "prompt_v1", claim.Prompt.Version)
+	require.Equal(t, "Implement PR-001", claim.Prompt.PromptText)
+	require.NotNil(t, claim.ExecutionContext)
+	require.Equal(t, "repo_123", claim.ExecutionContext.RepositoryID)
+	require.Equal(t, "specforge/pr-001", claim.ExecutionContext.BranchName)
 	updated, err := svc.GetRun(context.Background(), dispatched.Run.ID)
 	require.NoError(t, err)
 	require.Equal(t, domain.AgentTaskStatusRunning, updated.Tasks[0].Status)
@@ -183,8 +192,28 @@ func TestClaimTaskReturnsEmptyWhenNoTaskAvailable(t *testing.T) {
 	require.Nil(t, claim.Task)
 }
 
-func TestSubmitTaskResultCompletesClaimedTaskAndUnlocksDependents(t *testing.T) {
+func TestClaimTaskRevertsWhenPromptContextIsMissing(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+
+	_, err = svc.ClaimTask(context.Background(), "runtime_123", &ClaimAgentTaskRequest{Executor: "codex_cli"})
+
+	require.Error(t, err)
+	updated, err := svc.GetRun(context.Background(), dispatched.Run.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.AgentTaskStatusDispatched, updated.Tasks[0].Status)
+	require.Empty(t, updated.Tasks[0].RuntimeID)
+	require.Empty(t, updated.Tasks[0].SessionID)
+	require.Nil(t, updated.Tasks[0].StartedAt)
+}
+
+func TestSubmitTaskResultCompletesClaimedTaskAndUnlocksDependents(t *testing.T) {
+	planningRepo := memoryPlanningRepoWithPrompt()
 	runRepo := &memoryExecutionRepo{}
 	deliverer := &fakePRNodeDeliverer{node: &domain.SpecForgePRNode{ID: 4, GitHubPRURL: "https://github.com/agicto/codingcto/pull/42"}}
 	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, deliverer)
@@ -212,7 +241,7 @@ func TestSubmitTaskResultCompletesClaimedTaskAndUnlocksDependents(t *testing.T) 
 }
 
 func TestSubmitTaskResultMarksFailureWithoutUnlockingDependents(t *testing.T) {
-	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	planningRepo := memoryPlanningRepoWithPrompt()
 	runRepo := &memoryExecutionRepo{}
 	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
 	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
@@ -240,7 +269,7 @@ func TestSubmitTaskResultMarksFailureWithoutUnlockingDependents(t *testing.T) {
 }
 
 func TestSubmitTaskResultRejectsRuntimeMismatch(t *testing.T) {
-	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	planningRepo := memoryPlanningRepoWithPrompt()
 	runRepo := &memoryExecutionRepo{}
 	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
 	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
@@ -1027,6 +1056,21 @@ func approvedPlanBundle() *domain.SpecForgePlanBundle {
 		PRNodes: []*domain.SpecForgePRNode{
 			{ID: 4, PlanID: 3, NodeKey: "PR-001", BranchName: "specforge/pr-001", Status: domain.PRNodeStatusPlanned},
 			{ID: 5, PlanID: 3, NodeKey: "PR-002", BranchName: "specforge/pr-002", DependsOn: []string{"PR-001"}, Status: domain.PRNodeStatusPlanned},
+		},
+	}
+}
+
+func memoryPlanningRepoWithPrompt() *memoryPlanningRepo {
+	return &memoryPlanningRepo{
+		bundle: approvedPlanBundle(),
+		prompt: &domain.SpecForgeCompiledPrompt{
+			ID:         7,
+			PRNodeID:   4,
+			PlanID:     3,
+			Type:       "implementation",
+			Version:    "prompt_v1",
+			PromptText: "Implement PR-001",
+			PromptHash: "hash_123",
 		},
 	}
 }

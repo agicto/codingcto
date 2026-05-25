@@ -233,7 +233,19 @@ func (s *service) ClaimTask(ctx context.Context, runtimeID string, req *ClaimAge
 		}
 		return nil, fmt.Errorf("claim agent task: %w", err)
 	}
-	return &ClaimAgentTaskResponse{Task: toClaimedAgentTask(task)}, nil
+	claim, err := s.buildClaimResponse(ctx, task)
+	if err != nil {
+		task.Status = domain.AgentTaskStatusDispatched
+		task.RuntimeID = ""
+		task.SessionID = ""
+		task.Workdir = ""
+		task.StartedAt = nil
+		if updateErr := s.repo.UpdateAgentTask(ctx, task); updateErr != nil {
+			return nil, fmt.Errorf("revert unservable claimed task: %w", updateErr)
+		}
+		return nil, err
+	}
+	return claim, nil
 }
 
 func (s *service) PinTaskSession(ctx context.Context, taskID uint, req *PinAgentTaskSessionRequest) (*domain.SpecForgeExecutionBundle, error) {
@@ -527,6 +539,39 @@ func (s *service) deliverTaskPR(ctx context.Context, task *domain.SpecForgeAgent
 	return nil
 }
 
+func (s *service) buildClaimResponse(ctx context.Context, task *domain.SpecForgeAgentTask) (*ClaimAgentTaskResponse, error) {
+	bundle, err := s.GetRun(ctx, task.RunID)
+	if err != nil {
+		return nil, err
+	}
+	if bundle.Plan == nil || bundle.Plan.Idea == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	node := nodeByID(bundle.Plan.PRNodes)[task.PRNodeID]
+	if node == nil {
+		return nil, domain.ErrNotFound
+	}
+	prompt, err := s.planningRepo.FindLatestCompiledPromptByPRNodeID(ctx, task.PRNodeID)
+	if err != nil {
+		return nil, fmt.Errorf("find compiled prompt for claimed task: %w", err)
+	}
+	return &ClaimAgentTaskResponse{
+		Task:   toClaimedAgentTask(task),
+		PRNode: toClaimedTaskPRNode(node),
+		Prompt: &ClaimedTaskPrompt{
+			ID:         prompt.ID,
+			Version:    prompt.Version,
+			Type:       prompt.Type,
+			PromptText: prompt.PromptText,
+			PromptHash: prompt.PromptHash,
+		},
+		ExecutionContext: &ClaimedTaskExecutionContext{
+			RepositoryID: bundle.Plan.Idea.RepositoryID,
+			BranchName:   node.BranchName,
+		},
+	}, nil
+}
+
 func (s *service) finalizeTaskResult(ctx context.Context, task *domain.SpecForgeAgentTask, result *ExecutionResult, runErr error, failureReasonOverride string) (*domain.SpecForgeExecutionBundle, error) {
 	if result == nil {
 		result = &ExecutionResult{Status: "failed", Error: "executor returned no result", ExitCode: -1}
@@ -699,5 +744,24 @@ func toClaimedAgentTask(task *domain.SpecForgeAgentTask) *ClaimedAgentTask {
 		AttemptNumber: task.AttemptNumber,
 		SessionID:     task.SessionID,
 		Workdir:       task.Workdir,
+	}
+}
+
+func toClaimedTaskPRNode(node *domain.SpecForgePRNode) *ClaimedTaskPRNode {
+	if node == nil {
+		return nil
+	}
+	return &ClaimedTaskPRNode{
+		ID:                 node.ID,
+		NodeKey:            node.NodeKey,
+		Title:              node.Title,
+		Type:               node.Type,
+		Goal:               node.Goal,
+		DependsOn:          node.DependsOn,
+		ExpectedFiles:      node.ExpectedFiles,
+		NonGoals:           node.NonGoals,
+		AcceptanceCriteria: node.AcceptanceCriteria,
+		TestCommands:       node.TestCommands,
+		BranchName:         node.BranchName,
 	}
 }
