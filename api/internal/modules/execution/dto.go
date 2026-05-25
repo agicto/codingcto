@@ -51,6 +51,17 @@ type ExecuteAgentTaskRequest struct {
 	Env       map[string]string `json:"env" binding:"omitempty"`
 }
 
+type SubmitTaskResultRequest struct {
+	RuntimeID     string `json:"runtime_id" binding:"omitempty,max=100"`
+	SessionID     string `json:"session_id" binding:"omitempty,max=255"`
+	Workdir       string `json:"workdir" binding:"omitempty,max=500"`
+	Status        string `json:"status" binding:"required,oneof=completed failed timeout"`
+	Output        string `json:"output" binding:"omitempty,max=200000"`
+	Error         string `json:"error" binding:"omitempty,max=200000"`
+	ExitCode      int    `json:"exit_code" binding:"omitempty"`
+	FailureReason string `json:"failure_reason" binding:"omitempty,max=100"`
+}
+
 type PinAgentTaskSessionRequest struct {
 	SessionID string `json:"session_id" binding:"omitempty,max=255"`
 	Workdir   string `json:"workdir" binding:"omitempty,max=500"`

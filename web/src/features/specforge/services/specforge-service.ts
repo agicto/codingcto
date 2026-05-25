@@ -60,6 +60,17 @@ export interface ExecuteTaskPayload {
   env?: Record<string, string>;
 }
 
+export interface SubmitTaskResultPayload {
+  runtime_id?: string;
+  session_id?: string;
+  workdir?: string;
+  status: "completed" | "failed" | "timeout";
+  output?: string;
+  error?: string;
+  exit_code?: number;
+  failure_reason?: string;
+}
+
 export interface PinTaskSessionPayload {
   session_id?: string;
   workdir?: string;
@@ -304,6 +315,12 @@ export const specForgeService = {
   executeTask: (taskId: number, payload: ExecuteTaskPayload) =>
     request.post<SpecForgeExecutionBundleDTO, ExecuteTaskPayload>(
       `/tasks/${taskId}/execute`,
+      payload
+    ),
+
+  submitTaskResult: (taskId: number, payload: SubmitTaskResultPayload) =>
+    request.post<SpecForgeExecutionBundleDTO, SubmitTaskResultPayload>(
+      `/tasks/${taskId}/result`,
       payload
     ),
 

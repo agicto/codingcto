@@ -183,3 +183,24 @@ func (h *Handler) ExecuteTask(c *gin.Context) {
 
 	response.Success(c, run)
 }
+
+func (h *Handler) SubmitTaskResult(c *gin.Context) {
+	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || taskID == 0 {
+		response.HandleError(c, "Invalid task id", err)
+		return
+	}
+
+	var req SubmitTaskResultRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+
+	run, err := h.service.SubmitTaskResult(c.Request.Context(), uint(taskID), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to submit agent task result", err)
+		return
+	}
+
+	response.Success(c, run)
+}

@@ -20,6 +20,7 @@ type Service interface {
 	ClaimTask(ctx context.Context, runtimeID string, req *ClaimAgentTaskRequest) (*ClaimAgentTaskResponse, error)
 	PinTaskSession(ctx context.Context, taskID uint, req *PinAgentTaskSessionRequest) (*domain.SpecForgeExecutionBundle, error)
 	ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
+	SubmitTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.SpecForgeExecutionBundle, error)
 	CompleteTask(ctx context.Context, taskID uint) (*domain.SpecForgeExecutionBundle, error)
 }
 
@@ -286,45 +287,39 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 		result = &ExecutionResult{Status: "failed", Error: "executor returned no result", ExitCode: -1}
 	}
 
-	finishedAt := time.Now()
-	task.OutputLog = result.Output
-	task.ErrorLog = result.Error
-	task.ExitCode = &result.ExitCode
-	task.FinishedAt = &finishedAt
-	if runErr != nil || result.Status != "completed" || result.ExitCode != 0 {
-		task.Status = domain.AgentTaskStatusFailed
-		task.FailureReason = executionFailureReason(result, runErr)
-	} else {
-		if err := s.deliverTaskPR(ctx, task); err != nil {
-			task.Status = domain.AgentTaskStatusFailed
-			task.FailureReason = "pr_delivery_failed"
-			task.ErrorLog = appendLogLine(task.ErrorLog, err.Error())
-		} else {
-			task.Status = domain.AgentTaskStatusCompleted
-		}
-	}
-	if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
-		return nil, fmt.Errorf("update executed agent task: %w", err)
-	}
-	if task.Status == domain.AgentTaskStatusFailed {
-		return s.GetRun(ctx, task.RunID)
-	}
+	return s.finalizeTaskResult(ctx, task, result, runErr, "")
+}
 
-	bundle, err := s.GetRun(ctx, task.RunID)
+func (s *service) SubmitTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.SpecForgeExecutionBundle, error) {
+	if taskID == 0 || req == nil || strings.TrimSpace(req.Status) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	task, err := s.repo.FindAgentTaskByID(ctx, taskID)
 	if err != nil {
 		return nil, err
 	}
-	if err := s.unlockReadyTasks(ctx, bundle); err != nil {
-		return nil, err
+	if task.Status != domain.AgentTaskStatusRunning {
+		return nil, domain.ErrConflict
 	}
-	if allTasksCompleted(bundle.Tasks) {
-		bundle.Run.Status = domain.ExecutionRunStatusCompleted
-		bundle.Run.CompletedAt = &finishedAt
-		if err := s.repo.UpdateExecutionRun(ctx, bundle.Run); err != nil {
-			return nil, fmt.Errorf("complete execution run: %w", err)
+	if runtimeID := strings.TrimSpace(req.RuntimeID); runtimeID != "" {
+		if strings.TrimSpace(task.RuntimeID) != "" && task.RuntimeID != runtimeID {
+			return nil, domain.ErrConflict
 		}
+		task.RuntimeID = runtimeID
 	}
-	return s.GetRun(ctx, task.RunID)
+	if sessionID := strings.TrimSpace(req.SessionID); sessionID != "" {
+		task.SessionID = sessionID
+	}
+	if workdir := strings.TrimSpace(req.Workdir); workdir != "" {
+		task.Workdir = workdir
+	}
+	result := &ExecutionResult{
+		Status:   strings.TrimSpace(req.Status),
+		Output:   strings.TrimSpace(req.Output),
+		Error:    strings.TrimSpace(req.Error),
+		ExitCode: req.ExitCode,
+	}
+	return s.finalizeTaskResult(ctx, task, result, nil, strings.TrimSpace(req.FailureReason))
 }
 
 func (s *service) CompleteTask(ctx context.Context, taskID uint) (*domain.SpecForgeExecutionBundle, error) {
@@ -441,6 +436,54 @@ func (s *service) deliverTaskPR(ctx context.Context, task *domain.SpecForgeAgent
 		return fmt.Errorf("deliver PR node: %w", err)
 	}
 	return nil
+}
+
+func (s *service) finalizeTaskResult(ctx context.Context, task *domain.SpecForgeAgentTask, result *ExecutionResult, runErr error, failureReasonOverride string) (*domain.SpecForgeExecutionBundle, error) {
+	if result == nil {
+		result = &ExecutionResult{Status: "failed", Error: "executor returned no result", ExitCode: -1}
+	}
+	finishedAt := time.Now()
+	task.OutputLog = result.Output
+	task.ErrorLog = result.Error
+	task.ExitCode = &result.ExitCode
+	task.FinishedAt = &finishedAt
+	if runErr != nil || result.Status != "completed" || result.ExitCode != 0 {
+		task.Status = domain.AgentTaskStatusFailed
+		task.FailureReason = executionFailureReason(result, runErr)
+		if strings.TrimSpace(failureReasonOverride) != "" {
+			task.FailureReason = strings.TrimSpace(failureReasonOverride)
+		}
+	} else {
+		if err := s.deliverTaskPR(ctx, task); err != nil {
+			task.Status = domain.AgentTaskStatusFailed
+			task.FailureReason = "pr_delivery_failed"
+			task.ErrorLog = appendLogLine(task.ErrorLog, err.Error())
+		} else {
+			task.Status = domain.AgentTaskStatusCompleted
+		}
+	}
+	if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
+		return nil, fmt.Errorf("update executed agent task: %w", err)
+	}
+	if task.Status == domain.AgentTaskStatusFailed {
+		return s.GetRun(ctx, task.RunID)
+	}
+
+	bundle, err := s.GetRun(ctx, task.RunID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.unlockReadyTasks(ctx, bundle); err != nil {
+		return nil, err
+	}
+	if allTasksCompleted(bundle.Tasks) {
+		bundle.Run.Status = domain.ExecutionRunStatusCompleted
+		bundle.Run.CompletedAt = &finishedAt
+		if err := s.repo.UpdateExecutionRun(ctx, bundle.Run); err != nil {
+			return nil, fmt.Errorf("complete execution run: %w", err)
+		}
+	}
+	return s.GetRun(ctx, task.RunID)
 }
 
 func appendLogLine(existing, line string) string {
