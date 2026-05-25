@@ -2,6 +2,7 @@ package execution
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strconv"
 	"strings"
@@ -15,6 +16,8 @@ type Service interface {
 	StartRun(ctx context.Context, userID, planID uint, req *StartExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error)
 	GetRun(ctx context.Context, runID uint) (*domain.SpecForgeExecutionBundle, error)
 	DispatchRun(ctx context.Context, runID uint, req *DispatchExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error)
+	HeartbeatRuntime(ctx context.Context, req *RuntimeHeartbeatRequest) (*RuntimeHeartbeatResponse, error)
+	ClaimTask(ctx context.Context, runtimeID string, req *ClaimAgentTaskRequest) (*ClaimAgentTaskResponse, error)
 	PinTaskSession(ctx context.Context, taskID uint, req *PinAgentTaskSessionRequest) (*domain.SpecForgeExecutionBundle, error)
 	ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	CompleteTask(ctx context.Context, taskID uint) (*domain.SpecForgeExecutionBundle, error)
@@ -136,6 +139,50 @@ func (s *service) DispatchRun(ctx context.Context, runID uint, req *DispatchExec
 		}
 	}
 	return s.GetRun(ctx, runID)
+}
+
+func (s *service) HeartbeatRuntime(ctx context.Context, req *RuntimeHeartbeatRequest) (*RuntimeHeartbeatResponse, error) {
+	if req == nil || strings.TrimSpace(req.RuntimeID) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	executor := strings.TrimSpace(req.Executor)
+	if executor == "" {
+		executor = ExecutorNameCodexCLI
+	}
+	runtime := &domain.SpecForgeRuntime{
+		RuntimeID:  strings.TrimSpace(req.RuntimeID),
+		Executor:   executor,
+		Status:     domain.RuntimeStatusOnline,
+		Hostname:   strings.TrimSpace(req.Hostname),
+		Version:    strings.TrimSpace(req.Version),
+		LastSeenAt: time.Now(),
+	}
+	if err := s.repo.UpsertRuntime(ctx, runtime); err != nil {
+		return nil, fmt.Errorf("upsert runtime heartbeat: %w", err)
+	}
+	pending, err := s.repo.HasClaimableAgentTask(ctx, runtime.RuntimeID, runtime.Executor)
+	if err != nil {
+		return nil, fmt.Errorf("check claimable task: %w", err)
+	}
+	return &RuntimeHeartbeatResponse{Runtime: runtime, ClaimPending: pending}, nil
+}
+
+func (s *service) ClaimTask(ctx context.Context, runtimeID string, req *ClaimAgentTaskRequest) (*ClaimAgentTaskResponse, error) {
+	runtimeID = strings.TrimSpace(runtimeID)
+	if runtimeID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	if req == nil {
+		req = &ClaimAgentTaskRequest{}
+	}
+	task, err := s.repo.ClaimDispatchedAgentTask(ctx, runtimeID, req.Executor, req.SessionID, req.Workdir)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return &ClaimAgentTaskResponse{}, nil
+		}
+		return nil, fmt.Errorf("claim agent task: %w", err)
+	}
+	return &ClaimAgentTaskResponse{Task: toClaimedAgentTask(task)}, nil
 }
 
 func (s *service) PinTaskSession(ctx context.Context, taskID uint, req *PinAgentTaskSessionRequest) (*domain.SpecForgeExecutionBundle, error) {
@@ -504,4 +551,21 @@ func executionFailureReason(result *ExecutionResult, runErr error) string {
 		return "executor_error"
 	}
 	return "executor_failed"
+}
+
+func toClaimedAgentTask(task *domain.SpecForgeAgentTask) *ClaimedAgentTask {
+	if task == nil {
+		return nil
+	}
+	return &ClaimedAgentTask{
+		ID:            task.ID,
+		RunID:         task.RunID,
+		PRNodeID:      task.PRNodeID,
+		Executor:      task.Executor,
+		Status:        task.Status,
+		RuntimeID:     task.RuntimeID,
+		AttemptNumber: task.AttemptNumber,
+		SessionID:     task.SessionID,
+		Workdir:       task.Workdir,
+	}
 }

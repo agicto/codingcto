@@ -5,9 +5,11 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   type ApprovePlanPayload,
   type CompilePromptPayload,
+  type ClaimTaskPayload,
   type CreateIdeaPayload,
   type DispatchRunPayload,
   type RepoProfilePayload,
+  type RuntimeHeartbeatPayload,
   type StartRunPayload,
   type UpsertSkillPayload,
   specForgeService,
@@ -121,6 +123,19 @@ export function useDispatchExecutionRun() {
     onSuccess: (bundle) => {
       queryClient.setQueryData(specForgeKeys.run(bundle.run.id), bundle);
     },
+  });
+}
+
+export function useHeartbeatSpecForgeRuntime() {
+  return useMutation({
+    mutationFn: (payload: RuntimeHeartbeatPayload) => specForgeService.heartbeatRuntime(payload),
+  });
+}
+
+export function useClaimSpecForgeTask() {
+  return useMutation({
+    mutationFn: ({ runtimeId, payload }: { runtimeId: string; payload?: ClaimTaskPayload }) =>
+      specForgeService.claimTask(runtimeId, payload),
   });
 }
 

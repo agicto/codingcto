@@ -93,6 +93,39 @@ func (h *Handler) DispatchRun(c *gin.Context) {
 	response.Success(c, run)
 }
 
+func (h *Handler) HeartbeatRuntime(c *gin.Context) {
+	var req RuntimeHeartbeatRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+
+	heartbeat, err := h.service.HeartbeatRuntime(c.Request.Context(), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to record runtime heartbeat", err)
+		return
+	}
+
+	response.Success(c, heartbeat)
+}
+
+func (h *Handler) ClaimTask(c *gin.Context) {
+	runtimeID := c.Param("runtime_id")
+
+	var req ClaimAgentTaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		response.BadRequest(c, "Invalid request parameters", err)
+		return
+	}
+
+	claim, err := h.service.ClaimTask(c.Request.Context(), runtimeID, &req)
+	if err != nil {
+		response.HandleError(c, "Failed to claim agent task", err)
+		return
+	}
+
+	response.Success(c, claim)
+}
+
 func (h *Handler) CompleteTask(c *gin.Context) {
 	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || taskID == 0 {
