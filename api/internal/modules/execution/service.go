@@ -143,7 +143,8 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 	if task.Status != domain.AgentTaskStatusRunning {
 		return nil, domain.ErrConflict
 	}
-	if err := s.prepareTaskBranch(ctx, task); err != nil {
+	branchName, err := s.prepareTaskBranch(ctx, task)
+	if err != nil {
 		now := time.Now()
 		task.Status = domain.AgentTaskStatusFailed
 		task.ErrorLog = appendLogLine(task.ErrorLog, err.Error())
@@ -158,10 +159,11 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 		return nil, err
 	}
 	result, runErr := s.executor.Run(ctx, ExecutionContext{
-		RunID:   strconv.FormatUint(uint64(task.RunID), 10),
-		TaskID:  task.ID,
-		Workdir: strings.TrimSpace(req.Workdir),
-		Env:     req.Env,
+		RunID:      strconv.FormatUint(uint64(task.RunID), 10),
+		TaskID:     task.ID,
+		Workdir:    strings.TrimSpace(req.Workdir),
+		BranchName: branchName,
+		Env:        req.Env,
 	}, CompiledExecutionPrompt{
 		ID:         prompt.ID,
 		PRNodeID:   prompt.PRNodeID,
@@ -247,25 +249,30 @@ func (s *service) CompleteTask(ctx context.Context, taskID uint) (*domain.SpecFo
 	return s.GetRun(ctx, task.RunID)
 }
 
-func (s *service) prepareTaskBranch(ctx context.Context, task *domain.SpecForgeAgentTask) error {
-	if s.preparer == nil {
-		return nil
-	}
+func (s *service) prepareTaskBranch(ctx context.Context, task *domain.SpecForgeAgentTask) (string, error) {
 	bundle, err := s.GetRun(ctx, task.RunID)
 	if err != nil {
-		return err
+		return "", err
 	}
 	if bundle.Plan == nil || bundle.Plan.Idea == nil || strings.TrimSpace(bundle.Plan.Idea.RepositoryID) == "" {
-		return domain.ErrInvalidInput
+		return "", domain.ErrInvalidInput
+	}
+	node := nodeByID(bundle.Plan.PRNodes)[task.PRNodeID]
+	if node == nil {
+		return "", domain.ErrNotFound
+	}
+	branchName := strings.TrimSpace(node.BranchName)
+	if s.preparer == nil {
+		return branchName, nil
 	}
 	_, err = s.preparer.PreparePRNodeBranch(ctx, &githubintegration.PreparePRNodeBranchRequest{
 		RepositoryID: bundle.Plan.Idea.RepositoryID,
 		PRNodeID:     task.PRNodeID,
 	})
 	if err != nil {
-		return fmt.Errorf("prepare PR node branch: %w", err)
+		return "", fmt.Errorf("prepare PR node branch: %w", err)
 	}
-	return nil
+	return branchName, nil
 }
 
 func (s *service) deliverTaskPR(ctx context.Context, task *domain.SpecForgeAgentTask) error {

@@ -51,6 +51,44 @@ func TestCodexCLIExecutorBuildsNonInteractiveCommand(t *testing.T) {
 	}, runner.spec.Args)
 }
 
+func TestCodexCLIExecutorChecksOutBranchBeforeRunningPrompt(t *testing.T) {
+	runner := &captureRunner{result: CommandResult{Stdout: `{"type":"message"}`, ExitCode: 0}}
+	executor := NewCodexCLIExecutor(CodexCLIExecutorConfig{
+		ExecutablePath: "codex-test",
+		Timeout:        time.Minute,
+	}, runner)
+
+	result, err := executor.Run(context.Background(), ExecutionContext{
+		Workdir:    "/tmp/repo",
+		BranchName: "specforge/pr-001",
+	}, CompiledExecutionPrompt{PromptText: "Implement PR-001"})
+
+	require.NoError(t, err)
+	require.Equal(t, "completed", result.Status)
+	require.Len(t, runner.specs, 3)
+	require.Equal(t, "git", runner.specs[0].Executable)
+	require.Equal(t, []string{"fetch", "origin", "specforge/pr-001"}, runner.specs[0].Args)
+	require.Equal(t, "git", runner.specs[1].Executable)
+	require.Equal(t, []string{"checkout", "-B", "specforge/pr-001", "origin/specforge/pr-001"}, runner.specs[1].Args)
+	require.Equal(t, "codex-test", runner.specs[2].Executable)
+}
+
+func TestCodexCLIExecutorFailsWhenBranchCheckoutFails(t *testing.T) {
+	runner := &captureRunner{
+		results: []CommandResult{{Stderr: "missing ref", ExitCode: 128}},
+		errs:    []error{errors.New("exit status 128")},
+	}
+	executor := NewCodexCLIExecutor(CodexCLIExecutorConfig{}, runner)
+
+	_, err := executor.Run(context.Background(), ExecutionContext{
+		Workdir:    "/tmp/repo",
+		BranchName: "specforge/missing",
+	}, CompiledExecutionPrompt{PromptText: "Implement PR-001"})
+
+	require.ErrorContains(t, err, "fetch branch failed: missing ref")
+	require.Len(t, runner.specs, 1)
+}
+
 func TestCodexCLIExecutorFailsWithoutWorkdirOrPrompt(t *testing.T) {
 	executor := NewCodexCLIExecutor(CodexCLIExecutorConfig{}, &captureRunner{})
 
@@ -90,12 +128,25 @@ func TestOSCommandRunnerPassesStdinAndEnv(t *testing.T) {
 }
 
 type captureRunner struct {
-	spec   CommandSpec
-	result CommandResult
-	err    error
+	spec    CommandSpec
+	specs   []CommandSpec
+	result  CommandResult
+	results []CommandResult
+	err     error
+	errs    []error
 }
 
 func (r *captureRunner) Run(ctx context.Context, spec CommandSpec) (CommandResult, error) {
 	r.spec = spec
-	return r.result, r.err
+	r.specs = append(r.specs, spec)
+	index := len(r.specs) - 1
+	result := r.result
+	if index < len(r.results) {
+		result = r.results[index]
+	}
+	err := r.err
+	if index < len(r.errs) {
+		err = r.errs[index]
+	}
+	return result, err
 }
