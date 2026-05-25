@@ -18,6 +18,7 @@ type Service interface {
 	DispatchRun(ctx context.Context, runID uint, req *DispatchExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error)
 	CancelRun(ctx context.Context, runID uint) (*domain.SpecForgeExecutionBundle, error)
 	HeartbeatRuntime(ctx context.Context, req *RuntimeHeartbeatRequest) (*RuntimeHeartbeatResponse, error)
+	DeregisterRuntimes(ctx context.Context, req *RuntimeDeregisterRequest) (*domain.SpecForgeRuntimeSweepResult, error)
 	SweepStaleRuntimes(ctx context.Context, req *RuntimeSweepRequest) (*domain.SpecForgeRuntimeSweepResult, error)
 	SweepStaleTasks(ctx context.Context, req *StaleTaskSweepRequest) (*domain.SpecForgeTaskSweepResult, error)
 	ClaimTask(ctx context.Context, runtimeID string, req *ClaimAgentTaskRequest) (*ClaimAgentTaskResponse, error)
@@ -198,6 +199,28 @@ func (s *service) HeartbeatRuntime(ctx context.Context, req *RuntimeHeartbeatReq
 		return nil, fmt.Errorf("check claimable task: %w", err)
 	}
 	return &RuntimeHeartbeatResponse{Runtime: runtime, ClaimPending: pending}, nil
+}
+
+func (s *service) DeregisterRuntimes(ctx context.Context, req *RuntimeDeregisterRequest) (*domain.SpecForgeRuntimeSweepResult, error) {
+	if req == nil || len(req.RuntimeIDs) == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	runtimeIDs := compactStrings(req.RuntimeIDs)
+	if len(runtimeIDs) == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	runtimes, err := s.repo.MarkRuntimesOfflineByRuntimeIDs(ctx, runtimeIDs)
+	if err != nil {
+		return nil, fmt.Errorf("mark deregistered runtimes offline: %w", err)
+	}
+	tasks, err := s.repo.FailTasksForRuntimeIDs(ctx, runtimeIDs, "runtime_deregistered", "runtime deregistered")
+	if err != nil {
+		return nil, fmt.Errorf("fail tasks for deregistered runtimes: %w", err)
+	}
+	return &domain.SpecForgeRuntimeSweepResult{
+		OfflineRuntimes: runtimes,
+		FailedTasks:     tasks,
+	}, nil
 }
 
 func (s *service) SweepStaleRuntimes(ctx context.Context, req *RuntimeSweepRequest) (*domain.SpecForgeRuntimeSweepResult, error) {

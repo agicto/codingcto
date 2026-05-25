@@ -142,6 +142,55 @@ func TestRepositorySweepsOfflineRuntimesAndFailsActiveTasks(t *testing.T) {
 	require.NotNil(t, failedTasks[0].FinishedAt)
 }
 
+func TestRepositoryDeregistersRuntimeAndFailsOnlyItsTasks(t *testing.T) {
+	repo := newTestExecutionRepository(t)
+	require.NoError(t, repo.UpsertRuntime(context.Background(), &domain.SpecForgeRuntime{
+		RuntimeID:  "runtime_leaving",
+		Executor:   ExecutorNameCodexCLI,
+		Status:     domain.RuntimeStatusOnline,
+		LastSeenAt: time.Now(),
+	}))
+	require.NoError(t, repo.UpsertRuntime(context.Background(), &domain.SpecForgeRuntime{
+		RuntimeID:  "runtime_other",
+		Executor:   ExecutorNameCodexCLI,
+		Status:     domain.RuntimeStatusOnline,
+		LastSeenAt: time.Now(),
+	}))
+	bundle := &domain.SpecForgeExecutionBundle{
+		Run: &domain.SpecForgeExecutionRun{
+			PlanID:    1,
+			Status:    domain.ExecutionRunStatusRunning,
+			StartedBy: 7,
+			StartedAt: time.Now(),
+		},
+		Tasks: []*domain.SpecForgeAgentTask{
+			{PRNodeID: 10, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusRunning, RuntimeID: "runtime_leaving", AttemptNumber: 1},
+			{PRNodeID: 11, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusDispatched, RuntimeID: "runtime_other", AttemptNumber: 1},
+			{PRNodeID: 12, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusCompleted, RuntimeID: "runtime_leaving", AttemptNumber: 1},
+		},
+	}
+	require.NoError(t, repo.CreateExecutionBundle(context.Background(), bundle))
+
+	runtimes, err := repo.MarkRuntimesOfflineByRuntimeIDs(context.Background(), []string{" runtime_leaving ", "runtime_leaving"})
+	require.NoError(t, err)
+	failedTasks, err := repo.FailTasksForRuntimeIDs(context.Background(), []string{"runtime_leaving"}, "runtime_deregistered", "runtime deregistered")
+
+	require.NoError(t, err)
+	require.Len(t, runtimes, 1)
+	require.Equal(t, "runtime_leaving", runtimes[0].RuntimeID)
+	require.Equal(t, domain.RuntimeStatusOffline, runtimes[0].Status)
+	require.Len(t, failedTasks, 1)
+	require.Equal(t, bundle.Tasks[0].ID, failedTasks[0].ID)
+	require.Equal(t, domain.AgentTaskStatusFailed, failedTasks[0].Status)
+	require.Equal(t, "runtime_deregistered", failedTasks[0].FailureReason)
+	require.Contains(t, failedTasks[0].ErrorLog, "runtime deregistered")
+	found, err := repo.FindExecutionBundleByRunID(context.Background(), bundle.Run.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.AgentTaskStatusFailed, found.Tasks[0].Status)
+	require.Equal(t, domain.AgentTaskStatusDispatched, found.Tasks[1].Status)
+	require.Equal(t, domain.AgentTaskStatusCompleted, found.Tasks[2].Status)
+}
+
 func TestRepositoryFailsStaleDispatchedAndRunningTasks(t *testing.T) {
 	repo := newTestExecutionRepository(t)
 	oldDispatchedAt := time.Now().Add(-10 * time.Minute)

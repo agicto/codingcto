@@ -51,6 +51,10 @@ export interface RuntimeSweepPayload {
   stale_seconds?: number;
 }
 
+export interface RuntimeDeregisterPayload {
+  runtime_ids: string[];
+}
+
 export interface StaleTaskSweepPayload {
   dispatch_timeout_seconds?: number;
   running_timeout_seconds?: number;
@@ -377,6 +381,12 @@ export const specForgeService = {
   sweepStaleRuntimes: (payload?: RuntimeSweepPayload) =>
     request.post<SpecForgeRuntimeSweepResultDTO, RuntimeSweepPayload | undefined>(
       `/runtimes/sweep`,
+      payload
+    ),
+
+  deregisterRuntimes: (payload: RuntimeDeregisterPayload) =>
+    request.post<SpecForgeRuntimeSweepResultDTO, RuntimeDeregisterPayload>(
+      `/runtimes/deregister`,
       payload
     ),
 

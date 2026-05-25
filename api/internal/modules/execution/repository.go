@@ -176,6 +176,45 @@ func (r *repository) MarkStaleRuntimesOffline(ctx context.Context, staleBefore t
 	return runtimes, nil
 }
 
+func (r *repository) MarkRuntimesOfflineByRuntimeIDs(ctx context.Context, runtimeIDs []string) ([]*domain.SpecForgeRuntime, error) {
+	runtimeIDs = compactStrings(runtimeIDs)
+	if len(runtimeIDs) == 0 {
+		return []*domain.SpecForgeRuntime{}, nil
+	}
+
+	var pos []*RuntimePO
+	if err := r.db.WithContext(ctx).
+		Where("runtime_id IN ?", runtimeIDs).
+		Order("id ASC").
+		Find(&pos).Error; err != nil {
+		return nil, err
+	}
+	if len(pos) == 0 {
+		return []*domain.SpecForgeRuntime{}, nil
+	}
+
+	now := time.Now()
+	ids := make([]uint, len(pos))
+	for i, po := range pos {
+		ids[i] = po.ID
+		po.Status = domain.RuntimeStatusOffline
+		po.UpdatedAt = now
+	}
+	if err := r.db.WithContext(ctx).Model(&RuntimePO{}).
+		Where("id IN ?", ids).
+		Updates(map[string]any{
+			"status":     domain.RuntimeStatusOffline,
+			"updated_at": now,
+		}).Error; err != nil {
+		return nil, err
+	}
+	runtimes := make([]*domain.SpecForgeRuntime, len(pos))
+	for i, po := range pos {
+		runtimes[i] = po.toDomain()
+	}
+	return runtimes, nil
+}
+
 func (r *repository) FailTasksForOfflineRuntimes(ctx context.Context) ([]*domain.SpecForgeAgentTask, error) {
 	var runtimes []*RuntimePO
 	if err := r.db.WithContext(ctx).
@@ -212,6 +251,56 @@ func (r *repository) FailTasksForOfflineRuntimes(ctx context.Context) ([]*domain
 		taskPO.FailureReason = "runtime_offline"
 		taskPO.FinishedAt = &now
 		taskPO.ErrorLog = appendLogLine(taskPO.ErrorLog, "runtime went offline")
+	}
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, taskPO := range taskPOs {
+			if err := tx.Save(taskPO).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	tasks := make([]*domain.SpecForgeAgentTask, len(taskPOs))
+	for i, po := range taskPOs {
+		tasks[i] = po.toDomain()
+	}
+	return tasks, nil
+}
+
+func (r *repository) FailTasksForRuntimeIDs(ctx context.Context, runtimeIDs []string, reason, errorLine string) ([]*domain.SpecForgeAgentTask, error) {
+	runtimeIDs = compactStrings(runtimeIDs)
+	if len(runtimeIDs) == 0 {
+		return []*domain.SpecForgeAgentTask{}, nil
+	}
+	reason = strings.TrimSpace(reason)
+	if reason == "" {
+		reason = "runtime_offline"
+	}
+	errorLine = strings.TrimSpace(errorLine)
+	if errorLine == "" {
+		errorLine = "runtime went offline"
+	}
+
+	var taskPOs []*AgentTaskPO
+	activeStatuses := []string{domain.AgentTaskStatusDispatched, domain.AgentTaskStatusRunning}
+	if err := r.db.WithContext(ctx).
+		Where("status IN ? AND runtime_id IN ?", activeStatuses, runtimeIDs).
+		Order("id ASC").
+		Find(&taskPOs).Error; err != nil {
+		return nil, err
+	}
+	if len(taskPOs) == 0 {
+		return []*domain.SpecForgeAgentTask{}, nil
+	}
+	now := time.Now()
+	for _, taskPO := range taskPOs {
+		taskPO.Status = domain.AgentTaskStatusFailed
+		taskPO.FailureReason = reason
+		taskPO.FinishedAt = &now
+		taskPO.ErrorLog = appendLogLine(taskPO.ErrorLog, errorLine)
 	}
 	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
 		for _, taskPO := range taskPOs {
@@ -433,4 +522,21 @@ func (r *repository) UpdateAgentTask(ctx context.Context, task *domain.SpecForge
 	}
 	task.UpdatedAt = po.UpdatedAt
 	return nil
+}
+
+func compactStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := make(map[string]struct{}, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }

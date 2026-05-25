@@ -270,7 +270,9 @@ type SpecForgeExecutionRepository interface {
 	ListTaskEvents(ctx context.Context, taskID uint, afterSeq int) ([]*SpecForgeTaskEvent, error)
 	UpsertRuntime(ctx context.Context, runtime *SpecForgeRuntime) error
 	MarkStaleRuntimesOffline(ctx context.Context, staleBefore time.Time) ([]*SpecForgeRuntime, error)
+	MarkRuntimesOfflineByRuntimeIDs(ctx context.Context, runtimeIDs []string) ([]*SpecForgeRuntime, error)
 	FailTasksForOfflineRuntimes(ctx context.Context) ([]*SpecForgeAgentTask, error)
+	FailTasksForRuntimeIDs(ctx context.Context, runtimeIDs []string, reason, errorLine string) ([]*SpecForgeAgentTask, error)
 	FailStaleAgentTasks(ctx context.Context, dispatchBefore, runningBefore time.Time) ([]*SpecForgeAgentTask, error)
 	CancelActiveTasksByRunID(ctx context.Context, runID uint) ([]*SpecForgeAgentTask, error)
 	CreateRetryAgentTask(ctx context.Context, parent *SpecForgeAgentTask, status string, forceFreshSession bool) (*SpecForgeAgentTask, error)

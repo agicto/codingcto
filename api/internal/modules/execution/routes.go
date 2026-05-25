@@ -11,6 +11,7 @@ func (h *Handler) RegisterRoutes(r *router.Router) {
 		auth.POST("/runs/:id/dispatch", h.DispatchRun).Name("specforge.runs.dispatch").WhereNumber("id")
 		auth.POST("/runs/:id/cancel", h.CancelRun).Name("specforge.runs.cancel").WhereNumber("id")
 		auth.POST("/runtimes/heartbeat", h.HeartbeatRuntime).Name("specforge.runtimes.heartbeat")
+		auth.POST("/runtimes/deregister", h.DeregisterRuntimes).Name("specforge.runtimes.deregister")
 		auth.POST("/runtimes/sweep", h.SweepStaleRuntimes).Name("specforge.runtimes.sweep")
 		auth.POST("/runtimes/:runtime_id/claim", h.ClaimTask).Name("specforge.runtimes.claim")
 		auth.POST("/tasks/sweep", h.SweepStaleTasks).Name("specforge.tasks.sweep")
