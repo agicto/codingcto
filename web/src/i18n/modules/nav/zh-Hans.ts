@@ -2,6 +2,7 @@
 const messages = {
   home: '首页',
   dashboard: '平台工作台',
+  specforge: 'SpecForge',
   settings: '设置',
   profile: '个人资料',
   analytics: '数据分析',
