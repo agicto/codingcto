@@ -231,6 +231,48 @@ func (r *repository) FailTasksForOfflineRuntimes(ctx context.Context) ([]*domain
 	return tasks, nil
 }
 
+func (r *repository) CancelActiveTasksByRunID(ctx context.Context, runID uint) ([]*domain.SpecForgeAgentTask, error) {
+	if runID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	activeStatuses := []string{
+		domain.AgentTaskStatusQueued,
+		domain.AgentTaskStatusDispatched,
+		domain.AgentTaskStatusWaiting,
+		domain.AgentTaskStatusRunning,
+	}
+	var taskPOs []*AgentTaskPO
+	if err := r.db.WithContext(ctx).
+		Where("run_id = ? AND status IN ?", runID, activeStatuses).
+		Order("id ASC").
+		Find(&taskPOs).Error; err != nil {
+		return nil, err
+	}
+	if len(taskPOs) == 0 {
+		return []*domain.SpecForgeAgentTask{}, nil
+	}
+	now := time.Now()
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, taskPO := range taskPOs {
+			taskPO.Status = domain.AgentTaskStatusCancelled
+			taskPO.FailureReason = "run_cancelled"
+			taskPO.FinishedAt = &now
+			if err := tx.Save(taskPO).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	tasks := make([]*domain.SpecForgeAgentTask, len(taskPOs))
+	for i, po := range taskPOs {
+		tasks[i] = po.toDomain()
+	}
+	return tasks, nil
+}
+
 func (r *repository) HasClaimableAgentTask(ctx context.Context, runtimeID, executor string) (bool, error) {
 	runtimeID = strings.TrimSpace(runtimeID)
 	executor = strings.TrimSpace(executor)

@@ -323,6 +323,9 @@ export const specForgeService = {
       payload
     ),
 
+  cancelRun: (runId: number) =>
+    request.post<SpecForgeExecutionBundleDTO, undefined>(`/runs/${runId}/cancel`),
+
   heartbeatRuntime: (payload: RuntimeHeartbeatPayload) =>
     request.post<
       { runtime: SpecForgeRuntimeDTO; claim_pending: boolean },

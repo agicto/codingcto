@@ -17,6 +17,7 @@ const (
 	ExecutionRunStatusQueued    = "queued"
 	ExecutionRunStatusRunning   = "running"
 	ExecutionRunStatusCompleted = "completed"
+	ExecutionRunStatusCancelled = "cancelled"
 	RuntimeStatusOnline         = "online"
 	RuntimeStatusOffline        = "offline"
 	AgentTaskStatusQueued       = "queued"
@@ -264,6 +265,7 @@ type SpecForgeExecutionRepository interface {
 	UpsertRuntime(ctx context.Context, runtime *SpecForgeRuntime) error
 	MarkStaleRuntimesOffline(ctx context.Context, staleBefore time.Time) ([]*SpecForgeRuntime, error)
 	FailTasksForOfflineRuntimes(ctx context.Context) ([]*SpecForgeAgentTask, error)
+	CancelActiveTasksByRunID(ctx context.Context, runID uint) ([]*SpecForgeAgentTask, error)
 	HasClaimableAgentTask(ctx context.Context, runtimeID, executor string) (bool, error)
 	ClaimDispatchedAgentTask(ctx context.Context, runtimeID, executor, sessionID, workdir string) (*SpecForgeAgentTask, error)
 	UpdateExecutionRun(ctx context.Context, run *SpecForgeExecutionRun) error

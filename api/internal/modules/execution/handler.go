@@ -93,6 +93,22 @@ func (h *Handler) DispatchRun(c *gin.Context) {
 	response.Success(c, run)
 }
 
+func (h *Handler) CancelRun(c *gin.Context) {
+	runID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || runID == 0 {
+		response.HandleError(c, "Invalid run id", err)
+		return
+	}
+
+	run, err := h.service.CancelRun(c.Request.Context(), uint(runID))
+	if err != nil {
+		response.HandleError(c, "Failed to cancel execution run", err)
+		return
+	}
+
+	response.Success(c, run)
+}
+
 func (h *Handler) HeartbeatRuntime(c *gin.Context) {
 	var req RuntimeHeartbeatRequest
 	if !handler.BindJSON(c, &req) {

@@ -9,6 +9,7 @@ func (h *Handler) RegisterRoutes(r *router.Router) {
 		auth.POST("/plans/:id/run", h.StartRun).Name("specforge.plans.runs.store").WhereNumber("id")
 		auth.GET("/runs/:id", h.GetRun).Name("specforge.runs.show").WhereNumber("id")
 		auth.POST("/runs/:id/dispatch", h.DispatchRun).Name("specforge.runs.dispatch").WhereNumber("id")
+		auth.POST("/runs/:id/cancel", h.CancelRun).Name("specforge.runs.cancel").WhereNumber("id")
 		auth.POST("/runtimes/heartbeat", h.HeartbeatRuntime).Name("specforge.runtimes.heartbeat")
 		auth.POST("/runtimes/sweep", h.SweepStaleRuntimes).Name("specforge.runtimes.sweep")
 		auth.POST("/runtimes/:runtime_id/claim", h.ClaimTask).Name("specforge.runtimes.claim")

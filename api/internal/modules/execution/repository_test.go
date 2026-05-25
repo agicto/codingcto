@@ -142,6 +142,37 @@ func TestRepositorySweepsOfflineRuntimesAndFailsActiveTasks(t *testing.T) {
 	require.NotNil(t, failedTasks[0].FinishedAt)
 }
 
+func TestRepositoryCancelsActiveTasksByRunID(t *testing.T) {
+	repo := newTestExecutionRepository(t)
+	bundle := &domain.SpecForgeExecutionBundle{
+		Run: &domain.SpecForgeExecutionRun{
+			PlanID:    1,
+			Status:    domain.ExecutionRunStatusRunning,
+			StartedBy: 7,
+			StartedAt: time.Now(),
+		},
+		Tasks: []*domain.SpecForgeAgentTask{
+			{PRNodeID: 10, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusQueued, AttemptNumber: 1},
+			{PRNodeID: 11, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusRunning, AttemptNumber: 1},
+			{PRNodeID: 12, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusCompleted, AttemptNumber: 1},
+		},
+	}
+	require.NoError(t, repo.CreateExecutionBundle(context.Background(), bundle))
+
+	cancelled, err := repo.CancelActiveTasksByRunID(context.Background(), bundle.Run.ID)
+
+	require.NoError(t, err)
+	require.Len(t, cancelled, 2)
+	require.Equal(t, domain.AgentTaskStatusCancelled, cancelled[0].Status)
+	require.Equal(t, "run_cancelled", cancelled[0].FailureReason)
+	require.NotNil(t, cancelled[0].FinishedAt)
+	found, err := repo.FindExecutionBundleByRunID(context.Background(), bundle.Run.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.AgentTaskStatusCancelled, found.Tasks[0].Status)
+	require.Equal(t, domain.AgentTaskStatusCancelled, found.Tasks[1].Status)
+	require.Equal(t, domain.AgentTaskStatusCompleted, found.Tasks[2].Status)
+}
+
 func newTestExecutionRepository(t *testing.T) *repository {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

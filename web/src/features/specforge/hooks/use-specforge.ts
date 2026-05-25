@@ -139,6 +139,17 @@ export function useDispatchExecutionRun() {
   });
 }
 
+export function useCancelExecutionRun() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (runId: number) => specForgeService.cancelRun(runId),
+    onSuccess: (bundle) => {
+      queryClient.setQueryData(specForgeKeys.run(bundle.run.id), bundle);
+    },
+  });
+}
+
 export function useHeartbeatSpecForgeRuntime() {
   return useMutation({
     mutationFn: (payload: RuntimeHeartbeatPayload) => specForgeService.heartbeatRuntime(payload),

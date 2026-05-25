@@ -16,6 +16,7 @@ type Service interface {
 	StartRun(ctx context.Context, userID, planID uint, req *StartExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error)
 	GetRun(ctx context.Context, runID uint) (*domain.SpecForgeExecutionBundle, error)
 	DispatchRun(ctx context.Context, runID uint, req *DispatchExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error)
+	CancelRun(ctx context.Context, runID uint) (*domain.SpecForgeExecutionBundle, error)
 	HeartbeatRuntime(ctx context.Context, req *RuntimeHeartbeatRequest) (*RuntimeHeartbeatResponse, error)
 	SweepStaleRuntimes(ctx context.Context, req *RuntimeSweepRequest) (*domain.SpecForgeRuntimeSweepResult, error)
 	ClaimTask(ctx context.Context, runtimeID string, req *ClaimAgentTaskRequest) (*ClaimAgentTaskResponse, error)
@@ -117,6 +118,9 @@ func (s *service) DispatchRun(ctx context.Context, runID uint, req *DispatchExec
 	if err != nil {
 		return nil, err
 	}
+	if bundle.Run.Status == domain.ExecutionRunStatusCompleted || bundle.Run.Status == domain.ExecutionRunStatusCancelled {
+		return nil, domain.ErrConflict
+	}
 	dispatched := 0
 	now := time.Now()
 	for _, task := range bundle.Tasks {
@@ -141,6 +145,29 @@ func (s *service) DispatchRun(ctx context.Context, runID uint, req *DispatchExec
 		if err := s.repo.UpdateExecutionRun(ctx, bundle.Run); err != nil {
 			return nil, fmt.Errorf("update execution run: %w", err)
 		}
+	}
+	return s.GetRun(ctx, runID)
+}
+
+func (s *service) CancelRun(ctx context.Context, runID uint) (*domain.SpecForgeExecutionBundle, error) {
+	if runID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	bundle, err := s.GetRun(ctx, runID)
+	if err != nil {
+		return nil, err
+	}
+	if bundle.Run.Status == domain.ExecutionRunStatusCompleted || bundle.Run.Status == domain.ExecutionRunStatusCancelled {
+		return nil, domain.ErrConflict
+	}
+	if _, err := s.repo.CancelActiveTasksByRunID(ctx, runID); err != nil {
+		return nil, fmt.Errorf("cancel active agent tasks: %w", err)
+	}
+	now := time.Now()
+	bundle.Run.Status = domain.ExecutionRunStatusCancelled
+	bundle.Run.CompletedAt = &now
+	if err := s.repo.UpdateExecutionRun(ctx, bundle.Run); err != nil {
+		return nil, fmt.Errorf("cancel execution run: %w", err)
 	}
 	return s.GetRun(ctx, runID)
 }
