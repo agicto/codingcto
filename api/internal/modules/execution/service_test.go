@@ -108,6 +108,7 @@ func TestExecuteTaskRunsCompiledPromptAndUnlocksDependents(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, "/tmp/repo", executor.execContext.Workdir)
+	require.Equal(t, "specforge/pr-001", executor.execContext.BranchName)
 	require.Equal(t, "Implement PR-001", executor.prompt.PromptText)
 	require.Equal(t, domain.AgentTaskStatusCompleted, updated.Tasks[0].Status)
 	require.Equal(t, "done", updated.Tasks[0].OutputLog)
@@ -457,8 +458,8 @@ func approvedPlanBundle() *domain.SpecForgePlanBundle {
 			Status:        domain.PlanStatusApproved,
 		},
 		PRNodes: []*domain.SpecForgePRNode{
-			{ID: 4, PlanID: 3, NodeKey: "PR-001", Status: domain.PRNodeStatusPlanned},
-			{ID: 5, PlanID: 3, NodeKey: "PR-002", DependsOn: []string{"PR-001"}, Status: domain.PRNodeStatusPlanned},
+			{ID: 4, PlanID: 3, NodeKey: "PR-001", BranchName: "specforge/pr-001", Status: domain.PRNodeStatusPlanned},
+			{ID: 5, PlanID: 3, NodeKey: "PR-002", BranchName: "specforge/pr-002", DependsOn: []string{"PR-001"}, Status: domain.PRNodeStatusPlanned},
 		},
 	}
 }

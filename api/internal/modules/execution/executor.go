@@ -23,10 +23,11 @@ type CodeExecutor interface {
 }
 
 type ExecutionContext struct {
-	RunID   string
-	TaskID  uint
-	Workdir string
-	Env     map[string]string
+	RunID      string
+	TaskID     uint
+	Workdir    string
+	BranchName string
+	Env        map[string]string
 }
 
 type CompiledExecutionPrompt struct {
@@ -92,6 +93,29 @@ func (e *CodexCLIExecutor) Name() string {
 func (e *CodexCLIExecutor) Prepare(ctx context.Context, execContext ExecutionContext) error {
 	if strings.TrimSpace(execContext.Workdir) == "" {
 		return fmt.Errorf("codex executor: workdir is required")
+	}
+	branch := strings.TrimSpace(execContext.BranchName)
+	if branch == "" {
+		return nil
+	}
+	if strings.HasPrefix(branch, "-") {
+		return fmt.Errorf("codex executor: branch name is invalid")
+	}
+	if result, err := e.runner.Run(ctx, CommandSpec{
+		Executable: "git",
+		Args:       []string{"fetch", "origin", branch},
+		Dir:        execContext.Workdir,
+		Env:        execContext.Env,
+	}); err != nil || result.ExitCode != 0 {
+		return commandFailure("fetch branch", result, err)
+	}
+	if result, err := e.runner.Run(ctx, CommandSpec{
+		Executable: "git",
+		Args:       []string{"checkout", "-B", branch, "origin/" + branch},
+		Dir:        execContext.Workdir,
+		Env:        execContext.Env,
+	}); err != nil || result.ExitCode != 0 {
+		return commandFailure("checkout branch", result, err)
 	}
 	return nil
 }
@@ -160,6 +184,20 @@ func (e *CodexCLIExecutor) GetLogs(ctx context.Context, runID string) (*Executor
 		return nil, fmt.Errorf("codex executor: run id is required")
 	}
 	return &ExecutorLogs{}, nil
+}
+
+func commandFailure(action string, result CommandResult, err error) error {
+	detail := strings.TrimSpace(result.Stderr)
+	if detail == "" {
+		detail = strings.TrimSpace(result.Stdout)
+	}
+	if err != nil && detail == "" {
+		detail = err.Error()
+	}
+	if detail == "" {
+		detail = fmt.Sprintf("exit code %d", result.ExitCode)
+	}
+	return fmt.Errorf("codex executor: %s failed: %s", action, detail)
 }
 
 type CommandSpec struct {
