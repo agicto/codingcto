@@ -18,6 +18,7 @@ type Service interface {
 	GetInstallation(ctx context.Context, id uint) (*domain.GitHubInstallation, error)
 	UpsertRepository(ctx context.Context, userID uint, req *UpsertRepositoryRequest) (*domain.Repository, error)
 	GetRepository(ctx context.Context, repositoryID string) (*domain.Repository, error)
+	PreparePRNodeBranch(ctx context.Context, req *PreparePRNodeBranchRequest) (*domain.SpecForgePRNode, error)
 	DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) (*domain.SpecForgePRNode, error)
 	RecordWebhook(ctx context.Context, req *GitHubWebhookRequest) (*domain.GitHubWebhookEvent, error)
 }
@@ -99,6 +100,44 @@ func (s *service) GetRepository(ctx context.Context, repositoryID string) (*doma
 	return s.repo.FindRepositoryByRepositoryID(ctx, strings.TrimSpace(repositoryID))
 }
 
+func (s *service) PreparePRNodeBranch(ctx context.Context, req *PreparePRNodeBranchRequest) (*domain.SpecForgePRNode, error) {
+	if req == nil || strings.TrimSpace(req.RepositoryID) == "" || req.PRNodeID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	if s.planningRepo == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	repository, err := s.repo.FindRepositoryByRepositoryID(ctx, strings.TrimSpace(req.RepositoryID))
+	if err != nil {
+		return nil, err
+	}
+	node, err := s.planningRepo.FindPRNodeByID(ctx, req.PRNodeID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(node.BranchName) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	baseBranch := resolveBaseBranch(repository, req.BaseBranch)
+	client, err := s.repositoryClientForRepository(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
+	baseRef, err := client.GetBranchRef(ctx, repository.GitHubOwner, repository.GitHubRepo, baseBranch)
+	if err != nil {
+		return nil, err
+	}
+	if baseRef == nil || strings.TrimSpace(baseRef.Object.SHA) == "" {
+		return nil, fmt.Errorf("github integration: base branch response missing sha")
+	}
+	if _, err := client.CreateBranch(ctx, repository.GitHubOwner, repository.GitHubRepo, node.BranchName, baseRef.Object.SHA); err != nil {
+		if !isBranchAlreadyExistsError(err) {
+			return nil, err
+		}
+	}
+	return node, nil
+}
+
 func (s *service) DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) (*domain.SpecForgePRNode, error) {
 	if req == nil || strings.TrimSpace(req.RepositoryID) == "" || req.PRNodeID == 0 {
 		return nil, domain.ErrInvalidInput
@@ -110,10 +149,6 @@ func (s *service) DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) 
 	if err != nil {
 		return nil, err
 	}
-	installation, err := s.repo.FindInstallationByID(ctx, repository.GitHubInstallationID)
-	if err != nil {
-		return nil, err
-	}
 	node, err := s.planningRepo.FindPRNodeByID(ctx, req.PRNodeID)
 	if err != nil {
 		return nil, err
@@ -121,13 +156,7 @@ func (s *service) DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) 
 	if strings.TrimSpace(node.BranchName) == "" {
 		return nil, domain.ErrInvalidInput
 	}
-	baseBranch := strings.TrimSpace(req.BaseBranch)
-	if baseBranch == "" {
-		baseBranch = repository.DefaultBranch
-	}
-	if baseBranch == "" {
-		baseBranch = "main"
-	}
+	baseBranch := resolveBaseBranch(repository, req.BaseBranch)
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
 		title = node.Title
@@ -136,14 +165,7 @@ func (s *service) DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) 
 	if req.Draft != nil {
 		draft = *req.Draft
 	}
-	token, err := s.tokenProvider.InstallationToken(ctx, installation.InstallationID)
-	if err != nil {
-		return nil, err
-	}
-	if token == nil || strings.TrimSpace(token.Token) == "" {
-		return nil, fmt.Errorf("github integration: installation token is required")
-	}
-	client, err := s.clientFactory.NewRepositoryClient(strings.TrimSpace(token.Token))
+	client, err := s.repositoryClientForRepository(ctx, repository)
 	if err != nil {
 		return nil, err
 	}
@@ -172,6 +194,28 @@ func (s *service) DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) 
 		return nil, err
 	}
 	return node, nil
+}
+
+func (s *service) repositoryClientForRepository(ctx context.Context, repository *domain.Repository) (RepositoryClient, error) {
+	installation, err := s.repo.FindInstallationByID(ctx, repository.GitHubInstallationID)
+	if err != nil {
+		return nil, err
+	}
+	token, err := s.tokenProvider.InstallationToken(ctx, installation.InstallationID)
+	if err != nil {
+		return nil, err
+	}
+	if token == nil || strings.TrimSpace(token.Token) == "" {
+		return nil, fmt.Errorf("github integration: installation token is required")
+	}
+	client, err := s.clientFactory.NewRepositoryClient(strings.TrimSpace(token.Token))
+	if err != nil {
+		return nil, err
+	}
+	if client == nil {
+		return nil, fmt.Errorf("github integration: repository client is required")
+	}
+	return client, nil
 }
 
 func (s *service) RecordWebhook(ctx context.Context, req *GitHubWebhookRequest) (*domain.GitHubWebhookEvent, error) {
@@ -219,6 +263,25 @@ func prDescription(node *domain.SpecForgePRNode, body string) string {
 		strings.TrimSpace(node.NodeKey),
 		formatMarkdownList(node.TestCommands),
 	)
+}
+
+func resolveBaseBranch(repository *domain.Repository, override string) string {
+	baseBranch := strings.TrimSpace(override)
+	if baseBranch == "" && repository != nil {
+		baseBranch = strings.TrimSpace(repository.DefaultBranch)
+	}
+	if baseBranch == "" {
+		baseBranch = "main"
+	}
+	return baseBranch
+}
+
+func isBranchAlreadyExistsError(err error) bool {
+	if err == nil {
+		return false
+	}
+	message := strings.ToLower(err.Error())
+	return strings.Contains(message, "reference already exists")
 }
 
 func formatMarkdownList(items []string) string {

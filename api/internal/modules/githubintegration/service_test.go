@@ -5,6 +5,7 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -271,6 +272,79 @@ func TestDeliverPRNodeCreatesDraftPRAndUpdatesNode(t *testing.T) {
 	require.Equal(t, node.GitHubPRURL, planningRepo.nodes[0].GitHubPRURL)
 }
 
+func TestPreparePRNodeBranchCreatesBranchFromDefaultBranch(t *testing.T) {
+	repo := &memoryRepo{
+		installation: &domain.GitHubInstallation{
+			ID:             3,
+			InstallationID: 98765,
+		},
+		repository: &domain.Repository{
+			ID:                   1,
+			RepositoryID:         "github_agicto__codingcto",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto",
+			DefaultBranch:        "main",
+		},
+	}
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, NodeKey: "PR-001", BranchName: "specforge/team-invite-01-api", Status: domain.PRNodeStatusPlanned},
+		},
+	}
+	client := &fakeRepositoryClient{branchRef: &GitReference{Object: GitRefObject{SHA: "abc123"}}}
+	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider)
+
+	node, err := svc.PreparePRNodeBranch(context.Background(), &PreparePRNodeBranchRequest{
+		RepositoryID: "github_agicto__codingcto",
+		PRNodeID:     10,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, uint(10), node.ID)
+	require.Equal(t, "agicto", client.getBranchOwner)
+	require.Equal(t, "codingcto", client.getBranchRepo)
+	require.Equal(t, "main", client.getBranchName)
+	require.Equal(t, "specforge/team-invite-01-api", client.createBranchName)
+	require.Equal(t, "abc123", client.createBranchSHA)
+}
+
+func TestPreparePRNodeBranchIgnoresExistingBranch(t *testing.T) {
+	repo := &memoryRepo{
+		installation: &domain.GitHubInstallation{
+			ID:             3,
+			InstallationID: 98765,
+		},
+		repository: &domain.Repository{
+			ID:                   1,
+			RepositoryID:         "github_agicto__codingcto",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto",
+			DefaultBranch:        "main",
+		},
+	}
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, NodeKey: "PR-001", BranchName: "specforge/team-invite-01-api", Status: domain.PRNodeStatusPlanned},
+		},
+	}
+	client := &fakeRepositoryClient{
+		branchRef:       &GitReference{Object: GitRefObject{SHA: "abc123"}},
+		createBranchErr: fmt.Errorf("github repository client: request failed: Reference already exists"),
+	}
+	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider)
+
+	_, err := svc.PreparePRNodeBranch(context.Background(), &PreparePRNodeBranchRequest{
+		RepositoryID: "github_agicto__codingcto",
+		PRNodeID:     10,
+	})
+
+	require.NoError(t, err)
+}
+
 func TestDeliverPRNodeAllowsOverrides(t *testing.T) {
 	repo := &memoryRepo{
 		installation: &domain.GitHubInstallation{
@@ -368,9 +442,30 @@ func (f *fakeRepositoryClientFactory) NewRepositoryClient(token string) (Reposit
 }
 
 type fakeRepositoryClient struct {
-	input CreatePullRequestInput
-	pr    *PullRequest
-	err   error
+	input            CreatePullRequestInput
+	pr               *PullRequest
+	err              error
+	branchRef        *GitReference
+	getBranchOwner   string
+	getBranchRepo    string
+	getBranchName    string
+	getBranchErr     error
+	createBranchName string
+	createBranchSHA  string
+	createBranchErr  error
+}
+
+func (c *fakeRepositoryClient) GetBranchRef(ctx context.Context, owner, repo, branch string) (*GitReference, error) {
+	c.getBranchOwner = owner
+	c.getBranchRepo = repo
+	c.getBranchName = branch
+	return c.branchRef, c.getBranchErr
+}
+
+func (c *fakeRepositoryClient) CreateBranch(ctx context.Context, owner, repo, branch, sha string) (*GitReference, error) {
+	c.createBranchName = branch
+	c.createBranchSHA = sha
+	return &GitReference{Ref: "refs/heads/" + branch, Object: GitRefObject{SHA: sha}}, c.createBranchErr
 }
 
 func (c *fakeRepositoryClient) CreatePullRequest(ctx context.Context, input CreatePullRequestInput) (*PullRequest, error) {

@@ -99,6 +99,19 @@ func (h *Handler) DeliverPRNode(c *gin.Context) {
 	response.Success(c, node)
 }
 
+func (h *Handler) PreparePRNodeBranch(c *gin.Context) {
+	var req PreparePRNodeBranchRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+	node, err := h.service.PreparePRNodeBranch(c.Request.Context(), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to prepare PR node branch", err)
+		return
+	}
+	response.Success(c, node)
+}
+
 func (h *Handler) ReceiveWebhook(c *gin.Context) {
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {

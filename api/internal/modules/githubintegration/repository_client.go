@@ -19,6 +19,8 @@ type GitHubRepositoryClient struct {
 }
 
 type RepositoryClient interface {
+	GetBranchRef(ctx context.Context, owner, repo, branch string) (*GitReference, error)
+	CreateBranch(ctx context.Context, owner, repo, branch, sha string) (*GitReference, error)
 	CreatePullRequest(ctx context.Context, input CreatePullRequestInput) (*PullRequest, error)
 }
 
