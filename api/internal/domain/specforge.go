@@ -10,6 +10,9 @@ const (
 	PlanStatusDraft            = "draft"
 	PlanStatusApproved         = "approved"
 	PRNodeStatusPlanned        = "planned"
+	ExecutionRunStatusQueued   = "queued"
+	AgentTaskStatusQueued      = "queued"
+	AgentTaskStatusWaiting     = "waiting_on_dependencies"
 )
 
 // SpecForgeIdea captures the original product intent submitted for a repository.
@@ -95,6 +98,39 @@ type SpecForgeCompiledPrompt struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+// SpecForgeExecutionRun is one approved plan execution attempt.
+type SpecForgeExecutionRun struct {
+	ID          uint       `json:"id"`
+	PlanID      uint       `json:"plan_id"`
+	Status      string     `json:"status"`
+	StartedBy   uint       `json:"started_by"`
+	StartedAt   time.Time  `json:"started_at"`
+	CompletedAt *time.Time `json:"completed_at,omitempty"`
+	CreatedAt   time.Time  `json:"created_at"`
+	UpdatedAt   time.Time  `json:"updated_at"`
+}
+
+// SpecForgeAgentTask tracks one executor task for a planned PR node.
+type SpecForgeAgentTask struct {
+	ID         uint       `json:"id"`
+	RunID      uint       `json:"run_id"`
+	PRNodeID   uint       `json:"pr_node_id"`
+	Executor   string     `json:"executor"`
+	Status     string     `json:"status"`
+	LogsURL    string     `json:"logs_url,omitempty"`
+	StartedAt  *time.Time `json:"started_at,omitempty"`
+	FinishedAt *time.Time `json:"finished_at,omitempty"`
+	CreatedAt  time.Time  `json:"created_at"`
+	UpdatedAt  time.Time  `json:"updated_at"`
+}
+
+// SpecForgeExecutionBundle is the delivery state returned to run pages.
+type SpecForgeExecutionBundle struct {
+	Run   *SpecForgeExecutionRun `json:"run"`
+	Plan  *SpecForgePlanBundle   `json:"plan,omitempty"`
+	Tasks []*SpecForgeAgentTask  `json:"tasks"`
+}
+
 // SpecForgeRepoProfile is the compact repository context used by planners.
 type SpecForgeRepoProfile struct {
 	ID                uint      `json:"id"`
@@ -136,4 +172,10 @@ type SpecForgePlanningRepository interface {
 type SpecForgeRepoProfileRepository interface {
 	UpsertProfile(ctx context.Context, profile *SpecForgeRepoProfile) error
 	FindProfileByRepositoryID(ctx context.Context, repositoryID string) (*SpecForgeRepoProfile, error)
+}
+
+// SpecForgeExecutionRepository persists execution run state.
+type SpecForgeExecutionRepository interface {
+	CreateExecutionBundle(ctx context.Context, bundle *SpecForgeExecutionBundle) error
+	FindExecutionBundleByRunID(ctx context.Context, runID uint) (*SpecForgeExecutionBundle, error)
 }
