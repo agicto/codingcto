@@ -21,6 +21,11 @@ type RuntimeSweepRequest struct {
 	StaleSeconds int `json:"stale_seconds" binding:"omitempty,min=1,max=86400"`
 }
 
+type StaleTaskSweepRequest struct {
+	DispatchTimeoutSeconds int `json:"dispatch_timeout_seconds" binding:"omitempty,min=1,max=86400"`
+	RunningTimeoutSeconds  int `json:"running_timeout_seconds" binding:"omitempty,min=1,max=86400"`
+}
+
 type RetryAgentTaskRequest struct {
 	ForceFreshSession bool `json:"force_fresh_session" binding:"omitempty"`
 }

@@ -231,6 +231,55 @@ func (r *repository) FailTasksForOfflineRuntimes(ctx context.Context) ([]*domain
 	return tasks, nil
 }
 
+func (r *repository) FailStaleAgentTasks(ctx context.Context, dispatchBefore, runningBefore time.Time) ([]*domain.SpecForgeAgentTask, error) {
+	var taskPOs []*AgentTaskPO
+	if err := r.db.WithContext(ctx).
+		Where(
+			"(status = ? AND dispatched_at IS NOT NULL AND dispatched_at < ?) OR (status = ? AND started_at IS NOT NULL AND started_at < ?)",
+			domain.AgentTaskStatusDispatched,
+			dispatchBefore,
+			domain.AgentTaskStatusRunning,
+			runningBefore,
+		).
+		Order("id ASC").
+		Find(&taskPOs).Error; err != nil {
+		return nil, err
+	}
+	if len(taskPOs) == 0 {
+		return []*domain.SpecForgeAgentTask{}, nil
+	}
+
+	now := time.Now()
+	for _, taskPO := range taskPOs {
+		switch taskPO.Status {
+		case domain.AgentTaskStatusDispatched:
+			taskPO.FailureReason = "dispatch_timeout"
+			taskPO.ErrorLog = appendLogLine(taskPO.ErrorLog, "task dispatch timed out")
+		case domain.AgentTaskStatusRunning:
+			taskPO.FailureReason = "execution_timeout"
+			taskPO.ErrorLog = appendLogLine(taskPO.ErrorLog, "task execution timed out")
+		}
+		taskPO.Status = domain.AgentTaskStatusFailed
+		taskPO.FinishedAt = &now
+	}
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		for _, taskPO := range taskPOs {
+			if err := tx.Save(taskPO).Error; err != nil {
+				return err
+			}
+		}
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	tasks := make([]*domain.SpecForgeAgentTask, len(taskPOs))
+	for i, po := range taskPOs {
+		tasks[i] = po.toDomain()
+	}
+	return tasks, nil
+}
+
 func (r *repository) CancelActiveTasksByRunID(ctx context.Context, runID uint) ([]*domain.SpecForgeAgentTask, error) {
 	if runID == 0 {
 		return nil, domain.ErrInvalidInput
