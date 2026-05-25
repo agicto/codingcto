@@ -108,6 +108,22 @@ func (CompiledPromptPO) TableName() string {
 	return "specforge_compiled_prompts"
 }
 
+type SkillPO struct {
+	ID           uint   `gorm:"primaryKey"`
+	RepositoryID string `gorm:"size:255;not null;uniqueIndex:idx_specforge_skill_repo_name"`
+	Name         string `gorm:"size:120;not null;uniqueIndex:idx_specforge_skill_repo_name"`
+	Description  string `gorm:"type:text"`
+	Content      string `gorm:"type:text;not null"`
+	Active       bool   `gorm:"not null;default:true;index"`
+	CreatedBy    uint   `gorm:"not null;index"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+func (SkillPO) TableName() string {
+	return "specforge_skills"
+}
+
 func newIdeaPO(idea *domain.SpecForgeIdea) *IdeaPO {
 	return &IdeaPO{
 		ID: idea.ID, RepositoryID: idea.RepositoryID, CreatedBy: idea.CreatedBy,
@@ -217,6 +233,34 @@ func (po *CompiledPromptPO) toDomain() *domain.SpecForgeCompiledPrompt {
 		PromptHash: po.PromptHash,
 		CreatedBy:  po.CreatedBy,
 		CreatedAt:  po.CreatedAt,
+	}
+}
+
+func newSkillPO(skill *domain.SpecForgeSkill) *SkillPO {
+	return &SkillPO{
+		ID:           skill.ID,
+		RepositoryID: skill.RepositoryID,
+		Name:         skill.Name,
+		Description:  skill.Description,
+		Content:      skill.Content,
+		Active:       skill.Active,
+		CreatedBy:    skill.CreatedBy,
+		CreatedAt:    skill.CreatedAt,
+		UpdatedAt:    skill.UpdatedAt,
+	}
+}
+
+func (po *SkillPO) toDomain() *domain.SpecForgeSkill {
+	return &domain.SpecForgeSkill{
+		ID:           po.ID,
+		RepositoryID: po.RepositoryID,
+		Name:         po.Name,
+		Description:  po.Description,
+		Content:      po.Content,
+		Active:       po.Active,
+		CreatedBy:    po.CreatedBy,
+		CreatedAt:    po.CreatedAt,
+		UpdatedAt:    po.UpdatedAt,
 	}
 }
 

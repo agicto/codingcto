@@ -17,16 +17,19 @@ type Service interface {
 	CreateIdea(ctx context.Context, userID uint, repoID string, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error)
 	GetPlanForIdea(ctx context.Context, ideaID uint) (*domain.SpecForgePlanBundle, error)
 	ApprovePlan(ctx context.Context, userID, planID uint, req *ApprovePlanRequest) (*domain.SpecForgePlanBundle, error)
+	UpsertSkill(ctx context.Context, userID uint, repoID string, req *UpsertSkillRequest) (*domain.SpecForgeSkill, error)
+	ListSkills(ctx context.Context, repoID string) ([]*domain.SpecForgeSkill, error)
 	CompilePrompt(ctx context.Context, userID, prNodeID uint, req *CompilePromptRequest) (*domain.SpecForgeCompiledPrompt, error)
 }
 
 type service struct {
 	repo        domain.SpecForgePlanningRepository
 	profileRepo domain.SpecForgeRepoProfileRepository
+	skillRepo   domain.SpecForgeSkillRepository
 }
 
-func NewService(repo domain.SpecForgePlanningRepository, profileRepo domain.SpecForgeRepoProfileRepository) *service {
-	return &service{repo: repo, profileRepo: profileRepo}
+func NewService(repo domain.SpecForgePlanningRepository, profileRepo domain.SpecForgeRepoProfileRepository, skillRepo domain.SpecForgeSkillRepository) *service {
+	return &service{repo: repo, profileRepo: profileRepo, skillRepo: skillRepo}
 }
 
 func (s *service) CreateIdea(ctx context.Context, userID uint, repoID string, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error) {
@@ -90,6 +93,38 @@ func (s *service) ApprovePlan(ctx context.Context, userID, planID uint, req *App
 	return s.withRepoProfile(ctx, bundle)
 }
 
+func (s *service) UpsertSkill(ctx context.Context, userID uint, repoID string, req *UpsertSkillRequest) (*domain.SpecForgeSkill, error) {
+	if userID == 0 || req == nil || strings.TrimSpace(repoID) == "" || strings.TrimSpace(req.Name) == "" || strings.TrimSpace(req.Content) == "" || s.skillRepo == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	active := true
+	if req.Active != nil {
+		active = *req.Active
+	}
+	skill := &domain.SpecForgeSkill{
+		RepositoryID: strings.TrimSpace(repoID),
+		Name:         strings.TrimSpace(sanitizeSkillText(req.Name)),
+		Description:  strings.TrimSpace(sanitizeSkillText(req.Description)),
+		Content:      strings.TrimSpace(sanitizeSkillText(req.Content)),
+		Active:       active,
+		CreatedBy:    userID,
+	}
+	if skill.Name == "" || skill.Content == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	if err := s.skillRepo.UpsertSkill(ctx, skill); err != nil {
+		return nil, fmt.Errorf("upsert repo skill: %w", err)
+	}
+	return skill, nil
+}
+
+func (s *service) ListSkills(ctx context.Context, repoID string) ([]*domain.SpecForgeSkill, error) {
+	if strings.TrimSpace(repoID) == "" || s.skillRepo == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.skillRepo.ListSkillsByRepositoryID(ctx, strings.TrimSpace(repoID))
+}
+
 func (s *service) CompilePrompt(ctx context.Context, userID, prNodeID uint, req *CompilePromptRequest) (*domain.SpecForgeCompiledPrompt, error) {
 	if userID == 0 || prNodeID == 0 {
 		return nil, domain.ErrInvalidInput
@@ -112,8 +147,12 @@ func (s *service) CompilePrompt(ctx context.Context, userID, prNodeID uint, req 
 	if err != nil {
 		return nil, err
 	}
+	skills, err := s.activeSkillsFor(ctx, bundle)
+	if err != nil {
+		return nil, err
+	}
 
-	text := compilePromptText(promptType, bundle, node)
+	text := compilePromptText(promptType, bundle, node, skills)
 	hash := sha256.Sum256([]byte(text))
 	prompt := &domain.SpecForgeCompiledPrompt{
 		PRNodeID:   node.ID,
@@ -128,6 +167,17 @@ func (s *service) CompilePrompt(ctx context.Context, userID, prNodeID uint, req 
 		return nil, fmt.Errorf("create compiled prompt: %w", err)
 	}
 	return prompt, nil
+}
+
+func (s *service) activeSkillsFor(ctx context.Context, bundle *domain.SpecForgePlanBundle) ([]*domain.SpecForgeSkill, error) {
+	if s.skillRepo == nil || bundle == nil || bundle.Idea == nil || strings.TrimSpace(bundle.Idea.RepositoryID) == "" {
+		return []*domain.SpecForgeSkill{}, nil
+	}
+	skills, err := s.skillRepo.ListActiveSkillsByRepositoryID(ctx, bundle.Idea.RepositoryID)
+	if err != nil {
+		return nil, fmt.Errorf("load active repo skills: %w", err)
+	}
+	return skills, nil
 }
 
 func (s *service) withRepoProfile(ctx context.Context, bundle *domain.SpecForgePlanBundle) (*domain.SpecForgePlanBundle, error) {
@@ -156,7 +206,7 @@ func (s *service) repoProfileFor(ctx context.Context, repoID string) (*domain.Sp
 	return profile, nil
 }
 
-func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode) string {
+func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, skills []*domain.SpecForgeSkill) string {
 	var b strings.Builder
 	b.WriteString("You are implementing a SpecForge PR node.\n\n")
 	b.WriteString("Prompt type: " + promptType + "\n")
@@ -168,6 +218,7 @@ func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, no
 	}
 	b.WriteString("\nTechnical plan:\n" + bundle.Plan.TechnicalSummary + "\n\n")
 	writeRepoProfile(&b, bundle.RepoProfile)
+	writeSkills(&b, skills)
 	writeList(&b, "Expected files", node.ExpectedFiles)
 	writeList(&b, "Dependencies", node.DependsOn)
 	writeList(&b, "Non-goals", node.NonGoals)
@@ -178,6 +229,24 @@ func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, no
 	b.WriteString("- Run the listed test commands.\n")
 	b.WriteString("- Prepare a PR description with summary, scope, non-goals, tests, risks, and dependencies.\n")
 	return b.String()
+}
+
+func writeSkills(b *strings.Builder, skills []*domain.SpecForgeSkill) {
+	b.WriteString("Repository skills:\n")
+	if len(skills) == 0 {
+		b.WriteString("- None\n\n")
+		return
+	}
+	for _, skill := range skills {
+		if skill == nil || strings.TrimSpace(skill.Name) == "" || strings.TrimSpace(skill.Content) == "" {
+			continue
+		}
+		b.WriteString("## " + strings.TrimSpace(skill.Name) + "\n")
+		if strings.TrimSpace(skill.Description) != "" {
+			b.WriteString(strings.TrimSpace(skill.Description) + "\n")
+		}
+		b.WriteString(strings.TrimSpace(skill.Content) + "\n\n")
+	}
 }
 
 func writeRepoProfile(b *strings.Builder, profile *domain.SpecForgeRepoProfile) {
@@ -208,6 +277,10 @@ func writeList(b *strings.Builder, title string, values []string) {
 		b.WriteString("- " + value + "\n")
 	}
 	b.WriteString("\n")
+}
+
+func sanitizeSkillText(value string) string {
+	return strings.ToValidUTF8(strings.ReplaceAll(value, "\x00", ""), "")
 }
 
 func compileInitialPlan(userID uint, repoID, input, ideaType string, profile *domain.SpecForgeRepoProfile) *domain.SpecForgePlanBundle {

@@ -22,7 +22,14 @@ export interface ApprovePlanPayload {
 }
 
 export interface CompilePromptPayload {
-  type?: "implementation" | "fix" | "review";
+  type?: "implementation" | "fix" | "review_patch";
+}
+
+export interface UpsertSkillPayload {
+  name: string;
+  description?: string;
+  content: string;
+  active?: boolean;
 }
 
 export interface StartRunPayload {
@@ -142,6 +149,18 @@ export interface SpecForgeCompiledPromptDTO {
   created_at: string;
 }
 
+export interface SpecForgeSkillDTO {
+  id: number;
+  repository_id: string;
+  name: string;
+  description: string;
+  content: string;
+  active: boolean;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SpecForgeExecutionBundleDTO {
   run: {
     id: number;
@@ -198,8 +217,17 @@ export const specForgeService = {
   approvePlan: (planId: number, payload: ApprovePlanPayload) =>
     request.post<SpecForgePlanBundleDTO, ApprovePlanPayload>(`/plans/${planId}/approve`, payload),
 
+  listSkills: (repoId: string) =>
+    request.get<{ skills: SpecForgeSkillDTO[] }>(`/repositories/${repoId}/skills`),
+
+  upsertSkill: (repoId: string, payload: UpsertSkillPayload) =>
+    request.post<{ skill: SpecForgeSkillDTO }, UpsertSkillPayload>(
+      `/repositories/${repoId}/skills`,
+      payload
+    ),
+
   compilePrompt: (prNodeId: number, payload?: CompilePromptPayload) =>
-    request.post<SpecForgeCompiledPromptDTO, CompilePromptPayload | undefined>(
+    request.post<{ prompt: SpecForgeCompiledPromptDTO }, CompilePromptPayload | undefined>(
       `/pr-nodes/${prNodeId}/prompts`,
       payload
     ),

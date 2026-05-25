@@ -112,6 +112,19 @@ type SpecForgeCompiledPrompt struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+// SpecForgeSkill is a reusable repository instruction injected into compiled prompts.
+type SpecForgeSkill struct {
+	ID           uint      `json:"id"`
+	RepositoryID string    `json:"repository_id"`
+	Name         string    `json:"name"`
+	Description  string    `json:"description"`
+	Content      string    `json:"content"`
+	Active       bool      `json:"active"`
+	CreatedBy    uint      `json:"created_by"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
 // SpecForgeExecutionRun is one approved plan execution attempt.
 type SpecForgeExecutionRun struct {
 	ID          uint       `json:"id"`
@@ -198,6 +211,13 @@ type SpecForgePlanningRepository interface {
 type SpecForgeRepoProfileRepository interface {
 	UpsertProfile(ctx context.Context, profile *SpecForgeRepoProfile) error
 	FindProfileByRepositoryID(ctx context.Context, repositoryID string) (*SpecForgeRepoProfile, error)
+}
+
+// SpecForgeSkillRepository persists reusable repo-level prompt instructions.
+type SpecForgeSkillRepository interface {
+	UpsertSkill(ctx context.Context, skill *SpecForgeSkill) error
+	ListActiveSkillsByRepositoryID(ctx context.Context, repositoryID string) ([]*SpecForgeSkill, error)
+	ListSkillsByRepositoryID(ctx context.Context, repositoryID string) ([]*SpecForgeSkill, error)
 }
 
 // SpecForgeExecutionRepository persists execution run state.

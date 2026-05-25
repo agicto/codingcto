@@ -2,6 +2,7 @@ package planning
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/zgiai/luas/api/internal/domain"
@@ -137,6 +138,53 @@ func (r *repository) FindLatestCompiledPromptByPRNodeID(ctx context.Context, prN
 	return po.toDomain(), nil
 }
 
+func (r *repository) UpsertSkill(ctx context.Context, skill *domain.SpecForgeSkill) error {
+	if skill == nil || strings.TrimSpace(skill.RepositoryID) == "" || strings.TrimSpace(skill.Name) == "" {
+		return domain.ErrInvalidInput
+	}
+	var existing SkillPO
+	query := r.db.WithContext(ctx).Where("repository_id = ? AND name = ?", skill.RepositoryID, skill.Name).First(&existing)
+	if query.Error != nil && !errors.Is(query.Error, gorm.ErrRecordNotFound) {
+		return query.Error
+	}
+	po := newSkillPO(skill)
+	if query.Error == nil {
+		po.ID = existing.ID
+		po.CreatedAt = existing.CreatedAt
+	}
+	if err := r.db.WithContext(ctx).Save(po).Error; err != nil {
+		return err
+	}
+	skill.ID = po.ID
+	skill.CreatedAt = po.CreatedAt
+	skill.UpdatedAt = po.UpdatedAt
+	return nil
+}
+
+func (r *repository) ListActiveSkillsByRepositoryID(ctx context.Context, repositoryID string) ([]*domain.SpecForgeSkill, error) {
+	repositoryID = strings.TrimSpace(repositoryID)
+	if repositoryID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	var pos []*SkillPO
+	if err := r.db.WithContext(ctx).Where("repository_id = ? AND active = ?", repositoryID, true).Order("name ASC, id ASC").Find(&pos).Error; err != nil {
+		return nil, err
+	}
+	return skillsToDomain(pos), nil
+}
+
+func (r *repository) ListSkillsByRepositoryID(ctx context.Context, repositoryID string) ([]*domain.SpecForgeSkill, error) {
+	repositoryID = strings.TrimSpace(repositoryID)
+	if repositoryID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	var pos []*SkillPO
+	if err := r.db.WithContext(ctx).Where("repository_id = ?", repositoryID).Order("name ASC, id ASC").Find(&pos).Error; err != nil {
+		return nil, err
+	}
+	return skillsToDomain(pos), nil
+}
+
 func (r *repository) findBundle(ctx context.Context, query string, args ...any) (*domain.SpecForgePlanBundle, error) {
 	var plan ImplementationPlanPO
 	if err := r.db.WithContext(ctx).Where(query, args...).First(&plan).Error; err != nil {
@@ -169,4 +217,12 @@ func (r *repository) findBundle(ctx context.Context, query string, args ...any) 
 		Plan:        plan.toDomain(),
 		PRNodes:     nodes,
 	}, nil
+}
+
+func skillsToDomain(pos []*SkillPO) []*domain.SpecForgeSkill {
+	out := make([]*domain.SpecForgeSkill, len(pos))
+	for i, po := range pos {
+		out[i] = po.toDomain()
+	}
+	return out
 }
