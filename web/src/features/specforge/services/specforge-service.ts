@@ -36,7 +36,7 @@ export interface DispatchRunPayload {
 export interface ExecuteTaskPayload {
   runtime_id?: string;
   session_id?: string;
-  workdir: string;
+  workdir?: string;
   env?: Record<string, string>;
 }
 
