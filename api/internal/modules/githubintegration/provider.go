@@ -9,6 +9,7 @@ import (
 var ProviderSet = wire.NewSet(
 	NewRepository,
 	wire.Bind(new(domain.GitHubIntegrationRepository), new(*repository)),
+	NewDefaultRepositoryClientFactory,
 	NewService,
 	wire.Bind(new(Service), new(*service)),
 	NewHandler,
