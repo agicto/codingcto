@@ -2,6 +2,7 @@ package repocontext
 
 import (
 	"context"
+	"errors"
 
 	"github.com/zgiai/luas/api/internal/domain"
 	"gorm.io/gorm"
@@ -39,6 +40,9 @@ func (r *repository) UpsertProfile(ctx context.Context, profile *domain.SpecForg
 func (r *repository) FindProfileByRepositoryID(ctx context.Context, repositoryID string) (*domain.SpecForgeRepoProfile, error) {
 	var po RepoProfilePO
 	if err := r.db.WithContext(ctx).Where("repository_id = ?", repositoryID).First(&po).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
 		return nil, err
 	}
 	return po.toDomain(), nil
