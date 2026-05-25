@@ -108,6 +108,22 @@ func (h *Handler) HeartbeatRuntime(c *gin.Context) {
 	response.Success(c, heartbeat)
 }
 
+func (h *Handler) SweepStaleRuntimes(c *gin.Context) {
+	var req RuntimeSweepRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		response.BadRequest(c, "Invalid request parameters", err)
+		return
+	}
+
+	result, err := h.service.SweepStaleRuntimes(c.Request.Context(), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to sweep stale runtimes", err)
+		return
+	}
+
+	response.Success(c, result)
+}
+
 func (h *Handler) ClaimTask(c *gin.Context) {
 	runtimeID := c.Param("runtime_id")
 

@@ -578,6 +578,34 @@ func TestCreateTaskEventRecordsOrderedRuntimeOutput(t *testing.T) {
 	require.Equal(t, "go test", events[0].Tool)
 }
 
+func TestSweepStaleRuntimesMarksRuntimeOfflineAndFailsTasks(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched.Tasks[0].RuntimeID = "runtime_old"
+	dispatched.Tasks[0].Status = domain.AgentTaskStatusRunning
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), dispatched.Tasks[0]))
+	require.NoError(t, runRepo.UpsertRuntime(context.Background(), &domain.SpecForgeRuntime{
+		RuntimeID:  "runtime_old",
+		Executor:   ExecutorNameCodexCLI,
+		Status:     domain.RuntimeStatusOnline,
+		LastSeenAt: time.Now().Add(-10 * time.Minute),
+	}))
+
+	result, err := svc.SweepStaleRuntimes(context.Background(), &RuntimeSweepRequest{StaleSeconds: 300})
+
+	require.NoError(t, err)
+	require.Len(t, result.OfflineRuntimes, 1)
+	require.Equal(t, domain.RuntimeStatusOffline, result.OfflineRuntimes[0].Status)
+	require.Len(t, result.FailedTasks, 1)
+	require.Equal(t, dispatched.Tasks[0].ID, result.FailedTasks[0].ID)
+	require.Equal(t, "runtime_offline", result.FailedTasks[0].FailureReason)
+}
+
 type memoryExecutionRepo struct {
 	nextID   uint
 	bundle   *domain.SpecForgeExecutionBundle
@@ -663,6 +691,47 @@ func (r *memoryExecutionRepo) UpsertRuntime(ctx context.Context, runtime *domain
 	runtime.ID = copied.ID
 	r.runtimes[runtime.RuntimeID] = &copied
 	return nil
+}
+
+func (r *memoryExecutionRepo) MarkStaleRuntimesOffline(ctx context.Context, staleBefore time.Time) ([]*domain.SpecForgeRuntime, error) {
+	if r.runtimes == nil {
+		return []*domain.SpecForgeRuntime{}, nil
+	}
+	out := make([]*domain.SpecForgeRuntime, 0)
+	for runtimeID, runtime := range r.runtimes {
+		if runtime.Status != domain.RuntimeStatusOnline || !runtime.LastSeenAt.Before(staleBefore) {
+			continue
+		}
+		copied := *runtime
+		copied.Status = domain.RuntimeStatusOffline
+		r.runtimes[runtimeID] = &copied
+		out = append(out, &copied)
+	}
+	return out, nil
+}
+
+func (r *memoryExecutionRepo) FailTasksForOfflineRuntimes(ctx context.Context) ([]*domain.SpecForgeAgentTask, error) {
+	if r.bundle == nil || r.runtimes == nil {
+		return []*domain.SpecForgeAgentTask{}, nil
+	}
+	out := make([]*domain.SpecForgeAgentTask, 0)
+	now := time.Now()
+	for _, task := range r.bundle.Tasks {
+		runtime := r.runtimes[task.RuntimeID]
+		if runtime == nil || runtime.Status != domain.RuntimeStatusOffline {
+			continue
+		}
+		if task.Status != domain.AgentTaskStatusDispatched && task.Status != domain.AgentTaskStatusRunning {
+			continue
+		}
+		task.Status = domain.AgentTaskStatusFailed
+		task.FailureReason = "runtime_offline"
+		task.FinishedAt = &now
+		task.ErrorLog = appendLogLine(task.ErrorLog, "runtime went offline")
+		copied := *task
+		out = append(out, &copied)
+	}
+	return out, nil
 }
 
 func (r *memoryExecutionRepo) HasClaimableAgentTask(ctx context.Context, runtimeID, executor string) (bool, error) {

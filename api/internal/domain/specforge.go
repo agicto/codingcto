@@ -18,6 +18,7 @@ const (
 	ExecutionRunStatusRunning   = "running"
 	ExecutionRunStatusCompleted = "completed"
 	RuntimeStatusOnline         = "online"
+	RuntimeStatusOffline        = "offline"
 	AgentTaskStatusQueued       = "queued"
 	AgentTaskStatusDispatched   = "dispatched"
 	AgentTaskStatusWaiting      = "waiting_on_dependencies"
@@ -187,6 +188,12 @@ type SpecForgeTaskEvent struct {
 	CreatedAt time.Time `json:"created_at"`
 }
 
+// SpecForgeRuntimeSweepResult summarizes stale runtime cleanup work.
+type SpecForgeRuntimeSweepResult struct {
+	OfflineRuntimes []*SpecForgeRuntime   `json:"offline_runtimes"`
+	FailedTasks     []*SpecForgeAgentTask `json:"failed_tasks"`
+}
+
 // SpecForgeExecutionBundle is the delivery state returned to run pages.
 type SpecForgeExecutionBundle struct {
 	Run   *SpecForgeExecutionRun `json:"run"`
@@ -255,6 +262,8 @@ type SpecForgeExecutionRepository interface {
 	CreateTaskEvent(ctx context.Context, event *SpecForgeTaskEvent) error
 	ListTaskEvents(ctx context.Context, taskID uint, afterSeq int) ([]*SpecForgeTaskEvent, error)
 	UpsertRuntime(ctx context.Context, runtime *SpecForgeRuntime) error
+	MarkStaleRuntimesOffline(ctx context.Context, staleBefore time.Time) ([]*SpecForgeRuntime, error)
+	FailTasksForOfflineRuntimes(ctx context.Context) ([]*SpecForgeAgentTask, error)
 	HasClaimableAgentTask(ctx context.Context, runtimeID, executor string) (bool, error)
 	ClaimDispatchedAgentTask(ctx context.Context, runtimeID, executor, sessionID, workdir string) (*SpecForgeAgentTask, error)
 	UpdateExecutionRun(ctx context.Context, run *SpecForgeExecutionRun) error
