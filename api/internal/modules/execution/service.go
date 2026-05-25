@@ -29,18 +29,20 @@ type PRNodeBranchPreparer interface {
 }
 
 type service struct {
-	repo         domain.SpecForgeExecutionRepository
-	planningRepo domain.SpecForgePlanningRepository
-	executor     CodeExecutor
-	preparer     PRNodeBranchPreparer
-	deliverer    PRNodeDeliverer
+	repo               domain.SpecForgeExecutionRepository
+	planningRepo       domain.SpecForgePlanningRepository
+	repositoryResolver RepositoryResolver
+	executor           CodeExecutor
+	worktrees          WorktreeManager
+	preparer           PRNodeBranchPreparer
+	deliverer          PRNodeDeliverer
 }
 
-func NewService(repo domain.SpecForgeExecutionRepository, planningRepo domain.SpecForgePlanningRepository, executor CodeExecutor, preparer PRNodeBranchPreparer, deliverer PRNodeDeliverer) *service {
+func NewService(repo domain.SpecForgeExecutionRepository, planningRepo domain.SpecForgePlanningRepository, repositoryResolver RepositoryResolver, executor CodeExecutor, worktrees WorktreeManager, preparer PRNodeBranchPreparer, deliverer PRNodeDeliverer) *service {
 	if executor == nil {
 		executor = NewCodexCLIExecutor(CodexCLIExecutorConfig{}, nil)
 	}
-	return &service{repo: repo, planningRepo: planningRepo, executor: executor, preparer: preparer, deliverer: deliverer}
+	return &service{repo: repo, planningRepo: planningRepo, repositoryResolver: repositoryResolver, executor: executor, worktrees: worktrees, preparer: preparer, deliverer: deliverer}
 }
 
 func (s *service) StartRun(ctx context.Context, userID, planID uint, req *StartExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error) {
@@ -165,7 +167,7 @@ func (s *service) PinTaskSession(ctx context.Context, taskID uint, req *PinAgent
 }
 
 func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error) {
-	if taskID == 0 || req == nil || strings.TrimSpace(req.Workdir) == "" {
+	if taskID == 0 || req == nil {
 		return nil, domain.ErrInvalidInput
 	}
 	task, err := s.repo.FindAgentTaskByID(ctx, taskID)
@@ -183,7 +185,9 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 	if sessionID := strings.TrimSpace(req.SessionID); sessionID != "" {
 		task.SessionID = sessionID
 	}
-	task.Workdir = strings.TrimSpace(req.Workdir)
+	if workdir := strings.TrimSpace(req.Workdir); workdir != "" {
+		task.Workdir = workdir
+	}
 	if task.AttemptNumber == 0 {
 		task.AttemptNumber = 1
 	}
@@ -200,6 +204,20 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 			return nil, fmt.Errorf("update failed branch preparation task: %w", updateErr)
 		}
 		return s.GetRun(ctx, task.RunID)
+	}
+	if strings.TrimSpace(task.Workdir) == "" {
+		worktree, err := s.prepareTaskWorktree(ctx, task, branchName)
+		if err != nil {
+			markTaskFailed(task, "worktree_preparation_failed", err.Error(), -1)
+			if updateErr := s.repo.UpdateAgentTask(ctx, task); updateErr != nil {
+				return nil, fmt.Errorf("update failed worktree preparation task: %w", updateErr)
+			}
+			return s.GetRun(ctx, task.RunID)
+		}
+		task.Workdir = worktree
+		if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
+			return nil, fmt.Errorf("update agent task worktree: %w", err)
+		}
 	}
 	prompt, err := s.planningRepo.FindLatestCompiledPromptByPRNodeID(ctx, task.PRNodeID)
 	if err != nil {
@@ -325,6 +343,36 @@ func (s *service) prepareTaskBranch(ctx context.Context, task *domain.SpecForgeA
 		return "", fmt.Errorf("prepare PR node branch: %w", err)
 	}
 	return branchName, nil
+}
+
+func (s *service) prepareTaskWorktree(ctx context.Context, task *domain.SpecForgeAgentTask, branchName string) (string, error) {
+	if s.repositoryResolver == nil || s.worktrees == nil {
+		return "", domain.ErrInvalidInput
+	}
+	bundle, err := s.GetRun(ctx, task.RunID)
+	if err != nil {
+		return "", err
+	}
+	if bundle.Plan == nil || bundle.Plan.Idea == nil || strings.TrimSpace(bundle.Plan.Idea.RepositoryID) == "" {
+		return "", domain.ErrInvalidInput
+	}
+	repository, err := s.repositoryResolver.GetRepository(ctx, bundle.Plan.Idea.RepositoryID)
+	if err != nil {
+		return "", err
+	}
+	worktree, err := s.worktrees.PrepareWorktree(ctx, WorktreeRequest{
+		Repository: repository,
+		BranchName: branchName,
+		RunID:      task.RunID,
+		TaskID:     task.ID,
+	})
+	if err != nil {
+		return "", err
+	}
+	if worktree == nil || strings.TrimSpace(worktree.Path) == "" {
+		return "", domain.ErrInvalidInput
+	}
+	return strings.TrimSpace(worktree.Path), nil
 }
 
 func (s *service) deliverTaskPR(ctx context.Context, task *domain.SpecForgeAgentTask) error {

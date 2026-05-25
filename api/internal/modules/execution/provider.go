@@ -11,12 +11,18 @@ var ProviderSet = wire.NewSet(
 	NewRepository,
 	wire.Bind(new(domain.SpecForgeExecutionRepository), new(*repository)),
 	NewDefaultCodeExecutor,
+	NewDefaultWorktreeManager,
+	NewGitHubRepositoryResolver,
 	NewGitHubPRNodeBranchPreparer,
 	NewGitHubPRNodeDeliverer,
 	NewService,
 	wire.Bind(new(Service), new(*service)),
 	NewHandler,
 )
+
+func NewGitHubRepositoryResolver(service githubintegration.Service) RepositoryResolver {
+	return service
+}
 
 func NewGitHubPRNodeBranchPreparer(service githubintegration.Service) PRNodeBranchPreparer {
 	return service
