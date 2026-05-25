@@ -19,5 +19,6 @@ func NewStarterManifest(handler *Handler) contracts.StarterManifest {
 		"githubintegration",
 		contracts.WithStarterModule(handler),
 		contracts.WithStarterMigrationNames("2026_05_25_000004_create_github_integration_tables"),
+		contracts.WithStarterMigrationNames("2026_05_25_000006_create_github_webhook_events_table"),
 	)
 }

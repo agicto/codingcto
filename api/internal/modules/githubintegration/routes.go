@@ -3,6 +3,8 @@ package githubintegration
 import "github.com/zgiai/luas/api/internal/infra/router"
 
 func (h *Handler) RegisterRoutes(r *router.Router) {
+	r.POST("/webhooks/github", h.ReceiveWebhook).Name("github.webhooks.receive")
+
 	r.Group("", func(auth *router.Router) {
 		auth.WithMiddleware("auth")
 

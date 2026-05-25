@@ -16,3 +16,10 @@ type UpsertRepositoryRequest struct {
 	DefaultBranch        string `json:"default_branch" binding:"omitempty,max=100"`
 	IsPrivate            bool   `json:"is_private"`
 }
+
+type GitHubWebhookRequest struct {
+	EventType  string
+	DeliveryID string
+	Signature  string
+	Body       []byte
+}

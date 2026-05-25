@@ -2,8 +2,14 @@ package githubintegration
 
 import (
 	"context"
+	"crypto/hmac"
+	"crypto/sha256"
+	"encoding/hex"
+	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
+	"time"
 
 	"github.com/zgiai/luas/api/internal/domain"
 )
@@ -13,6 +19,7 @@ type Service interface {
 	GetInstallation(ctx context.Context, id uint) (*domain.GitHubInstallation, error)
 	UpsertRepository(ctx context.Context, userID uint, req *UpsertRepositoryRequest) (*domain.Repository, error)
 	GetRepository(ctx context.Context, repositoryID string) (*domain.Repository, error)
+	RecordWebhook(ctx context.Context, req *GitHubWebhookRequest) (*domain.GitHubWebhookEvent, error)
 }
 
 type service struct {
@@ -83,6 +90,36 @@ func (s *service) GetRepository(ctx context.Context, repositoryID string) (*doma
 	return s.repo.FindRepositoryByRepositoryID(ctx, strings.TrimSpace(repositoryID))
 }
 
+func (s *service) RecordWebhook(ctx context.Context, req *GitHubWebhookRequest) (*domain.GitHubWebhookEvent, error) {
+	if req == nil || strings.TrimSpace(req.EventType) == "" || strings.TrimSpace(req.DeliveryID) == "" || len(req.Body) == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	existing, err := s.repo.FindWebhookEventByDeliveryID(ctx, strings.TrimSpace(req.DeliveryID))
+	if err == nil {
+		return existing, nil
+	}
+	if err != nil && !errors.Is(err, domain.ErrNotFound) {
+		return nil, err
+	}
+
+	metadata := parseWebhookMetadata(req.Body)
+	event := &domain.GitHubWebhookEvent{
+		DeliveryID:         strings.TrimSpace(req.DeliveryID),
+		EventType:          strings.TrimSpace(req.EventType),
+		Action:             metadata.Action,
+		InstallationID:     metadata.InstallationID,
+		RepositoryFullName: metadata.RepositoryFullName,
+		Payload:            string(req.Body),
+		Signature:          strings.TrimSpace(req.Signature),
+		Status:             "received",
+		ReceivedAt:         time.Now(),
+	}
+	if err := s.repo.CreateWebhookEvent(ctx, event); err != nil {
+		return nil, fmt.Errorf("record github webhook: %w", err)
+	}
+	return event, nil
+}
+
 func normalizePermissions(permissions map[string]string) map[string]string {
 	out := make(map[string]string, len(permissions))
 	for key, value := range permissions {
@@ -94,4 +131,42 @@ func normalizePermissions(permissions map[string]string) map[string]string {
 		out[key] = value
 	}
 	return out
+}
+
+func verifyGitHubSignature(secret string, body []byte, signature string) bool {
+	secret = strings.TrimSpace(secret)
+	signature = strings.TrimSpace(signature)
+	if secret == "" || len(body) == 0 || !strings.HasPrefix(signature, "sha256=") {
+		return false
+	}
+	mac := hmac.New(sha256.New, []byte(secret))
+	_, _ = mac.Write(body)
+	expected := "sha256=" + hex.EncodeToString(mac.Sum(nil))
+	return hmac.Equal([]byte(expected), []byte(signature))
+}
+
+type webhookMetadata struct {
+	Action             string
+	InstallationID     int64
+	RepositoryFullName string
+}
+
+func parseWebhookMetadata(body []byte) webhookMetadata {
+	var payload struct {
+		Action       string `json:"action"`
+		Installation struct {
+			ID int64 `json:"id"`
+		} `json:"installation"`
+		Repository struct {
+			FullName string `json:"full_name"`
+		} `json:"repository"`
+	}
+	if err := json.Unmarshal(body, &payload); err != nil {
+		return webhookMetadata{}
+	}
+	return webhookMetadata{
+		Action:             strings.TrimSpace(payload.Action),
+		InstallationID:     payload.Installation.ID,
+		RepositoryFullName: strings.TrimSpace(payload.Repository.FullName),
+	}
 }

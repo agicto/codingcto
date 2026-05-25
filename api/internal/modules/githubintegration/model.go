@@ -40,6 +40,25 @@ func (RepositoryPO) TableName() string {
 	return "repositories"
 }
 
+type GitHubWebhookEventPO struct {
+	ID                 uint   `gorm:"primaryKey"`
+	DeliveryID         string `gorm:"size:255;not null;uniqueIndex"`
+	EventType          string `gorm:"size:100;not null;index"`
+	Action             string `gorm:"size:100;index"`
+	InstallationID     int64  `gorm:"index"`
+	RepositoryFullName string `gorm:"size:511;index"`
+	Payload            string `gorm:"type:text;not null"`
+	Signature          string `gorm:"size:255"`
+	Status             string `gorm:"size:50;not null;index"`
+	ReceivedAt         time.Time
+	CreatedAt          time.Time
+	UpdatedAt          time.Time
+}
+
+func (GitHubWebhookEventPO) TableName() string {
+	return "github_webhook_events"
+}
+
 func newGitHubInstallationPO(installation *domain.GitHubInstallation) *GitHubInstallationPO {
 	return &GitHubInstallationPO{
 		ID:             installation.ID,
@@ -95,6 +114,40 @@ func (po *RepositoryPO) toDomain() *domain.Repository {
 		CreatedBy:            po.CreatedBy,
 		CreatedAt:            po.CreatedAt,
 		UpdatedAt:            po.UpdatedAt,
+	}
+}
+
+func newGitHubWebhookEventPO(event *domain.GitHubWebhookEvent) *GitHubWebhookEventPO {
+	return &GitHubWebhookEventPO{
+		ID:                 event.ID,
+		DeliveryID:         event.DeliveryID,
+		EventType:          event.EventType,
+		Action:             event.Action,
+		InstallationID:     event.InstallationID,
+		RepositoryFullName: event.RepositoryFullName,
+		Payload:            event.Payload,
+		Signature:          event.Signature,
+		Status:             event.Status,
+		ReceivedAt:         event.ReceivedAt,
+		CreatedAt:          event.CreatedAt,
+		UpdatedAt:          event.UpdatedAt,
+	}
+}
+
+func (po *GitHubWebhookEventPO) toDomain() *domain.GitHubWebhookEvent {
+	return &domain.GitHubWebhookEvent{
+		ID:                 po.ID,
+		DeliveryID:         po.DeliveryID,
+		EventType:          po.EventType,
+		Action:             po.Action,
+		InstallationID:     po.InstallationID,
+		RepositoryFullName: po.RepositoryFullName,
+		Payload:            po.Payload,
+		Signature:          po.Signature,
+		Status:             po.Status,
+		ReceivedAt:         po.ReceivedAt,
+		CreatedAt:          po.CreatedAt,
+		UpdatedAt:          po.UpdatedAt,
 	}
 }
 

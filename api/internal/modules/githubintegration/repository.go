@@ -86,3 +86,25 @@ func (r *repository) FindRepositoryByRepositoryID(ctx context.Context, repositor
 	}
 	return po.toDomain(), nil
 }
+
+func (r *repository) CreateWebhookEvent(ctx context.Context, event *domain.GitHubWebhookEvent) error {
+	po := newGitHubWebhookEventPO(event)
+	if err := r.db.WithContext(ctx).Create(po).Error; err != nil {
+		return err
+	}
+	event.ID = po.ID
+	event.CreatedAt = po.CreatedAt
+	event.UpdatedAt = po.UpdatedAt
+	return nil
+}
+
+func (r *repository) FindWebhookEventByDeliveryID(ctx context.Context, deliveryID string) (*domain.GitHubWebhookEvent, error) {
+	var po GitHubWebhookEventPO
+	if err := r.db.WithContext(ctx).Where("delivery_id = ?", deliveryID).First(&po).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return po.toDomain(), nil
+}
