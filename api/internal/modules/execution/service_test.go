@@ -133,6 +133,82 @@ func TestClaimTaskReturnsEmptyWhenNoTaskAvailable(t *testing.T) {
 	require.Nil(t, claim.Task)
 }
 
+func TestSubmitTaskResultCompletesClaimedTaskAndUnlocksDependents(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	deliverer := &fakePRNodeDeliverer{node: &domain.SpecForgePRNode{ID: 4, GitHubPRURL: "https://github.com/agicto/codingcto/pull/42"}}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, deliverer)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+	claim, err := svc.ClaimTask(context.Background(), "runtime_123", &ClaimAgentTaskRequest{Executor: "codex_cli"})
+	require.NoError(t, err)
+
+	updated, err := svc.SubmitTaskResult(context.Background(), claim.Task.ID, &SubmitTaskResultRequest{
+		RuntimeID: "runtime_123",
+		Status:    "completed",
+		Output:    "done",
+		ExitCode:  0,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "repo_123", deliverer.request.RepositoryID)
+	require.Equal(t, dispatched.Tasks[0].PRNodeID, deliverer.request.PRNodeID)
+	require.Equal(t, domain.AgentTaskStatusCompleted, updated.Tasks[0].Status)
+	require.Equal(t, "done", updated.Tasks[0].OutputLog)
+	require.NotNil(t, updated.Tasks[0].FinishedAt)
+	require.Equal(t, domain.AgentTaskStatusQueued, updated.Tasks[1].Status)
+}
+
+func TestSubmitTaskResultMarksFailureWithoutUnlockingDependents(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	_, err = svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+	claim, err := svc.ClaimTask(context.Background(), "runtime_123", &ClaimAgentTaskRequest{Executor: "codex_cli"})
+	require.NoError(t, err)
+
+	updated, err := svc.SubmitTaskResult(context.Background(), claim.Task.ID, &SubmitTaskResultRequest{
+		RuntimeID:     "runtime_123",
+		Status:        "failed",
+		Error:         "tests failed",
+		ExitCode:      2,
+		FailureReason: "test_failure",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, domain.AgentTaskStatusFailed, updated.Tasks[0].Status)
+	require.Equal(t, "test_failure", updated.Tasks[0].FailureReason)
+	require.Equal(t, "tests failed", updated.Tasks[0].ErrorLog)
+	require.NotNil(t, updated.Tasks[0].ExitCode)
+	require.Equal(t, 2, *updated.Tasks[0].ExitCode)
+	require.Equal(t, domain.AgentTaskStatusWaiting, updated.Tasks[1].Status)
+}
+
+func TestSubmitTaskResultRejectsRuntimeMismatch(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	_, err = svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+	claim, err := svc.ClaimTask(context.Background(), "runtime_123", &ClaimAgentTaskRequest{Executor: "codex_cli"})
+	require.NoError(t, err)
+
+	_, err = svc.SubmitTaskResult(context.Background(), claim.Task.ID, &SubmitTaskResultRequest{
+		RuntimeID: "runtime_other",
+		Status:    "completed",
+		ExitCode:  0,
+	})
+
+	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
 func TestCompleteTaskUnlocksDependentTasks(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
 	runRepo := &memoryExecutionRepo{}

@@ -11,6 +11,7 @@ import {
   type RepoProfilePayload,
   type RuntimeHeartbeatPayload,
   type StartRunPayload,
+  type SubmitTaskResultPayload,
   type UpsertSkillPayload,
   specForgeService,
 } from "@/features/specforge/services/specforge-service";
@@ -136,6 +137,18 @@ export function useClaimSpecForgeTask() {
   return useMutation({
     mutationFn: ({ runtimeId, payload }: { runtimeId: string; payload?: ClaimTaskPayload }) =>
       specForgeService.claimTask(runtimeId, payload),
+  });
+}
+
+export function useSubmitExecutionTaskResult() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ taskId, payload }: { taskId: number; payload: SubmitTaskResultPayload }) =>
+      specForgeService.submitTaskResult(taskId, payload),
+    onSuccess: (bundle) => {
+      queryClient.setQueryData(specForgeKeys.run(bundle.run.id), bundle);
+    },
   });
 }
 
