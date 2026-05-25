@@ -11,6 +11,7 @@ const (
 	PlanStatusApproved          = "approved"
 	PRNodeStatusPlanned         = "planned"
 	PRNodeStatusPROpened        = "pr_opened"
+	PRNodeStatusCIRunning       = "ci_running"
 	PRNodeStatusReadyForReview  = "ready_for_review"
 	PRNodeStatusBlocked         = "blocked"
 	ExecutionRunStatusQueued    = "queued"
