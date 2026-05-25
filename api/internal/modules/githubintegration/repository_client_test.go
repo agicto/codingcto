@@ -143,6 +143,69 @@ func TestGitHubRepositoryClientListWorkflowRuns(t *testing.T) {
 	require.Equal(t, createdAt, runs[0].CreatedAt)
 }
 
+func TestGitHubRepositoryClientListWorkflowJobs(t *testing.T) {
+	startedAt := time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC)
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "/repos/acme/web/actions/runs/123/jobs", r.URL.Path)
+		require.Equal(t, "100", r.URL.Query().Get("per_page"))
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"jobs": []map[string]any{
+				{
+					"id":         987,
+					"run_id":     123,
+					"name":       "API",
+					"status":     "completed",
+					"conclusion": "failure",
+					"html_url":   "https://github.com/acme/web/actions/runs/123/job/987",
+					"started_at": startedAt.Format(time.RFC3339),
+					"steps": []map[string]any{
+						{
+							"name":       "go test",
+							"status":     "completed",
+							"conclusion": "failure",
+							"number":     4,
+						},
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+	client := newTestRepositoryClient(t, server.URL)
+
+	jobs, err := client.ListWorkflowJobs(context.Background(), "acme", "web", 123)
+
+	require.NoError(t, err)
+	require.Len(t, jobs, 1)
+	require.Equal(t, int64(987), jobs[0].ID)
+	require.Equal(t, "API", jobs[0].Name)
+	require.Equal(t, "failure", jobs[0].Conclusion)
+	require.NotNil(t, jobs[0].StartedAt)
+	require.Equal(t, startedAt, *jobs[0].StartedAt)
+	require.Len(t, jobs[0].Steps, 1)
+	require.Equal(t, "go test", jobs[0].Steps[0].Name)
+	require.Equal(t, 4, jobs[0].Steps[0].Number)
+}
+
+func TestGitHubRepositoryClientGetWorkflowJobLogs(t *testing.T) {
+	var authHeader string
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		authHeader = r.Header.Get("Authorization")
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "/repos/acme/web/actions/jobs/987/logs", r.URL.Path)
+		_, _ = w.Write([]byte("go test ./...\n--- FAIL: TestInvite\n"))
+	}))
+	defer server.Close()
+	client := newTestRepositoryClient(t, server.URL)
+
+	logs, err := client.GetWorkflowJobLogs(context.Background(), "acme", "web", 987)
+
+	require.NoError(t, err)
+	require.Equal(t, "Bearer ghs_token", authHeader)
+	require.Contains(t, logs, "--- FAIL: TestInvite")
+}
+
 func TestGitHubRepositoryClientReturnsGitHubErrorMessage(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		w.WriteHeader(http.StatusUnprocessableEntity)
