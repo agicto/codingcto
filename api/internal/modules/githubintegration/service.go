@@ -189,6 +189,9 @@ func (s *service) DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) 
 	}
 	node.GitHubPRNumber = &pr.Number
 	node.GitHubPRURL = pr.HTMLURL
+	if strings.TrimSpace(pr.Head.SHA) != "" {
+		node.GitHubHeadSHA = strings.TrimSpace(pr.Head.SHA)
+	}
 	node.Status = domain.PRNodeStatusPROpened
 	if err := s.planningRepo.UpdatePRNode(ctx, node); err != nil {
 		return nil, err

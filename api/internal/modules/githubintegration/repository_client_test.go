@@ -77,6 +77,10 @@ func TestGitHubRepositoryClientCreatePullRequest(t *testing.T) {
 			"state":    "open",
 			"title":    "Add invite API",
 			"draft":    true,
+			"head": map[string]any{
+				"ref": "specforge/team-invite-02-api",
+				"sha": "abc123",
+			},
 		})
 	}))
 	defer server.Close()
@@ -100,6 +104,7 @@ func TestGitHubRepositoryClientCreatePullRequest(t *testing.T) {
 	require.Equal(t, true, payload["draft"])
 	require.Equal(t, 42, pr.Number)
 	require.Equal(t, "https://github.com/acme/web/pull/42", pr.HTMLURL)
+	require.Equal(t, "abc123", pr.Head.SHA)
 }
 
 func TestGitHubRepositoryClientListWorkflowRuns(t *testing.T) {

@@ -89,6 +89,12 @@ type PullRequest struct {
 	State   string `json:"state"`
 	Title   string `json:"title"`
 	Draft   bool   `json:"draft"`
+	Head    PRHead `json:"head"`
+}
+
+type PRHead struct {
+	Ref string `json:"ref"`
+	SHA string `json:"sha"`
 }
 
 type CreatePullRequestInput struct {
