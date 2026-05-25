@@ -41,5 +41,6 @@ func NewStarterManifest(handler *Handler) contracts.StarterManifest {
 		contracts.WithStarterMigrationNames("2026_05_25_000009_add_lifecycle_fields_to_agent_tasks"),
 		contracts.WithStarterMigrationNames("2026_05_25_000011_create_specforge_runtimes_table"),
 		contracts.WithStarterMigrationNames("2026_05_25_000012_create_specforge_task_events_table"),
+		contracts.WithStarterMigrationNames("2026_05_25_000013_add_parent_task_to_specforge_agent_tasks"),
 	)
 }

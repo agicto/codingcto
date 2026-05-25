@@ -20,6 +20,7 @@ type Service interface {
 	HeartbeatRuntime(ctx context.Context, req *RuntimeHeartbeatRequest) (*RuntimeHeartbeatResponse, error)
 	SweepStaleRuntimes(ctx context.Context, req *RuntimeSweepRequest) (*domain.SpecForgeRuntimeSweepResult, error)
 	ClaimTask(ctx context.Context, runtimeID string, req *ClaimAgentTaskRequest) (*ClaimAgentTaskResponse, error)
+	RetryTask(ctx context.Context, taskID uint, req *RetryAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	PinTaskSession(ctx context.Context, taskID uint, req *PinAgentTaskSessionRequest) (*domain.SpecForgeExecutionBundle, error)
 	ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	SubmitTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.SpecForgeExecutionBundle, error)
@@ -246,6 +247,41 @@ func (s *service) ClaimTask(ctx context.Context, runtimeID string, req *ClaimAge
 		return nil, err
 	}
 	return claim, nil
+}
+
+func (s *service) RetryTask(ctx context.Context, taskID uint, req *RetryAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error) {
+	if taskID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	if req == nil {
+		req = &RetryAgentTaskRequest{}
+	}
+	parent, err := s.repo.FindAgentTaskByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if parent.Status != domain.AgentTaskStatusFailed && parent.Status != domain.AgentTaskStatusCancelled {
+		return nil, domain.ErrConflict
+	}
+	bundle, err := s.GetRun(ctx, parent.RunID)
+	if err != nil {
+		return nil, err
+	}
+	if bundle.Run.Status == domain.ExecutionRunStatusCompleted || bundle.Run.Status == domain.ExecutionRunStatusCancelled {
+		return nil, domain.ErrConflict
+	}
+	status := domain.AgentTaskStatusWaiting
+	node := nodeByID(bundle.Plan.PRNodes)[parent.PRNodeID]
+	if node == nil {
+		return nil, domain.ErrNotFound
+	}
+	if dependenciesComplete(node, completedNodeKeySet(bundle)) {
+		status = domain.AgentTaskStatusQueued
+	}
+	if _, err := s.repo.CreateRetryAgentTask(ctx, parent, status, req.ForceFreshSession); err != nil {
+		return nil, fmt.Errorf("create retry agent task: %w", err)
+	}
+	return s.GetRun(ctx, parent.RunID)
 }
 
 func (s *service) PinTaskSession(ctx context.Context, taskID uint, req *PinAgentTaskSessionRequest) (*domain.SpecForgeExecutionBundle, error) {
@@ -742,6 +778,7 @@ func toClaimedAgentTask(task *domain.SpecForgeAgentTask) *ClaimedAgentTask {
 		Status:        task.Status,
 		RuntimeID:     task.RuntimeID,
 		AttemptNumber: task.AttemptNumber,
+		ParentTaskID:  task.ParentTaskID,
 		SessionID:     task.SessionID,
 		Workdir:       task.Workdir,
 	}

@@ -121,6 +121,86 @@ func TestCancelRunRejectsCompletedRun(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrConflict)
 }
 
+func TestRetryTaskCreatesQueuedAttemptForFailedTask(t *testing.T) {
+	planningRepo := memoryPlanningRepoWithPrompt()
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+	failed := dispatched.Tasks[0]
+	failed.Status = domain.AgentTaskStatusFailed
+	failed.FailureReason = "test_failure"
+	failed.SessionID = "session_123"
+	failed.Workdir = "/tmp/specforge/task"
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), failed))
+
+	retried, err := svc.RetryTask(context.Background(), failed.ID, &RetryAgentTaskRequest{})
+
+	require.NoError(t, err)
+	require.Len(t, retried.Tasks, 3)
+	retry := retried.Tasks[2]
+	require.Equal(t, failed.ID, *retry.ParentTaskID)
+	require.Equal(t, failed.PRNodeID, retry.PRNodeID)
+	require.Equal(t, 2, retry.AttemptNumber)
+	require.Equal(t, domain.AgentTaskStatusQueued, retry.Status)
+	require.Equal(t, "session_123", retry.SessionID)
+	require.Equal(t, "/tmp/specforge/task", retry.Workdir)
+	require.Equal(t, domain.AgentTaskStatusFailed, retried.Tasks[0].Status)
+}
+
+func TestRetryTaskCanForceFreshSession(t *testing.T) {
+	planningRepo := memoryPlanningRepoWithPrompt()
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+	failed := dispatched.Tasks[0]
+	failed.Status = domain.AgentTaskStatusFailed
+	failed.SessionID = "session_123"
+	failed.Workdir = "/tmp/specforge/task"
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), failed))
+
+	retried, err := svc.RetryTask(context.Background(), failed.ID, &RetryAgentTaskRequest{ForceFreshSession: true})
+
+	require.NoError(t, err)
+	retry := retried.Tasks[2]
+	require.Empty(t, retry.SessionID)
+	require.Empty(t, retry.Workdir)
+}
+
+func TestRetryTaskRejectsNonTerminalTask(t *testing.T) {
+	planningRepo := memoryPlanningRepoWithPrompt()
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+
+	_, err = svc.RetryTask(context.Background(), created.Tasks[0].ID, &RetryAgentTaskRequest{})
+
+	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
+func TestRetryTaskRejectsCancelledRun(t *testing.T) {
+	planningRepo := memoryPlanningRepoWithPrompt()
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	failed := created.Tasks[0]
+	failed.Status = domain.AgentTaskStatusFailed
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), failed))
+	created.Run.Status = domain.ExecutionRunStatusCancelled
+	require.NoError(t, runRepo.UpdateExecutionRun(context.Background(), created.Run))
+
+	_, err = svc.RetryTask(context.Background(), failed.ID, &RetryAgentTaskRequest{})
+
+	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
 func TestHeartbeatRuntimeRecordsRuntimeAndReportsPendingClaim(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
 	runRepo := &memoryExecutionRepo{}
@@ -833,6 +913,35 @@ func (r *memoryExecutionRepo) CancelActiveTasksByRunID(ctx context.Context, runI
 		}
 	}
 	return out, nil
+}
+
+func (r *memoryExecutionRepo) CreateRetryAgentTask(ctx context.Context, parent *domain.SpecForgeAgentTask, status string, forceFreshSession bool) (*domain.SpecForgeAgentTask, error) {
+	if parent == nil || parent.ID == 0 || parent.RunID == 0 || parent.PRNodeID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	if r.bundle == nil || r.bundle.Run.ID != parent.RunID {
+		return nil, domain.ErrNotFound
+	}
+	r.nextID++
+	retry := &domain.SpecForgeAgentTask{
+		ID:            r.nextID,
+		RunID:         parent.RunID,
+		PRNodeID:      parent.PRNodeID,
+		Executor:      parent.Executor,
+		Status:        status,
+		AttemptNumber: parent.AttemptNumber + 1,
+		ParentTaskID:  &parent.ID,
+	}
+	if retry.AttemptNumber <= 1 {
+		retry.AttemptNumber = 2
+	}
+	if !forceFreshSession {
+		retry.SessionID = parent.SessionID
+		retry.Workdir = parent.Workdir
+	}
+	r.bundle.Tasks = append(r.bundle.Tasks, retry)
+	copied := *retry
+	return &copied, nil
 }
 
 func (r *memoryExecutionRepo) HasClaimableAgentTask(ctx context.Context, runtimeID, executor string) (bool, error) {
