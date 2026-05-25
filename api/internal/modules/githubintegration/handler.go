@@ -1,6 +1,9 @@
 package githubintegration
 
 import (
+	"io"
+	"net/http"
+	"os"
 	"strconv"
 
 	"github.com/gin-gonic/gin"
@@ -81,4 +84,33 @@ func (h *Handler) GetRepository(c *gin.Context) {
 		return
 	}
 	response.Success(c, repository)
+}
+
+func (h *Handler) ReceiveWebhook(c *gin.Context) {
+	body, err := io.ReadAll(c.Request.Body)
+	if err != nil {
+		response.HandleError(c, "Failed to read GitHub webhook", err)
+		return
+	}
+
+	signature := c.GetHeader("X-Hub-Signature-256")
+	if !verifyGitHubSignature(os.Getenv("GITHUB_WEBHOOK_SECRET"), body, signature) {
+		c.JSON(http.StatusUnauthorized, gin.H{
+			"error": "invalid github webhook signature",
+			"code":  "GITHUB_WEBHOOK_SIGNATURE_INVALID",
+		})
+		return
+	}
+
+	event, err := h.service.RecordWebhook(c.Request.Context(), &GitHubWebhookRequest{
+		EventType:  c.GetHeader("X-GitHub-Event"),
+		DeliveryID: c.GetHeader("X-GitHub-Delivery"),
+		Signature:  signature,
+		Body:       body,
+	})
+	if err != nil {
+		response.HandleError(c, "Failed to record GitHub webhook", err)
+		return
+	}
+	response.Success(c, event)
 }
