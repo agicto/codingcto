@@ -110,6 +110,30 @@ func (r *repository) FindWebhookEventByDeliveryID(ctx context.Context, deliveryI
 	return po.toDomain(), nil
 }
 
+func (r *repository) ListWebhookEvents(ctx context.Context, status, repositoryFullName string, limit int) ([]*domain.GitHubWebhookEvent, error) {
+	status = strings.TrimSpace(status)
+	repositoryFullName = strings.TrimSpace(repositoryFullName)
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	query := r.db.WithContext(ctx).Model(&GitHubWebhookEventPO{})
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+	if repositoryFullName != "" {
+		query = query.Where("repository_full_name = ?", repositoryFullName)
+	}
+	var pos []*GitHubWebhookEventPO
+	if err := query.Order("received_at DESC, id DESC").Limit(limit).Find(&pos).Error; err != nil {
+		return nil, err
+	}
+	events := make([]*domain.GitHubWebhookEvent, len(pos))
+	for i, po := range pos {
+		events[i] = po.toDomain()
+	}
+	return events, nil
+}
+
 func (r *repository) UpdateWebhookEventStatus(ctx context.Context, deliveryID, status string) error {
 	deliveryID = strings.TrimSpace(deliveryID)
 	status = strings.TrimSpace(status)

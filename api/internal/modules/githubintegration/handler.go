@@ -86,6 +86,20 @@ func (h *Handler) GetRepository(c *gin.Context) {
 	response.Success(c, repository)
 }
 
+func (h *Handler) ListWebhookEvents(c *gin.Context) {
+	var req ListWebhookEventsRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		response.BadRequest(c, "Invalid request parameters", err)
+		return
+	}
+	events, err := h.service.ListWebhookEvents(c.Request.Context(), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to list GitHub webhook events", err)
+		return
+	}
+	response.Success(c, gin.H{"events": events})
+}
+
 func (h *Handler) DeliverPRNode(c *gin.Context) {
 	var req DeliverPRNodeRequest
 	if !handler.BindJSON(c, &req) {

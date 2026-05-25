@@ -250,6 +250,27 @@ func TestRecordWebhookMarksFailedWhenApplyFails(t *testing.T) {
 	require.Equal(t, GitHubWebhookStatusFailed, repo.webhookEvents[0].Status)
 }
 
+func TestListWebhookEventsAppliesFiltersAndLimit(t *testing.T) {
+	repo := &memoryRepo{
+		webhookEvents: []*domain.GitHubWebhookEvent{
+			{ID: 1, DeliveryID: "delivery-1", Status: GitHubWebhookStatusProcessed, RepositoryFullName: "agicto/codingcto", ReceivedAt: time.Now().Add(-2 * time.Minute)},
+			{ID: 2, DeliveryID: "delivery-2", Status: GitHubWebhookStatusFailed, RepositoryFullName: "agicto/codingcto", ReceivedAt: time.Now().Add(-1 * time.Minute)},
+			{ID: 3, DeliveryID: "delivery-3", Status: GitHubWebhookStatusFailed, RepositoryFullName: "other/repo", ReceivedAt: time.Now()},
+		},
+	}
+	svc := NewService(repo, nil, nil, nil)
+
+	events, err := svc.ListWebhookEvents(context.Background(), &ListWebhookEventsRequest{
+		Status:             GitHubWebhookStatusFailed,
+		RepositoryFullName: "agicto/codingcto",
+		Limit:              1,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	require.Equal(t, "delivery-2", events[0].DeliveryID)
+}
+
 func TestDeliverPRNodeCreatesDraftPRAndUpdatesNode(t *testing.T) {
 	repo := &memoryRepo{
 		installation: &domain.GitHubInstallation{
@@ -797,6 +818,27 @@ func (r *memoryRepo) FindWebhookEventByDeliveryID(ctx context.Context, deliveryI
 		}
 	}
 	return nil, domain.ErrNotFound
+}
+
+func (r *memoryRepo) ListWebhookEvents(ctx context.Context, status, repositoryFullName string, limit int) ([]*domain.GitHubWebhookEvent, error) {
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	out := make([]*domain.GitHubWebhookEvent, 0)
+	for _, event := range r.webhookEvents {
+		if status != "" && event.Status != status {
+			continue
+		}
+		if repositoryFullName != "" && event.RepositoryFullName != repositoryFullName {
+			continue
+		}
+		copied := *event
+		out = append(out, &copied)
+		if len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
 }
 
 func (r *memoryRepo) UpdateWebhookEventStatus(ctx context.Context, deliveryID, status string) error {
