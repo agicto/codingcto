@@ -86,6 +86,19 @@ func (h *Handler) GetRepository(c *gin.Context) {
 	response.Success(c, repository)
 }
 
+func (h *Handler) DeliverPRNode(c *gin.Context) {
+	var req DeliverPRNodeRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+	node, err := h.service.DeliverPRNode(c.Request.Context(), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to deliver PR node", err)
+		return
+	}
+	response.Success(c, node)
+}
+
 func (h *Handler) ReceiveWebhook(c *gin.Context) {
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {

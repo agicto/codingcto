@@ -18,6 +18,24 @@ type GitHubRepositoryClient struct {
 	httpClient *http.Client
 }
 
+type RepositoryClient interface {
+	CreatePullRequest(ctx context.Context, input CreatePullRequestInput) (*PullRequest, error)
+}
+
+type RepositoryClientFactory interface {
+	NewRepositoryClient(token string) (RepositoryClient, error)
+}
+
+type defaultRepositoryClientFactory struct{}
+
+func NewDefaultRepositoryClientFactory() RepositoryClientFactory {
+	return defaultRepositoryClientFactory{}
+}
+
+func (defaultRepositoryClientFactory) NewRepositoryClient(token string) (RepositoryClient, error) {
+	return NewGitHubRepositoryClient(token)
+}
+
 type GitHubRepositoryClientOption func(*GitHubRepositoryClient)
 
 func NewGitHubRepositoryClient(token string, opts ...GitHubRepositoryClientOption) (*GitHubRepositoryClient, error) {
