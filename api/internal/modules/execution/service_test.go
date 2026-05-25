@@ -2,16 +2,18 @@ package execution
 
 import (
 	"context"
+	"fmt"
 	"testing"
 
 	"github.com/stretchr/testify/require"
 	"github.com/zgiai/luas/api/internal/domain"
+	"github.com/zgiai/luas/api/internal/modules/githubintegration"
 )
 
 func TestStartRunCreatesTasksFromApprovedPlanDAG(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
 	runRepo := &memoryExecutionRepo{}
-	svc := NewService(runRepo, planningRepo, nil)
+	svc := NewService(runRepo, planningRepo, nil, nil)
 
 	bundle, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
 
@@ -27,7 +29,7 @@ func TestStartRunCreatesTasksFromApprovedPlanDAG(t *testing.T) {
 func TestStartRunRejectsUnapprovedPlan(t *testing.T) {
 	bundle := approvedPlanBundle()
 	bundle.Plan.Status = domain.PlanStatusDraft
-	svc := NewService(&memoryExecutionRepo{}, &memoryPlanningRepo{bundle: bundle}, nil)
+	svc := NewService(&memoryExecutionRepo{}, &memoryPlanningRepo{bundle: bundle}, nil, nil)
 
 	_, err := svc.StartRun(context.Background(), 42, bundle.Plan.ID, &StartExecutionRunRequest{})
 
@@ -37,7 +39,7 @@ func TestStartRunRejectsUnapprovedPlan(t *testing.T) {
 func TestGetRunAttachesPlanBundle(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
 	runRepo := &memoryExecutionRepo{}
-	svc := NewService(runRepo, planningRepo, nil)
+	svc := NewService(runRepo, planningRepo, nil, nil)
 	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{Executor: "custom"})
 	require.NoError(t, err)
 
@@ -53,7 +55,7 @@ func TestGetRunAttachesPlanBundle(t *testing.T) {
 func TestDispatchRunMovesQueuedTasksToRunning(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
 	runRepo := &memoryExecutionRepo{}
-	svc := NewService(runRepo, planningRepo, nil)
+	svc := NewService(runRepo, planningRepo, nil, nil)
 	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
 	require.NoError(t, err)
 
@@ -69,7 +71,7 @@ func TestDispatchRunMovesQueuedTasksToRunning(t *testing.T) {
 func TestCompleteTaskUnlocksDependentTasks(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
 	runRepo := &memoryExecutionRepo{}
-	svc := NewService(runRepo, planningRepo, nil)
+	svc := NewService(runRepo, planningRepo, nil, nil)
 	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
 	require.NoError(t, err)
 	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{})
@@ -96,7 +98,7 @@ func TestExecuteTaskRunsCompiledPromptAndUnlocksDependents(t *testing.T) {
 	}
 	runRepo := &memoryExecutionRepo{}
 	executor := &fakeExecutor{result: &ExecutionResult{Status: "completed", Output: "done", ExitCode: 0}}
-	svc := NewService(runRepo, planningRepo, executor)
+	svc := NewService(runRepo, planningRepo, executor, nil)
 	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
 	require.NoError(t, err)
 	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
@@ -115,6 +117,61 @@ func TestExecuteTaskRunsCompiledPromptAndUnlocksDependents(t *testing.T) {
 	require.Equal(t, domain.AgentTaskStatusQueued, updated.Tasks[1].Status)
 }
 
+func TestExecuteTaskDeliversPRBeforeUnlockingDependents(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{
+		bundle: approvedPlanBundle(),
+		prompt: &domain.SpecForgeCompiledPrompt{
+			ID:         7,
+			PRNodeID:   4,
+			Version:    "prompt_v1",
+			PromptText: "Implement PR-001",
+		},
+	}
+	runRepo := &memoryExecutionRepo{}
+	executor := &fakeExecutor{result: &ExecutionResult{Status: "completed", Output: "done", ExitCode: 0}}
+	deliverer := &fakePRNodeDeliverer{node: &domain.SpecForgePRNode{ID: 4, GitHubPRURL: "https://github.com/agicto/codingcto/pull/42"}}
+	svc := NewService(runRepo, planningRepo, executor, deliverer)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+
+	updated, err := svc.ExecuteTask(context.Background(), dispatched.Tasks[0].ID, &ExecuteAgentTaskRequest{Workdir: "/tmp/repo"})
+
+	require.NoError(t, err)
+	require.Equal(t, "repo_123", deliverer.request.RepositoryID)
+	require.Equal(t, uint(4), deliverer.request.PRNodeID)
+	require.Equal(t, domain.AgentTaskStatusCompleted, updated.Tasks[0].Status)
+	require.Equal(t, domain.AgentTaskStatusQueued, updated.Tasks[1].Status)
+}
+
+func TestExecuteTaskMarksFailureWhenPRDeliveryFails(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{
+		bundle: approvedPlanBundle(),
+		prompt: &domain.SpecForgeCompiledPrompt{
+			ID:         7,
+			PRNodeID:   4,
+			Version:    "prompt_v1",
+			PromptText: "Implement PR-001",
+		},
+	}
+	runRepo := &memoryExecutionRepo{}
+	executor := &fakeExecutor{result: &ExecutionResult{Status: "completed", Output: "done", ExitCode: 0}}
+	deliverer := &fakePRNodeDeliverer{err: fmt.Errorf("missing branch")}
+	svc := NewService(runRepo, planningRepo, executor, deliverer)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+
+	updated, err := svc.ExecuteTask(context.Background(), dispatched.Tasks[0].ID, &ExecuteAgentTaskRequest{Workdir: "/tmp/repo"})
+
+	require.NoError(t, err)
+	require.Equal(t, domain.AgentTaskStatusFailed, updated.Tasks[0].Status)
+	require.Contains(t, updated.Tasks[0].ErrorLog, "deliver PR node: missing branch")
+	require.Equal(t, domain.AgentTaskStatusWaiting, updated.Tasks[1].Status)
+}
+
 func TestExecuteTaskMarksFailureWithoutUnlockingDependents(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{
 		bundle: approvedPlanBundle(),
@@ -127,7 +184,7 @@ func TestExecuteTaskMarksFailureWithoutUnlockingDependents(t *testing.T) {
 	}
 	runRepo := &memoryExecutionRepo{}
 	executor := &fakeExecutor{result: &ExecutionResult{Status: "failed", Error: "boom", ExitCode: 2}}
-	svc := NewService(runRepo, planningRepo, executor)
+	svc := NewService(runRepo, planningRepo, executor, nil)
 	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
 	require.NoError(t, err)
 	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
@@ -146,7 +203,7 @@ func TestExecuteTaskMarksFailureWithoutUnlockingDependents(t *testing.T) {
 func TestCompleteTaskCompletesRunWhenAllTasksDone(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
 	runRepo := &memoryExecutionRepo{}
-	svc := NewService(runRepo, planningRepo, nil)
+	svc := NewService(runRepo, planningRepo, nil, nil)
 	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
 	require.NoError(t, err)
 	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{})
@@ -305,6 +362,19 @@ func (e *fakeExecutor) Cancel(ctx context.Context, runID string) error {
 
 func (e *fakeExecutor) GetLogs(ctx context.Context, runID string) (*ExecutorLogs, error) {
 	return &ExecutorLogs{}, nil
+}
+
+type fakePRNodeDeliverer struct {
+	request githubintegration.DeliverPRNodeRequest
+	node    *domain.SpecForgePRNode
+	err     error
+}
+
+func (d *fakePRNodeDeliverer) DeliverPRNode(ctx context.Context, req *githubintegration.DeliverPRNodeRequest) (*domain.SpecForgePRNode, error) {
+	if req != nil {
+		d.request = *req
+	}
+	return d.node, d.err
 }
 
 func approvedPlanBundle() *domain.SpecForgePlanBundle {

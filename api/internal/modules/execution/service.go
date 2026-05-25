@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/zgiai/luas/api/internal/domain"
+	"github.com/zgiai/luas/api/internal/modules/githubintegration"
 )
 
 type Service interface {
@@ -18,17 +19,22 @@ type Service interface {
 	CompleteTask(ctx context.Context, taskID uint) (*domain.SpecForgeExecutionBundle, error)
 }
 
+type PRNodeDeliverer interface {
+	DeliverPRNode(ctx context.Context, req *githubintegration.DeliverPRNodeRequest) (*domain.SpecForgePRNode, error)
+}
+
 type service struct {
 	repo         domain.SpecForgeExecutionRepository
 	planningRepo domain.SpecForgePlanningRepository
 	executor     CodeExecutor
+	deliverer    PRNodeDeliverer
 }
 
-func NewService(repo domain.SpecForgeExecutionRepository, planningRepo domain.SpecForgePlanningRepository, executor CodeExecutor) *service {
+func NewService(repo domain.SpecForgeExecutionRepository, planningRepo domain.SpecForgePlanningRepository, executor CodeExecutor, deliverer PRNodeDeliverer) *service {
 	if executor == nil {
 		executor = NewCodexCLIExecutor(CodexCLIExecutorConfig{}, nil)
 	}
-	return &service{repo: repo, planningRepo: planningRepo, executor: executor}
+	return &service{repo: repo, planningRepo: planningRepo, executor: executor, deliverer: deliverer}
 }
 
 func (s *service) StartRun(ctx context.Context, userID, planID uint, req *StartExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error) {
@@ -159,7 +165,12 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 	if runErr != nil || result.Status != "completed" || result.ExitCode != 0 {
 		task.Status = domain.AgentTaskStatusFailed
 	} else {
-		task.Status = domain.AgentTaskStatusCompleted
+		if err := s.deliverTaskPR(ctx, task); err != nil {
+			task.Status = domain.AgentTaskStatusFailed
+			task.ErrorLog = appendLogLine(task.ErrorLog, err.Error())
+		} else {
+			task.Status = domain.AgentTaskStatusCompleted
+		}
 	}
 	if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
 		return nil, fmt.Errorf("update executed agent task: %w", err)
@@ -219,6 +230,39 @@ func (s *service) CompleteTask(ctx context.Context, taskID uint) (*domain.SpecFo
 		}
 	}
 	return s.GetRun(ctx, task.RunID)
+}
+
+func (s *service) deliverTaskPR(ctx context.Context, task *domain.SpecForgeAgentTask) error {
+	if s.deliverer == nil {
+		return nil
+	}
+	bundle, err := s.GetRun(ctx, task.RunID)
+	if err != nil {
+		return err
+	}
+	if bundle.Plan == nil || bundle.Plan.Idea == nil || strings.TrimSpace(bundle.Plan.Idea.RepositoryID) == "" {
+		return domain.ErrInvalidInput
+	}
+	_, err = s.deliverer.DeliverPRNode(ctx, &githubintegration.DeliverPRNodeRequest{
+		RepositoryID: bundle.Plan.Idea.RepositoryID,
+		PRNodeID:     task.PRNodeID,
+	})
+	if err != nil {
+		return fmt.Errorf("deliver PR node: %w", err)
+	}
+	return nil
+}
+
+func appendLogLine(existing, line string) string {
+	line = strings.TrimSpace(line)
+	if line == "" {
+		return existing
+	}
+	existing = strings.TrimSpace(existing)
+	if existing == "" {
+		return line
+	}
+	return existing + "\n" + line
 }
 
 func buildInitialTasks(nodes []*domain.SpecForgePRNode, executor string) []*domain.SpecForgeAgentTask {
