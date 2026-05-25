@@ -20,6 +20,7 @@ type Service interface {
 	GetRepository(ctx context.Context, repositoryID string) (*domain.Repository, error)
 	PreparePRNodeBranch(ctx context.Context, req *PreparePRNodeBranchRequest) (*domain.SpecForgePRNode, error)
 	DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) (*domain.SpecForgePRNode, error)
+	RefreshPRNodeCI(ctx context.Context, req *RefreshPRNodeCIRequest) (*domain.SpecForgePRNode, error)
 	RecordWebhook(ctx context.Context, req *GitHubWebhookRequest) (*domain.GitHubWebhookEvent, error)
 }
 
@@ -199,6 +200,43 @@ func (s *service) DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) 
 	return node, nil
 }
 
+func (s *service) RefreshPRNodeCI(ctx context.Context, req *RefreshPRNodeCIRequest) (*domain.SpecForgePRNode, error) {
+	if req == nil || strings.TrimSpace(req.RepositoryID) == "" || req.PRNodeID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	if s.planningRepo == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	repository, err := s.repo.FindRepositoryByRepositoryID(ctx, strings.TrimSpace(req.RepositoryID))
+	if err != nil {
+		return nil, err
+	}
+	node, err := s.planningRepo.FindPRNodeByID(ctx, req.PRNodeID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(node.BranchName) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	client, err := s.repositoryClientForRepository(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
+	runs, err := client.ListWorkflowRuns(ctx, repository.GitHubOwner, repository.GitHubRepo, node.BranchName)
+	if err != nil {
+		return nil, err
+	}
+	if len(runs) == 0 {
+		return node, nil
+	}
+	latest := latestWorkflowRun(runs)
+	applyWorkflowRunState(node, latest.HeadSHA, latest.Status, latest.Conclusion)
+	if err := s.planningRepo.UpdatePRNode(ctx, node); err != nil {
+		return nil, err
+	}
+	return node, nil
+}
+
 func (s *service) repositoryClientForRepository(ctx context.Context, repository *domain.Repository) (RepositoryClient, error) {
 	installation, err := s.repo.FindInstallationByID(ctx, repository.GitHubInstallationID)
 	if err != nil {
@@ -287,6 +325,29 @@ func isBranchAlreadyExistsError(err error) bool {
 	return strings.Contains(message, "reference already exists")
 }
 
+func latestWorkflowRun(runs []WorkflowRun) WorkflowRun {
+	latest := runs[0]
+	for _, run := range runs[1:] {
+		if run.CreatedAt.After(latest.CreatedAt) {
+			latest = run
+		}
+	}
+	return latest
+}
+
+func applyWorkflowRunState(node *domain.SpecForgePRNode, headSHA, status, conclusion string) {
+	if strings.TrimSpace(headSHA) != "" {
+		node.GitHubHeadSHA = strings.TrimSpace(headSHA)
+	}
+	if strings.TrimSpace(status) != "completed" {
+		node.Status = domain.PRNodeStatusCIRunning
+	} else if strings.TrimSpace(conclusion) == "success" {
+		node.Status = domain.PRNodeStatusReadyForReview
+	} else if strings.TrimSpace(conclusion) != "" {
+		node.Status = domain.PRNodeStatusBlocked
+	}
+}
+
 func formatMarkdownList(items []string) string {
 	if len(items) == 0 {
 		return "- Not run yet"
@@ -352,14 +413,7 @@ func (s *service) updatePRNodeFromWorkflowRun(ctx context.Context, run *WebhookW
 	if err != nil {
 		return err
 	}
-	node.GitHubHeadSHA = run.HeadSHA
-	if strings.TrimSpace(run.Status) != "completed" {
-		node.Status = domain.PRNodeStatusCIRunning
-	} else if strings.TrimSpace(run.Conclusion) == "success" {
-		node.Status = domain.PRNodeStatusReadyForReview
-	} else if strings.TrimSpace(run.Conclusion) != "" {
-		node.Status = domain.PRNodeStatusBlocked
-	}
+	applyWorkflowRunState(node, run.HeadSHA, run.Status, run.Conclusion)
 	return s.planningRepo.UpdatePRNode(ctx, node)
 }
 

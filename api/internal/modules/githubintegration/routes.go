@@ -14,5 +14,6 @@ func (h *Handler) RegisterRoutes(r *router.Router) {
 		auth.GET("/repositories/:repo_id", h.GetRepository).Name("github.repositories.show")
 		auth.POST("/github/pr-nodes/prepare-branch", h.PreparePRNodeBranch).Name("github.pr_nodes.prepare_branch")
 		auth.POST("/github/pr-nodes/deliver", h.DeliverPRNode).Name("github.pr_nodes.deliver")
+		auth.POST("/github/pr-nodes/refresh-ci", h.RefreshPRNodeCI).Name("github.pr_nodes.refresh_ci")
 	})
 }
