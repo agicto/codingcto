@@ -48,6 +48,28 @@ func (h *Handler) CreateFixAttempt(c *gin.Context) {
 	response.Success(c, attempt)
 }
 
+func (h *Handler) CreateFixAttemptFromCI(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	prNodeID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || prNodeID == 0 {
+		response.HandleError(c, "Invalid PR node id", err)
+		return
+	}
+	var req CreateFixAttemptFromCIRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+	attempt, err := h.service.CreateFixAttemptFromCI(c.Request.Context(), userID, uint(prNodeID), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to create fix attempt from CI", err)
+		return
+	}
+	response.Success(c, attempt)
+}
+
 func (h *Handler) ListFixAttempts(c *gin.Context) {
 	prNodeID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || prNodeID == 0 {

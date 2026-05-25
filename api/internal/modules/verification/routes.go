@@ -8,5 +8,6 @@ func (h *Handler) RegisterRoutes(r *router.Router) {
 
 		auth.GET("/pr-nodes/:id/fix-attempts", h.ListFixAttempts).Name("specforge.pr_nodes.fix_attempts.index").WhereNumber("id")
 		auth.POST("/pr-nodes/:id/fix-attempts", h.CreateFixAttempt).Name("specforge.pr_nodes.fix_attempts.store").WhereNumber("id")
+		auth.POST("/pr-nodes/:id/fix-attempts/from-ci", h.CreateFixAttemptFromCI).Name("specforge.pr_nodes.fix_attempts.from_ci").WhereNumber("id")
 	})
 }

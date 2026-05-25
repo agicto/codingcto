@@ -6,11 +6,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/zgiai/luas/api/internal/domain"
+	"github.com/zgiai/luas/api/internal/modules/githubintegration"
 )
 
 func TestCreateFixAttemptAssignsAttemptNumberAndDefaults(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 
 	first, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
 		FailureType:       " type_error ",
@@ -37,7 +38,7 @@ func TestCreateFixAttemptAssignsAttemptNumberAndDefaults(t *testing.T) {
 
 func TestListFixAttemptsReturnsPRNodeAttempts(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 	_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{FailureType: "type_error"})
 	require.NoError(t, err)
 	_, err = svc.CreateFixAttempt(context.Background(), 7, 99, &CreateFixAttemptRequest{FailureType: "lint_failure"})
@@ -48,6 +49,56 @@ func TestListFixAttemptsReturnsPRNodeAttempts(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, attempts, 1)
 	require.Equal(t, uint(42), attempts[0].PRNodeID)
+}
+
+func TestCreateFixAttemptFromCIClassifiesFailedLogs(t *testing.T) {
+	repo := &memoryRepo{}
+	reader := &fakeFailureReader{
+		failure: &githubintegration.PRNodeFailureLog{
+			PRNodeID:    42,
+			JobName:     "API",
+			LogExcerpt:  "go test ./...\n--- FAIL: TestInvite\n",
+			FailedSteps: []string{"go test"},
+		},
+	}
+	svc := NewService(repo, reader)
+
+	attempt, err := svc.CreateFixAttemptFromCI(context.Background(), 7, 42, &CreateFixAttemptFromCIRequest{
+		RepositoryID: "github_agicto__codingcto",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "github_agicto__codingcto", reader.request.RepositoryID)
+	require.Equal(t, uint(42), reader.request.PRNodeID)
+	require.Equal(t, 1, attempt.AttemptNumber)
+	require.Equal(t, "unit_test_failure", attempt.FailureType)
+	require.Contains(t, attempt.CILogExcerpt, "TestInvite")
+	require.Contains(t, attempt.LikelyCause, "go test")
+	require.True(t, attempt.CanAutoFix)
+}
+
+func TestCreateFixAttemptFromCIRejectsMissingReader(t *testing.T) {
+	repo := &memoryRepo{}
+	svc := NewService(repo, nil)
+
+	_, err := svc.CreateFixAttemptFromCI(context.Background(), 7, 42, &CreateFixAttemptFromCIRequest{
+		RepositoryID: "github_agicto__codingcto",
+	})
+
+	require.ErrorIs(t, err, domain.ErrInvalidInput)
+}
+
+type fakeFailureReader struct {
+	request githubintegration.ReadPRNodeFailureLogRequest
+	failure *githubintegration.PRNodeFailureLog
+	err     error
+}
+
+func (r *fakeFailureReader) ReadPRNodeFailureLog(ctx context.Context, req *githubintegration.ReadPRNodeFailureLogRequest) (*githubintegration.PRNodeFailureLog, error) {
+	if req != nil {
+		r.request = *req
+	}
+	return r.failure, r.err
 }
 
 type memoryRepo struct {

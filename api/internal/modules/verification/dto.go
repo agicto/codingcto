@@ -9,3 +9,7 @@ type CreateFixAttemptRequest struct {
 	RecommendedAction string  `json:"recommended_action" binding:"omitempty,max=5000"`
 	CanAutoFix        bool    `json:"can_auto_fix"`
 }
+
+type CreateFixAttemptFromCIRequest struct {
+	RepositoryID string `json:"repository_id" binding:"required,max=255"`
+}

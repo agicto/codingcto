@@ -424,6 +424,51 @@ func TestRefreshPRNodeCIMarksFailedRunBlocked(t *testing.T) {
 	require.Equal(t, domain.PRNodeStatusBlocked, node.Status)
 }
 
+func TestReadPRNodeFailureLogReturnsLatestFailedJobLogs(t *testing.T) {
+	repo := &memoryRepo{
+		installation: &domain.GitHubInstallation{
+			ID:             3,
+			InstallationID: 98765,
+		},
+		repository: &domain.Repository{
+			ID:                   1,
+			RepositoryID:         "github_agicto__codingcto",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto",
+			DefaultBranch:        "main",
+		},
+	}
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, BranchName: "specforge/team-invite-01-api", Status: domain.PRNodeStatusBlocked},
+		},
+	}
+	client := &fakeRepositoryClient{
+		workflowRuns: []WorkflowRun{{ID: 123, HeadSHA: "abc123", Status: "completed", Conclusion: "failure", CreatedAt: time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC)}},
+		workflowJobs: []WorkflowJob{
+			{ID: 987, Name: "API", Conclusion: "failure", Steps: []WorkflowStep{{Name: "go test", Conclusion: "failure"}}},
+		},
+		workflowLogs: "go test ./...\n--- FAIL: TestInvite\n",
+	}
+	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider)
+
+	failure, err := svc.ReadPRNodeFailureLog(context.Background(), &ReadPRNodeFailureLogRequest{
+		RepositoryID: "github_agicto__codingcto",
+		PRNodeID:     10,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, uint(10), failure.PRNodeID)
+	require.Equal(t, int64(123), failure.WorkflowRunID)
+	require.Equal(t, int64(987), failure.JobID)
+	require.Equal(t, "API", failure.JobName)
+	require.Equal(t, "abc123", failure.HeadSHA)
+	require.Contains(t, failure.LogExcerpt, "--- FAIL: TestInvite")
+	require.Equal(t, []string{"go test"}, failure.FailedSteps)
+}
+
 func TestDeliverPRNodeAllowsOverrides(t *testing.T) {
 	repo := &memoryRepo{
 		installation: &domain.GitHubInstallation{
@@ -535,6 +580,12 @@ type fakeRepositoryClient struct {
 	workflowRuns       []WorkflowRun
 	listWorkflowBranch string
 	listWorkflowErr    error
+	workflowJobs       []WorkflowJob
+	listWorkflowRunID  int64
+	listWorkflowJobErr error
+	workflowLogs       string
+	workflowLogJobID   int64
+	workflowLogErr     error
 }
 
 func (c *fakeRepositoryClient) GetBranchRef(ctx context.Context, owner, repo, branch string) (*GitReference, error) {
@@ -561,11 +612,13 @@ func (c *fakeRepositoryClient) ListWorkflowRuns(ctx context.Context, owner, repo
 }
 
 func (c *fakeRepositoryClient) ListWorkflowJobs(ctx context.Context, owner, repo string, runID int64) ([]WorkflowJob, error) {
-	return nil, nil
+	c.listWorkflowRunID = runID
+	return c.workflowJobs, c.listWorkflowJobErr
 }
 
 func (c *fakeRepositoryClient) GetWorkflowJobLogs(ctx context.Context, owner, repo string, jobID int64) (string, error) {
-	return "", nil
+	c.workflowLogJobID = jobID
+	return c.workflowLogs, c.workflowLogErr
 }
 
 type fakeInstallationTokenProvider struct {
