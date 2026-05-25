@@ -1,0 +1,72 @@
+package execution
+
+import (
+	"errors"
+	"io"
+	"strconv"
+
+	"github.com/gin-gonic/gin"
+	"github.com/zgiai/luas/api/internal/contracts"
+	"github.com/zgiai/luas/api/pkg/handler"
+	"github.com/zgiai/luas/api/pkg/response"
+)
+
+type Handler struct {
+	service Service
+}
+
+var (
+	_ contracts.Module      = (*Handler)(nil)
+	_ contracts.RouteModule = (*Handler)(nil)
+)
+
+func NewHandler(service Service) *Handler {
+	return &Handler{service: service}
+}
+
+func (h *Handler) Name() string {
+	return "execution"
+}
+
+func (h *Handler) StartRun(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+
+	planID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || planID == 0 {
+		response.HandleError(c, "Invalid plan id", err)
+		return
+	}
+
+	var req StartExecutionRunRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		response.BadRequest(c, "Invalid request parameters", err)
+		return
+	}
+
+	run, err := h.service.StartRun(c.Request.Context(), userID, uint(planID), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to start execution run", err)
+		return
+	}
+
+	response.Success(c, run)
+}
+
+func (h *Handler) GetRun(c *gin.Context) {
+	runID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || runID == 0 {
+		response.HandleError(c, "Invalid run id", err)
+		return
+	}
+
+	run, err := h.service.GetRun(c.Request.Context(), uint(runID))
+	if err != nil {
+		response.HandleError(c, "Failed to get execution run", err)
+		return
+	}
+
+	response.Success(c, run)
+}

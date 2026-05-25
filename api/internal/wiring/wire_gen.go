@@ -16,6 +16,7 @@ import (
 	"github.com/zgiai/luas/api/internal/infra/migration"
 	"github.com/zgiai/luas/api/internal/modules/apikey"
 	"github.com/zgiai/luas/api/internal/modules/audit"
+	"github.com/zgiai/luas/api/internal/modules/execution"
 	"github.com/zgiai/luas/api/internal/modules/planning"
 	"github.com/zgiai/luas/api/internal/modules/repocontext"
 	"github.com/zgiai/luas/api/internal/modules/user"
@@ -51,12 +52,15 @@ func InitApplication() (*app.Application, error) {
 	planningHandler := planning.NewHandler(planningService)
 	repocontextService := repocontext.NewService(repocontextRepository)
 	repocontextHandler := repocontext.NewHandler(repocontextService)
+	executionRepository := execution.NewRepository(db)
+	executionService := execution.NewService(executionRepository, planningRepository)
+	executionHandler := execution.NewHandler(executionService)
 	userRepository := user.NewRepository(db)
 	jwtService := jwt.NewService(configConfig)
 	userMailer := user.NewUserMailer(service)
 	userService := user.NewService(userRepository, userRepository, jwtService, eventBus, userMailer)
 	userHandler := user.NewHandler(userService, userService, userService, jwtService, userMailer)
-	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, planningHandler, repocontextHandler, userHandler)
+	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, planningHandler, repocontextHandler, executionHandler, userHandler)
 	if err != nil {
 		return nil, err
 	}
@@ -94,12 +98,15 @@ func InitApplicationWithConfig(cfg *config.Config) (*app.Application, error) {
 	planningHandler := planning.NewHandler(planningService)
 	repocontextService := repocontext.NewService(repocontextRepository)
 	repocontextHandler := repocontext.NewHandler(repocontextService)
+	executionRepository := execution.NewRepository(db)
+	executionService := execution.NewService(executionRepository, planningRepository)
+	executionHandler := execution.NewHandler(executionService)
 	userRepository := user.NewRepository(db)
 	jwtService := jwt.NewService(cfg)
 	userMailer := user.NewUserMailer(service)
 	userService := user.NewService(userRepository, userRepository, jwtService, eventBus, userMailer)
 	userHandler := user.NewHandler(userService, userService, userService, jwtService, userMailer)
-	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, planningHandler, repocontextHandler, userHandler)
+	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, planningHandler, repocontextHandler, executionHandler, userHandler)
 	if err != nil {
 		return nil, err
 	}
