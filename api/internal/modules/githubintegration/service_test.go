@@ -243,7 +243,7 @@ func TestDeliverPRNodeCreatesDraftPRAndUpdatesNode(t *testing.T) {
 		},
 	}
 	client := &fakeRepositoryClient{
-		pr: &PullRequest{Number: 42, HTMLURL: "https://github.com/agicto/codingcto/pull/42", Draft: true},
+		pr: &PullRequest{Number: 42, HTMLURL: "https://github.com/agicto/codingcto/pull/42", Draft: true, Head: PRHead{SHA: "abc123"}},
 	}
 	factory := &fakeRepositoryClientFactory{client: client}
 	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
@@ -268,6 +268,7 @@ func TestDeliverPRNodeCreatesDraftPRAndUpdatesNode(t *testing.T) {
 	require.NotNil(t, node.GitHubPRNumber)
 	require.Equal(t, 42, *node.GitHubPRNumber)
 	require.Equal(t, "https://github.com/agicto/codingcto/pull/42", node.GitHubPRURL)
+	require.Equal(t, "abc123", node.GitHubHeadSHA)
 	require.Equal(t, domain.PRNodeStatusPROpened, node.Status)
 	require.Equal(t, node.GitHubPRURL, planningRepo.nodes[0].GitHubPRURL)
 }
