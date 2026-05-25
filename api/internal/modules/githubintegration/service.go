@@ -26,13 +26,17 @@ type service struct {
 	repo          domain.GitHubIntegrationRepository
 	planningRepo  domain.SpecForgePlanningRepository
 	clientFactory RepositoryClientFactory
+	tokenProvider InstallationTokenProvider
 }
 
-func NewService(repo domain.GitHubIntegrationRepository, planningRepo domain.SpecForgePlanningRepository, clientFactory RepositoryClientFactory) *service {
+func NewService(repo domain.GitHubIntegrationRepository, planningRepo domain.SpecForgePlanningRepository, clientFactory RepositoryClientFactory, tokenProvider InstallationTokenProvider) *service {
 	if clientFactory == nil {
 		clientFactory = defaultRepositoryClientFactory{}
 	}
-	return &service{repo: repo, planningRepo: planningRepo, clientFactory: clientFactory}
+	if tokenProvider == nil {
+		tokenProvider = defaultInstallationTokenProvider{}
+	}
+	return &service{repo: repo, planningRepo: planningRepo, clientFactory: clientFactory, tokenProvider: tokenProvider}
 }
 
 func (s *service) UpsertInstallation(ctx context.Context, userID uint, req *UpsertInstallationRequest) (*domain.GitHubInstallation, error) {
@@ -96,13 +100,17 @@ func (s *service) GetRepository(ctx context.Context, repositoryID string) (*doma
 }
 
 func (s *service) DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) (*domain.SpecForgePRNode, error) {
-	if req == nil || strings.TrimSpace(req.RepositoryID) == "" || req.PRNodeID == 0 || strings.TrimSpace(req.Token) == "" {
+	if req == nil || strings.TrimSpace(req.RepositoryID) == "" || req.PRNodeID == 0 {
 		return nil, domain.ErrInvalidInput
 	}
 	if s.planningRepo == nil {
 		return nil, domain.ErrInvalidInput
 	}
 	repository, err := s.repo.FindRepositoryByRepositoryID(ctx, strings.TrimSpace(req.RepositoryID))
+	if err != nil {
+		return nil, err
+	}
+	installation, err := s.repo.FindInstallationByID(ctx, repository.GitHubInstallationID)
 	if err != nil {
 		return nil, err
 	}
@@ -128,7 +136,14 @@ func (s *service) DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) 
 	if req.Draft != nil {
 		draft = *req.Draft
 	}
-	client, err := s.clientFactory.NewRepositoryClient(strings.TrimSpace(req.Token))
+	token, err := s.tokenProvider.InstallationToken(ctx, installation.InstallationID)
+	if err != nil {
+		return nil, err
+	}
+	if token == nil || strings.TrimSpace(token.Token) == "" {
+		return nil, fmt.Errorf("github integration: installation token is required")
+	}
+	client, err := s.clientFactory.NewRepositoryClient(strings.TrimSpace(token.Token))
 	if err != nil {
 		return nil, err
 	}

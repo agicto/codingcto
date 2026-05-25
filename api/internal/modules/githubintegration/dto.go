@@ -27,7 +27,6 @@ type GitHubWebhookRequest struct {
 type DeliverPRNodeRequest struct {
 	RepositoryID string `json:"repository_id" binding:"required,max=255"`
 	PRNodeID     uint   `json:"pr_node_id" binding:"required"`
-	Token        string `json:"token" binding:"required"`
 	Title        string `json:"title" binding:"omitempty,max=255"`
 	Body         string `json:"body" binding:"omitempty"`
 	BaseBranch   string `json:"base_branch" binding:"omitempty,max=100"`

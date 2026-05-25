@@ -13,7 +13,7 @@ import (
 
 func TestUpsertInstallationNormalizesPermissions(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil, nil)
+	svc := NewService(repo, nil, nil, nil)
 
 	installation, err := svc.UpsertInstallation(context.Background(), 7, &UpsertInstallationRequest{
 		WorkspaceID:    " workspace_123 ",
@@ -34,7 +34,7 @@ func TestUpsertInstallationNormalizesPermissions(t *testing.T) {
 
 func TestUpsertRepositoryDefaultsRepositoryIDAndBranch(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil, nil)
+	svc := NewService(repo, nil, nil, nil)
 
 	repository, err := svc.UpsertRepository(context.Background(), 9, &UpsertRepositoryRequest{
 		WorkspaceID:          "workspace_123",
@@ -53,7 +53,7 @@ func TestUpsertRepositoryDefaultsRepositoryIDAndBranch(t *testing.T) {
 
 func TestGetRepositoryReturnsStoredRepository(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil, nil)
+	svc := NewService(repo, nil, nil, nil)
 	created, err := svc.UpsertRepository(context.Background(), 9, &UpsertRepositoryRequest{
 		RepositoryID:         "repo_123",
 		WorkspaceID:          "workspace_123",
@@ -73,7 +73,7 @@ func TestGetRepositoryReturnsStoredRepository(t *testing.T) {
 
 func TestRecordWebhookParsesMetadataAndIsIdempotent(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil, nil)
+	svc := NewService(repo, nil, nil, nil)
 	body := []byte(`{"action":"completed","installation":{"id":123},"repository":{"full_name":"agicto/codingcto"}}`)
 
 	first, err := svc.RecordWebhook(context.Background(), &GitHubWebhookRequest{
@@ -106,7 +106,7 @@ func TestRecordWebhookLinksPullRequestToPRNode(t *testing.T) {
 			{ID: 10, BranchName: "specforge/team-invite-02-api", Status: domain.PRNodeStatusPlanned},
 		},
 	}
-	svc := NewService(repo, planningRepo, nil)
+	svc := NewService(repo, planningRepo, nil, nil)
 	body := []byte(`{
 		"action": "opened",
 		"installation": {"id": 123},
@@ -143,7 +143,7 @@ func TestRecordWebhookUpdatesPRNodeFromWorkflowRun(t *testing.T) {
 			{ID: 10, BranchName: "specforge/team-invite-02-api", Status: domain.PRNodeStatusPROpened},
 		},
 	}
-	svc := NewService(repo, planningRepo, nil)
+	svc := NewService(repo, planningRepo, nil, nil)
 	body := []byte(`{
 		"action": "completed",
 		"installation": {"id": 123},
@@ -178,7 +178,7 @@ func TestRecordWebhookReappliesExistingDeliveryToPRNode(t *testing.T) {
 			{ID: 10, BranchName: "specforge/team-invite-02-api", Status: domain.PRNodeStatusPlanned},
 		},
 	}
-	svc := NewService(repo, nil, nil)
+	svc := NewService(repo, nil, nil, nil)
 	body := []byte(`{
 		"action": "opened",
 		"installation": {"id": 123},
@@ -215,12 +215,17 @@ func TestRecordWebhookReappliesExistingDeliveryToPRNode(t *testing.T) {
 
 func TestDeliverPRNodeCreatesDraftPRAndUpdatesNode(t *testing.T) {
 	repo := &memoryRepo{
+		installation: &domain.GitHubInstallation{
+			ID:             3,
+			InstallationID: 98765,
+		},
 		repository: &domain.Repository{
-			ID:            1,
-			RepositoryID:  "github_agicto__codingcto",
-			GitHubOwner:   "agicto",
-			GitHubRepo:    "codingcto",
-			DefaultBranch: "main",
+			ID:                   1,
+			RepositoryID:         "github_agicto__codingcto",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto",
+			DefaultBranch:        "main",
 		},
 	}
 	planningRepo := &memoryPlanningRepo{
@@ -240,16 +245,17 @@ func TestDeliverPRNodeCreatesDraftPRAndUpdatesNode(t *testing.T) {
 		pr: &PullRequest{Number: 42, HTMLURL: "https://github.com/agicto/codingcto/pull/42", Draft: true},
 	}
 	factory := &fakeRepositoryClientFactory{client: client}
-	svc := NewService(repo, planningRepo, factory)
+	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
+	svc := NewService(repo, planningRepo, factory, tokenProvider)
 
 	node, err := svc.DeliverPRNode(context.Background(), &DeliverPRNodeRequest{
 		RepositoryID: "github_agicto__codingcto",
 		PRNodeID:     10,
-		Token:        "ghs_token",
 	})
 
 	require.NoError(t, err)
-	require.Equal(t, "ghs_token", factory.token)
+	require.Equal(t, int64(98765), tokenProvider.installationID)
+	require.Equal(t, "ghs_installation_token", factory.token)
 	require.Equal(t, "agicto", client.input.Owner)
 	require.Equal(t, "codingcto", client.input.Repo)
 	require.Equal(t, "Add invite API", client.input.Title)
@@ -267,12 +273,17 @@ func TestDeliverPRNodeCreatesDraftPRAndUpdatesNode(t *testing.T) {
 
 func TestDeliverPRNodeAllowsOverrides(t *testing.T) {
 	repo := &memoryRepo{
+		installation: &domain.GitHubInstallation{
+			ID:             3,
+			InstallationID: 98765,
+		},
 		repository: &domain.Repository{
-			ID:            1,
-			RepositoryID:  "github_agicto__codingcto",
-			GitHubOwner:   "agicto",
-			GitHubRepo:    "codingcto",
-			DefaultBranch: "main",
+			ID:                   1,
+			RepositoryID:         "github_agicto__codingcto",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto",
+			DefaultBranch:        "main",
 		},
 	}
 	planningRepo := &memoryPlanningRepo{
@@ -281,13 +292,13 @@ func TestDeliverPRNodeAllowsOverrides(t *testing.T) {
 		},
 	}
 	client := &fakeRepositoryClient{pr: &PullRequest{Number: 43, HTMLURL: "https://github.com/agicto/codingcto/pull/43"}}
-	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client})
+	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider)
 	ready := false
 
 	_, err := svc.DeliverPRNode(context.Background(), &DeliverPRNodeRequest{
 		RepositoryID: "github_agicto__codingcto",
 		PRNodeID:     10,
-		Token:        "ghs_token",
 		Title:        "Custom title",
 		Body:         "Custom body",
 		BaseBranch:   "develop",
@@ -303,12 +314,17 @@ func TestDeliverPRNodeAllowsOverrides(t *testing.T) {
 
 func TestDeliverPRNodeRejectsMalformedPullRequestResponse(t *testing.T) {
 	repo := &memoryRepo{
+		installation: &domain.GitHubInstallation{
+			ID:             3,
+			InstallationID: 98765,
+		},
 		repository: &domain.Repository{
-			ID:            1,
-			RepositoryID:  "github_agicto__codingcto",
-			GitHubOwner:   "agicto",
-			GitHubRepo:    "codingcto",
-			DefaultBranch: "main",
+			ID:                   1,
+			RepositoryID:         "github_agicto__codingcto",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto",
+			DefaultBranch:        "main",
 		},
 	}
 	planningRepo := &memoryPlanningRepo{
@@ -317,12 +333,12 @@ func TestDeliverPRNodeRejectsMalformedPullRequestResponse(t *testing.T) {
 		},
 	}
 	client := &fakeRepositoryClient{pr: &PullRequest{Number: 0, HTMLURL: ""}}
-	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client})
+	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider)
 
 	_, err := svc.DeliverPRNode(context.Background(), &DeliverPRNodeRequest{
 		RepositoryID: "github_agicto__codingcto",
 		PRNodeID:     10,
-		Token:        "ghs_token",
 	})
 
 	require.Error(t, err)
@@ -360,6 +376,17 @@ type fakeRepositoryClient struct {
 func (c *fakeRepositoryClient) CreatePullRequest(ctx context.Context, input CreatePullRequestInput) (*PullRequest, error) {
 	c.input = input
 	return c.pr, c.err
+}
+
+type fakeInstallationTokenProvider struct {
+	installationID int64
+	token          *InstallationToken
+	err            error
+}
+
+func (p *fakeInstallationTokenProvider) InstallationToken(ctx context.Context, installationID int64) (*InstallationToken, error) {
+	p.installationID = installationID
+	return p.token, p.err
 }
 
 type memoryPlanningRepo struct {
