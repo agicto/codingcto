@@ -5,7 +5,6 @@ import (
 	"crypto/hmac"
 	"crypto/sha256"
 	"encoding/hex"
-	"encoding/json"
 	"errors"
 	"fmt"
 	"strings"
@@ -152,21 +151,13 @@ type webhookMetadata struct {
 }
 
 func parseWebhookMetadata(body []byte) webhookMetadata {
-	var payload struct {
-		Action       string `json:"action"`
-		Installation struct {
-			ID int64 `json:"id"`
-		} `json:"installation"`
-		Repository struct {
-			FullName string `json:"full_name"`
-		} `json:"repository"`
-	}
-	if err := json.Unmarshal(body, &payload); err != nil {
+	event, err := ParseGitHubWebhookPayload("metadata", body)
+	if err != nil {
 		return webhookMetadata{}
 	}
 	return webhookMetadata{
-		Action:             strings.TrimSpace(payload.Action),
-		InstallationID:     payload.Installation.ID,
-		RepositoryFullName: strings.TrimSpace(payload.Repository.FullName),
+		Action:             event.Action,
+		InstallationID:     event.InstallationID,
+		RepositoryFullName: event.RepositoryFullName,
 	}
 }
