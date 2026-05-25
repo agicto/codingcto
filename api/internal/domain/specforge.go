@@ -95,6 +95,24 @@ type SpecForgeCompiledPrompt struct {
 	CreatedAt  time.Time `json:"created_at"`
 }
 
+// SpecForgeRepoProfile is the compact repository context used by planners.
+type SpecForgeRepoProfile struct {
+	ID                uint      `json:"id"`
+	RepositoryID      string    `json:"repository_id"`
+	DefaultBranch     string    `json:"default_branch"`
+	Stack             []string  `json:"stack"`
+	TestCommands      []string  `json:"test_commands"`
+	CIProvider        string    `json:"ci_provider"`
+	AppStructure      []string  `json:"app_structure"`
+	CodingConventions []string  `json:"coding_conventions"`
+	RiskAreas         []string  `json:"risk_areas"`
+	Summary           string    `json:"summary"`
+	CreatedBy         uint      `json:"created_by"`
+	LastIndexedAt     time.Time `json:"last_indexed_at"`
+	CreatedAt         time.Time `json:"created_at"`
+	UpdatedAt         time.Time `json:"updated_at"`
+}
+
 // SpecForgePlanBundle is the aggregate returned to plan review screens.
 type SpecForgePlanBundle struct {
 	Idea        *SpecForgeIdea               `json:"idea"`
@@ -111,4 +129,10 @@ type SpecForgePlanningRepository interface {
 	FindPRNodeByID(ctx context.Context, prNodeID uint) (*SpecForgePRNode, error)
 	CreateCompiledPrompt(ctx context.Context, prompt *SpecForgeCompiledPrompt) error
 	UpdatePlan(ctx context.Context, plan *SpecForgeImplementationPlan) error
+}
+
+// SpecForgeRepoProfileRepository persists compact repository intelligence.
+type SpecForgeRepoProfileRepository interface {
+	UpsertProfile(ctx context.Context, profile *SpecForgeRepoProfile) error
+	FindProfileByRepositoryID(ctx context.Context, repositoryID string) (*SpecForgeRepoProfile, error)
 }
