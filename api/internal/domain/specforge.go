@@ -21,6 +21,7 @@ const (
 	AgentTaskStatusWaiting      = "waiting_on_dependencies"
 	AgentTaskStatusRunning      = "running"
 	AgentTaskStatusCompleted    = "completed"
+	AgentTaskStatusFailed       = "failed"
 )
 
 // SpecForgeIdea captures the original product intent submitted for a repository.
@@ -129,6 +130,9 @@ type SpecForgeAgentTask struct {
 	Executor   string     `json:"executor"`
 	Status     string     `json:"status"`
 	LogsURL    string     `json:"logs_url,omitempty"`
+	OutputLog  string     `json:"output_log,omitempty"`
+	ErrorLog   string     `json:"error_log,omitempty"`
+	ExitCode   *int       `json:"exit_code,omitempty"`
 	StartedAt  *time.Time `json:"started_at,omitempty"`
 	FinishedAt *time.Time `json:"finished_at,omitempty"`
 	CreatedAt  time.Time  `json:"created_at"`
@@ -178,6 +182,7 @@ type SpecForgePlanningRepository interface {
 	FindPRNodeByBranchName(ctx context.Context, branchName string) (*SpecForgePRNode, error)
 	UpdatePRNode(ctx context.Context, node *SpecForgePRNode) error
 	CreateCompiledPrompt(ctx context.Context, prompt *SpecForgeCompiledPrompt) error
+	FindLatestCompiledPromptByPRNodeID(ctx context.Context, prNodeID uint) (*SpecForgeCompiledPrompt, error)
 	UpdatePlan(ctx context.Context, plan *SpecForgeImplementationPlan) error
 }
 

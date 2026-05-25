@@ -81,6 +81,10 @@ func NewCodexCLIExecutor(cfg CodexCLIExecutorConfig, runner CommandRunner) *Code
 	return &CodexCLIExecutor{cfg: cfg, runner: runner}
 }
 
+func NewDefaultCodeExecutor() CodeExecutor {
+	return NewCodexCLIExecutor(CodexCLIExecutorConfig{}, nil)
+}
+
 func (e *CodexCLIExecutor) Name() string {
 	return ExecutorNameCodexCLI
 }

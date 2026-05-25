@@ -126,6 +126,17 @@ func (r *repository) CreateCompiledPrompt(ctx context.Context, prompt *domain.Sp
 	return nil
 }
 
+func (r *repository) FindLatestCompiledPromptByPRNodeID(ctx context.Context, prNodeID uint) (*domain.SpecForgeCompiledPrompt, error) {
+	if prNodeID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	var po CompiledPromptPO
+	if err := r.db.WithContext(ctx).Where("pr_node_id = ?", prNodeID).Order("id DESC").First(&po).Error; err != nil {
+		return nil, err
+	}
+	return po.toDomain(), nil
+}
+
 func (r *repository) findBundle(ctx context.Context, query string, args ...any) (*domain.SpecForgePlanBundle, error) {
 	var plan ImplementationPlanPO
 	if err := r.db.WithContext(ctx).Where(query, args...).First(&plan).Error; err != nil {

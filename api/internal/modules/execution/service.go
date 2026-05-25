@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"fmt"
+	"strconv"
 	"strings"
 	"time"
 
@@ -13,16 +14,21 @@ type Service interface {
 	StartRun(ctx context.Context, userID, planID uint, req *StartExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error)
 	GetRun(ctx context.Context, runID uint) (*domain.SpecForgeExecutionBundle, error)
 	DispatchRun(ctx context.Context, runID uint, req *DispatchExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error)
+	ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	CompleteTask(ctx context.Context, taskID uint) (*domain.SpecForgeExecutionBundle, error)
 }
 
 type service struct {
 	repo         domain.SpecForgeExecutionRepository
 	planningRepo domain.SpecForgePlanningRepository
+	executor     CodeExecutor
 }
 
-func NewService(repo domain.SpecForgeExecutionRepository, planningRepo domain.SpecForgePlanningRepository) *service {
-	return &service{repo: repo, planningRepo: planningRepo}
+func NewService(repo domain.SpecForgeExecutionRepository, planningRepo domain.SpecForgePlanningRepository, executor CodeExecutor) *service {
+	if executor == nil {
+		executor = NewCodexCLIExecutor(CodexCLIExecutorConfig{}, nil)
+	}
+	return &service{repo: repo, planningRepo: planningRepo, executor: executor}
 }
 
 func (s *service) StartRun(ctx context.Context, userID, planID uint, req *StartExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error) {
@@ -113,6 +119,70 @@ func (s *service) DispatchRun(ctx context.Context, runID uint, req *DispatchExec
 		}
 	}
 	return s.GetRun(ctx, runID)
+}
+
+func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error) {
+	if taskID == 0 || req == nil || strings.TrimSpace(req.Workdir) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	task, err := s.repo.FindAgentTaskByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if task.Status != domain.AgentTaskStatusRunning {
+		return nil, domain.ErrConflict
+	}
+	prompt, err := s.planningRepo.FindLatestCompiledPromptByPRNodeID(ctx, task.PRNodeID)
+	if err != nil {
+		return nil, err
+	}
+	result, runErr := s.executor.Run(ctx, ExecutionContext{
+		RunID:   strconv.FormatUint(uint64(task.RunID), 10),
+		TaskID:  task.ID,
+		Workdir: strings.TrimSpace(req.Workdir),
+		Env:     req.Env,
+	}, CompiledExecutionPrompt{
+		ID:         prompt.ID,
+		PRNodeID:   prompt.PRNodeID,
+		Version:    prompt.Version,
+		PromptText: prompt.PromptText,
+	})
+	if result == nil {
+		result = &ExecutionResult{Status: "failed", Error: "executor returned no result", ExitCode: -1}
+	}
+
+	now := time.Now()
+	task.OutputLog = result.Output
+	task.ErrorLog = result.Error
+	task.ExitCode = &result.ExitCode
+	task.FinishedAt = &now
+	if runErr != nil || result.Status != "completed" || result.ExitCode != 0 {
+		task.Status = domain.AgentTaskStatusFailed
+	} else {
+		task.Status = domain.AgentTaskStatusCompleted
+	}
+	if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
+		return nil, fmt.Errorf("update executed agent task: %w", err)
+	}
+	if task.Status == domain.AgentTaskStatusFailed {
+		return s.GetRun(ctx, task.RunID)
+	}
+
+	bundle, err := s.GetRun(ctx, task.RunID)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.unlockReadyTasks(ctx, bundle); err != nil {
+		return nil, err
+	}
+	if allTasksCompleted(bundle.Tasks) {
+		bundle.Run.Status = domain.ExecutionRunStatusCompleted
+		bundle.Run.CompletedAt = &now
+		if err := s.repo.UpdateExecutionRun(ctx, bundle.Run); err != nil {
+			return nil, fmt.Errorf("complete execution run: %w", err)
+		}
+	}
+	return s.GetRun(ctx, task.RunID)
 }
 
 func (s *service) CompleteTask(ctx context.Context, taskID uint) (*domain.SpecForgeExecutionBundle, error) {

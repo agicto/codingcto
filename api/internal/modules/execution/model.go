@@ -28,6 +28,9 @@ type AgentTaskPO struct {
 	Executor   string `gorm:"size:100;not null;index"`
 	Status     string `gorm:"size:50;not null;index"`
 	LogsURL    string `gorm:"type:text"`
+	OutputLog  string `gorm:"type:text"`
+	ErrorLog   string `gorm:"type:text"`
+	ExitCode   *int
 	StartedAt  *time.Time
 	FinishedAt *time.Time
 	CreatedAt  time.Time
@@ -72,6 +75,9 @@ func newAgentTaskPO(task *domain.SpecForgeAgentTask) *AgentTaskPO {
 		Executor:   task.Executor,
 		Status:     task.Status,
 		LogsURL:    task.LogsURL,
+		OutputLog:  task.OutputLog,
+		ErrorLog:   task.ErrorLog,
+		ExitCode:   task.ExitCode,
 		StartedAt:  task.StartedAt,
 		FinishedAt: task.FinishedAt,
 		CreatedAt:  task.CreatedAt,
@@ -87,6 +93,9 @@ func (po *AgentTaskPO) toDomain() *domain.SpecForgeAgentTask {
 		Executor:   po.Executor,
 		Status:     po.Status,
 		LogsURL:    po.LogsURL,
+		OutputLog:  po.OutputLog,
+		ErrorLog:   po.ErrorLog,
+		ExitCode:   po.ExitCode,
 		StartedAt:  po.StartedAt,
 		FinishedAt: po.FinishedAt,
 		CreatedAt:  po.CreatedAt,

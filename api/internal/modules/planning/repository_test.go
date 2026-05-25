@@ -32,6 +32,39 @@ func TestRepositoryUpdatesPRNodeGitHubLink(t *testing.T) {
 	require.Equal(t, domain.PRNodeStatusPROpened, found.Status)
 }
 
+func TestRepositoryFindsLatestCompiledPromptForPRNode(t *testing.T) {
+	repo := newTestPlanningRepository(t)
+	bundle := testPlanBundle()
+	require.NoError(t, repo.CreatePlanBundle(context.Background(), bundle))
+	first := &domain.SpecForgeCompiledPrompt{
+		PRNodeID:   bundle.PRNodes[0].ID,
+		PlanID:     bundle.Plan.ID,
+		Type:       "implementation",
+		Version:    "prompt_v1",
+		PromptText: "old prompt",
+		PromptHash: "hash1",
+		CreatedBy:  7,
+	}
+	second := &domain.SpecForgeCompiledPrompt{
+		PRNodeID:   bundle.PRNodes[0].ID,
+		PlanID:     bundle.Plan.ID,
+		Type:       "implementation",
+		Version:    "prompt_v2",
+		PromptText: "new prompt",
+		PromptHash: "hash2",
+		CreatedBy:  7,
+	}
+	require.NoError(t, repo.CreateCompiledPrompt(context.Background(), first))
+	require.NoError(t, repo.CreateCompiledPrompt(context.Background(), second))
+
+	found, err := repo.FindLatestCompiledPromptByPRNodeID(context.Background(), bundle.PRNodes[0].ID)
+
+	require.NoError(t, err)
+	require.Equal(t, second.ID, found.ID)
+	require.Equal(t, "prompt_v2", found.Version)
+	require.Equal(t, "new prompt", found.PromptText)
+}
+
 func newTestPlanningRepository(t *testing.T) *repository {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
