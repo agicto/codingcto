@@ -319,9 +319,6 @@ func (s *service) RecordWebhook(ctx context.Context, req *GitHubWebhookRequest) 
 	}
 	existing, err := s.repo.FindWebhookEventByDeliveryID(ctx, strings.TrimSpace(req.DeliveryID))
 	if err == nil {
-		if applyErr := s.applyWebhookToPRNode(ctx, existing.EventType, req.Body); applyErr != nil {
-			return nil, applyErr
-		}
 		return existing, nil
 	}
 	if err != nil && !errors.Is(err, domain.ErrNotFound) {
