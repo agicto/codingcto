@@ -21,6 +21,8 @@ type Service interface {
 	PinTaskSession(ctx context.Context, taskID uint, req *PinAgentTaskSessionRequest) (*domain.SpecForgeExecutionBundle, error)
 	ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	SubmitTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.SpecForgeExecutionBundle, error)
+	CreateTaskEvent(ctx context.Context, taskID uint, req *CreateTaskEventRequest) (*domain.SpecForgeTaskEvent, error)
+	ListTaskEvents(ctx context.Context, taskID uint, afterSeq int) ([]*domain.SpecForgeTaskEvent, error)
 	CompleteTask(ctx context.Context, taskID uint) (*domain.SpecForgeExecutionBundle, error)
 }
 
@@ -320,6 +322,45 @@ func (s *service) SubmitTaskResult(ctx context.Context, taskID uint, req *Submit
 		ExitCode: req.ExitCode,
 	}
 	return s.finalizeTaskResult(ctx, task, result, nil, strings.TrimSpace(req.FailureReason))
+}
+
+func (s *service) CreateTaskEvent(ctx context.Context, taskID uint, req *CreateTaskEventRequest) (*domain.SpecForgeTaskEvent, error) {
+	if taskID == 0 || req == nil || strings.TrimSpace(req.Type) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	task, err := s.repo.FindAgentTaskByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if task.Status != domain.AgentTaskStatusDispatched && task.Status != domain.AgentTaskStatusRunning {
+		return nil, domain.ErrConflict
+	}
+	event := &domain.SpecForgeTaskEvent{
+		TaskID:  taskID,
+		Type:    strings.TrimSpace(req.Type),
+		Tool:    strings.TrimSpace(req.Tool),
+		Content: strings.TrimSpace(req.Content),
+		Input:   strings.TrimSpace(req.Input),
+		Output:  strings.TrimSpace(req.Output),
+	}
+	if err := s.repo.CreateTaskEvent(ctx, event); err != nil {
+		return nil, fmt.Errorf("create task event: %w", err)
+	}
+	return event, nil
+}
+
+func (s *service) ListTaskEvents(ctx context.Context, taskID uint, afterSeq int) ([]*domain.SpecForgeTaskEvent, error) {
+	if taskID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	if _, err := s.repo.FindAgentTaskByID(ctx, taskID); err != nil {
+		return nil, err
+	}
+	events, err := s.repo.ListTaskEvents(ctx, taskID, afterSeq)
+	if err != nil {
+		return nil, fmt.Errorf("list task events: %w", err)
+	}
+	return events, nil
 }
 
 func (s *service) CompleteTask(ctx context.Context, taskID uint) (*domain.SpecForgeExecutionBundle, error) {

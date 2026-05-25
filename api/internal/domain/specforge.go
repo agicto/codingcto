@@ -174,6 +174,19 @@ type SpecForgeAgentTask struct {
 	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
+// SpecForgeTaskEvent records ordered runtime output for one agent task.
+type SpecForgeTaskEvent struct {
+	ID        uint      `json:"id"`
+	TaskID    uint      `json:"task_id"`
+	Seq       int       `json:"seq"`
+	Type      string    `json:"type"`
+	Tool      string    `json:"tool,omitempty"`
+	Content   string    `json:"content,omitempty"`
+	Input     string    `json:"input,omitempty"`
+	Output    string    `json:"output,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
 // SpecForgeExecutionBundle is the delivery state returned to run pages.
 type SpecForgeExecutionBundle struct {
 	Run   *SpecForgeExecutionRun `json:"run"`
@@ -239,6 +252,8 @@ type SpecForgeExecutionRepository interface {
 	CreateExecutionBundle(ctx context.Context, bundle *SpecForgeExecutionBundle) error
 	FindExecutionBundleByRunID(ctx context.Context, runID uint) (*SpecForgeExecutionBundle, error)
 	FindAgentTaskByID(ctx context.Context, taskID uint) (*SpecForgeAgentTask, error)
+	CreateTaskEvent(ctx context.Context, event *SpecForgeTaskEvent) error
+	ListTaskEvents(ctx context.Context, taskID uint, afterSeq int) ([]*SpecForgeTaskEvent, error)
 	UpsertRuntime(ctx context.Context, runtime *SpecForgeRuntime) error
 	HasClaimableAgentTask(ctx context.Context, runtimeID, executor string) (bool, error)
 	ClaimDispatchedAgentTask(ctx context.Context, runtimeID, executor, sessionID, workdir string) (*SpecForgeAgentTask, error)

@@ -6,6 +6,7 @@ import {
   type ApprovePlanPayload,
   type CompilePromptPayload,
   type ClaimTaskPayload,
+  type CreateTaskEventPayload,
   type CreateIdeaPayload,
   type DispatchRunPayload,
   type RepoProfilePayload,
@@ -22,6 +23,8 @@ export const specForgeKeys = {
   skills: (repoId: string) => [...specForgeKeys.all, "skills", repoId] as const,
   ideaPlan: (ideaId: number) => [...specForgeKeys.all, "idea-plan", ideaId] as const,
   run: (runId: number) => [...specForgeKeys.all, "run", runId] as const,
+  taskEvents: (taskId: number, afterSeq?: number) =>
+    [...specForgeKeys.all, "task-events", taskId, afterSeq ?? 0] as const,
 };
 
 export function useRepoProfile(repoId: string) {
@@ -53,6 +56,14 @@ export function useExecutionRun(runId?: number) {
     queryKey: specForgeKeys.run(runId ?? 0),
     queryFn: () => specForgeService.getRun(runId ?? 0),
     enabled: Boolean(runId),
+  });
+}
+
+export function useSpecForgeTaskEvents(taskId?: number, afterSeq?: number) {
+  return useQuery({
+    queryKey: specForgeKeys.taskEvents(taskId ?? 0, afterSeq),
+    queryFn: () => specForgeService.listTaskEvents(taskId ?? 0, afterSeq),
+    enabled: Boolean(taskId),
   });
 }
 
@@ -148,6 +159,20 @@ export function useSubmitExecutionTaskResult() {
       specForgeService.submitTaskResult(taskId, payload),
     onSuccess: (bundle) => {
       queryClient.setQueryData(specForgeKeys.run(bundle.run.id), bundle);
+    },
+  });
+}
+
+export function useCreateSpecForgeTaskEvent() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ taskId, payload }: { taskId: number; payload: CreateTaskEventPayload }) =>
+      specForgeService.createTaskEvent(taskId, payload),
+    onSuccess: (event) => {
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.taskEvents(event.task_id),
+      });
     },
   });
 }

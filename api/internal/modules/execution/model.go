@@ -63,6 +63,22 @@ func (RuntimePO) TableName() string {
 	return "specforge_runtimes"
 }
 
+type TaskEventPO struct {
+	ID        uint   `gorm:"primaryKey"`
+	TaskID    uint   `gorm:"not null;uniqueIndex:idx_specforge_task_events_task_seq"`
+	Seq       int    `gorm:"not null;uniqueIndex:idx_specforge_task_events_task_seq"`
+	Type      string `gorm:"size:50;not null;index"`
+	Tool      string `gorm:"size:100"`
+	Content   string `gorm:"type:text"`
+	Input     string `gorm:"type:text"`
+	Output    string `gorm:"type:text"`
+	CreatedAt time.Time
+}
+
+func (TaskEventPO) TableName() string {
+	return "specforge_task_events"
+}
+
 func newExecutionRunPO(run *domain.SpecForgeExecutionRun) *ExecutionRunPO {
 	return &ExecutionRunPO{
 		ID:          run.ID,
@@ -162,5 +178,33 @@ func (po *RuntimePO) toDomain() *domain.SpecForgeRuntime {
 		LastSeenAt: po.LastSeenAt,
 		CreatedAt:  po.CreatedAt,
 		UpdatedAt:  po.UpdatedAt,
+	}
+}
+
+func newTaskEventPO(event *domain.SpecForgeTaskEvent) *TaskEventPO {
+	return &TaskEventPO{
+		ID:        event.ID,
+		TaskID:    event.TaskID,
+		Seq:       event.Seq,
+		Type:      event.Type,
+		Tool:      event.Tool,
+		Content:   event.Content,
+		Input:     event.Input,
+		Output:    event.Output,
+		CreatedAt: event.CreatedAt,
+	}
+}
+
+func (po *TaskEventPO) toDomain() *domain.SpecForgeTaskEvent {
+	return &domain.SpecForgeTaskEvent{
+		ID:        po.ID,
+		TaskID:    po.TaskID,
+		Seq:       po.Seq,
+		Type:      po.Type,
+		Tool:      po.Tool,
+		Content:   po.Content,
+		Input:     po.Input,
+		Output:    po.Output,
+		CreatedAt: po.CreatedAt,
 	}
 }

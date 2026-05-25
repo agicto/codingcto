@@ -62,6 +62,18 @@ type SubmitTaskResultRequest struct {
 	FailureReason string `json:"failure_reason" binding:"omitempty,max=100"`
 }
 
+type CreateTaskEventRequest struct {
+	Type    string `json:"type" binding:"required,max=50"`
+	Tool    string `json:"tool" binding:"omitempty,max=100"`
+	Content string `json:"content" binding:"omitempty,max=200000"`
+	Input   string `json:"input" binding:"omitempty,max=200000"`
+	Output  string `json:"output" binding:"omitempty,max=200000"`
+}
+
+type TaskEventsResponse struct {
+	Events []*domain.SpecForgeTaskEvent `json:"events"`
+}
+
 type PinAgentTaskSessionRequest struct {
 	SessionID string `json:"session_id" binding:"omitempty,max=255"`
 	Workdir   string `json:"workdir" binding:"omitempty,max=500"`

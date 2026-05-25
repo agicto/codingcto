@@ -13,6 +13,8 @@ func (h *Handler) RegisterRoutes(r *router.Router) {
 		auth.POST("/runtimes/:runtime_id/claim", h.ClaimTask).Name("specforge.runtimes.claim")
 		auth.POST("/tasks/:id/session", h.PinTaskSession).Name("specforge.tasks.session.store").WhereNumber("id")
 		auth.POST("/tasks/:id/execute", h.ExecuteTask).Name("specforge.tasks.execute").WhereNumber("id")
+		auth.GET("/tasks/:id/events", h.ListTaskEvents).Name("specforge.tasks.events.index").WhereNumber("id")
+		auth.POST("/tasks/:id/events", h.CreateTaskEvent).Name("specforge.tasks.events.store").WhereNumber("id")
 		auth.POST("/tasks/:id/result", h.SubmitTaskResult).Name("specforge.tasks.result.store").WhereNumber("id")
 		auth.POST("/tasks/:id/complete", h.CompleteTask).Name("specforge.tasks.complete").WhereNumber("id")
 	})

@@ -547,10 +547,42 @@ func TestCompleteTaskCompletesRunWhenAllTasksDone(t *testing.T) {
 	require.Equal(t, domain.AgentTaskStatusCompleted, completed.Tasks[1].Status)
 }
 
+func TestCreateTaskEventRecordsOrderedRuntimeOutput(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{})
+	require.NoError(t, err)
+
+	first, err := svc.CreateTaskEvent(context.Background(), dispatched.Tasks[0].ID, &CreateTaskEventRequest{
+		Type:    "stdout",
+		Content: "starting task",
+	})
+	require.NoError(t, err)
+	second, err := svc.CreateTaskEvent(context.Background(), dispatched.Tasks[0].ID, &CreateTaskEventRequest{
+		Type:   "tool",
+		Tool:   "go test",
+		Input:  "go test ./...",
+		Output: "ok",
+	})
+	require.NoError(t, err)
+	events, err := svc.ListTaskEvents(context.Background(), dispatched.Tasks[0].ID, first.Seq)
+
+	require.NoError(t, err)
+	require.Equal(t, 1, first.Seq)
+	require.Equal(t, 2, second.Seq)
+	require.Len(t, events, 1)
+	require.Equal(t, second.ID, events[0].ID)
+	require.Equal(t, "go test", events[0].Tool)
+}
+
 type memoryExecutionRepo struct {
 	nextID   uint
 	bundle   *domain.SpecForgeExecutionBundle
 	runtimes map[string]*domain.SpecForgeRuntime
+	events   map[uint][]*domain.SpecForgeTaskEvent
 }
 
 func (r *memoryExecutionRepo) CreateExecutionBundle(ctx context.Context, bundle *domain.SpecForgeExecutionBundle) error {
@@ -583,6 +615,38 @@ func (r *memoryExecutionRepo) FindAgentTaskByID(ctx context.Context, taskID uint
 		}
 	}
 	return nil, domain.ErrNotFound
+}
+
+func (r *memoryExecutionRepo) CreateTaskEvent(ctx context.Context, event *domain.SpecForgeTaskEvent) error {
+	if event == nil || event.TaskID == 0 || event.Type == "" {
+		return domain.ErrInvalidInput
+	}
+	if r.events == nil {
+		r.events = make(map[uint][]*domain.SpecForgeTaskEvent)
+	}
+	r.nextID++
+	copied := *event
+	copied.ID = r.nextID
+	copied.Seq = len(r.events[event.TaskID]) + 1
+	event.ID = copied.ID
+	event.Seq = copied.Seq
+	r.events[event.TaskID] = append(r.events[event.TaskID], &copied)
+	return nil
+}
+
+func (r *memoryExecutionRepo) ListTaskEvents(ctx context.Context, taskID uint, afterSeq int) ([]*domain.SpecForgeTaskEvent, error) {
+	if taskID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	out := make([]*domain.SpecForgeTaskEvent, 0, len(r.events[taskID]))
+	for _, event := range r.events[taskID] {
+		if event.Seq <= afterSeq {
+			continue
+		}
+		copied := *event
+		out = append(out, &copied)
+	}
+	return out, nil
 }
 
 func (r *memoryExecutionRepo) UpsertRuntime(ctx context.Context, runtime *domain.SpecForgeRuntime) error {

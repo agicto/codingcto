@@ -204,3 +204,49 @@ func (h *Handler) SubmitTaskResult(c *gin.Context) {
 
 	response.Success(c, run)
 }
+
+func (h *Handler) CreateTaskEvent(c *gin.Context) {
+	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || taskID == 0 {
+		response.HandleError(c, "Invalid task id", err)
+		return
+	}
+
+	var req CreateTaskEventRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+
+	event, err := h.service.CreateTaskEvent(c.Request.Context(), uint(taskID), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to create agent task event", err)
+		return
+	}
+
+	response.Success(c, event)
+}
+
+func (h *Handler) ListTaskEvents(c *gin.Context) {
+	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || taskID == 0 {
+		response.HandleError(c, "Invalid task id", err)
+		return
+	}
+	afterSeq := 0
+	if raw := c.Query("after_seq"); raw != "" {
+		parsed, parseErr := strconv.Atoi(raw)
+		if parseErr != nil || parsed < 0 {
+			response.BadRequest(c, "Invalid after_seq", parseErr)
+			return
+		}
+		afterSeq = parsed
+	}
+
+	events, err := h.service.ListTaskEvents(c.Request.Context(), uint(taskID), afterSeq)
+	if err != nil {
+		response.HandleError(c, "Failed to list agent task events", err)
+		return
+	}
+
+	response.Success(c, &TaskEventsResponse{Events: events})
+}
