@@ -89,6 +89,22 @@ func (PRNodePO) TableName() string {
 	return "specforge_pr_nodes"
 }
 
+type CompiledPromptPO struct {
+	ID         uint   `gorm:"primaryKey"`
+	PRNodeID   uint   `gorm:"not null;index"`
+	PlanID     uint   `gorm:"not null;index"`
+	Type       string `gorm:"size:50;not null;index"`
+	Version    string `gorm:"size:50;not null"`
+	PromptText string `gorm:"type:text;not null"`
+	PromptHash string `gorm:"size:64;not null;index"`
+	CreatedBy  uint   `gorm:"not null;index"`
+	CreatedAt  time.Time
+}
+
+func (CompiledPromptPO) TableName() string {
+	return "specforge_compiled_prompts"
+}
+
 func newIdeaPO(idea *domain.SpecForgeIdea) *IdeaPO {
 	return &IdeaPO{
 		ID: idea.ID, RepositoryID: idea.RepositoryID, CreatedBy: idea.CreatedBy,
@@ -168,6 +184,34 @@ func (po *PRNodePO) toDomain() *domain.SpecForgePRNode {
 		NonGoals: decodeStrings(po.NonGoals), AcceptanceCriteria: decodeStrings(po.AcceptanceCriteria),
 		TestCommands: decodeStrings(po.TestCommands), BranchName: po.BranchName,
 		Status: po.Status, CreatedAt: po.CreatedAt, UpdatedAt: po.UpdatedAt,
+	}
+}
+
+func newCompiledPromptPO(prompt *domain.SpecForgeCompiledPrompt) *CompiledPromptPO {
+	return &CompiledPromptPO{
+		ID:         prompt.ID,
+		PRNodeID:   prompt.PRNodeID,
+		PlanID:     prompt.PlanID,
+		Type:       prompt.Type,
+		Version:    prompt.Version,
+		PromptText: prompt.PromptText,
+		PromptHash: prompt.PromptHash,
+		CreatedBy:  prompt.CreatedBy,
+		CreatedAt:  prompt.CreatedAt,
+	}
+}
+
+func (po *CompiledPromptPO) toDomain() *domain.SpecForgeCompiledPrompt {
+	return &domain.SpecForgeCompiledPrompt{
+		ID:         po.ID,
+		PRNodeID:   po.PRNodeID,
+		PlanID:     po.PlanID,
+		Type:       po.Type,
+		Version:    po.Version,
+		PromptText: po.PromptText,
+		PromptHash: po.PromptHash,
+		CreatedBy:  po.CreatedBy,
+		CreatedAt:  po.CreatedAt,
 	}
 }
 

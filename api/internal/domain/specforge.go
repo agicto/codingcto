@@ -82,6 +82,19 @@ type SpecForgePRNode struct {
 	UpdatedAt          time.Time `json:"updated_at"`
 }
 
+// SpecForgeCompiledPrompt records the exact prompt generated for a PR node.
+type SpecForgeCompiledPrompt struct {
+	ID         uint      `json:"id"`
+	PRNodeID   uint      `json:"pr_node_id"`
+	PlanID     uint      `json:"plan_id"`
+	Type       string    `json:"type"`
+	Version    string    `json:"version"`
+	PromptText string    `json:"prompt_text"`
+	PromptHash string    `json:"prompt_hash"`
+	CreatedBy  uint      `json:"created_by"`
+	CreatedAt  time.Time `json:"created_at"`
+}
+
 // SpecForgePlanBundle is the aggregate returned to plan review screens.
 type SpecForgePlanBundle struct {
 	Idea        *SpecForgeIdea               `json:"idea"`
@@ -95,5 +108,7 @@ type SpecForgePlanningRepository interface {
 	CreatePlanBundle(ctx context.Context, bundle *SpecForgePlanBundle) error
 	FindPlanBundleByIdeaID(ctx context.Context, ideaID uint) (*SpecForgePlanBundle, error)
 	FindPlanBundleByPlanID(ctx context.Context, planID uint) (*SpecForgePlanBundle, error)
+	FindPRNodeByID(ctx context.Context, prNodeID uint) (*SpecForgePRNode, error)
+	CreateCompiledPrompt(ctx context.Context, prompt *SpecForgeCompiledPrompt) error
 	UpdatePlan(ctx context.Context, plan *SpecForgeImplementationPlan) error
 }

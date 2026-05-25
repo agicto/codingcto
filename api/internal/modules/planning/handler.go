@@ -83,3 +83,28 @@ func (h *Handler) ApprovePlan(c *gin.Context) {
 
 	response.Success(c, toPlanReviewResponse(bundle))
 }
+
+func (h *Handler) CompilePrompt(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+
+	prNodeID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+
+	var req CompilePromptRequest
+	if c.Request.ContentLength > 0 && !handler.BindJSON(c, &req) {
+		return
+	}
+
+	prompt, err := h.service.CompilePrompt(c.Request.Context(), userID, prNodeID, &req)
+	if err != nil {
+		response.HandleError(c, "Failed to compile prompt", err)
+		return
+	}
+
+	response.Created(c, &CompiledPromptResponse{Prompt: prompt})
+}

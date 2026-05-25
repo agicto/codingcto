@@ -2,6 +2,8 @@ package planning
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"fmt"
 	"regexp"
 	"strings"
@@ -14,6 +16,7 @@ type Service interface {
 	CreateIdea(ctx context.Context, userID uint, repoID string, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error)
 	GetPlanForIdea(ctx context.Context, ideaID uint) (*domain.SpecForgePlanBundle, error)
 	ApprovePlan(ctx context.Context, userID, planID uint, req *ApprovePlanRequest) (*domain.SpecForgePlanBundle, error)
+	CompilePrompt(ctx context.Context, userID, prNodeID uint, req *CompilePromptRequest) (*domain.SpecForgeCompiledPrompt, error)
 }
 
 type service struct {
@@ -70,6 +73,77 @@ func (s *service) ApprovePlan(ctx context.Context, userID, planID uint, req *App
 		return nil, fmt.Errorf("approve plan: %w", err)
 	}
 	return s.repo.FindPlanBundleByPlanID(ctx, planID)
+}
+
+func (s *service) CompilePrompt(ctx context.Context, userID, prNodeID uint, req *CompilePromptRequest) (*domain.SpecForgeCompiledPrompt, error) {
+	if userID == 0 || prNodeID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+
+	promptType := "implementation"
+	if req != nil && strings.TrimSpace(req.Type) != "" {
+		promptType = strings.TrimSpace(req.Type)
+	}
+
+	node, err := s.repo.FindPRNodeByID(ctx, prNodeID)
+	if err != nil {
+		return nil, err
+	}
+	bundle, err := s.repo.FindPlanBundleByPlanID(ctx, node.PlanID)
+	if err != nil {
+		return nil, err
+	}
+
+	text := compilePromptText(promptType, bundle, node)
+	hash := sha256.Sum256([]byte(text))
+	prompt := &domain.SpecForgeCompiledPrompt{
+		PRNodeID:   node.ID,
+		PlanID:     node.PlanID,
+		Type:       promptType,
+		Version:    "prompt_v1",
+		PromptText: text,
+		PromptHash: hex.EncodeToString(hash[:]),
+		CreatedBy:  userID,
+	}
+	if err := s.repo.CreateCompiledPrompt(ctx, prompt); err != nil {
+		return nil, fmt.Errorf("create compiled prompt: %w", err)
+	}
+	return prompt, nil
+}
+
+func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode) string {
+	var b strings.Builder
+	b.WriteString("You are implementing a SpecForge PR node.\n\n")
+	b.WriteString("Prompt type: " + promptType + "\n")
+	b.WriteString("PR node: " + node.NodeKey + " - " + node.Title + "\n")
+	b.WriteString("Goal:\n" + node.Goal + "\n\n")
+	b.WriteString("Product context:\n")
+	for _, goal := range bundle.ProductSpec.Goals {
+		b.WriteString("- " + goal + "\n")
+	}
+	b.WriteString("\nTechnical plan:\n" + bundle.Plan.TechnicalSummary + "\n\n")
+	writeList(&b, "Expected files", node.ExpectedFiles)
+	writeList(&b, "Dependencies", node.DependsOn)
+	writeList(&b, "Non-goals", node.NonGoals)
+	writeList(&b, "Acceptance criteria", node.AcceptanceCriteria)
+	writeList(&b, "Test commands", node.TestCommands)
+	b.WriteString("\nAfter implementation:\n")
+	b.WriteString("- Keep the diff within this PR node scope.\n")
+	b.WriteString("- Run the listed test commands.\n")
+	b.WriteString("- Prepare a PR description with summary, scope, non-goals, tests, risks, and dependencies.\n")
+	return b.String()
+}
+
+func writeList(b *strings.Builder, title string, values []string) {
+	b.WriteString(title + ":\n")
+	if len(values) == 0 {
+		b.WriteString("- None\n\n")
+		return
+	}
+	for _, value := range values {
+		b.WriteString("- " + value + "\n")
+	}
+	b.WriteString("\n")
 }
 
 func compileInitialPlan(userID uint, repoID, input, ideaType string) *domain.SpecForgePlanBundle {

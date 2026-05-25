@@ -83,6 +83,24 @@ func (r *repository) UpdatePlan(ctx context.Context, plan *domain.SpecForgeImple
 	return nil
 }
 
+func (r *repository) FindPRNodeByID(ctx context.Context, prNodeID uint) (*domain.SpecForgePRNode, error) {
+	var po PRNodePO
+	if err := r.db.WithContext(ctx).First(&po, prNodeID).Error; err != nil {
+		return nil, err
+	}
+	return po.toDomain(), nil
+}
+
+func (r *repository) CreateCompiledPrompt(ctx context.Context, prompt *domain.SpecForgeCompiledPrompt) error {
+	po := newCompiledPromptPO(prompt)
+	if err := r.db.WithContext(ctx).Create(po).Error; err != nil {
+		return err
+	}
+	prompt.ID = po.ID
+	prompt.CreatedAt = po.CreatedAt
+	return nil
+}
+
 func (r *repository) findBundle(ctx context.Context, query string, args ...any) (*domain.SpecForgePlanBundle, error) {
 	var plan ImplementationPlanPO
 	if err := r.db.WithContext(ctx).Where(query, args...).First(&plan).Error; err != nil {
