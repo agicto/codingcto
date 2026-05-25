@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"fmt"
+	"strings"
 	"testing"
 	"time"
 
@@ -270,6 +271,43 @@ func TestClaimTaskReturnsEmptyWhenNoTaskAvailable(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Nil(t, claim.Task)
+}
+
+func TestListRuntimePendingTasksReturnsVisibleTasks(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched.Tasks[1].Status = domain.AgentTaskStatusRunning
+	dispatched.Tasks[1].RuntimeID = "runtime_123"
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), dispatched.Tasks[1]))
+	runRepo.bundle.Tasks = append(runRepo.bundle.Tasks, &domain.SpecForgeAgentTask{
+		ID:            99,
+		RunID:         dispatched.Run.ID,
+		PRNodeID:      99,
+		Executor:      ExecutorNameCodexCLI,
+		Status:        domain.AgentTaskStatusDispatched,
+		RuntimeID:     "runtime_other",
+		AttemptNumber: 1,
+	})
+
+	result, err := svc.ListRuntimePendingTasks(context.Background(), "runtime_123", ExecutorNameCodexCLI)
+
+	require.NoError(t, err)
+	require.Len(t, result.Tasks, 2)
+	require.Equal(t, dispatched.Tasks[0].ID, result.Tasks[0].ID)
+	require.Equal(t, dispatched.Tasks[1].ID, result.Tasks[1].ID)
+}
+
+func TestListRuntimePendingTasksRejectsMissingRuntimeID(t *testing.T) {
+	svc := NewService(&memoryExecutionRepo{}, &memoryPlanningRepo{bundle: approvedPlanBundle()}, nil, nil, nil, nil, nil)
+
+	_, err := svc.ListRuntimePendingTasks(context.Background(), " ", "")
+
+	require.ErrorIs(t, err, domain.ErrInvalidInput)
 }
 
 func TestClaimTaskRevertsWhenPromptContextIsMissing(t *testing.T) {
@@ -886,6 +924,32 @@ func (r *memoryExecutionRepo) FindAgentTaskByID(ctx context.Context, taskID uint
 		}
 	}
 	return nil, domain.ErrNotFound
+}
+
+func (r *memoryExecutionRepo) ListPendingAgentTasksByRuntime(ctx context.Context, runtimeID, executor string) ([]*domain.SpecForgeAgentTask, error) {
+	runtimeID = strings.TrimSpace(runtimeID)
+	executor = strings.TrimSpace(executor)
+	if runtimeID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	if r.bundle == nil {
+		return []*domain.SpecForgeAgentTask{}, nil
+	}
+	out := make([]*domain.SpecForgeAgentTask, 0)
+	for _, task := range r.bundle.Tasks {
+		if executor != "" && task.Executor != executor {
+			continue
+		}
+		switch {
+		case task.Status == domain.AgentTaskStatusDispatched && (task.RuntimeID == "" || task.RuntimeID == runtimeID):
+			copied := *task
+			out = append(out, &copied)
+		case task.Status == domain.AgentTaskStatusRunning && task.RuntimeID == runtimeID:
+			copied := *task
+			out = append(out, &copied)
+		}
+	}
+	return out, nil
 }
 
 func (r *memoryExecutionRepo) CreateTaskEvent(ctx context.Context, event *domain.SpecForgeTaskEvent) error {

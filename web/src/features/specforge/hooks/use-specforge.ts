@@ -29,6 +29,8 @@ export const specForgeKeys = {
   run: (runId: number) => [...specForgeKeys.all, "run", runId] as const,
   taskEvents: (taskId: number, afterSeq?: number) =>
     [...specForgeKeys.all, "task-events", taskId, afterSeq ?? 0] as const,
+  runtimePendingTasks: (runtimeId: string, executor?: string) =>
+    [...specForgeKeys.all, "runtime-pending-tasks", runtimeId, executor ?? ""] as const,
 };
 
 export function useRepoProfile(repoId: string) {
@@ -68,6 +70,14 @@ export function useSpecForgeTaskEvents(taskId?: number, afterSeq?: number) {
     queryKey: specForgeKeys.taskEvents(taskId ?? 0, afterSeq),
     queryFn: () => specForgeService.listTaskEvents(taskId ?? 0, afterSeq),
     enabled: Boolean(taskId),
+  });
+}
+
+export function useSpecForgeRuntimePendingTasks(runtimeId?: string, executor?: string) {
+  return useQuery({
+    queryKey: specForgeKeys.runtimePendingTasks(runtimeId ?? "", executor),
+    queryFn: () => specForgeService.listRuntimePendingTasks(runtimeId ?? "", executor),
+    enabled: Boolean(runtimeId),
   });
 }
 

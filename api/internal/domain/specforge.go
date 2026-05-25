@@ -266,6 +266,7 @@ type SpecForgeExecutionRepository interface {
 	CreateExecutionBundle(ctx context.Context, bundle *SpecForgeExecutionBundle) error
 	FindExecutionBundleByRunID(ctx context.Context, runID uint) (*SpecForgeExecutionBundle, error)
 	FindAgentTaskByID(ctx context.Context, taskID uint) (*SpecForgeAgentTask, error)
+	ListPendingAgentTasksByRuntime(ctx context.Context, runtimeID, executor string) ([]*SpecForgeAgentTask, error)
 	CreateTaskEvent(ctx context.Context, event *SpecForgeTaskEvent) error
 	ListTaskEvents(ctx context.Context, taskID uint, afterSeq int) ([]*SpecForgeTaskEvent, error)
 	UpsertRuntime(ctx context.Context, runtime *SpecForgeRuntime) error

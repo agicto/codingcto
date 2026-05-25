@@ -19,6 +19,7 @@ type Service interface {
 	CancelRun(ctx context.Context, runID uint) (*domain.SpecForgeExecutionBundle, error)
 	HeartbeatRuntime(ctx context.Context, req *RuntimeHeartbeatRequest) (*RuntimeHeartbeatResponse, error)
 	DeregisterRuntimes(ctx context.Context, req *RuntimeDeregisterRequest) (*domain.SpecForgeRuntimeSweepResult, error)
+	ListRuntimePendingTasks(ctx context.Context, runtimeID, executor string) (*RuntimePendingTasksResponse, error)
 	SweepStaleRuntimes(ctx context.Context, req *RuntimeSweepRequest) (*domain.SpecForgeRuntimeSweepResult, error)
 	SweepStaleTasks(ctx context.Context, req *StaleTaskSweepRequest) (*domain.SpecForgeTaskSweepResult, error)
 	ClaimTask(ctx context.Context, runtimeID string, req *ClaimAgentTaskRequest) (*ClaimAgentTaskResponse, error)
@@ -221,6 +222,19 @@ func (s *service) DeregisterRuntimes(ctx context.Context, req *RuntimeDeregister
 		OfflineRuntimes: runtimes,
 		FailedTasks:     tasks,
 	}, nil
+}
+
+func (s *service) ListRuntimePendingTasks(ctx context.Context, runtimeID, executor string) (*RuntimePendingTasksResponse, error) {
+	runtimeID = strings.TrimSpace(runtimeID)
+	executor = strings.TrimSpace(executor)
+	if runtimeID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	tasks, err := s.repo.ListPendingAgentTasksByRuntime(ctx, runtimeID, executor)
+	if err != nil {
+		return nil, fmt.Errorf("list runtime pending tasks: %w", err)
+	}
+	return &RuntimePendingTasksResponse{Tasks: tasks}, nil
 }
 
 func (s *service) SweepStaleRuntimes(ctx context.Context, req *RuntimeSweepRequest) (*domain.SpecForgeRuntimeSweepResult, error) {
