@@ -55,9 +55,31 @@ func TestApprovePlanRecordsApproverAndRejectsSecondApproval(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrConflict)
 }
 
+func TestCompilePromptPersistsVersionedPromptForPRNode(t *testing.T) {
+	repo := &memoryRepo{}
+	svc := NewService(repo)
+
+	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
+		Input: "Add team invite feature for workspace admins",
+	})
+	require.NoError(t, err)
+
+	prompt, err := svc.CompilePrompt(context.Background(), 42, created.PRNodes[1].ID, &CompilePromptRequest{})
+	require.NoError(t, err)
+	require.Equal(t, created.PRNodes[1].ID, prompt.PRNodeID)
+	require.Equal(t, created.Plan.ID, prompt.PlanID)
+	require.Equal(t, "implementation", prompt.Type)
+	require.Equal(t, "prompt_v1", prompt.Version)
+	require.Len(t, prompt.PromptHash, 64)
+	require.Contains(t, prompt.PromptText, created.PRNodes[1].Title)
+	require.Contains(t, prompt.PromptText, "Acceptance criteria")
+	require.NotNil(t, repo.prompt)
+}
+
 type memoryRepo struct {
 	nextID uint
 	bundle *domain.SpecForgePlanBundle
+	prompt *domain.SpecForgeCompiledPrompt
 }
 
 func (r *memoryRepo) CreatePlanBundle(ctx context.Context, bundle *domain.SpecForgePlanBundle) error {
@@ -95,6 +117,24 @@ func (r *memoryRepo) FindPlanBundleByPlanID(ctx context.Context, planID uint) (*
 
 func (r *memoryRepo) UpdatePlan(ctx context.Context, plan *domain.SpecForgeImplementationPlan) error {
 	r.bundle.Plan = plan
+	return nil
+}
+
+func (r *memoryRepo) FindPRNodeByID(ctx context.Context, prNodeID uint) (*domain.SpecForgePRNode, error) {
+	for _, node := range r.bundle.PRNodes {
+		if node.ID == prNodeID {
+			copied := *node
+			return &copied, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryRepo) CreateCompiledPrompt(ctx context.Context, prompt *domain.SpecForgeCompiledPrompt) error {
+	r.nextID++
+	prompt.ID = r.nextID
+	copied := *prompt
+	r.prompt = &copied
 	return nil
 }
 

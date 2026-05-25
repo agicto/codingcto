@@ -19,5 +19,6 @@ func NewStarterManifest(handler *Handler) contracts.StarterManifest {
 		"planning",
 		contracts.WithStarterModule(handler),
 		contracts.WithStarterMigrationNames("2026_05_25_000000_create_specforge_planning_tables"),
+		contracts.WithStarterMigrationNames("2026_05_25_000001_create_specforge_compiled_prompts_table"),
 	)
 }

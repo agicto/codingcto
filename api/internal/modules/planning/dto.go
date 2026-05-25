@@ -16,11 +16,19 @@ type ApprovePlanRequest struct {
 	DecisionOverrides map[string]string `json:"decision_overrides"`
 }
 
+type CompilePromptRequest struct {
+	Type string `json:"type" binding:"omitempty,oneof=implementation fix review_patch"`
+}
+
 type PlanReviewResponse struct {
 	Idea               *domain.SpecForgeIdea               `json:"idea"`
 	ProductSpec        *domain.SpecForgeProductSpec        `json:"product_spec"`
 	ImplementationPlan *domain.SpecForgeImplementationPlan `json:"implementation_plan"`
 	PRNodes            []*domain.SpecForgePRNode           `json:"pr_nodes"`
+}
+
+type CompiledPromptResponse struct {
+	Prompt *domain.SpecForgeCompiledPrompt `json:"prompt"`
 }
 
 func toPlanReviewResponse(bundle *domain.SpecForgePlanBundle) *PlanReviewResponse {
