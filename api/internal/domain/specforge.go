@@ -17,6 +17,7 @@ const (
 	ExecutionRunStatusQueued    = "queued"
 	ExecutionRunStatusRunning   = "running"
 	ExecutionRunStatusCompleted = "completed"
+	RuntimeStatusOnline         = "online"
 	AgentTaskStatusQueued       = "queued"
 	AgentTaskStatusDispatched   = "dispatched"
 	AgentTaskStatusWaiting      = "waiting_on_dependencies"
@@ -110,6 +111,19 @@ type SpecForgeCompiledPrompt struct {
 	PromptHash string    `json:"prompt_hash"`
 	CreatedBy  uint      `json:"created_by"`
 	CreatedAt  time.Time `json:"created_at"`
+}
+
+// SpecForgeRuntime tracks a local or hosted executor that can claim agent tasks.
+type SpecForgeRuntime struct {
+	ID         uint      `json:"id"`
+	RuntimeID  string    `json:"runtime_id"`
+	Executor   string    `json:"executor"`
+	Status     string    `json:"status"`
+	Hostname   string    `json:"hostname,omitempty"`
+	Version    string    `json:"version,omitempty"`
+	LastSeenAt time.Time `json:"last_seen_at"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
 }
 
 // SpecForgeSkill is a reusable repository instruction injected into compiled prompts.
@@ -225,6 +239,9 @@ type SpecForgeExecutionRepository interface {
 	CreateExecutionBundle(ctx context.Context, bundle *SpecForgeExecutionBundle) error
 	FindExecutionBundleByRunID(ctx context.Context, runID uint) (*SpecForgeExecutionBundle, error)
 	FindAgentTaskByID(ctx context.Context, taskID uint) (*SpecForgeAgentTask, error)
+	UpsertRuntime(ctx context.Context, runtime *SpecForgeRuntime) error
+	HasClaimableAgentTask(ctx context.Context, runtimeID, executor string) (bool, error)
+	ClaimDispatchedAgentTask(ctx context.Context, runtimeID, executor, sessionID, workdir string) (*SpecForgeAgentTask, error)
 	UpdateExecutionRun(ctx context.Context, run *SpecForgeExecutionRun) error
 	UpdateAgentTask(ctx context.Context, task *SpecForgeAgentTask) error
 }

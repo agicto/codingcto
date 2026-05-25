@@ -40,6 +40,19 @@ export interface DispatchRunPayload {
   max_tasks?: number;
 }
 
+export interface RuntimeHeartbeatPayload {
+  runtime_id: string;
+  executor?: string;
+  hostname?: string;
+  version?: string;
+}
+
+export interface ClaimTaskPayload {
+  executor?: string;
+  session_id?: string;
+  workdir?: string;
+}
+
 export interface ExecuteTaskPayload {
   runtime_id?: string;
   session_id?: string;
@@ -161,6 +174,30 @@ export interface SpecForgeSkillDTO {
   updated_at: string;
 }
 
+export interface SpecForgeRuntimeDTO {
+  id: number;
+  runtime_id: string;
+  executor: string;
+  status: string;
+  hostname?: string;
+  version?: string;
+  last_seen_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SpecForgeClaimedTaskDTO {
+  id: number;
+  run_id: number;
+  pr_node_id: number;
+  executor: string;
+  status: string;
+  runtime_id: string;
+  attempt_number: number;
+  session_id?: string;
+  workdir?: string;
+}
+
 export interface SpecForgeExecutionBundleDTO {
   run: {
     id: number;
@@ -243,6 +280,18 @@ export const specForgeService = {
   dispatchRun: (runId: number, payload?: DispatchRunPayload) =>
     request.post<SpecForgeExecutionBundleDTO, DispatchRunPayload | undefined>(
       `/runs/${runId}/dispatch`,
+      payload
+    ),
+
+  heartbeatRuntime: (payload: RuntimeHeartbeatPayload) =>
+    request.post<
+      { runtime: SpecForgeRuntimeDTO; claim_pending: boolean },
+      RuntimeHeartbeatPayload
+    >(`/runtimes/heartbeat`, payload),
+
+  claimTask: (runtimeId: string, payload?: ClaimTaskPayload) =>
+    request.post<{ task?: SpecForgeClaimedTaskDTO }, ClaimTaskPayload | undefined>(
+      `/runtimes/${runtimeId}/claim`,
       payload
     ),
 

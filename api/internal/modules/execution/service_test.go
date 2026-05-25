@@ -4,6 +4,7 @@ import (
 	"context"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/zgiai/luas/api/internal/domain"
@@ -68,6 +69,68 @@ func TestDispatchRunMovesQueuedTasksToDispatched(t *testing.T) {
 	require.NotNil(t, dispatched.Tasks[0].DispatchedAt)
 	require.Nil(t, dispatched.Tasks[0].StartedAt)
 	require.Equal(t, domain.AgentTaskStatusWaiting, dispatched.Tasks[1].Status)
+}
+
+func TestHeartbeatRuntimeRecordsRuntimeAndReportsPendingClaim(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	_, err = svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+
+	heartbeat, err := svc.HeartbeatRuntime(context.Background(), &RuntimeHeartbeatRequest{
+		RuntimeID: "runtime_123",
+		Executor:  "codex_cli",
+		Hostname:  "worker-1",
+		Version:   "0.1.0",
+	})
+
+	require.NoError(t, err)
+	require.True(t, heartbeat.ClaimPending)
+	require.Equal(t, "runtime_123", heartbeat.Runtime.RuntimeID)
+	require.Equal(t, "worker-1", heartbeat.Runtime.Hostname)
+	require.Equal(t, domain.RuntimeStatusOnline, heartbeat.Runtime.Status)
+	require.NotZero(t, heartbeat.Runtime.LastSeenAt)
+}
+
+func TestClaimTaskBindsRuntimeAndMarksTaskRunning(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+
+	claim, err := svc.ClaimTask(context.Background(), "runtime_123", &ClaimAgentTaskRequest{
+		Executor:  "codex_cli",
+		SessionID: "session_123",
+		Workdir:   "/tmp/specforge/runtime_123/task",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, claim.Task)
+	require.Equal(t, dispatched.Tasks[0].ID, claim.Task.ID)
+	require.Equal(t, "runtime_123", claim.Task.RuntimeID)
+	require.Equal(t, "session_123", claim.Task.SessionID)
+	require.Equal(t, "/tmp/specforge/runtime_123/task", claim.Task.Workdir)
+	require.Equal(t, domain.AgentTaskStatusRunning, claim.Task.Status)
+	updated, err := svc.GetRun(context.Background(), dispatched.Run.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.AgentTaskStatusRunning, updated.Tasks[0].Status)
+	require.NotNil(t, updated.Tasks[0].StartedAt)
+	require.Equal(t, domain.AgentTaskStatusWaiting, updated.Tasks[1].Status)
+}
+
+func TestClaimTaskReturnsEmptyWhenNoTaskAvailable(t *testing.T) {
+	svc := NewService(&memoryExecutionRepo{}, &memoryPlanningRepo{bundle: approvedPlanBundle()}, nil, nil, nil, nil, nil)
+
+	claim, err := svc.ClaimTask(context.Background(), "runtime_123", &ClaimAgentTaskRequest{Executor: "codex_cli"})
+
+	require.NoError(t, err)
+	require.Nil(t, claim.Task)
 }
 
 func TestCompleteTaskUnlocksDependentTasks(t *testing.T) {
@@ -409,8 +472,9 @@ func TestCompleteTaskCompletesRunWhenAllTasksDone(t *testing.T) {
 }
 
 type memoryExecutionRepo struct {
-	nextID uint
-	bundle *domain.SpecForgeExecutionBundle
+	nextID   uint
+	bundle   *domain.SpecForgeExecutionBundle
+	runtimes map[string]*domain.SpecForgeRuntime
 }
 
 func (r *memoryExecutionRepo) CreateExecutionBundle(ctx context.Context, bundle *domain.SpecForgeExecutionBundle) error {
@@ -441,6 +505,69 @@ func (r *memoryExecutionRepo) FindAgentTaskByID(ctx context.Context, taskID uint
 			copied := *task
 			return &copied, nil
 		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryExecutionRepo) UpsertRuntime(ctx context.Context, runtime *domain.SpecForgeRuntime) error {
+	if r.runtimes == nil {
+		r.runtimes = make(map[string]*domain.SpecForgeRuntime)
+	}
+	copied := *runtime
+	if existing := r.runtimes[runtime.RuntimeID]; existing != nil {
+		copied.ID = existing.ID
+	} else {
+		r.nextID++
+		copied.ID = r.nextID
+	}
+	runtime.ID = copied.ID
+	r.runtimes[runtime.RuntimeID] = &copied
+	return nil
+}
+
+func (r *memoryExecutionRepo) HasClaimableAgentTask(ctx context.Context, runtimeID, executor string) (bool, error) {
+	if r.bundle == nil {
+		return false, nil
+	}
+	for _, task := range r.bundle.Tasks {
+		if task.Status != domain.AgentTaskStatusDispatched {
+			continue
+		}
+		if task.RuntimeID != "" && task.RuntimeID != runtimeID {
+			continue
+		}
+		if executor != "" && task.Executor != executor {
+			continue
+		}
+		return true, nil
+	}
+	return false, nil
+}
+
+func (r *memoryExecutionRepo) ClaimDispatchedAgentTask(ctx context.Context, runtimeID, executor, sessionID, workdir string) (*domain.SpecForgeAgentTask, error) {
+	if r.bundle == nil {
+		return nil, domain.ErrNotFound
+	}
+	for _, task := range r.bundle.Tasks {
+		if task.Status != domain.AgentTaskStatusDispatched {
+			continue
+		}
+		if task.RuntimeID != "" && task.RuntimeID != runtimeID {
+			continue
+		}
+		if executor != "" && task.Executor != executor {
+			continue
+		}
+		now := time.Now()
+		task.Status = domain.AgentTaskStatusRunning
+		task.RuntimeID = runtimeID
+		task.SessionID = sessionID
+		task.Workdir = workdir
+		if task.StartedAt == nil {
+			task.StartedAt = &now
+		}
+		copied := *task
+		return &copied, nil
 	}
 	return nil, domain.ErrNotFound
 }
