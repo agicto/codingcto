@@ -57,4 +57,5 @@ type GitHubIntegrationRepository interface {
 	FindRepositoryByRepositoryID(ctx context.Context, repositoryID string) (*Repository, error)
 	CreateWebhookEvent(ctx context.Context, event *GitHubWebhookEvent) error
 	FindWebhookEventByDeliveryID(ctx context.Context, deliveryID string) (*GitHubWebhookEvent, error)
+	UpdateWebhookEventStatus(ctx context.Context, deliveryID, status string) error
 }

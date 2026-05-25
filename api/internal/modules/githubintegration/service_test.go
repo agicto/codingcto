@@ -97,8 +97,9 @@ func TestRecordWebhookParsesMetadataAndIsIdempotent(t *testing.T) {
 	require.Equal(t, "completed", first.Action)
 	require.Equal(t, int64(123), first.InstallationID)
 	require.Equal(t, "agicto/codingcto", first.RepositoryFullName)
-	require.Equal(t, "received", first.Status)
+	require.Equal(t, GitHubWebhookStatusProcessed, first.Status)
 	require.Len(t, repo.webhookEvents, 1)
+	require.Equal(t, GitHubWebhookStatusProcessed, repo.webhookEvents[0].Status)
 }
 
 func TestRecordWebhookLinksPullRequestToPRNode(t *testing.T) {
@@ -213,6 +214,40 @@ func TestRecordWebhookDoesNotReapplyExistingDeliveryToPRNode(t *testing.T) {
 	require.Nil(t, planningRepo.nodes[0].GitHubPRNumber)
 	require.Equal(t, domain.PRNodeStatusPlanned, planningRepo.nodes[0].Status)
 	require.Len(t, repo.webhookEvents, 1)
+}
+
+func TestRecordWebhookMarksFailedWhenApplyFails(t *testing.T) {
+	repo := &memoryRepo{}
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, BranchName: "specforge/team-invite-02-api", Status: domain.PRNodeStatusPlanned},
+		},
+		updateErr: fmt.Errorf("database unavailable"),
+	}
+	svc := NewService(repo, planningRepo, nil, nil)
+	body := []byte(`{
+		"action": "opened",
+		"installation": {"id": 123},
+		"repository": {"full_name": "agicto/codingcto"},
+		"pull_request": {
+			"number": 42,
+			"state": "open",
+			"html_url": "https://github.com/agicto/codingcto/pull/42",
+			"head": {"ref": "specforge/team-invite-02-api", "sha": "abc123"},
+			"base": {"ref": "main"}
+		}
+	}`)
+
+	_, err := svc.RecordWebhook(context.Background(), &GitHubWebhookRequest{
+		EventType:  GitHubWebhookEventPullRequest,
+		DeliveryID: "delivery-failed",
+		Signature:  "sha256=abc",
+		Body:       body,
+	})
+
+	require.Error(t, err)
+	require.Len(t, repo.webhookEvents, 1)
+	require.Equal(t, GitHubWebhookStatusFailed, repo.webhookEvents[0].Status)
 }
 
 func TestDeliverPRNodeCreatesDraftPRAndUpdatesNode(t *testing.T) {
@@ -633,7 +668,8 @@ func (p *fakeInstallationTokenProvider) InstallationToken(ctx context.Context, i
 }
 
 type memoryPlanningRepo struct {
-	nodes []*domain.SpecForgePRNode
+	nodes     []*domain.SpecForgePRNode
+	updateErr error
 }
 
 func (r *memoryPlanningRepo) CreatePlanBundle(ctx context.Context, bundle *domain.SpecForgePlanBundle) error {
@@ -669,6 +705,9 @@ func (r *memoryPlanningRepo) FindPRNodeByBranchName(ctx context.Context, branchN
 }
 
 func (r *memoryPlanningRepo) UpdatePRNode(ctx context.Context, node *domain.SpecForgePRNode) error {
+	if r.updateErr != nil {
+		return r.updateErr
+	}
 	for i, existing := range r.nodes {
 		if existing.ID == node.ID {
 			copied := *node
@@ -758,6 +797,16 @@ func (r *memoryRepo) FindWebhookEventByDeliveryID(ctx context.Context, deliveryI
 		}
 	}
 	return nil, domain.ErrNotFound
+}
+
+func (r *memoryRepo) UpdateWebhookEventStatus(ctx context.Context, deliveryID, status string) error {
+	for _, event := range r.webhookEvents {
+		if event.DeliveryID == deliveryID {
+			event.Status = status
+			return nil
+		}
+	}
+	return domain.ErrNotFound
 }
 
 func githubSignature(secret string, body []byte) string {
