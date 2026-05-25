@@ -334,15 +334,23 @@ func (s *service) RecordWebhook(ctx context.Context, req *GitHubWebhookRequest) 
 		RepositoryFullName: metadata.RepositoryFullName,
 		Payload:            string(req.Body),
 		Signature:          strings.TrimSpace(req.Signature),
-		Status:             "received",
+		Status:             GitHubWebhookStatusReceived,
 		ReceivedAt:         time.Now(),
 	}
 	if err := s.repo.CreateWebhookEvent(ctx, event); err != nil {
 		return nil, fmt.Errorf("record github webhook: %w", err)
 	}
 	if err := s.applyWebhookToPRNode(ctx, event.EventType, req.Body); err != nil {
+		if updateErr := s.repo.UpdateWebhookEventStatus(ctx, event.DeliveryID, GitHubWebhookStatusFailed); updateErr != nil {
+			return nil, fmt.Errorf("mark github webhook failed: %w", updateErr)
+		}
+		event.Status = GitHubWebhookStatusFailed
 		return nil, err
 	}
+	if err := s.repo.UpdateWebhookEventStatus(ctx, event.DeliveryID, GitHubWebhookStatusProcessed); err != nil {
+		return nil, fmt.Errorf("mark github webhook processed: %w", err)
+	}
+	event.Status = GitHubWebhookStatusProcessed
 	return event, nil
 }
 

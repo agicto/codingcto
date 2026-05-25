@@ -3,6 +3,7 @@ package githubintegration
 import (
 	"context"
 	"errors"
+	"strings"
 
 	"github.com/zgiai/luas/api/internal/domain"
 	"gorm.io/gorm"
@@ -107,4 +108,23 @@ func (r *repository) FindWebhookEventByDeliveryID(ctx context.Context, deliveryI
 		return nil, err
 	}
 	return po.toDomain(), nil
+}
+
+func (r *repository) UpdateWebhookEventStatus(ctx context.Context, deliveryID, status string) error {
+	deliveryID = strings.TrimSpace(deliveryID)
+	status = strings.TrimSpace(status)
+	if deliveryID == "" || status == "" {
+		return domain.ErrInvalidInput
+	}
+	result := r.db.WithContext(ctx).
+		Model(&GitHubWebhookEventPO{}).
+		Where("delivery_id = ?", deliveryID).
+		Update("status", status)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return domain.ErrNotFound
+	}
+	return nil
 }

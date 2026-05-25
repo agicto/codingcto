@@ -9,6 +9,9 @@ import (
 const (
 	GitHubWebhookEventPullRequest = "pull_request"
 	GitHubWebhookEventWorkflowRun = "workflow_run"
+	GitHubWebhookStatusReceived   = "received"
+	GitHubWebhookStatusProcessed  = "processed"
+	GitHubWebhookStatusFailed     = "failed"
 )
 
 type StructuredGitHubWebhook struct {
