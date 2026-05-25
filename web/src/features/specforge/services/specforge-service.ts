@@ -221,6 +221,33 @@ export interface SpecForgeClaimedTaskDTO {
   workdir?: string;
 }
 
+export interface SpecForgeClaimedPRNodeDTO {
+  id: number;
+  node_key: string;
+  title: string;
+  type: string;
+  goal: string;
+  depends_on: string[];
+  expected_files: string[];
+  non_goals: string[];
+  acceptance_criteria: string[];
+  test_commands: string[];
+  branch_name: string;
+}
+
+export interface SpecForgeClaimedPromptDTO {
+  id: number;
+  version: string;
+  type: string;
+  prompt_text: string;
+  prompt_hash: string;
+}
+
+export interface SpecForgeClaimedExecutionContextDTO {
+  repository_id: string;
+  branch_name: string;
+}
+
 export interface SpecForgeTaskEventDTO {
   id: number;
   task_id: number;
@@ -339,7 +366,15 @@ export const specForgeService = {
     ),
 
   claimTask: (runtimeId: string, payload?: ClaimTaskPayload) =>
-    request.post<{ task?: SpecForgeClaimedTaskDTO }, ClaimTaskPayload | undefined>(
+    request.post<
+      {
+        task?: SpecForgeClaimedTaskDTO;
+        pr_node?: SpecForgeClaimedPRNodeDTO;
+        prompt?: SpecForgeClaimedPromptDTO;
+        execution_context?: SpecForgeClaimedExecutionContextDTO;
+      },
+      ClaimTaskPayload | undefined
+    >(
       `/runtimes/${runtimeId}/claim`,
       payload
     ),
