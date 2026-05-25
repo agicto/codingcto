@@ -158,6 +158,28 @@ func (h *Handler) ClaimTask(c *gin.Context) {
 	response.Success(c, claim)
 }
 
+func (h *Handler) RetryTask(c *gin.Context) {
+	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || taskID == 0 {
+		response.HandleError(c, "Invalid task id", err)
+		return
+	}
+
+	var req RetryAgentTaskRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		response.BadRequest(c, "Invalid request parameters", err)
+		return
+	}
+
+	run, err := h.service.RetryTask(c.Request.Context(), uint(taskID), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to retry agent task", err)
+		return
+	}
+
+	response.Success(c, run)
+}
+
 func (h *Handler) CompleteTask(c *gin.Context) {
 	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || taskID == 0 {

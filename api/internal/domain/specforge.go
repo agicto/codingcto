@@ -162,6 +162,7 @@ type SpecForgeAgentTask struct {
 	Status        string     `json:"status"`
 	RuntimeID     string     `json:"runtime_id,omitempty"`
 	AttemptNumber int        `json:"attempt_number"`
+	ParentTaskID  *uint      `json:"parent_task_id,omitempty"`
 	SessionID     string     `json:"session_id,omitempty"`
 	Workdir       string     `json:"workdir,omitempty"`
 	FailureReason string     `json:"failure_reason,omitempty"`
@@ -266,6 +267,7 @@ type SpecForgeExecutionRepository interface {
 	MarkStaleRuntimesOffline(ctx context.Context, staleBefore time.Time) ([]*SpecForgeRuntime, error)
 	FailTasksForOfflineRuntimes(ctx context.Context) ([]*SpecForgeAgentTask, error)
 	CancelActiveTasksByRunID(ctx context.Context, runID uint) ([]*SpecForgeAgentTask, error)
+	CreateRetryAgentTask(ctx context.Context, parent *SpecForgeAgentTask, status string, forceFreshSession bool) (*SpecForgeAgentTask, error)
 	HasClaimableAgentTask(ctx context.Context, runtimeID, executor string) (bool, error)
 	ClaimDispatchedAgentTask(ctx context.Context, runtimeID, executor, sessionID, workdir string) (*SpecForgeAgentTask, error)
 	UpdateExecutionRun(ctx context.Context, run *SpecForgeExecutionRun) error

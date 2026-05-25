@@ -173,6 +173,74 @@ func TestRepositoryCancelsActiveTasksByRunID(t *testing.T) {
 	require.Equal(t, domain.AgentTaskStatusCompleted, found.Tasks[2].Status)
 }
 
+func TestRepositoryCreatesRetryAgentTask(t *testing.T) {
+	repo := newTestExecutionRepository(t)
+	bundle := &domain.SpecForgeExecutionBundle{
+		Run: &domain.SpecForgeExecutionRun{
+			PlanID:    1,
+			Status:    domain.ExecutionRunStatusRunning,
+			StartedBy: 7,
+			StartedAt: time.Now(),
+		},
+		Tasks: []*domain.SpecForgeAgentTask{
+			{
+				PRNodeID:      10,
+				Executor:      ExecutorNameCodexCLI,
+				Status:        domain.AgentTaskStatusFailed,
+				AttemptNumber: 1,
+				SessionID:     "session_123",
+				Workdir:       "/tmp/specforge/task",
+			},
+		},
+	}
+	require.NoError(t, repo.CreateExecutionBundle(context.Background(), bundle))
+
+	retry, err := repo.CreateRetryAgentTask(context.Background(), bundle.Tasks[0], domain.AgentTaskStatusQueued, false)
+
+	require.NoError(t, err)
+	require.NotEqual(t, bundle.Tasks[0].ID, retry.ID)
+	require.Equal(t, bundle.Tasks[0].ID, *retry.ParentTaskID)
+	require.Equal(t, 2, retry.AttemptNumber)
+	require.Equal(t, domain.AgentTaskStatusQueued, retry.Status)
+	require.Equal(t, "session_123", retry.SessionID)
+	require.Equal(t, "/tmp/specforge/task", retry.Workdir)
+	found, err := repo.FindExecutionBundleByRunID(context.Background(), bundle.Run.ID)
+	require.NoError(t, err)
+	require.Len(t, found.Tasks, 2)
+	require.Equal(t, domain.AgentTaskStatusFailed, found.Tasks[0].Status)
+	require.Equal(t, domain.AgentTaskStatusQueued, found.Tasks[1].Status)
+}
+
+func TestRepositoryCreatesFreshRetryAgentTask(t *testing.T) {
+	repo := newTestExecutionRepository(t)
+	bundle := &domain.SpecForgeExecutionBundle{
+		Run: &domain.SpecForgeExecutionRun{
+			PlanID:    1,
+			Status:    domain.ExecutionRunStatusRunning,
+			StartedBy: 7,
+			StartedAt: time.Now(),
+		},
+		Tasks: []*domain.SpecForgeAgentTask{
+			{
+				PRNodeID:      10,
+				Executor:      ExecutorNameCodexCLI,
+				Status:        domain.AgentTaskStatusFailed,
+				AttemptNumber: 2,
+				SessionID:     "session_123",
+				Workdir:       "/tmp/specforge/task",
+			},
+		},
+	}
+	require.NoError(t, repo.CreateExecutionBundle(context.Background(), bundle))
+
+	retry, err := repo.CreateRetryAgentTask(context.Background(), bundle.Tasks[0], domain.AgentTaskStatusQueued, true)
+
+	require.NoError(t, err)
+	require.Equal(t, 3, retry.AttemptNumber)
+	require.Empty(t, retry.SessionID)
+	require.Empty(t, retry.Workdir)
+}
+
 func newTestExecutionRepository(t *testing.T) *repository {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

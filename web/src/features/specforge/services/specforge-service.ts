@@ -51,6 +51,10 @@ export interface RuntimeSweepPayload {
   stale_seconds?: number;
 }
 
+export interface RetryTaskPayload {
+  force_fresh_session?: boolean;
+}
+
 export interface ClaimTaskPayload {
   executor?: string;
   session_id?: string;
@@ -217,6 +221,7 @@ export interface SpecForgeClaimedTaskDTO {
   status: string;
   runtime_id: string;
   attempt_number: number;
+  parent_task_id?: number;
   session_id?: string;
   workdir?: string;
 }
@@ -285,6 +290,7 @@ export interface SpecForgeExecutionBundleDTO {
     status: string;
     runtime_id?: string;
     attempt_number: number;
+    parent_task_id?: number;
     session_id?: string;
     workdir?: string;
     failure_reason?: string;
@@ -388,6 +394,12 @@ export const specForgeService = {
   executeTask: (taskId: number, payload: ExecuteTaskPayload) =>
     request.post<SpecForgeExecutionBundleDTO, ExecuteTaskPayload>(
       `/tasks/${taskId}/execute`,
+      payload
+    ),
+
+  retryTask: (taskId: number, payload?: RetryTaskPayload) =>
+    request.post<SpecForgeExecutionBundleDTO, RetryTaskPayload | undefined>(
+      `/tasks/${taskId}/retry`,
       payload
     ),
 

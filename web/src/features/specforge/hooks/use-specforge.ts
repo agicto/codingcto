@@ -10,6 +10,7 @@ import {
   type CreateIdeaPayload,
   type DispatchRunPayload,
   type RepoProfilePayload,
+  type RetryTaskPayload,
   type RuntimeHeartbeatPayload,
   type RuntimeSweepPayload,
   type StartRunPayload,
@@ -180,6 +181,18 @@ export function useSubmitExecutionTaskResult() {
   return useMutation({
     mutationFn: ({ taskId, payload }: { taskId: number; payload: SubmitTaskResultPayload }) =>
       specForgeService.submitTaskResult(taskId, payload),
+    onSuccess: (bundle) => {
+      queryClient.setQueryData(specForgeKeys.run(bundle.run.id), bundle);
+    },
+  });
+}
+
+export function useRetryExecutionTask() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ taskId, payload }: { taskId: number; payload?: RetryTaskPayload }) =>
+      specForgeService.retryTask(taskId, payload),
     onSuccess: (bundle) => {
       queryClient.setQueryData(specForgeKeys.run(bundle.run.id), bundle);
     },

@@ -21,6 +21,10 @@ type RuntimeSweepRequest struct {
 	StaleSeconds int `json:"stale_seconds" binding:"omitempty,min=1,max=86400"`
 }
 
+type RetryAgentTaskRequest struct {
+	ForceFreshSession bool `json:"force_fresh_session" binding:"omitempty"`
+}
+
 type ClaimAgentTaskRequest struct {
 	Executor  string `json:"executor" binding:"omitempty,max=100"`
 	SessionID string `json:"session_id" binding:"omitempty,max=255"`
@@ -47,6 +51,7 @@ type ClaimedAgentTask struct {
 	Status        string `json:"status"`
 	RuntimeID     string `json:"runtime_id"`
 	AttemptNumber int    `json:"attempt_number"`
+	ParentTaskID  *uint  `json:"parent_task_id,omitempty"`
 	SessionID     string `json:"session_id,omitempty"`
 	Workdir       string `json:"workdir,omitempty"`
 }

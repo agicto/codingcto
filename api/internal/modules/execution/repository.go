@@ -273,6 +273,32 @@ func (r *repository) CancelActiveTasksByRunID(ctx context.Context, runID uint) (
 	return tasks, nil
 }
 
+func (r *repository) CreateRetryAgentTask(ctx context.Context, parent *domain.SpecForgeAgentTask, status string, forceFreshSession bool) (*domain.SpecForgeAgentTask, error) {
+	if parent == nil || parent.ID == 0 || parent.RunID == 0 || parent.PRNodeID == 0 || strings.TrimSpace(status) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	retry := &domain.SpecForgeAgentTask{
+		RunID:         parent.RunID,
+		PRNodeID:      parent.PRNodeID,
+		Executor:      parent.Executor,
+		Status:        strings.TrimSpace(status),
+		AttemptNumber: parent.AttemptNumber + 1,
+		ParentTaskID:  &parent.ID,
+	}
+	if retry.AttemptNumber <= 1 {
+		retry.AttemptNumber = 2
+	}
+	if !forceFreshSession {
+		retry.SessionID = parent.SessionID
+		retry.Workdir = parent.Workdir
+	}
+	po := newAgentTaskPO(retry)
+	if err := r.db.WithContext(ctx).Create(po).Error; err != nil {
+		return nil, err
+	}
+	return po.toDomain(), nil
+}
+
 func (r *repository) HasClaimableAgentTask(ctx context.Context, runtimeID, executor string) (bool, error) {
 	runtimeID = strings.TrimSpace(runtimeID)
 	executor = strings.TrimSpace(executor)
