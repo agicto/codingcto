@@ -21,6 +21,7 @@ type Service interface {
 	PreparePRNodeBranch(ctx context.Context, req *PreparePRNodeBranchRequest) (*domain.SpecForgePRNode, error)
 	DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) (*domain.SpecForgePRNode, error)
 	RefreshPRNodeCI(ctx context.Context, req *RefreshPRNodeCIRequest) (*domain.SpecForgePRNode, error)
+	ReadPRNodeFailureLog(ctx context.Context, req *ReadPRNodeFailureLogRequest) (*PRNodeFailureLog, error)
 	RecordWebhook(ctx context.Context, req *GitHubWebhookRequest) (*domain.GitHubWebhookEvent, error)
 }
 
@@ -237,6 +238,59 @@ func (s *service) RefreshPRNodeCI(ctx context.Context, req *RefreshPRNodeCIReque
 	return node, nil
 }
 
+func (s *service) ReadPRNodeFailureLog(ctx context.Context, req *ReadPRNodeFailureLogRequest) (*PRNodeFailureLog, error) {
+	if req == nil || strings.TrimSpace(req.RepositoryID) == "" || req.PRNodeID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	if s.planningRepo == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	repository, err := s.repo.FindRepositoryByRepositoryID(ctx, strings.TrimSpace(req.RepositoryID))
+	if err != nil {
+		return nil, err
+	}
+	node, err := s.planningRepo.FindPRNodeByID(ctx, req.PRNodeID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(node.BranchName) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	client, err := s.repositoryClientForRepository(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
+	runs, err := client.ListWorkflowRuns(ctx, repository.GitHubOwner, repository.GitHubRepo, node.BranchName)
+	if err != nil {
+		return nil, err
+	}
+	if len(runs) == 0 {
+		return nil, domain.ErrNotFound
+	}
+	latest := latestWorkflowRun(runs)
+	jobs, err := client.ListWorkflowJobs(ctx, repository.GitHubOwner, repository.GitHubRepo, latest.ID)
+	if err != nil {
+		return nil, err
+	}
+	job := firstFailedWorkflowJob(jobs)
+	if job == nil {
+		return nil, domain.ErrNotFound
+	}
+	logs, err := client.GetWorkflowJobLogs(ctx, repository.GitHubOwner, repository.GitHubRepo, job.ID)
+	if err != nil {
+		return nil, err
+	}
+	return &PRNodeFailureLog{
+		PRNodeID:      node.ID,
+		WorkflowRunID: latest.ID,
+		JobID:         job.ID,
+		JobName:       job.Name,
+		HeadSHA:       latest.HeadSHA,
+		LogExcerpt:    trimLogExcerpt(logs, 20000),
+		FailedSteps:   failedStepNames(job.Steps),
+	}, nil
+}
+
 func (s *service) repositoryClientForRepository(ctx context.Context, repository *domain.Repository) (RepositoryClient, error) {
 	installation, err := s.repo.FindInstallationByID(ctx, repository.GitHubInstallationID)
 	if err != nil {
@@ -333,6 +387,39 @@ func latestWorkflowRun(runs []WorkflowRun) WorkflowRun {
 		}
 	}
 	return latest
+}
+
+func firstFailedWorkflowJob(jobs []WorkflowJob) *WorkflowJob {
+	for i := range jobs {
+		conclusion := strings.TrimSpace(jobs[i].Conclusion)
+		if conclusion != "" && conclusion != "success" {
+			return &jobs[i]
+		}
+	}
+	return nil
+}
+
+func failedStepNames(steps []WorkflowStep) []string {
+	out := []string{}
+	for _, step := range steps {
+		conclusion := strings.TrimSpace(step.Conclusion)
+		if conclusion == "" || conclusion == "success" {
+			continue
+		}
+		name := strings.TrimSpace(step.Name)
+		if name != "" {
+			out = append(out, name)
+		}
+	}
+	return out
+}
+
+func trimLogExcerpt(logs string, limit int) string {
+	logs = strings.TrimSpace(logs)
+	if limit <= 0 || len(logs) <= limit {
+		return logs
+	}
+	return logs[len(logs)-limit:]
 }
 
 func applyWorkflowRunState(node *domain.SpecForgePRNode, headSHA, status, conclusion string) {

@@ -4,15 +4,21 @@ import (
 	"github.com/google/wire"
 	"github.com/zgiai/luas/api/internal/contracts"
 	"github.com/zgiai/luas/api/internal/domain"
+	"github.com/zgiai/luas/api/internal/modules/githubintegration"
 )
 
 var ProviderSet = wire.NewSet(
 	NewRepository,
 	wire.Bind(new(domain.SpecForgeVerificationRepository), new(*repository)),
+	NewGitHubCIFailureReader,
 	NewService,
 	wire.Bind(new(Service), new(*service)),
 	NewHandler,
 )
+
+func NewGitHubCIFailureReader(service githubintegration.Service) CIFailureReader {
+	return service
+}
 
 func NewStarterManifest(handler *Handler) contracts.StarterManifest {
 	return contracts.NewStaticStarterManifest(

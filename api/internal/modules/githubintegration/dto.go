@@ -43,3 +43,18 @@ type RefreshPRNodeCIRequest struct {
 	RepositoryID string `json:"repository_id" binding:"required,max=255"`
 	PRNodeID     uint   `json:"pr_node_id" binding:"required"`
 }
+
+type ReadPRNodeFailureLogRequest struct {
+	RepositoryID string `json:"repository_id" binding:"required,max=255"`
+	PRNodeID     uint   `json:"pr_node_id" binding:"required"`
+}
+
+type PRNodeFailureLog struct {
+	PRNodeID      uint     `json:"pr_node_id"`
+	WorkflowRunID int64    `json:"workflow_run_id"`
+	JobID         int64    `json:"job_id"`
+	JobName       string   `json:"job_name"`
+	HeadSHA       string   `json:"head_sha"`
+	LogExcerpt    string   `json:"log_excerpt"`
+	FailedSteps   []string `json:"failed_steps"`
+}
