@@ -23,6 +23,7 @@ func TestStartRunCreatesTasksFromApprovedPlanDAG(t *testing.T) {
 	require.Len(t, bundle.Tasks, 2)
 	require.Equal(t, domain.AgentTaskStatusQueued, bundle.Tasks[0].Status)
 	require.Equal(t, domain.AgentTaskStatusWaiting, bundle.Tasks[1].Status)
+	require.Equal(t, 1, bundle.Tasks[0].AttemptNumber)
 	require.Equal(t, "codex_cli", bundle.Tasks[0].Executor)
 }
 
@@ -52,7 +53,7 @@ func TestGetRunAttachesPlanBundle(t *testing.T) {
 	require.Equal(t, planningRepo.bundle.Plan.ID, found.Plan.Plan.ID)
 }
 
-func TestDispatchRunMovesQueuedTasksToRunning(t *testing.T) {
+func TestDispatchRunMovesQueuedTasksToDispatched(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
 	runRepo := &memoryExecutionRepo{}
 	svc := NewService(runRepo, planningRepo, nil, nil, nil)
@@ -63,8 +64,9 @@ func TestDispatchRunMovesQueuedTasksToRunning(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, domain.ExecutionRunStatusRunning, dispatched.Run.Status)
-	require.Equal(t, domain.AgentTaskStatusRunning, dispatched.Tasks[0].Status)
-	require.NotNil(t, dispatched.Tasks[0].StartedAt)
+	require.Equal(t, domain.AgentTaskStatusDispatched, dispatched.Tasks[0].Status)
+	require.NotNil(t, dispatched.Tasks[0].DispatchedAt)
+	require.Nil(t, dispatched.Tasks[0].StartedAt)
 	require.Equal(t, domain.AgentTaskStatusWaiting, dispatched.Tasks[1].Status)
 }
 
@@ -81,9 +83,58 @@ func TestCompleteTaskUnlocksDependentTasks(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, domain.AgentTaskStatusCompleted, updated.Tasks[0].Status)
+	require.NotNil(t, updated.Tasks[0].StartedAt)
 	require.NotNil(t, updated.Tasks[0].FinishedAt)
 	require.Equal(t, domain.AgentTaskStatusQueued, updated.Tasks[1].Status)
 	require.Equal(t, domain.ExecutionRunStatusRunning, updated.Run.Status)
+}
+
+func TestPinTaskSessionPersistsResumePointers(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+
+	updated, err := svc.PinTaskSession(context.Background(), dispatched.Tasks[0].ID, &PinAgentTaskSessionRequest{
+		SessionID: "codex-session-123",
+		Workdir:   "/tmp/specforge-worktree",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "codex-session-123", updated.Tasks[0].SessionID)
+	require.Equal(t, "/tmp/specforge-worktree", updated.Tasks[0].Workdir)
+	require.Equal(t, domain.AgentTaskStatusDispatched, updated.Tasks[0].Status)
+}
+
+func TestExecuteTaskPreservesPinnedSessionWhenRequestOmitsSessionID(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{
+		bundle: approvedPlanBundle(),
+		prompt: &domain.SpecForgeCompiledPrompt{
+			ID:         7,
+			PRNodeID:   4,
+			Version:    "prompt_v1",
+			PromptText: "Implement PR-001",
+		},
+	}
+	runRepo := &memoryExecutionRepo{}
+	executor := &fakeExecutor{result: &ExecutionResult{Status: "completed", Output: "done", ExitCode: 0}}
+	svc := NewService(runRepo, planningRepo, executor, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+	pinned, err := svc.PinTaskSession(context.Background(), dispatched.Tasks[0].ID, &PinAgentTaskSessionRequest{SessionID: "session_to_keep"})
+	require.NoError(t, err)
+
+	updated, err := svc.ExecuteTask(context.Background(), pinned.Tasks[0].ID, &ExecuteAgentTaskRequest{Workdir: "/tmp/repo"})
+
+	require.NoError(t, err)
+	require.Equal(t, "session_to_keep", updated.Tasks[0].SessionID)
+	require.Equal(t, "/tmp/repo", updated.Tasks[0].Workdir)
+	require.Equal(t, domain.AgentTaskStatusCompleted, updated.Tasks[0].Status)
 }
 
 func TestExecuteTaskRunsCompiledPromptAndUnlocksDependents(t *testing.T) {
@@ -104,13 +155,16 @@ func TestExecuteTaskRunsCompiledPromptAndUnlocksDependents(t *testing.T) {
 	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
 	require.NoError(t, err)
 
-	updated, err := svc.ExecuteTask(context.Background(), dispatched.Tasks[0].ID, &ExecuteAgentTaskRequest{Workdir: "/tmp/repo"})
+	updated, err := svc.ExecuteTask(context.Background(), dispatched.Tasks[0].ID, &ExecuteAgentTaskRequest{RuntimeID: "runtime_123", SessionID: "session_123", Workdir: "/tmp/repo"})
 
 	require.NoError(t, err)
 	require.Equal(t, "/tmp/repo", executor.execContext.Workdir)
 	require.Equal(t, "specforge/pr-001", executor.execContext.BranchName)
 	require.Equal(t, "Implement PR-001", executor.prompt.PromptText)
 	require.Equal(t, domain.AgentTaskStatusCompleted, updated.Tasks[0].Status)
+	require.Equal(t, "runtime_123", updated.Tasks[0].RuntimeID)
+	require.Equal(t, "session_123", updated.Tasks[0].SessionID)
+	require.Equal(t, "/tmp/repo", updated.Tasks[0].Workdir)
 	require.Equal(t, "done", updated.Tasks[0].OutputLog)
 	require.NotNil(t, updated.Tasks[0].ExitCode)
 	require.Equal(t, 0, *updated.Tasks[0].ExitCode)
@@ -170,6 +224,7 @@ func TestExecuteTaskFailsBeforeExecutorWhenBranchPreparationFails(t *testing.T) 
 	require.NoError(t, err)
 	require.Empty(t, executor.prompt.PromptText)
 	require.Equal(t, domain.AgentTaskStatusFailed, updated.Tasks[0].Status)
+	require.Equal(t, "branch_preparation_failed", updated.Tasks[0].FailureReason)
 	require.Contains(t, updated.Tasks[0].ErrorLog, "prepare PR node branch: base branch missing")
 	require.Equal(t, domain.AgentTaskStatusWaiting, updated.Tasks[1].Status)
 }
@@ -225,6 +280,7 @@ func TestExecuteTaskMarksFailureWhenPRDeliveryFails(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, domain.AgentTaskStatusFailed, updated.Tasks[0].Status)
+	require.Equal(t, "pr_delivery_failed", updated.Tasks[0].FailureReason)
 	require.Contains(t, updated.Tasks[0].ErrorLog, "deliver PR node: missing branch")
 	require.Equal(t, domain.AgentTaskStatusWaiting, updated.Tasks[1].Status)
 }
@@ -251,6 +307,7 @@ func TestExecuteTaskMarksFailureWithoutUnlockingDependents(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, domain.AgentTaskStatusFailed, updated.Tasks[0].Status)
+	require.Equal(t, "executor_failed", updated.Tasks[0].FailureReason)
 	require.Equal(t, "boom", updated.Tasks[0].ErrorLog)
 	require.NotNil(t, updated.Tasks[0].ExitCode)
 	require.Equal(t, 2, *updated.Tasks[0].ExitCode)

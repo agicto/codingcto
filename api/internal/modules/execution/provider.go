@@ -32,5 +32,6 @@ func NewStarterManifest(handler *Handler) contracts.StarterManifest {
 		contracts.WithStarterModule(handler),
 		contracts.WithStarterMigrationNames("2026_05_25_000003_create_specforge_execution_tables"),
 		contracts.WithStarterMigrationNames("2026_05_25_000008_add_execution_result_fields_to_agent_tasks"),
+		contracts.WithStarterMigrationNames("2026_05_25_000009_add_lifecycle_fields_to_agent_tasks"),
 	)
 }

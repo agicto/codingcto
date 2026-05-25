@@ -22,19 +22,25 @@ func (ExecutionRunPO) TableName() string {
 }
 
 type AgentTaskPO struct {
-	ID         uint   `gorm:"primaryKey"`
-	RunID      uint   `gorm:"not null;index"`
-	PRNodeID   uint   `gorm:"not null;index"`
-	Executor   string `gorm:"size:100;not null;index"`
-	Status     string `gorm:"size:50;not null;index"`
-	LogsURL    string `gorm:"type:text"`
-	OutputLog  string `gorm:"type:text"`
-	ErrorLog   string `gorm:"type:text"`
-	ExitCode   *int
-	StartedAt  *time.Time
-	FinishedAt *time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID            uint   `gorm:"primaryKey"`
+	RunID         uint   `gorm:"not null;index"`
+	PRNodeID      uint   `gorm:"not null;index"`
+	Executor      string `gorm:"size:100;not null;index"`
+	Status        string `gorm:"size:50;not null;index"`
+	RuntimeID     string `gorm:"size:100;index"`
+	AttemptNumber int    `gorm:"not null;default:1"`
+	SessionID     string `gorm:"size:255;index"`
+	Workdir       string `gorm:"type:text"`
+	FailureReason string `gorm:"size:100;index"`
+	LogsURL       string `gorm:"type:text"`
+	OutputLog     string `gorm:"type:text"`
+	ErrorLog      string `gorm:"type:text"`
+	ExitCode      *int
+	DispatchedAt  *time.Time
+	StartedAt     *time.Time
+	FinishedAt    *time.Time
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 func (AgentTaskPO) TableName() string {
@@ -69,36 +75,48 @@ func (po *ExecutionRunPO) toDomain() *domain.SpecForgeExecutionRun {
 
 func newAgentTaskPO(task *domain.SpecForgeAgentTask) *AgentTaskPO {
 	return &AgentTaskPO{
-		ID:         task.ID,
-		RunID:      task.RunID,
-		PRNodeID:   task.PRNodeID,
-		Executor:   task.Executor,
-		Status:     task.Status,
-		LogsURL:    task.LogsURL,
-		OutputLog:  task.OutputLog,
-		ErrorLog:   task.ErrorLog,
-		ExitCode:   task.ExitCode,
-		StartedAt:  task.StartedAt,
-		FinishedAt: task.FinishedAt,
-		CreatedAt:  task.CreatedAt,
-		UpdatedAt:  task.UpdatedAt,
+		ID:            task.ID,
+		RunID:         task.RunID,
+		PRNodeID:      task.PRNodeID,
+		Executor:      task.Executor,
+		Status:        task.Status,
+		RuntimeID:     task.RuntimeID,
+		AttemptNumber: task.AttemptNumber,
+		SessionID:     task.SessionID,
+		Workdir:       task.Workdir,
+		FailureReason: task.FailureReason,
+		LogsURL:       task.LogsURL,
+		OutputLog:     task.OutputLog,
+		ErrorLog:      task.ErrorLog,
+		ExitCode:      task.ExitCode,
+		DispatchedAt:  task.DispatchedAt,
+		StartedAt:     task.StartedAt,
+		FinishedAt:    task.FinishedAt,
+		CreatedAt:     task.CreatedAt,
+		UpdatedAt:     task.UpdatedAt,
 	}
 }
 
 func (po *AgentTaskPO) toDomain() *domain.SpecForgeAgentTask {
 	return &domain.SpecForgeAgentTask{
-		ID:         po.ID,
-		RunID:      po.RunID,
-		PRNodeID:   po.PRNodeID,
-		Executor:   po.Executor,
-		Status:     po.Status,
-		LogsURL:    po.LogsURL,
-		OutputLog:  po.OutputLog,
-		ErrorLog:   po.ErrorLog,
-		ExitCode:   po.ExitCode,
-		StartedAt:  po.StartedAt,
-		FinishedAt: po.FinishedAt,
-		CreatedAt:  po.CreatedAt,
-		UpdatedAt:  po.UpdatedAt,
+		ID:            po.ID,
+		RunID:         po.RunID,
+		PRNodeID:      po.PRNodeID,
+		Executor:      po.Executor,
+		Status:        po.Status,
+		RuntimeID:     po.RuntimeID,
+		AttemptNumber: po.AttemptNumber,
+		SessionID:     po.SessionID,
+		Workdir:       po.Workdir,
+		FailureReason: po.FailureReason,
+		LogsURL:       po.LogsURL,
+		OutputLog:     po.OutputLog,
+		ErrorLog:      po.ErrorLog,
+		ExitCode:      po.ExitCode,
+		DispatchedAt:  po.DispatchedAt,
+		StartedAt:     po.StartedAt,
+		FinishedAt:    po.FinishedAt,
+		CreatedAt:     po.CreatedAt,
+		UpdatedAt:     po.UpdatedAt,
 	}
 }

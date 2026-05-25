@@ -33,6 +33,18 @@ export interface DispatchRunPayload {
   max_tasks?: number;
 }
 
+export interface ExecuteTaskPayload {
+  runtime_id?: string;
+  session_id?: string;
+  workdir: string;
+  env?: Record<string, string>;
+}
+
+export interface PinTaskSessionPayload {
+  session_id?: string;
+  workdir?: string;
+}
+
 export interface SpecForgeRepoProfileDTO {
   id: number;
   repository_id: string;
@@ -148,7 +160,16 @@ export interface SpecForgeExecutionBundleDTO {
     pr_node_id: number;
     executor: string;
     status: string;
+    runtime_id?: string;
+    attempt_number: number;
+    session_id?: string;
+    workdir?: string;
+    failure_reason?: string;
     logs_url?: string;
+    output_log?: string;
+    error_log?: string;
+    exit_code?: number;
+    dispatched_at?: string;
     started_at?: string;
     finished_at?: string;
     created_at: string;
@@ -194,6 +215,18 @@ export const specForgeService = {
   dispatchRun: (runId: number, payload?: DispatchRunPayload) =>
     request.post<SpecForgeExecutionBundleDTO, DispatchRunPayload | undefined>(
       `/runs/${runId}/dispatch`,
+      payload
+    ),
+
+  pinTaskSession: (taskId: number, payload: PinTaskSessionPayload) =>
+    request.post<SpecForgeExecutionBundleDTO, PinTaskSessionPayload>(
+      `/tasks/${taskId}/session`,
+      payload
+    ),
+
+  executeTask: (taskId: number, payload: ExecuteTaskPayload) =>
+    request.post<SpecForgeExecutionBundleDTO, ExecuteTaskPayload>(
+      `/tasks/${taskId}/execute`,
       payload
     ),
 
