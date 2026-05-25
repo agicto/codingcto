@@ -10,7 +10,15 @@ import (
 
 func TestCreateIdeaBuildsReviewablePlanBundle(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo)
+	profileRepo := &memoryProfileRepo{profile: &domain.SpecForgeRepoProfile{
+		RepositoryID:  "repo_123",
+		DefaultBranch: "main",
+		Stack:         []string{"Go", "Gin"},
+		TestCommands:  []string{"go test ./..."},
+		CIProvider:    "github_actions",
+		RiskAreas:     []string{"database"},
+	}}
+	svc := NewService(repo, profileRepo)
 
 	bundle, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
@@ -19,6 +27,8 @@ func TestCreateIdeaBuildsReviewablePlanBundle(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, "repo_123", bundle.Idea.RepositoryID)
+	require.NotNil(t, bundle.RepoProfile)
+	require.Contains(t, bundle.ProductSpec.Assumptions, "Plan generation used the current repo profile for stack, test command, convention, and risk context.")
 	require.Equal(t, uint(42), bundle.Idea.CreatedBy)
 	require.Equal(t, domain.IdeaStatusAwaitingApproval, bundle.Idea.Status)
 	require.NotEmpty(t, bundle.ProductSpec.AcceptanceCriteria)
@@ -31,7 +41,7 @@ func TestCreateIdeaBuildsReviewablePlanBundle(t *testing.T) {
 
 func TestApprovePlanRecordsApproverAndRejectsSecondApproval(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo)
+	svc := NewService(repo, &memoryProfileRepo{})
 
 	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
@@ -57,7 +67,17 @@ func TestApprovePlanRecordsApproverAndRejectsSecondApproval(t *testing.T) {
 
 func TestCompilePromptPersistsVersionedPromptForPRNode(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo)
+	profileRepo := &memoryProfileRepo{profile: &domain.SpecForgeRepoProfile{
+		RepositoryID:      "repo_123",
+		DefaultBranch:     "main",
+		Stack:             []string{"Go", "Gin"},
+		TestCommands:      []string{"go test ./..."},
+		CIProvider:        "github_actions",
+		CodingConventions: []string{"Use service layer for business logic"},
+		RiskAreas:         []string{"auth"},
+		Summary:           "Backend API scaffold",
+	}}
+	svc := NewService(repo, profileRepo)
 
 	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
@@ -72,6 +92,9 @@ func TestCompilePromptPersistsVersionedPromptForPRNode(t *testing.T) {
 	require.Equal(t, "prompt_v1", prompt.Version)
 	require.Len(t, prompt.PromptHash, 64)
 	require.Contains(t, prompt.PromptText, created.PRNodes[1].Title)
+	require.Contains(t, prompt.PromptText, "Repository context")
+	require.Contains(t, prompt.PromptText, "Backend API scaffold")
+	require.Contains(t, prompt.PromptText, "Use service layer for business logic")
 	require.Contains(t, prompt.PromptText, "Acceptance criteria")
 	require.NotNil(t, repo.prompt)
 }
@@ -80,6 +103,24 @@ type memoryRepo struct {
 	nextID uint
 	bundle *domain.SpecForgePlanBundle
 	prompt *domain.SpecForgeCompiledPrompt
+}
+
+type memoryProfileRepo struct {
+	profile *domain.SpecForgeRepoProfile
+}
+
+func (r *memoryProfileRepo) UpsertProfile(ctx context.Context, profile *domain.SpecForgeRepoProfile) error {
+	copied := *profile
+	r.profile = &copied
+	return nil
+}
+
+func (r *memoryProfileRepo) FindProfileByRepositoryID(ctx context.Context, repositoryID string) (*domain.SpecForgeRepoProfile, error) {
+	if r.profile == nil || r.profile.RepositoryID != repositoryID {
+		return nil, domain.ErrNotFound
+	}
+	copied := *r.profile
+	return &copied, nil
 }
 
 func (r *memoryRepo) CreatePlanBundle(ctx context.Context, bundle *domain.SpecForgePlanBundle) error {

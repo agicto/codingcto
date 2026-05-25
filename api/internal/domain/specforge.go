@@ -116,6 +116,7 @@ type SpecForgeRepoProfile struct {
 // SpecForgePlanBundle is the aggregate returned to plan review screens.
 type SpecForgePlanBundle struct {
 	Idea        *SpecForgeIdea               `json:"idea"`
+	RepoProfile *SpecForgeRepoProfile        `json:"repo_profile,omitempty"`
 	ProductSpec *SpecForgeProductSpec        `json:"product_spec"`
 	Plan        *SpecForgeImplementationPlan `json:"implementation_plan"`
 	PRNodes     []*SpecForgePRNode           `json:"pr_nodes"`

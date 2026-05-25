@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"errors"
 	"fmt"
 	"regexp"
 	"strings"
@@ -20,11 +21,12 @@ type Service interface {
 }
 
 type service struct {
-	repo domain.SpecForgePlanningRepository
+	repo        domain.SpecForgePlanningRepository
+	profileRepo domain.SpecForgeRepoProfileRepository
 }
 
-func NewService(repo domain.SpecForgePlanningRepository) *service {
-	return &service{repo: repo}
+func NewService(repo domain.SpecForgePlanningRepository, profileRepo domain.SpecForgeRepoProfileRepository) *service {
+	return &service{repo: repo, profileRepo: profileRepo}
 }
 
 func (s *service) CreateIdea(ctx context.Context, userID uint, repoID string, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error) {
@@ -37,7 +39,12 @@ func (s *service) CreateIdea(ctx context.Context, userID uint, repoID string, re
 		ideaType = "feature"
 	}
 
-	bundle := compileInitialPlan(userID, repoID, strings.TrimSpace(req.Input), ideaType)
+	profile, err := s.repoProfileFor(ctx, repoID)
+	if err != nil {
+		return nil, err
+	}
+
+	bundle := compileInitialPlan(userID, repoID, strings.TrimSpace(req.Input), ideaType, profile)
 	if err := s.repo.CreatePlanBundle(ctx, bundle); err != nil {
 		return nil, fmt.Errorf("create plan bundle: %w", err)
 	}
@@ -48,7 +55,11 @@ func (s *service) GetPlanForIdea(ctx context.Context, ideaID uint) (*domain.Spec
 	if ideaID == 0 {
 		return nil, domain.ErrInvalidInput
 	}
-	return s.repo.FindPlanBundleByIdeaID(ctx, ideaID)
+	bundle, err := s.repo.FindPlanBundleByIdeaID(ctx, ideaID)
+	if err != nil {
+		return nil, err
+	}
+	return s.withRepoProfile(ctx, bundle)
 }
 
 func (s *service) ApprovePlan(ctx context.Context, userID, planID uint, req *ApprovePlanRequest) (*domain.SpecForgePlanBundle, error) {
@@ -72,7 +83,11 @@ func (s *service) ApprovePlan(ctx context.Context, userID, planID uint, req *App
 	if err := s.repo.UpdatePlan(ctx, bundle.Plan); err != nil {
 		return nil, fmt.Errorf("approve plan: %w", err)
 	}
-	return s.repo.FindPlanBundleByPlanID(ctx, planID)
+	bundle, err = s.repo.FindPlanBundleByPlanID(ctx, planID)
+	if err != nil {
+		return nil, err
+	}
+	return s.withRepoProfile(ctx, bundle)
 }
 
 func (s *service) CompilePrompt(ctx context.Context, userID, prNodeID uint, req *CompilePromptRequest) (*domain.SpecForgeCompiledPrompt, error) {
@@ -90,6 +105,10 @@ func (s *service) CompilePrompt(ctx context.Context, userID, prNodeID uint, req 
 		return nil, err
 	}
 	bundle, err := s.repo.FindPlanBundleByPlanID(ctx, node.PlanID)
+	if err != nil {
+		return nil, err
+	}
+	bundle, err = s.withRepoProfile(ctx, bundle)
 	if err != nil {
 		return nil, err
 	}
@@ -111,6 +130,32 @@ func (s *service) CompilePrompt(ctx context.Context, userID, prNodeID uint, req 
 	return prompt, nil
 }
 
+func (s *service) withRepoProfile(ctx context.Context, bundle *domain.SpecForgePlanBundle) (*domain.SpecForgePlanBundle, error) {
+	if bundle == nil || bundle.Idea == nil {
+		return bundle, nil
+	}
+	profile, err := s.repoProfileFor(ctx, bundle.Idea.RepositoryID)
+	if err != nil {
+		return nil, err
+	}
+	bundle.RepoProfile = profile
+	return bundle, nil
+}
+
+func (s *service) repoProfileFor(ctx context.Context, repoID string) (*domain.SpecForgeRepoProfile, error) {
+	if s.profileRepo == nil || strings.TrimSpace(repoID) == "" {
+		return nil, nil
+	}
+	profile, err := s.profileRepo.FindProfileByRepositoryID(ctx, strings.TrimSpace(repoID))
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load repo profile: %w", err)
+	}
+	return profile, nil
+}
+
 func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode) string {
 	var b strings.Builder
 	b.WriteString("You are implementing a SpecForge PR node.\n\n")
@@ -122,6 +167,7 @@ func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, no
 		b.WriteString("- " + goal + "\n")
 	}
 	b.WriteString("\nTechnical plan:\n" + bundle.Plan.TechnicalSummary + "\n\n")
+	writeRepoProfile(&b, bundle.RepoProfile)
 	writeList(&b, "Expected files", node.ExpectedFiles)
 	writeList(&b, "Dependencies", node.DependsOn)
 	writeList(&b, "Non-goals", node.NonGoals)
@@ -132,6 +178,24 @@ func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, no
 	b.WriteString("- Run the listed test commands.\n")
 	b.WriteString("- Prepare a PR description with summary, scope, non-goals, tests, risks, and dependencies.\n")
 	return b.String()
+}
+
+func writeRepoProfile(b *strings.Builder, profile *domain.SpecForgeRepoProfile) {
+	b.WriteString("Repository context:\n")
+	if profile == nil {
+		b.WriteString("- No repo profile is available yet. Follow local code patterns discovered during implementation.\n\n")
+		return
+	}
+	b.WriteString("- Default branch: " + profile.DefaultBranch + "\n")
+	b.WriteString("- CI provider: " + profile.CIProvider + "\n")
+	if strings.TrimSpace(profile.Summary) != "" {
+		b.WriteString("- Summary: " + strings.TrimSpace(profile.Summary) + "\n")
+	}
+	writeList(b, "Stack", profile.Stack)
+	writeList(b, "Repository test commands", profile.TestCommands)
+	writeList(b, "App structure", profile.AppStructure)
+	writeList(b, "Coding conventions", profile.CodingConventions)
+	writeList(b, "Risk areas", profile.RiskAreas)
 }
 
 func writeList(b *strings.Builder, title string, values []string) {
@@ -146,7 +210,7 @@ func writeList(b *strings.Builder, title string, values []string) {
 	b.WriteString("\n")
 }
 
-func compileInitialPlan(userID uint, repoID, input, ideaType string) *domain.SpecForgePlanBundle {
+func compileInitialPlan(userID uint, repoID, input, ideaType string, profile *domain.SpecForgeRepoProfile) *domain.SpecForgePlanBundle {
 	slug := slugify(input)
 	if slug == "" {
 		slug = "feature"
@@ -191,7 +255,7 @@ func compileInitialPlan(userID uint, repoID, input, ideaType string) *domain.Spe
 			"The plan can be approved once and records the approver and approval time.",
 		},
 		Assumptions: []string{
-			"Repo context indexing will be attached in a later slice.",
+			repoContextAssumption(profile),
 			"Executor-specific prompts will be compiled from PR nodes in a later slice.",
 		},
 	}
@@ -229,17 +293,29 @@ func compileInitialPlan(userID uint, repoID, input, ideaType string) *domain.Spe
 
 	return &domain.SpecForgePlanBundle{
 		Idea:        idea,
+		RepoProfile: profile,
 		ProductSpec: spec,
 		Plan:        plan,
 		PRNodes: []*domain.SpecForgePRNode{
-			prNode(slug, "PR-001", 1, "foundation", "Add SpecForge planning data model", "Create the persisted planning aggregate and migration.", nil, []string{"api/internal/modules/planning/*", "api/database/migrations/*"}),
-			prNode(slug, "PR-002", 2, "api", "Add idea and plan review APIs", "Expose idea creation, plan retrieval, and plan approval endpoints.", []string{"PR-001"}, []string{"api/internal/modules/planning/handler.go", "api/internal/modules/planning/routes.go"}),
-			prNode(slug, "PR-003", 3, "verification", "Add planning service tests", "Cover idea creation, plan retrieval, and single approval behavior.", []string{"PR-001", "PR-002"}, []string{"api/internal/modules/planning/service_test.go"}),
+			prNode(slug, "PR-001", 1, "foundation", "Add SpecForge planning data model", "Create the persisted planning aggregate and migration.", nil, []string{"api/internal/modules/planning/*", "api/database/migrations/*"}, profile),
+			prNode(slug, "PR-002", 2, "api", "Add idea and plan review APIs", "Expose idea creation, plan retrieval, and plan approval endpoints.", []string{"PR-001"}, []string{"api/internal/modules/planning/handler.go", "api/internal/modules/planning/routes.go"}, profile),
+			prNode(slug, "PR-003", 3, "verification", "Add planning service tests", "Cover idea creation, plan retrieval, and single approval behavior.", []string{"PR-001", "PR-002"}, []string{"api/internal/modules/planning/service_test.go"}, profile),
 		},
 	}
 }
 
-func prNode(slug, key string, order int, nodeType, title, goal string, dependsOn, expectedFiles []string) *domain.SpecForgePRNode {
+func repoContextAssumption(profile *domain.SpecForgeRepoProfile) string {
+	if profile == nil {
+		return "No repo profile was available when this plan was generated; executor prompts must rediscover local stack and commands."
+	}
+	return "Plan generation used the current repo profile for stack, test command, convention, and risk context."
+}
+
+func prNode(slug, key string, order int, nodeType, title, goal string, dependsOn, expectedFiles []string, profile *domain.SpecForgeRepoProfile) *domain.SpecForgePRNode {
+	testCommands := []string{"go test ./internal/modules/planning/...", "go test ./..."}
+	if profile != nil && len(profile.TestCommands) > 0 {
+		testCommands = append([]string(nil), profile.TestCommands...)
+	}
 	return &domain.SpecForgePRNode{
 		NodeKey:            key,
 		Order:              order,
@@ -251,7 +327,7 @@ func prNode(slug, key string, order int, nodeType, title, goal string, dependsOn
 		ExpectedFiles:      expectedFiles,
 		NonGoals:           []string{"Do not execute coding agents in this PR.", "Do not create GitHub pull requests in this PR."},
 		AcceptanceCriteria: []string{"The slice is independently reviewable.", "The relevant Go tests pass.", "The implementation stays within declared scope."},
-		TestCommands:       []string{"go test ./internal/modules/planning/...", "go test ./..."},
+		TestCommands:       testCommands,
 		BranchName:         fmt.Sprintf("specforge/%s-%02d-%s", slug, order, nodeType),
 		Status:             domain.PRNodeStatusPlanned,
 	}
