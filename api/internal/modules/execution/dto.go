@@ -9,6 +9,13 @@ type DispatchExecutionRunRequest struct {
 }
 
 type ExecuteAgentTaskRequest struct {
-	Workdir string            `json:"workdir" binding:"required,max=500"`
-	Env     map[string]string `json:"env" binding:"omitempty"`
+	RuntimeID string            `json:"runtime_id" binding:"omitempty,max=100"`
+	SessionID string            `json:"session_id" binding:"omitempty,max=255"`
+	Workdir   string            `json:"workdir" binding:"required,max=500"`
+	Env       map[string]string `json:"env" binding:"omitempty"`
+}
+
+type PinAgentTaskSessionRequest struct {
+	SessionID string `json:"session_id" binding:"omitempty,max=255"`
+	Workdir   string `json:"workdir" binding:"omitempty,max=500"`
 }

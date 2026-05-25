@@ -15,6 +15,7 @@ type Service interface {
 	StartRun(ctx context.Context, userID, planID uint, req *StartExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error)
 	GetRun(ctx context.Context, runID uint) (*domain.SpecForgeExecutionBundle, error)
 	DispatchRun(ctx context.Context, runID uint, req *DispatchExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error)
+	PinTaskSession(ctx context.Context, taskID uint, req *PinAgentTaskSessionRequest) (*domain.SpecForgeExecutionBundle, error)
 	ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	CompleteTask(ctx context.Context, taskID uint) (*domain.SpecForgeExecutionBundle, error)
 }
@@ -113,8 +114,11 @@ func (s *service) DispatchRun(ctx context.Context, runID uint, req *DispatchExec
 		if task.Status != domain.AgentTaskStatusQueued {
 			continue
 		}
-		task.Status = domain.AgentTaskStatusRunning
-		task.StartedAt = &now
+		task.Status = domain.AgentTaskStatusDispatched
+		task.DispatchedAt = &now
+		if task.AttemptNumber == 0 {
+			task.AttemptNumber = 1
+		}
 		if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
 			return nil, fmt.Errorf("dispatch agent task: %w", err)
 		}
@@ -132,6 +136,34 @@ func (s *service) DispatchRun(ctx context.Context, runID uint, req *DispatchExec
 	return s.GetRun(ctx, runID)
 }
 
+func (s *service) PinTaskSession(ctx context.Context, taskID uint, req *PinAgentTaskSessionRequest) (*domain.SpecForgeExecutionBundle, error) {
+	if taskID == 0 || req == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	sessionID := strings.TrimSpace(req.SessionID)
+	workdir := strings.TrimSpace(req.Workdir)
+	if sessionID == "" && workdir == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	task, err := s.repo.FindAgentTaskByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if task.Status != domain.AgentTaskStatusDispatched && task.Status != domain.AgentTaskStatusRunning {
+		return nil, domain.ErrConflict
+	}
+	if sessionID != "" {
+		task.SessionID = sessionID
+	}
+	if workdir != "" {
+		task.Workdir = workdir
+	}
+	if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
+		return nil, fmt.Errorf("pin agent task session: %w", err)
+	}
+	return s.GetRun(ctx, task.RunID)
+}
+
 func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error) {
 	if taskID == 0 || req == nil || strings.TrimSpace(req.Workdir) == "" {
 		return nil, domain.ErrInvalidInput
@@ -140,15 +172,30 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 	if err != nil {
 		return nil, err
 	}
-	if task.Status != domain.AgentTaskStatusRunning {
+	if task.Status != domain.AgentTaskStatusDispatched && task.Status != domain.AgentTaskStatusRunning {
 		return nil, domain.ErrConflict
+	}
+	now := time.Now()
+	task.Status = domain.AgentTaskStatusRunning
+	if runtimeID := strings.TrimSpace(req.RuntimeID); runtimeID != "" {
+		task.RuntimeID = runtimeID
+	}
+	if sessionID := strings.TrimSpace(req.SessionID); sessionID != "" {
+		task.SessionID = sessionID
+	}
+	task.Workdir = strings.TrimSpace(req.Workdir)
+	if task.AttemptNumber == 0 {
+		task.AttemptNumber = 1
+	}
+	if task.StartedAt == nil {
+		task.StartedAt = &now
+	}
+	if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
+		return nil, fmt.Errorf("mark agent task running: %w", err)
 	}
 	branchName, err := s.prepareTaskBranch(ctx, task)
 	if err != nil {
-		now := time.Now()
-		task.Status = domain.AgentTaskStatusFailed
-		task.ErrorLog = appendLogLine(task.ErrorLog, err.Error())
-		task.FinishedAt = &now
+		markTaskFailed(task, "branch_preparation_failed", err.Error(), -1)
 		if updateErr := s.repo.UpdateAgentTask(ctx, task); updateErr != nil {
 			return nil, fmt.Errorf("update failed branch preparation task: %w", updateErr)
 		}
@@ -161,7 +208,7 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 	result, runErr := s.executor.Run(ctx, ExecutionContext{
 		RunID:      strconv.FormatUint(uint64(task.RunID), 10),
 		TaskID:     task.ID,
-		Workdir:    strings.TrimSpace(req.Workdir),
+		Workdir:    task.Workdir,
 		BranchName: branchName,
 		Env:        req.Env,
 	}, CompiledExecutionPrompt{
@@ -174,16 +221,18 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 		result = &ExecutionResult{Status: "failed", Error: "executor returned no result", ExitCode: -1}
 	}
 
-	now := time.Now()
+	finishedAt := time.Now()
 	task.OutputLog = result.Output
 	task.ErrorLog = result.Error
 	task.ExitCode = &result.ExitCode
-	task.FinishedAt = &now
+	task.FinishedAt = &finishedAt
 	if runErr != nil || result.Status != "completed" || result.ExitCode != 0 {
 		task.Status = domain.AgentTaskStatusFailed
+		task.FailureReason = executionFailureReason(result, runErr)
 	} else {
 		if err := s.deliverTaskPR(ctx, task); err != nil {
 			task.Status = domain.AgentTaskStatusFailed
+			task.FailureReason = "pr_delivery_failed"
 			task.ErrorLog = appendLogLine(task.ErrorLog, err.Error())
 		} else {
 			task.Status = domain.AgentTaskStatusCompleted
@@ -205,7 +254,7 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 	}
 	if allTasksCompleted(bundle.Tasks) {
 		bundle.Run.Status = domain.ExecutionRunStatusCompleted
-		bundle.Run.CompletedAt = &now
+		bundle.Run.CompletedAt = &finishedAt
 		if err := s.repo.UpdateExecutionRun(ctx, bundle.Run); err != nil {
 			return nil, fmt.Errorf("complete execution run: %w", err)
 		}
@@ -221,12 +270,15 @@ func (s *service) CompleteTask(ctx context.Context, taskID uint) (*domain.SpecFo
 	if err != nil {
 		return nil, err
 	}
-	if task.Status != domain.AgentTaskStatusRunning {
+	if task.Status != domain.AgentTaskStatusDispatched && task.Status != domain.AgentTaskStatusRunning {
 		return nil, domain.ErrConflict
 	}
 
 	now := time.Now()
 	task.Status = domain.AgentTaskStatusCompleted
+	if task.StartedAt == nil {
+		task.StartedAt = &now
+	}
 	task.FinishedAt = &now
 	if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
 		return nil, fmt.Errorf("complete agent task: %w", err)
@@ -316,9 +368,10 @@ func buildInitialTasks(nodes []*domain.SpecForgePRNode, executor string) []*doma
 			status = domain.AgentTaskStatusWaiting
 		}
 		tasks = append(tasks, &domain.SpecForgeAgentTask{
-			PRNodeID: node.ID,
-			Executor: executor,
-			Status:   status,
+			PRNodeID:      node.ID,
+			Executor:      executor,
+			Status:        status,
+			AttemptNumber: 1,
 		})
 	}
 	return tasks
@@ -384,4 +437,23 @@ func allTasksCompleted(tasks []*domain.SpecForgeAgentTask) bool {
 		}
 	}
 	return true
+}
+
+func markTaskFailed(task *domain.SpecForgeAgentTask, reason, detail string, exitCode int) {
+	now := time.Now()
+	task.Status = domain.AgentTaskStatusFailed
+	task.FailureReason = reason
+	task.ErrorLog = appendLogLine(task.ErrorLog, detail)
+	task.ExitCode = &exitCode
+	task.FinishedAt = &now
+}
+
+func executionFailureReason(result *ExecutionResult, runErr error) string {
+	if result != nil && strings.TrimSpace(result.Status) == "timeout" {
+		return "executor_timeout"
+	}
+	if runErr != nil {
+		return "executor_error"
+	}
+	return "executor_failed"
 }

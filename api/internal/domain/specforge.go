@@ -18,10 +18,12 @@ const (
 	ExecutionRunStatusRunning   = "running"
 	ExecutionRunStatusCompleted = "completed"
 	AgentTaskStatusQueued       = "queued"
+	AgentTaskStatusDispatched   = "dispatched"
 	AgentTaskStatusWaiting      = "waiting_on_dependencies"
 	AgentTaskStatusRunning      = "running"
 	AgentTaskStatusCompleted    = "completed"
 	AgentTaskStatusFailed       = "failed"
+	AgentTaskStatusCancelled    = "cancelled"
 )
 
 // SpecForgeIdea captures the original product intent submitted for a repository.
@@ -124,19 +126,25 @@ type SpecForgeExecutionRun struct {
 
 // SpecForgeAgentTask tracks one executor task for a planned PR node.
 type SpecForgeAgentTask struct {
-	ID         uint       `json:"id"`
-	RunID      uint       `json:"run_id"`
-	PRNodeID   uint       `json:"pr_node_id"`
-	Executor   string     `json:"executor"`
-	Status     string     `json:"status"`
-	LogsURL    string     `json:"logs_url,omitempty"`
-	OutputLog  string     `json:"output_log,omitempty"`
-	ErrorLog   string     `json:"error_log,omitempty"`
-	ExitCode   *int       `json:"exit_code,omitempty"`
-	StartedAt  *time.Time `json:"started_at,omitempty"`
-	FinishedAt *time.Time `json:"finished_at,omitempty"`
-	CreatedAt  time.Time  `json:"created_at"`
-	UpdatedAt  time.Time  `json:"updated_at"`
+	ID            uint       `json:"id"`
+	RunID         uint       `json:"run_id"`
+	PRNodeID      uint       `json:"pr_node_id"`
+	Executor      string     `json:"executor"`
+	Status        string     `json:"status"`
+	RuntimeID     string     `json:"runtime_id,omitempty"`
+	AttemptNumber int        `json:"attempt_number"`
+	SessionID     string     `json:"session_id,omitempty"`
+	Workdir       string     `json:"workdir,omitempty"`
+	FailureReason string     `json:"failure_reason,omitempty"`
+	LogsURL       string     `json:"logs_url,omitempty"`
+	OutputLog     string     `json:"output_log,omitempty"`
+	ErrorLog      string     `json:"error_log,omitempty"`
+	ExitCode      *int       `json:"exit_code,omitempty"`
+	DispatchedAt  *time.Time `json:"dispatched_at,omitempty"`
+	StartedAt     *time.Time `json:"started_at,omitempty"`
+	FinishedAt    *time.Time `json:"finished_at,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 // SpecForgeExecutionBundle is the delivery state returned to run pages.
