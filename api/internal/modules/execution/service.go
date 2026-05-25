@@ -23,18 +23,23 @@ type PRNodeDeliverer interface {
 	DeliverPRNode(ctx context.Context, req *githubintegration.DeliverPRNodeRequest) (*domain.SpecForgePRNode, error)
 }
 
+type PRNodeBranchPreparer interface {
+	PreparePRNodeBranch(ctx context.Context, req *githubintegration.PreparePRNodeBranchRequest) (*domain.SpecForgePRNode, error)
+}
+
 type service struct {
 	repo         domain.SpecForgeExecutionRepository
 	planningRepo domain.SpecForgePlanningRepository
 	executor     CodeExecutor
+	preparer     PRNodeBranchPreparer
 	deliverer    PRNodeDeliverer
 }
 
-func NewService(repo domain.SpecForgeExecutionRepository, planningRepo domain.SpecForgePlanningRepository, executor CodeExecutor, deliverer PRNodeDeliverer) *service {
+func NewService(repo domain.SpecForgeExecutionRepository, planningRepo domain.SpecForgePlanningRepository, executor CodeExecutor, preparer PRNodeBranchPreparer, deliverer PRNodeDeliverer) *service {
 	if executor == nil {
 		executor = NewCodexCLIExecutor(CodexCLIExecutorConfig{}, nil)
 	}
-	return &service{repo: repo, planningRepo: planningRepo, executor: executor, deliverer: deliverer}
+	return &service{repo: repo, planningRepo: planningRepo, executor: executor, preparer: preparer, deliverer: deliverer}
 }
 
 func (s *service) StartRun(ctx context.Context, userID, planID uint, req *StartExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error) {
@@ -138,6 +143,16 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 	if task.Status != domain.AgentTaskStatusRunning {
 		return nil, domain.ErrConflict
 	}
+	if err := s.prepareTaskBranch(ctx, task); err != nil {
+		now := time.Now()
+		task.Status = domain.AgentTaskStatusFailed
+		task.ErrorLog = appendLogLine(task.ErrorLog, err.Error())
+		task.FinishedAt = &now
+		if updateErr := s.repo.UpdateAgentTask(ctx, task); updateErr != nil {
+			return nil, fmt.Errorf("update failed branch preparation task: %w", updateErr)
+		}
+		return s.GetRun(ctx, task.RunID)
+	}
 	prompt, err := s.planningRepo.FindLatestCompiledPromptByPRNodeID(ctx, task.PRNodeID)
 	if err != nil {
 		return nil, err
@@ -230,6 +245,27 @@ func (s *service) CompleteTask(ctx context.Context, taskID uint) (*domain.SpecFo
 		}
 	}
 	return s.GetRun(ctx, task.RunID)
+}
+
+func (s *service) prepareTaskBranch(ctx context.Context, task *domain.SpecForgeAgentTask) error {
+	if s.preparer == nil {
+		return nil
+	}
+	bundle, err := s.GetRun(ctx, task.RunID)
+	if err != nil {
+		return err
+	}
+	if bundle.Plan == nil || bundle.Plan.Idea == nil || strings.TrimSpace(bundle.Plan.Idea.RepositoryID) == "" {
+		return domain.ErrInvalidInput
+	}
+	_, err = s.preparer.PreparePRNodeBranch(ctx, &githubintegration.PreparePRNodeBranchRequest{
+		RepositoryID: bundle.Plan.Idea.RepositoryID,
+		PRNodeID:     task.PRNodeID,
+	})
+	if err != nil {
+		return fmt.Errorf("prepare PR node branch: %w", err)
+	}
+	return nil
 }
 
 func (s *service) deliverTaskPR(ctx context.Context, task *domain.SpecForgeAgentTask) error {
