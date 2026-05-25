@@ -18,6 +18,7 @@ export const ROUTES = {
   // Console (Admin) routes
   CONSOLE: {
     HOME: '/console',
+    SPECFORGE: '/console/specforge',
     SETTINGS: '/console/settings',
   },
 
