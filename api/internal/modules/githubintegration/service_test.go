@@ -13,7 +13,7 @@ import (
 
 func TestUpsertInstallationNormalizesPermissions(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 
 	installation, err := svc.UpsertInstallation(context.Background(), 7, &UpsertInstallationRequest{
 		WorkspaceID:    " workspace_123 ",
@@ -34,7 +34,7 @@ func TestUpsertInstallationNormalizesPermissions(t *testing.T) {
 
 func TestUpsertRepositoryDefaultsRepositoryIDAndBranch(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 
 	repository, err := svc.UpsertRepository(context.Background(), 9, &UpsertRepositoryRequest{
 		WorkspaceID:          "workspace_123",
@@ -53,7 +53,7 @@ func TestUpsertRepositoryDefaultsRepositoryIDAndBranch(t *testing.T) {
 
 func TestGetRepositoryReturnsStoredRepository(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 	created, err := svc.UpsertRepository(context.Background(), 9, &UpsertRepositoryRequest{
 		RepositoryID:         "repo_123",
 		WorkspaceID:          "workspace_123",
@@ -73,7 +73,7 @@ func TestGetRepositoryReturnsStoredRepository(t *testing.T) {
 
 func TestRecordWebhookParsesMetadataAndIsIdempotent(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 	body := []byte(`{"action":"completed","installation":{"id":123},"repository":{"full_name":"agicto/codingcto"}}`)
 
 	first, err := svc.RecordWebhook(context.Background(), &GitHubWebhookRequest{
@@ -99,6 +99,120 @@ func TestRecordWebhookParsesMetadataAndIsIdempotent(t *testing.T) {
 	require.Len(t, repo.webhookEvents, 1)
 }
 
+func TestRecordWebhookLinksPullRequestToPRNode(t *testing.T) {
+	repo := &memoryRepo{}
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, BranchName: "specforge/team-invite-02-api", Status: domain.PRNodeStatusPlanned},
+		},
+	}
+	svc := NewService(repo, planningRepo)
+	body := []byte(`{
+		"action": "opened",
+		"installation": {"id": 123},
+		"repository": {"full_name": "agicto/codingcto"},
+		"pull_request": {
+			"number": 42,
+			"state": "open",
+			"html_url": "https://github.com/agicto/codingcto/pull/42",
+			"head": {"ref": "specforge/team-invite-02-api", "sha": "abc123"},
+			"base": {"ref": "main"}
+		}
+	}`)
+
+	_, err := svc.RecordWebhook(context.Background(), &GitHubWebhookRequest{
+		EventType:  GitHubWebhookEventPullRequest,
+		DeliveryID: "delivery-pr",
+		Signature:  "sha256=abc",
+		Body:       body,
+	})
+
+	require.NoError(t, err)
+	node := planningRepo.nodes[0]
+	require.NotNil(t, node.GitHubPRNumber)
+	require.Equal(t, 42, *node.GitHubPRNumber)
+	require.Equal(t, "https://github.com/agicto/codingcto/pull/42", node.GitHubPRURL)
+	require.Equal(t, "abc123", node.GitHubHeadSHA)
+	require.Equal(t, domain.PRNodeStatusPROpened, node.Status)
+}
+
+func TestRecordWebhookUpdatesPRNodeFromWorkflowRun(t *testing.T) {
+	repo := &memoryRepo{}
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, BranchName: "specforge/team-invite-02-api", Status: domain.PRNodeStatusPROpened},
+		},
+	}
+	svc := NewService(repo, planningRepo)
+	body := []byte(`{
+		"action": "completed",
+		"installation": {"id": 123},
+		"repository": {"full_name": "agicto/codingcto"},
+		"workflow_run": {
+			"id": 987,
+			"name": "API",
+			"head_branch": "specforge/team-invite-02-api",
+			"head_sha": "def456",
+			"status": "completed",
+			"conclusion": "failure",
+			"html_url": "https://github.com/agicto/codingcto/actions/runs/987"
+		}
+	}`)
+
+	_, err := svc.RecordWebhook(context.Background(), &GitHubWebhookRequest{
+		EventType:  GitHubWebhookEventWorkflowRun,
+		DeliveryID: "delivery-workflow",
+		Signature:  "sha256=abc",
+		Body:       body,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "def456", planningRepo.nodes[0].GitHubHeadSHA)
+	require.Equal(t, domain.PRNodeStatusBlocked, planningRepo.nodes[0].Status)
+}
+
+func TestRecordWebhookReappliesExistingDeliveryToPRNode(t *testing.T) {
+	repo := &memoryRepo{}
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, BranchName: "specforge/team-invite-02-api", Status: domain.PRNodeStatusPlanned},
+		},
+	}
+	svc := NewService(repo, nil)
+	body := []byte(`{
+		"action": "opened",
+		"installation": {"id": 123},
+		"repository": {"full_name": "agicto/codingcto"},
+		"pull_request": {
+			"number": 42,
+			"state": "open",
+			"html_url": "https://github.com/agicto/codingcto/pull/42",
+			"head": {"ref": "specforge/team-invite-02-api", "sha": "abc123"},
+			"base": {"ref": "main"}
+		}
+	}`)
+	_, err := svc.RecordWebhook(context.Background(), &GitHubWebhookRequest{
+		EventType:  GitHubWebhookEventPullRequest,
+		DeliveryID: "delivery-retry",
+		Signature:  "sha256=abc",
+		Body:       body,
+	})
+	require.NoError(t, err)
+	svc.planningRepo = planningRepo
+
+	_, err = svc.RecordWebhook(context.Background(), &GitHubWebhookRequest{
+		EventType:  GitHubWebhookEventPullRequest,
+		DeliveryID: "delivery-retry",
+		Signature:  "sha256=abc",
+		Body:       body,
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, planningRepo.nodes[0].GitHubPRNumber)
+	require.Equal(t, 42, *planningRepo.nodes[0].GitHubPRNumber)
+	require.Len(t, repo.webhookEvents, 1)
+}
+
 func TestVerifyGitHubSignature(t *testing.T) {
 	body := []byte(`{"zen":"Keep it logically awesome."}`)
 	signature := githubSignature("secret", body)
@@ -107,6 +221,61 @@ func TestVerifyGitHubSignature(t *testing.T) {
 	require.False(t, verifyGitHubSignature("wrong", body, signature))
 	require.False(t, verifyGitHubSignature("", body, signature))
 	require.False(t, verifyGitHubSignature("secret", body, "bad"))
+}
+
+type memoryPlanningRepo struct {
+	nodes []*domain.SpecForgePRNode
+}
+
+func (r *memoryPlanningRepo) CreatePlanBundle(ctx context.Context, bundle *domain.SpecForgePlanBundle) error {
+	return nil
+}
+
+func (r *memoryPlanningRepo) FindPlanBundleByIdeaID(ctx context.Context, ideaID uint) (*domain.SpecForgePlanBundle, error) {
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryPlanningRepo) FindPlanBundleByPlanID(ctx context.Context, planID uint) (*domain.SpecForgePlanBundle, error) {
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryPlanningRepo) FindPRNodeByID(ctx context.Context, prNodeID uint) (*domain.SpecForgePRNode, error) {
+	for _, node := range r.nodes {
+		if node.ID == prNodeID {
+			copied := *node
+			return &copied, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryPlanningRepo) FindPRNodeByBranchName(ctx context.Context, branchName string) (*domain.SpecForgePRNode, error) {
+	for _, node := range r.nodes {
+		if node.BranchName == branchName {
+			copied := *node
+			return &copied, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryPlanningRepo) UpdatePRNode(ctx context.Context, node *domain.SpecForgePRNode) error {
+	for i, existing := range r.nodes {
+		if existing.ID == node.ID {
+			copied := *node
+			r.nodes[i] = &copied
+			return nil
+		}
+	}
+	return domain.ErrNotFound
+}
+
+func (r *memoryPlanningRepo) CreateCompiledPrompt(ctx context.Context, prompt *domain.SpecForgeCompiledPrompt) error {
+	return nil
+}
+
+func (r *memoryPlanningRepo) UpdatePlan(ctx context.Context, plan *domain.SpecForgeImplementationPlan) error {
+	return nil
 }
 
 type memoryRepo struct {

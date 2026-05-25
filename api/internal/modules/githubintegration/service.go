@@ -22,11 +22,12 @@ type Service interface {
 }
 
 type service struct {
-	repo domain.GitHubIntegrationRepository
+	repo         domain.GitHubIntegrationRepository
+	planningRepo domain.SpecForgePlanningRepository
 }
 
-func NewService(repo domain.GitHubIntegrationRepository) *service {
-	return &service{repo: repo}
+func NewService(repo domain.GitHubIntegrationRepository, planningRepo domain.SpecForgePlanningRepository) *service {
+	return &service{repo: repo, planningRepo: planningRepo}
 }
 
 func (s *service) UpsertInstallation(ctx context.Context, userID uint, req *UpsertInstallationRequest) (*domain.GitHubInstallation, error) {
@@ -95,6 +96,9 @@ func (s *service) RecordWebhook(ctx context.Context, req *GitHubWebhookRequest) 
 	}
 	existing, err := s.repo.FindWebhookEventByDeliveryID(ctx, strings.TrimSpace(req.DeliveryID))
 	if err == nil {
+		if applyErr := s.applyWebhookToPRNode(ctx, existing.EventType, req.Body); applyErr != nil {
+			return nil, applyErr
+		}
 		return existing, nil
 	}
 	if err != nil && !errors.Is(err, domain.ErrNotFound) {
@@ -116,7 +120,68 @@ func (s *service) RecordWebhook(ctx context.Context, req *GitHubWebhookRequest) 
 	if err := s.repo.CreateWebhookEvent(ctx, event); err != nil {
 		return nil, fmt.Errorf("record github webhook: %w", err)
 	}
+	if err := s.applyWebhookToPRNode(ctx, event.EventType, req.Body); err != nil {
+		return nil, err
+	}
 	return event, nil
+}
+
+func (s *service) applyWebhookToPRNode(ctx context.Context, eventType string, body []byte) error {
+	if s.planningRepo == nil {
+		return nil
+	}
+	event, err := ParseGitHubWebhookPayload(eventType, body)
+	if err != nil {
+		return nil
+	}
+	switch {
+	case event.PullRequest != nil:
+		return s.updatePRNodeFromPullRequest(ctx, event.PullRequest)
+	case event.WorkflowRun != nil:
+		return s.updatePRNodeFromWorkflowRun(ctx, event.WorkflowRun)
+	default:
+		return nil
+	}
+}
+
+func (s *service) updatePRNodeFromPullRequest(ctx context.Context, pr *WebhookPullRequest) error {
+	if strings.TrimSpace(pr.HeadBranch) == "" {
+		return nil
+	}
+	node, err := s.planningRepo.FindPRNodeByBranchName(ctx, pr.HeadBranch)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	node.GitHubPRNumber = &pr.Number
+	node.GitHubPRURL = pr.HTMLURL
+	node.GitHubHeadSHA = pr.HeadSHA
+	node.Status = domain.PRNodeStatusPROpened
+	return s.planningRepo.UpdatePRNode(ctx, node)
+}
+
+func (s *service) updatePRNodeFromWorkflowRun(ctx context.Context, run *WebhookWorkflowRun) error {
+	if strings.TrimSpace(run.HeadBranch) == "" {
+		return nil
+	}
+	node, err := s.planningRepo.FindPRNodeByBranchName(ctx, run.HeadBranch)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return err
+	}
+	node.GitHubHeadSHA = run.HeadSHA
+	if strings.TrimSpace(run.Status) != "completed" {
+		node.Status = domain.PRNodeStatusCIRunning
+	} else if strings.TrimSpace(run.Conclusion) == "success" {
+		node.Status = domain.PRNodeStatusReadyForReview
+	} else if strings.TrimSpace(run.Conclusion) != "" {
+		node.Status = domain.PRNodeStatusBlocked
+	}
+	return s.planningRepo.UpdatePRNode(ctx, node)
 }
 
 func normalizePermissions(permissions map[string]string) map[string]string {
