@@ -274,6 +274,10 @@ func (r *memoryPlanningRepo) CreateCompiledPrompt(ctx context.Context, prompt *d
 	return nil
 }
 
+func (r *memoryPlanningRepo) FindLatestCompiledPromptByPRNodeID(ctx context.Context, prNodeID uint) (*domain.SpecForgeCompiledPrompt, error) {
+	return nil, domain.ErrNotFound
+}
+
 func (r *memoryPlanningRepo) UpdatePlan(ctx context.Context, plan *domain.SpecForgeImplementationPlan) error {
 	return nil
 }

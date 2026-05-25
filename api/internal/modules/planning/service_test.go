@@ -200,6 +200,14 @@ func (r *memoryRepo) CreateCompiledPrompt(ctx context.Context, prompt *domain.Sp
 	return nil
 }
 
+func (r *memoryRepo) FindLatestCompiledPromptByPRNodeID(ctx context.Context, prNodeID uint) (*domain.SpecForgeCompiledPrompt, error) {
+	if r.prompt == nil || r.prompt.PRNodeID != prNodeID {
+		return nil, domain.ErrNotFound
+	}
+	copied := *r.prompt
+	return &copied, nil
+}
+
 func cloneBundle(bundle *domain.SpecForgePlanBundle) *domain.SpecForgePlanBundle {
 	out := *bundle
 	idea := *bundle.Idea
