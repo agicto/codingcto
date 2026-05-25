@@ -6,13 +6,17 @@ import (
 )
 
 const (
-	IdeaStatusAwaitingApproval = "awaiting_approval"
-	PlanStatusDraft            = "draft"
-	PlanStatusApproved         = "approved"
-	PRNodeStatusPlanned        = "planned"
-	ExecutionRunStatusQueued   = "queued"
-	AgentTaskStatusQueued      = "queued"
-	AgentTaskStatusWaiting     = "waiting_on_dependencies"
+	IdeaStatusAwaitingApproval  = "awaiting_approval"
+	PlanStatusDraft             = "draft"
+	PlanStatusApproved          = "approved"
+	PRNodeStatusPlanned         = "planned"
+	ExecutionRunStatusQueued    = "queued"
+	ExecutionRunStatusRunning   = "running"
+	ExecutionRunStatusCompleted = "completed"
+	AgentTaskStatusQueued       = "queued"
+	AgentTaskStatusWaiting      = "waiting_on_dependencies"
+	AgentTaskStatusRunning      = "running"
+	AgentTaskStatusCompleted    = "completed"
 )
 
 // SpecForgeIdea captures the original product intent submitted for a repository.
@@ -178,4 +182,7 @@ type SpecForgeRepoProfileRepository interface {
 type SpecForgeExecutionRepository interface {
 	CreateExecutionBundle(ctx context.Context, bundle *SpecForgeExecutionBundle) error
 	FindExecutionBundleByRunID(ctx context.Context, runID uint) (*SpecForgeExecutionBundle, error)
+	FindAgentTaskByID(ctx context.Context, taskID uint) (*SpecForgeAgentTask, error)
+	UpdateExecutionRun(ctx context.Context, run *SpecForgeExecutionRun) error
+	UpdateAgentTask(ctx context.Context, task *SpecForgeAgentTask) error
 }

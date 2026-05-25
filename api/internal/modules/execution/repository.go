@@ -63,3 +63,32 @@ func (r *repository) FindExecutionBundleByRunID(ctx context.Context, runID uint)
 		Tasks: tasks,
 	}, nil
 }
+
+func (r *repository) FindAgentTaskByID(ctx context.Context, taskID uint) (*domain.SpecForgeAgentTask, error) {
+	var po AgentTaskPO
+	if err := r.db.WithContext(ctx).First(&po, taskID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return po.toDomain(), nil
+}
+
+func (r *repository) UpdateExecutionRun(ctx context.Context, run *domain.SpecForgeExecutionRun) error {
+	po := newExecutionRunPO(run)
+	if err := r.db.WithContext(ctx).Save(po).Error; err != nil {
+		return err
+	}
+	run.UpdatedAt = po.UpdatedAt
+	return nil
+}
+
+func (r *repository) UpdateAgentTask(ctx context.Context, task *domain.SpecForgeAgentTask) error {
+	po := newAgentTaskPO(task)
+	if err := r.db.WithContext(ctx).Save(po).Error; err != nil {
+		return err
+	}
+	task.UpdatedAt = po.UpdatedAt
+	return nil
+}

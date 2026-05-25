@@ -70,3 +70,41 @@ func (h *Handler) GetRun(c *gin.Context) {
 
 	response.Success(c, run)
 }
+
+func (h *Handler) DispatchRun(c *gin.Context) {
+	runID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || runID == 0 {
+		response.HandleError(c, "Invalid run id", err)
+		return
+	}
+
+	var req DispatchExecutionRunRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		response.BadRequest(c, "Invalid request parameters", err)
+		return
+	}
+
+	run, err := h.service.DispatchRun(c.Request.Context(), uint(runID), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to dispatch execution run", err)
+		return
+	}
+
+	response.Success(c, run)
+}
+
+func (h *Handler) CompleteTask(c *gin.Context) {
+	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || taskID == 0 {
+		response.HandleError(c, "Invalid task id", err)
+		return
+	}
+
+	run, err := h.service.CompleteTask(c.Request.Context(), uint(taskID))
+	if err != nil {
+		response.HandleError(c, "Failed to complete agent task", err)
+		return
+	}
+
+	response.Success(c, run)
+}
