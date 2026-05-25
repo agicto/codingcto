@@ -71,6 +71,14 @@ export interface SubmitTaskResultPayload {
   failure_reason?: string;
 }
 
+export interface CreateTaskEventPayload {
+  type: string;
+  tool?: string;
+  content?: string;
+  input?: string;
+  output?: string;
+}
+
 export interface PinTaskSessionPayload {
   session_id?: string;
   workdir?: string;
@@ -209,6 +217,18 @@ export interface SpecForgeClaimedTaskDTO {
   workdir?: string;
 }
 
+export interface SpecForgeTaskEventDTO {
+  id: number;
+  task_id: number;
+  seq: number;
+  type: string;
+  tool?: string;
+  content?: string;
+  input?: string;
+  output?: string;
+  created_at: string;
+}
+
 export interface SpecForgeExecutionBundleDTO {
   run: {
     id: number;
@@ -323,6 +343,14 @@ export const specForgeService = {
       `/tasks/${taskId}/result`,
       payload
     ),
+
+  listTaskEvents: (taskId: number, afterSeq?: number) => {
+    const query = afterSeq && afterSeq > 0 ? `?after_seq=${afterSeq}` : "";
+    return request.get<{ events: SpecForgeTaskEventDTO[] }>(`/tasks/${taskId}/events${query}`);
+  },
+
+  createTaskEvent: (taskId: number, payload: CreateTaskEventPayload) =>
+    request.post<SpecForgeTaskEventDTO, CreateTaskEventPayload>(`/tasks/${taskId}/events`, payload),
 
   completeTask: (taskId: number) =>
     request.post<SpecForgeExecutionBundleDTO, undefined>(`/tasks/${taskId}/complete`),

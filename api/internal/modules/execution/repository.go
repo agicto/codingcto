@@ -78,6 +78,48 @@ func (r *repository) FindAgentTaskByID(ctx context.Context, taskID uint) (*domai
 	return po.toDomain(), nil
 }
 
+func (r *repository) CreateTaskEvent(ctx context.Context, event *domain.SpecForgeTaskEvent) error {
+	if event == nil || event.TaskID == 0 || strings.TrimSpace(event.Type) == "" {
+		return domain.ErrInvalidInput
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var maxSeq int
+		if err := tx.Model(&TaskEventPO{}).
+			Where("task_id = ?", event.TaskID).
+			Select("COALESCE(MAX(seq), 0)").
+			Scan(&maxSeq).Error; err != nil {
+			return err
+		}
+		event.Seq = maxSeq + 1
+		po := newTaskEventPO(event)
+		if err := tx.Create(po).Error; err != nil {
+			return err
+		}
+		event.ID = po.ID
+		event.CreatedAt = po.CreatedAt
+		return nil
+	})
+}
+
+func (r *repository) ListTaskEvents(ctx context.Context, taskID uint, afterSeq int) ([]*domain.SpecForgeTaskEvent, error) {
+	if taskID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	query := r.db.WithContext(ctx).Where("task_id = ?", taskID)
+	if afterSeq > 0 {
+		query = query.Where("seq > ?", afterSeq)
+	}
+	var pos []*TaskEventPO
+	if err := query.Order("seq ASC").Find(&pos).Error; err != nil {
+		return nil, err
+	}
+	events := make([]*domain.SpecForgeTaskEvent, len(pos))
+	for i, po := range pos {
+		events[i] = po.toDomain()
+	}
+	return events, nil
+}
+
 func (r *repository) UpsertRuntime(ctx context.Context, runtime *domain.SpecForgeRuntime) error {
 	if runtime == nil || strings.TrimSpace(runtime.RuntimeID) == "" || strings.TrimSpace(runtime.Executor) == "" {
 		return domain.ErrInvalidInput

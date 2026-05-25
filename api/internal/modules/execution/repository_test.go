@@ -54,10 +54,51 @@ func TestRepositoryUpsertsRuntimeAndClaimsDispatchedTask(t *testing.T) {
 	require.False(t, pending)
 }
 
+func TestRepositoryCreatesAndListsTaskEventsInSequence(t *testing.T) {
+	repo := newTestExecutionRepository(t)
+	bundle := &domain.SpecForgeExecutionBundle{
+		Run: &domain.SpecForgeExecutionRun{
+			PlanID:    1,
+			Status:    domain.ExecutionRunStatusRunning,
+			StartedBy: 7,
+			StartedAt: time.Now(),
+		},
+		Tasks: []*domain.SpecForgeAgentTask{
+			{PRNodeID: 10, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusRunning, AttemptNumber: 1},
+		},
+	}
+	require.NoError(t, repo.CreateExecutionBundle(context.Background(), bundle))
+	first := &domain.SpecForgeTaskEvent{
+		TaskID:  bundle.Tasks[0].ID,
+		Type:    "stdout",
+		Content: "starting",
+	}
+	second := &domain.SpecForgeTaskEvent{
+		TaskID: bundle.Tasks[0].ID,
+		Type:   "tool",
+		Tool:   "go test",
+		Input:  "go test ./...",
+		Output: "ok",
+	}
+	require.NoError(t, repo.CreateTaskEvent(context.Background(), first))
+	require.NoError(t, repo.CreateTaskEvent(context.Background(), second))
+
+	require.Equal(t, 1, first.Seq)
+	require.Equal(t, 2, second.Seq)
+	events, err := repo.ListTaskEvents(context.Background(), bundle.Tasks[0].ID, 1)
+
+	require.NoError(t, err)
+	require.Len(t, events, 1)
+	require.Equal(t, second.ID, events[0].ID)
+	require.Equal(t, "tool", events[0].Type)
+	require.Equal(t, "go test", events[0].Tool)
+	require.Equal(t, "ok", events[0].Output)
+}
+
 func newTestExecutionRepository(t *testing.T) *repository {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&ExecutionRunPO{}, &AgentTaskPO{}, &RuntimePO{}))
+	require.NoError(t, db.AutoMigrate(&ExecutionRunPO{}, &AgentTaskPO{}, &RuntimePO{}, &TaskEventPO{}))
 	return NewRepository(db)
 }
