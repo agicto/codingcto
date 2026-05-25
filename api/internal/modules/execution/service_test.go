@@ -192,6 +192,14 @@ func (r *memoryPlanningRepo) FindPRNodeByID(ctx context.Context, prNodeID uint) 
 	return nil, domain.ErrNotFound
 }
 
+func (r *memoryPlanningRepo) FindPRNodeByBranchName(ctx context.Context, branchName string) (*domain.SpecForgePRNode, error) {
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryPlanningRepo) UpdatePRNode(ctx context.Context, node *domain.SpecForgePRNode) error {
+	return nil
+}
+
 func (r *memoryPlanningRepo) CreateCompiledPrompt(ctx context.Context, prompt *domain.SpecForgeCompiledPrompt) error {
 	return nil
 }

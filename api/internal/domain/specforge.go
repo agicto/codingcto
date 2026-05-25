@@ -10,6 +10,9 @@ const (
 	PlanStatusDraft             = "draft"
 	PlanStatusApproved          = "approved"
 	PRNodeStatusPlanned         = "planned"
+	PRNodeStatusPROpened        = "pr_opened"
+	PRNodeStatusReadyForReview  = "ready_for_review"
+	PRNodeStatusBlocked         = "blocked"
 	ExecutionRunStatusQueued    = "queued"
 	ExecutionRunStatusRunning   = "running"
 	ExecutionRunStatusCompleted = "completed"
@@ -84,6 +87,9 @@ type SpecForgePRNode struct {
 	AcceptanceCriteria []string  `json:"acceptance_criteria"`
 	TestCommands       []string  `json:"test_commands"`
 	BranchName         string    `json:"branch_name"`
+	GitHubPRNumber     *int      `json:"github_pr_number,omitempty"`
+	GitHubPRURL        string    `json:"github_pr_url,omitempty"`
+	GitHubHeadSHA      string    `json:"github_head_sha,omitempty"`
 	Status             string    `json:"status"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
@@ -168,6 +174,8 @@ type SpecForgePlanningRepository interface {
 	FindPlanBundleByIdeaID(ctx context.Context, ideaID uint) (*SpecForgePlanBundle, error)
 	FindPlanBundleByPlanID(ctx context.Context, planID uint) (*SpecForgePlanBundle, error)
 	FindPRNodeByID(ctx context.Context, prNodeID uint) (*SpecForgePRNode, error)
+	FindPRNodeByBranchName(ctx context.Context, branchName string) (*SpecForgePRNode, error)
+	UpdatePRNode(ctx context.Context, node *SpecForgePRNode) error
 	CreateCompiledPrompt(ctx context.Context, prompt *SpecForgeCompiledPrompt) error
 	UpdatePlan(ctx context.Context, plan *SpecForgeImplementationPlan) error
 }

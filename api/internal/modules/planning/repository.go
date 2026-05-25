@@ -2,6 +2,7 @@ package planning
 
 import (
 	"context"
+	"strings"
 
 	"github.com/zgiai/luas/api/internal/domain"
 	"gorm.io/gorm"
@@ -89,6 +90,30 @@ func (r *repository) FindPRNodeByID(ctx context.Context, prNodeID uint) (*domain
 		return nil, err
 	}
 	return po.toDomain(), nil
+}
+
+func (r *repository) FindPRNodeByBranchName(ctx context.Context, branchName string) (*domain.SpecForgePRNode, error) {
+	branchName = strings.TrimSpace(branchName)
+	if branchName == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	var po PRNodePO
+	if err := r.db.WithContext(ctx).Where("branch_name = ?", branchName).First(&po).Error; err != nil {
+		return nil, err
+	}
+	return po.toDomain(), nil
+}
+
+func (r *repository) UpdatePRNode(ctx context.Context, node *domain.SpecForgePRNode) error {
+	if node == nil || node.ID == 0 {
+		return domain.ErrInvalidInput
+	}
+	po := newPRNodePO(node)
+	if err := r.db.WithContext(ctx).Save(po).Error; err != nil {
+		return err
+	}
+	node.UpdatedAt = po.UpdatedAt
+	return nil
 }
 
 func (r *repository) CreateCompiledPrompt(ctx context.Context, prompt *domain.SpecForgeCompiledPrompt) error {

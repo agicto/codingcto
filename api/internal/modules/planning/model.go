@@ -80,6 +80,9 @@ type PRNodePO struct {
 	AcceptanceCriteria string `gorm:"type:text"`
 	TestCommands       string `gorm:"type:text"`
 	BranchName         string `gorm:"size:255;not null"`
+	GitHubPRNumber     *int   `gorm:"index"`
+	GitHubPRURL        string `gorm:"size:511"`
+	GitHubHeadSHA      string `gorm:"size:100;index"`
 	Status             string `gorm:"size:50;not null;index"`
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
@@ -172,6 +175,7 @@ func newPRNodePO(node *domain.SpecForgePRNode) *PRNodePO {
 		EstimatedRisk: node.EstimatedRisk, ExpectedFiles: encodeStrings(node.ExpectedFiles),
 		NonGoals: encodeStrings(node.NonGoals), AcceptanceCriteria: encodeStrings(node.AcceptanceCriteria),
 		TestCommands: encodeStrings(node.TestCommands), BranchName: node.BranchName,
+		GitHubPRNumber: node.GitHubPRNumber, GitHubPRURL: node.GitHubPRURL, GitHubHeadSHA: node.GitHubHeadSHA,
 		Status: node.Status, CreatedAt: node.CreatedAt, UpdatedAt: node.UpdatedAt,
 	}
 }
@@ -183,6 +187,7 @@ func (po *PRNodePO) toDomain() *domain.SpecForgePRNode {
 		EstimatedRisk: po.EstimatedRisk, ExpectedFiles: decodeStrings(po.ExpectedFiles),
 		NonGoals: decodeStrings(po.NonGoals), AcceptanceCriteria: decodeStrings(po.AcceptanceCriteria),
 		TestCommands: decodeStrings(po.TestCommands), BranchName: po.BranchName,
+		GitHubPRNumber: po.GitHubPRNumber, GitHubPRURL: po.GitHubPRURL, GitHubHeadSHA: po.GitHubHeadSHA,
 		Status: po.Status, CreatedAt: po.CreatedAt, UpdatedAt: po.UpdatedAt,
 	}
 }
