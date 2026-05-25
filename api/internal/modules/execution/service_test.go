@@ -71,6 +71,56 @@ func TestDispatchRunMovesQueuedTasksToDispatched(t *testing.T) {
 	require.Equal(t, domain.AgentTaskStatusWaiting, dispatched.Tasks[1].Status)
 }
 
+func TestDispatchRunRejectsCancelledRun(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	created.Run.Status = domain.ExecutionRunStatusCancelled
+	require.NoError(t, runRepo.UpdateExecutionRun(context.Background(), created.Run))
+
+	_, err = svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{})
+
+	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
+func TestCancelRunCancelsNonTerminalTasks(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+	dispatched.Tasks[0].Status = domain.AgentTaskStatusRunning
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), dispatched.Tasks[0]))
+
+	cancelled, err := svc.CancelRun(context.Background(), dispatched.Run.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, domain.ExecutionRunStatusCancelled, cancelled.Run.Status)
+	require.NotNil(t, cancelled.Run.CompletedAt)
+	require.Equal(t, domain.AgentTaskStatusCancelled, cancelled.Tasks[0].Status)
+	require.Equal(t, "run_cancelled", cancelled.Tasks[0].FailureReason)
+	require.Equal(t, domain.AgentTaskStatusCancelled, cancelled.Tasks[1].Status)
+	require.Equal(t, "run_cancelled", cancelled.Tasks[1].FailureReason)
+}
+
+func TestCancelRunRejectsCompletedRun(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	created.Run.Status = domain.ExecutionRunStatusCompleted
+	require.NoError(t, runRepo.UpdateExecutionRun(context.Background(), created.Run))
+
+	_, err = svc.CancelRun(context.Background(), created.Run.ID)
+
+	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
 func TestHeartbeatRuntimeRecordsRuntimeAndReportsPendingClaim(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
 	runRepo := &memoryExecutionRepo{}
@@ -730,6 +780,28 @@ func (r *memoryExecutionRepo) FailTasksForOfflineRuntimes(ctx context.Context) (
 		task.ErrorLog = appendLogLine(task.ErrorLog, "runtime went offline")
 		copied := *task
 		out = append(out, &copied)
+	}
+	return out, nil
+}
+
+func (r *memoryExecutionRepo) CancelActiveTasksByRunID(ctx context.Context, runID uint) ([]*domain.SpecForgeAgentTask, error) {
+	if runID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	if r.bundle == nil || r.bundle.Run.ID != runID {
+		return nil, domain.ErrNotFound
+	}
+	out := make([]*domain.SpecForgeAgentTask, 0)
+	now := time.Now()
+	for _, task := range r.bundle.Tasks {
+		switch task.Status {
+		case domain.AgentTaskStatusQueued, domain.AgentTaskStatusDispatched, domain.AgentTaskStatusWaiting, domain.AgentTaskStatusRunning:
+			task.Status = domain.AgentTaskStatusCancelled
+			task.FailureReason = "run_cancelled"
+			task.FinishedAt = &now
+			copied := *task
+			out = append(out, &copied)
+		}
 	}
 	return out, nil
 }
