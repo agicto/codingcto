@@ -24,6 +24,12 @@ type GitHubWebhookRequest struct {
 	Body       []byte
 }
 
+type ListWebhookEventsRequest struct {
+	Status             string `form:"status" binding:"omitempty,max=50"`
+	RepositoryFullName string `form:"repository_full_name" binding:"omitempty,max=511"`
+	Limit              int    `form:"limit" binding:"omitempty,min=1,max=100"`
+}
+
 type DeliverPRNodeRequest struct {
 	RepositoryID string `json:"repository_id" binding:"required,max=255"`
 	PRNodeID     uint   `json:"pr_node_id" binding:"required"`

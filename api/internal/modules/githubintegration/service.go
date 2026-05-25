@@ -23,6 +23,7 @@ type Service interface {
 	RefreshPRNodeCI(ctx context.Context, req *RefreshPRNodeCIRequest) (*domain.SpecForgePRNode, error)
 	ReadPRNodeFailureLog(ctx context.Context, req *ReadPRNodeFailureLogRequest) (*PRNodeFailureLog, error)
 	RecordWebhook(ctx context.Context, req *GitHubWebhookRequest) (*domain.GitHubWebhookEvent, error)
+	ListWebhookEvents(ctx context.Context, req *ListWebhookEventsRequest) ([]*domain.GitHubWebhookEvent, error)
 }
 
 type service struct {
@@ -352,6 +353,17 @@ func (s *service) RecordWebhook(ctx context.Context, req *GitHubWebhookRequest) 
 	}
 	event.Status = GitHubWebhookStatusProcessed
 	return event, nil
+}
+
+func (s *service) ListWebhookEvents(ctx context.Context, req *ListWebhookEventsRequest) ([]*domain.GitHubWebhookEvent, error) {
+	if req == nil {
+		req = &ListWebhookEventsRequest{}
+	}
+	limit := req.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	return s.repo.ListWebhookEvents(ctx, strings.TrimSpace(req.Status), strings.TrimSpace(req.RepositoryFullName), limit)
 }
 
 func prDescription(node *domain.SpecForgePRNode, body string) string {

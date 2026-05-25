@@ -101,6 +101,27 @@ export interface PinTaskSessionPayload {
   workdir?: string;
 }
 
+export interface ListGitHubWebhookEventsParams {
+  status?: string;
+  repository_full_name?: string;
+  limit?: number;
+}
+
+export interface GitHubWebhookEventDTO {
+  id: number;
+  delivery_id: string;
+  event_type: string;
+  action: string;
+  installation_id: number;
+  repository_full_name: string;
+  payload: string;
+  signature: string;
+  status: string;
+  received_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SpecForgeRepoProfileDTO {
   id: number;
   repository_id: string;
@@ -328,6 +349,15 @@ export const specForgeService = {
 
   getRepoProfile: (repoId: string) =>
     request.get<SpecForgeRepoProfileDTO>(`/repositories/${repoId}/profile`),
+
+  listGitHubWebhookEvents: (params?: ListGitHubWebhookEventsParams) => {
+    const query = new URLSearchParams();
+    if (params?.status) query.set("status", params.status);
+    if (params?.repository_full_name) query.set("repository_full_name", params.repository_full_name);
+    if (params?.limit) query.set("limit", String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request.get<{ events: GitHubWebhookEventDTO[] }>(`/github/webhooks${suffix}`);
+  },
 
   createIdea: (repoId: string, payload: CreateIdeaPayload) =>
     request.post<SpecForgePlanBundleDTO, CreateIdeaPayload>(
