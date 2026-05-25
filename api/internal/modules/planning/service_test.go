@@ -171,6 +171,27 @@ func (r *memoryRepo) FindPRNodeByID(ctx context.Context, prNodeID uint) (*domain
 	return nil, domain.ErrNotFound
 }
 
+func (r *memoryRepo) FindPRNodeByBranchName(ctx context.Context, branchName string) (*domain.SpecForgePRNode, error) {
+	for _, node := range r.bundle.PRNodes {
+		if node.BranchName == branchName {
+			copied := *node
+			return &copied, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryRepo) UpdatePRNode(ctx context.Context, node *domain.SpecForgePRNode) error {
+	for i, existing := range r.bundle.PRNodes {
+		if existing.ID == node.ID {
+			copied := *node
+			r.bundle.PRNodes[i] = &copied
+			return nil
+		}
+	}
+	return domain.ErrNotFound
+}
+
 func (r *memoryRepo) CreateCompiledPrompt(ctx context.Context, prompt *domain.SpecForgeCompiledPrompt) error {
 	r.nextID++
 	prompt.ID = r.nextID
