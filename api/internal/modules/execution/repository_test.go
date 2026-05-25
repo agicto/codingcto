@@ -95,6 +95,53 @@ func TestRepositoryCreatesAndListsTaskEventsInSequence(t *testing.T) {
 	require.Equal(t, "ok", events[0].Output)
 }
 
+func TestRepositorySweepsOfflineRuntimesAndFailsActiveTasks(t *testing.T) {
+	repo := newTestExecutionRepository(t)
+	oldSeen := time.Now().Add(-10 * time.Minute)
+	freshSeen := time.Now()
+	oldRuntime := &domain.SpecForgeRuntime{
+		RuntimeID:  "runtime_old",
+		Executor:   ExecutorNameCodexCLI,
+		Status:     domain.RuntimeStatusOnline,
+		LastSeenAt: oldSeen,
+	}
+	freshRuntime := &domain.SpecForgeRuntime{
+		RuntimeID:  "runtime_fresh",
+		Executor:   ExecutorNameCodexCLI,
+		Status:     domain.RuntimeStatusOnline,
+		LastSeenAt: freshSeen,
+	}
+	require.NoError(t, repo.UpsertRuntime(context.Background(), oldRuntime))
+	require.NoError(t, repo.UpsertRuntime(context.Background(), freshRuntime))
+	bundle := &domain.SpecForgeExecutionBundle{
+		Run: &domain.SpecForgeExecutionRun{
+			PlanID:    1,
+			Status:    domain.ExecutionRunStatusRunning,
+			StartedBy: 7,
+			StartedAt: time.Now(),
+		},
+		Tasks: []*domain.SpecForgeAgentTask{
+			{PRNodeID: 10, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusRunning, RuntimeID: "runtime_old", AttemptNumber: 1},
+			{PRNodeID: 11, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusDispatched, RuntimeID: "runtime_fresh", AttemptNumber: 1},
+		},
+	}
+	require.NoError(t, repo.CreateExecutionBundle(context.Background(), bundle))
+
+	runtimes, err := repo.MarkStaleRuntimesOffline(context.Background(), time.Now().Add(-5*time.Minute))
+	require.NoError(t, err)
+	failedTasks, err := repo.FailTasksForOfflineRuntimes(context.Background())
+
+	require.NoError(t, err)
+	require.Len(t, runtimes, 1)
+	require.Equal(t, "runtime_old", runtimes[0].RuntimeID)
+	require.Equal(t, domain.RuntimeStatusOffline, runtimes[0].Status)
+	require.Len(t, failedTasks, 1)
+	require.Equal(t, bundle.Tasks[0].ID, failedTasks[0].ID)
+	require.Equal(t, domain.AgentTaskStatusFailed, failedTasks[0].Status)
+	require.Equal(t, "runtime_offline", failedTasks[0].FailureReason)
+	require.NotNil(t, failedTasks[0].FinishedAt)
+}
+
 func newTestExecutionRepository(t *testing.T) *repository {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})

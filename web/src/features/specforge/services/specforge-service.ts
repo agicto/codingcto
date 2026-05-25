@@ -47,6 +47,10 @@ export interface RuntimeHeartbeatPayload {
   version?: string;
 }
 
+export interface RuntimeSweepPayload {
+  stale_seconds?: number;
+}
+
 export interface ClaimTaskPayload {
   executor?: string;
   session_id?: string;
@@ -229,6 +233,11 @@ export interface SpecForgeTaskEventDTO {
   created_at: string;
 }
 
+export interface SpecForgeRuntimeSweepResultDTO {
+  offline_runtimes: SpecForgeRuntimeDTO[];
+  failed_tasks: SpecForgeExecutionBundleDTO["tasks"];
+}
+
 export interface SpecForgeExecutionBundleDTO {
   run: {
     id: number;
@@ -319,6 +328,12 @@ export const specForgeService = {
       { runtime: SpecForgeRuntimeDTO; claim_pending: boolean },
       RuntimeHeartbeatPayload
     >(`/runtimes/heartbeat`, payload),
+
+  sweepStaleRuntimes: (payload?: RuntimeSweepPayload) =>
+    request.post<SpecForgeRuntimeSweepResultDTO, RuntimeSweepPayload | undefined>(
+      `/runtimes/sweep`,
+      payload
+    ),
 
   claimTask: (runtimeId: string, payload?: ClaimTaskPayload) =>
     request.post<{ task?: SpecForgeClaimedTaskDTO }, ClaimTaskPayload | undefined>(

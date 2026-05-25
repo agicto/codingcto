@@ -17,6 +17,7 @@ type Service interface {
 	GetRun(ctx context.Context, runID uint) (*domain.SpecForgeExecutionBundle, error)
 	DispatchRun(ctx context.Context, runID uint, req *DispatchExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error)
 	HeartbeatRuntime(ctx context.Context, req *RuntimeHeartbeatRequest) (*RuntimeHeartbeatResponse, error)
+	SweepStaleRuntimes(ctx context.Context, req *RuntimeSweepRequest) (*domain.SpecForgeRuntimeSweepResult, error)
 	ClaimTask(ctx context.Context, runtimeID string, req *ClaimAgentTaskRequest) (*ClaimAgentTaskResponse, error)
 	PinTaskSession(ctx context.Context, taskID uint, req *PinAgentTaskSessionRequest) (*domain.SpecForgeExecutionBundle, error)
 	ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
@@ -168,6 +169,26 @@ func (s *service) HeartbeatRuntime(ctx context.Context, req *RuntimeHeartbeatReq
 		return nil, fmt.Errorf("check claimable task: %w", err)
 	}
 	return &RuntimeHeartbeatResponse{Runtime: runtime, ClaimPending: pending}, nil
+}
+
+func (s *service) SweepStaleRuntimes(ctx context.Context, req *RuntimeSweepRequest) (*domain.SpecForgeRuntimeSweepResult, error) {
+	staleSeconds := 300
+	if req != nil && req.StaleSeconds > 0 {
+		staleSeconds = req.StaleSeconds
+	}
+	staleBefore := time.Now().Add(-time.Duration(staleSeconds) * time.Second)
+	runtimes, err := s.repo.MarkStaleRuntimesOffline(ctx, staleBefore)
+	if err != nil {
+		return nil, fmt.Errorf("mark stale runtimes offline: %w", err)
+	}
+	tasks, err := s.repo.FailTasksForOfflineRuntimes(ctx)
+	if err != nil {
+		return nil, fmt.Errorf("fail tasks for offline runtimes: %w", err)
+	}
+	return &domain.SpecForgeRuntimeSweepResult{
+		OfflineRuntimes: runtimes,
+		FailedTasks:     tasks,
+	}, nil
 }
 
 func (s *service) ClaimTask(ctx context.Context, runtimeID string, req *ClaimAgentTaskRequest) (*ClaimAgentTaskResponse, error) {

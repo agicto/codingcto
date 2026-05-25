@@ -17,6 +17,10 @@ type RuntimeHeartbeatRequest struct {
 	Version   string `json:"version" binding:"omitempty,max=100"`
 }
 
+type RuntimeSweepRequest struct {
+	StaleSeconds int `json:"stale_seconds" binding:"omitempty,min=1,max=86400"`
+}
+
 type ClaimAgentTaskRequest struct {
 	Executor  string `json:"executor" binding:"omitempty,max=100"`
 	SessionID string `json:"session_id" binding:"omitempty,max=255"`

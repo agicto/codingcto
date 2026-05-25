@@ -11,6 +11,7 @@ import {
   type DispatchRunPayload,
   type RepoProfilePayload,
   type RuntimeHeartbeatPayload,
+  type RuntimeSweepPayload,
   type StartRunPayload,
   type SubmitTaskResultPayload,
   type UpsertSkillPayload,
@@ -141,6 +142,17 @@ export function useDispatchExecutionRun() {
 export function useHeartbeatSpecForgeRuntime() {
   return useMutation({
     mutationFn: (payload: RuntimeHeartbeatPayload) => specForgeService.heartbeatRuntime(payload),
+  });
+}
+
+export function useSweepSpecForgeRuntimes() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload?: RuntimeSweepPayload) => specForgeService.sweepStaleRuntimes(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: specForgeKeys.all });
+    },
   });
 }
 
