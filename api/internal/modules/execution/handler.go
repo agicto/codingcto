@@ -124,6 +124,21 @@ func (h *Handler) HeartbeatRuntime(c *gin.Context) {
 	response.Success(c, heartbeat)
 }
 
+func (h *Handler) DeregisterRuntimes(c *gin.Context) {
+	var req RuntimeDeregisterRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+
+	result, err := h.service.DeregisterRuntimes(c.Request.Context(), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to deregister runtimes", err)
+		return
+	}
+
+	response.Success(c, result)
+}
+
 func (h *Handler) SweepStaleRuntimes(c *gin.Context) {
 	var req RuntimeSweepRequest
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {

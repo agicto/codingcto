@@ -11,6 +11,7 @@ import {
   type DispatchRunPayload,
   type RepoProfilePayload,
   type RetryTaskPayload,
+  type RuntimeDeregisterPayload,
   type RuntimeHeartbeatPayload,
   type RuntimeSweepPayload,
   type StartRunPayload,
@@ -163,6 +164,17 @@ export function useSweepSpecForgeRuntimes() {
 
   return useMutation({
     mutationFn: (payload?: RuntimeSweepPayload) => specForgeService.sweepStaleRuntimes(payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: specForgeKeys.all });
+    },
+  });
+}
+
+export function useDeregisterSpecForgeRuntimes() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: RuntimeDeregisterPayload) => specForgeService.deregisterRuntimes(payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: specForgeKeys.all });
     },
