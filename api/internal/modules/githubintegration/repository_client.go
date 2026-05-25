@@ -23,6 +23,8 @@ type RepositoryClient interface {
 	CreateBranch(ctx context.Context, owner, repo, branch, sha string) (*GitReference, error)
 	CreatePullRequest(ctx context.Context, input CreatePullRequestInput) (*PullRequest, error)
 	ListWorkflowRuns(ctx context.Context, owner, repo, branch string) ([]WorkflowRun, error)
+	ListWorkflowJobs(ctx context.Context, owner, repo string, runID int64) ([]WorkflowJob, error)
+	GetWorkflowJobLogs(ctx context.Context, owner, repo string, jobID int64) (string, error)
 }
 
 type RepositoryClientFactory interface {
@@ -121,6 +123,27 @@ type WorkflowRun struct {
 	RunStarted *time.Time `json:"run_started_at"`
 }
 
+type WorkflowJob struct {
+	ID          int64          `json:"id"`
+	RunID       int64          `json:"run_id"`
+	Name        string         `json:"name"`
+	Status      string         `json:"status"`
+	Conclusion  string         `json:"conclusion"`
+	HTMLURL     string         `json:"html_url"`
+	StartedAt   *time.Time     `json:"started_at"`
+	CompletedAt *time.Time     `json:"completed_at"`
+	Steps       []WorkflowStep `json:"steps"`
+}
+
+type WorkflowStep struct {
+	Name        string     `json:"name"`
+	Status      string     `json:"status"`
+	Conclusion  string     `json:"conclusion"`
+	Number      int        `json:"number"`
+	StartedAt   *time.Time `json:"started_at"`
+	CompletedAt *time.Time `json:"completed_at"`
+}
+
 func (c *GitHubRepositoryClient) GetBranchRef(ctx context.Context, owner, repo, branch string) (*GitReference, error) {
 	if err := requireRepoArgs(owner, repo); err != nil {
 		return nil, err
@@ -195,6 +218,39 @@ func (c *GitHubRepositoryClient) ListWorkflowRuns(ctx context.Context, owner, re
 	return body.WorkflowRuns, nil
 }
 
+func (c *GitHubRepositoryClient) ListWorkflowJobs(ctx context.Context, owner, repo string, runID int64) ([]WorkflowJob, error) {
+	if err := requireRepoArgs(owner, repo); err != nil {
+		return nil, err
+	}
+	if runID == 0 {
+		return nil, fmt.Errorf("github repository client: workflow run id is required")
+	}
+	query := url.Values{"per_page": []string{"100"}}
+	path := fmt.Sprintf("/repos/%s/%s/actions/runs/%d/jobs?%s", url.PathEscape(owner), url.PathEscape(repo), runID, query.Encode())
+	var body struct {
+		Jobs []WorkflowJob `json:"jobs"`
+	}
+	if err := c.do(ctx, http.MethodGet, path, nil, &body); err != nil {
+		return nil, err
+	}
+	return body.Jobs, nil
+}
+
+func (c *GitHubRepositoryClient) GetWorkflowJobLogs(ctx context.Context, owner, repo string, jobID int64) (string, error) {
+	if err := requireRepoArgs(owner, repo); err != nil {
+		return "", err
+	}
+	if jobID == 0 {
+		return "", fmt.Errorf("github repository client: workflow job id is required")
+	}
+	path := fmt.Sprintf("/repos/%s/%s/actions/jobs/%d/logs", url.PathEscape(owner), url.PathEscape(repo), jobID)
+	body, err := c.doText(ctx, http.MethodGet, path)
+	if err != nil {
+		return "", err
+	}
+	return body, nil
+}
+
 func (c *GitHubRepositoryClient) do(ctx context.Context, method, path string, payload any, out any) error {
 	var body io.Reader
 	if payload != nil {
@@ -242,6 +298,48 @@ func (c *GitHubRepositoryClient) do(ctx context.Context, method, path string, pa
 		return fmt.Errorf("github repository client: decode response: %w", err)
 	}
 	return nil
+}
+
+func (c *GitHubRepositoryClient) doText(ctx context.Context, method, path string) (string, error) {
+	req, err := c.newRequest(ctx, method, path, nil)
+	if err != nil {
+		return "", err
+	}
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return "", err
+	}
+	defer resp.Body.Close()
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return "", fmt.Errorf("github repository client: read response: %w", err)
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		var errorBody struct {
+			Message string `json:"message"`
+		}
+		_ = json.Unmarshal(responseBody, &errorBody)
+		if errorBody.Message != "" {
+			return "", fmt.Errorf("github repository client: request failed: %s", errorBody.Message)
+		}
+		return "", fmt.Errorf("github repository client: request failed with HTTP %d", resp.StatusCode)
+	}
+	return string(responseBody), nil
+}
+
+func (c *GitHubRepositoryClient) newRequest(ctx context.Context, method, path string, body io.Reader) (*http.Request, error) {
+	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.baseURL, "/")+path, body)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "Bearer "+c.token)
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+	if body != nil {
+		req.Header.Set("Content-Type", "application/json")
+	}
+	return req, nil
 }
 
 func requireRepoArgs(owner, repo string) error {

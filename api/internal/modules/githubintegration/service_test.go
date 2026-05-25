@@ -560,6 +560,14 @@ func (c *fakeRepositoryClient) ListWorkflowRuns(ctx context.Context, owner, repo
 	return c.workflowRuns, c.listWorkflowErr
 }
 
+func (c *fakeRepositoryClient) ListWorkflowJobs(ctx context.Context, owner, repo string, runID int64) ([]WorkflowJob, error) {
+	return nil, nil
+}
+
+func (c *fakeRepositoryClient) GetWorkflowJobLogs(ctx context.Context, owner, repo string, jobID int64) (string, error) {
+	return "", nil
+}
+
 type fakeInstallationTokenProvider struct {
 	installationID int64
 	token          *InstallationToken
