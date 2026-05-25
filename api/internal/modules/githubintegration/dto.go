@@ -38,3 +38,8 @@ type PreparePRNodeBranchRequest struct {
 	PRNodeID     uint   `json:"pr_node_id" binding:"required"`
 	BaseBranch   string `json:"base_branch" binding:"omitempty,max=100"`
 }
+
+type RefreshPRNodeCIRequest struct {
+	RepositoryID string `json:"repository_id" binding:"required,max=255"`
+	PRNodeID     uint   `json:"pr_node_id" binding:"required"`
+}

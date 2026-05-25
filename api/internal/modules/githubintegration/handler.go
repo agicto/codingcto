@@ -112,6 +112,19 @@ func (h *Handler) PreparePRNodeBranch(c *gin.Context) {
 	response.Success(c, node)
 }
 
+func (h *Handler) RefreshPRNodeCI(c *gin.Context) {
+	var req RefreshPRNodeCIRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+	node, err := h.service.RefreshPRNodeCI(c.Request.Context(), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to refresh PR node CI", err)
+		return
+	}
+	response.Success(c, node)
+}
+
 func (h *Handler) ReceiveWebhook(c *gin.Context) {
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {

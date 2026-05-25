@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"fmt"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/zgiai/luas/api/internal/domain"
@@ -346,6 +347,83 @@ func TestPreparePRNodeBranchIgnoresExistingBranch(t *testing.T) {
 	require.NoError(t, err)
 }
 
+func TestRefreshPRNodeCIUpdatesFromLatestWorkflowRun(t *testing.T) {
+	repo := &memoryRepo{
+		installation: &domain.GitHubInstallation{
+			ID:             3,
+			InstallationID: 98765,
+		},
+		repository: &domain.Repository{
+			ID:                   1,
+			RepositoryID:         "github_agicto__codingcto",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto",
+			DefaultBranch:        "main",
+		},
+	}
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, BranchName: "specforge/team-invite-01-api", Status: domain.PRNodeStatusCIRunning},
+		},
+	}
+	client := &fakeRepositoryClient{
+		workflowRuns: []WorkflowRun{
+			{HeadBranch: "specforge/team-invite-01-api", HeadSHA: "old", Status: "completed", Conclusion: "failure", CreatedAt: time.Date(2026, 5, 24, 10, 0, 0, 0, time.UTC)},
+			{HeadBranch: "specforge/team-invite-01-api", HeadSHA: "new", Status: "completed", Conclusion: "success", CreatedAt: time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC)},
+		},
+	}
+	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider)
+
+	node, err := svc.RefreshPRNodeCI(context.Background(), &RefreshPRNodeCIRequest{
+		RepositoryID: "github_agicto__codingcto",
+		PRNodeID:     10,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "specforge/team-invite-01-api", client.listWorkflowBranch)
+	require.Equal(t, "new", node.GitHubHeadSHA)
+	require.Equal(t, domain.PRNodeStatusReadyForReview, node.Status)
+	require.Equal(t, domain.PRNodeStatusReadyForReview, planningRepo.nodes[0].Status)
+}
+
+func TestRefreshPRNodeCIMarksFailedRunBlocked(t *testing.T) {
+	repo := &memoryRepo{
+		installation: &domain.GitHubInstallation{
+			ID:             3,
+			InstallationID: 98765,
+		},
+		repository: &domain.Repository{
+			ID:                   1,
+			RepositoryID:         "github_agicto__codingcto",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto",
+			DefaultBranch:        "main",
+		},
+	}
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, BranchName: "specforge/team-invite-01-api", Status: domain.PRNodeStatusCIRunning},
+		},
+	}
+	client := &fakeRepositoryClient{
+		workflowRuns: []WorkflowRun{{HeadSHA: "failed", Status: "completed", Conclusion: "failure", CreatedAt: time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC)}},
+	}
+	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider)
+
+	node, err := svc.RefreshPRNodeCI(context.Background(), &RefreshPRNodeCIRequest{
+		RepositoryID: "github_agicto__codingcto",
+		PRNodeID:     10,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "failed", node.GitHubHeadSHA)
+	require.Equal(t, domain.PRNodeStatusBlocked, node.Status)
+}
+
 func TestDeliverPRNodeAllowsOverrides(t *testing.T) {
 	repo := &memoryRepo{
 		installation: &domain.GitHubInstallation{
@@ -443,17 +521,20 @@ func (f *fakeRepositoryClientFactory) NewRepositoryClient(token string) (Reposit
 }
 
 type fakeRepositoryClient struct {
-	input            CreatePullRequestInput
-	pr               *PullRequest
-	err              error
-	branchRef        *GitReference
-	getBranchOwner   string
-	getBranchRepo    string
-	getBranchName    string
-	getBranchErr     error
-	createBranchName string
-	createBranchSHA  string
-	createBranchErr  error
+	input              CreatePullRequestInput
+	pr                 *PullRequest
+	err                error
+	branchRef          *GitReference
+	getBranchOwner     string
+	getBranchRepo      string
+	getBranchName      string
+	getBranchErr       error
+	createBranchName   string
+	createBranchSHA    string
+	createBranchErr    error
+	workflowRuns       []WorkflowRun
+	listWorkflowBranch string
+	listWorkflowErr    error
 }
 
 func (c *fakeRepositoryClient) GetBranchRef(ctx context.Context, owner, repo, branch string) (*GitReference, error) {
@@ -472,6 +553,11 @@ func (c *fakeRepositoryClient) CreateBranch(ctx context.Context, owner, repo, br
 func (c *fakeRepositoryClient) CreatePullRequest(ctx context.Context, input CreatePullRequestInput) (*PullRequest, error) {
 	c.input = input
 	return c.pr, c.err
+}
+
+func (c *fakeRepositoryClient) ListWorkflowRuns(ctx context.Context, owner, repo, branch string) ([]WorkflowRun, error) {
+	c.listWorkflowBranch = branch
+	return c.workflowRuns, c.listWorkflowErr
 }
 
 type fakeInstallationTokenProvider struct {
