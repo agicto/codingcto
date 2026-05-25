@@ -20,6 +20,13 @@ type CompilePromptRequest struct {
 	Type string `json:"type" binding:"omitempty,oneof=implementation fix review_patch"`
 }
 
+type UpsertSkillRequest struct {
+	Name        string `json:"name" binding:"required,min=2,max=120"`
+	Description string `json:"description" binding:"omitempty,max=1000"`
+	Content     string `json:"content" binding:"required,min=3,max=50000"`
+	Active      *bool  `json:"active" binding:"omitempty"`
+}
+
 type PlanReviewResponse struct {
 	Idea               *domain.SpecForgeIdea               `json:"idea"`
 	ProductSpec        *domain.SpecForgeProductSpec        `json:"product_spec"`
@@ -29,6 +36,14 @@ type PlanReviewResponse struct {
 
 type CompiledPromptResponse struct {
 	Prompt *domain.SpecForgeCompiledPrompt `json:"prompt"`
+}
+
+type SkillResponse struct {
+	Skill *domain.SpecForgeSkill `json:"skill"`
+}
+
+type SkillListResponse struct {
+	Skills []*domain.SpecForgeSkill `json:"skills"`
 }
 
 func toPlanReviewResponse(bundle *domain.SpecForgePlanBundle) *PlanReviewResponse {

@@ -9,12 +9,14 @@ import {
   type DispatchRunPayload,
   type RepoProfilePayload,
   type StartRunPayload,
+  type UpsertSkillPayload,
   specForgeService,
 } from "@/features/specforge/services/specforge-service";
 
 export const specForgeKeys = {
   all: ["specforge"] as const,
   repoProfile: (repoId: string) => [...specForgeKeys.all, "repo-profile", repoId] as const,
+  skills: (repoId: string) => [...specForgeKeys.all, "skills", repoId] as const,
   ideaPlan: (ideaId: number) => [...specForgeKeys.all, "idea-plan", ideaId] as const,
   run: (runId: number) => [...specForgeKeys.all, "run", runId] as const,
 };
@@ -23,6 +25,14 @@ export function useRepoProfile(repoId: string) {
   return useQuery({
     queryKey: specForgeKeys.repoProfile(repoId),
     queryFn: () => specForgeService.getRepoProfile(repoId),
+    enabled: Boolean(repoId),
+  });
+}
+
+export function useSpecForgeSkills(repoId: string) {
+  return useQuery({
+    queryKey: specForgeKeys.skills(repoId),
+    queryFn: () => specForgeService.listSkills(repoId),
     enabled: Boolean(repoId),
   });
 }
@@ -50,6 +60,17 @@ export function useUpsertRepoProfile(repoId: string) {
     mutationFn: (payload: RepoProfilePayload) => specForgeService.upsertRepoProfile(repoId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: specForgeKeys.repoProfile(repoId) });
+    },
+  });
+}
+
+export function useUpsertSpecForgeSkill(repoId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: UpsertSkillPayload) => specForgeService.upsertSkill(repoId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: specForgeKeys.skills(repoId) });
     },
   });
 }

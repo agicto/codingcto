@@ -84,6 +84,36 @@ func (h *Handler) ApprovePlan(c *gin.Context) {
 	response.Success(c, toPlanReviewResponse(bundle))
 }
 
+func (h *Handler) UpsertSkill(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+
+	var req UpsertSkillRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+
+	skill, err := h.service.UpsertSkill(c.Request.Context(), userID, c.Param("repo_id"), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to upsert skill", err)
+		return
+	}
+
+	response.Created(c, &SkillResponse{Skill: skill})
+}
+
+func (h *Handler) ListSkills(c *gin.Context) {
+	skills, err := h.service.ListSkills(c.Request.Context(), c.Param("repo_id"))
+	if err != nil {
+		response.HandleError(c, "Failed to list skills", err)
+		return
+	}
+
+	response.Success(c, &SkillListResponse{Skills: skills})
+}
+
 func (h *Handler) CompilePrompt(c *gin.Context) {
 	userID, ok := handler.GetUserID(c)
 	if !ok {

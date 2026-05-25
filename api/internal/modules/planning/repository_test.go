@@ -65,6 +65,31 @@ func TestRepositoryFindsLatestCompiledPromptForPRNode(t *testing.T) {
 	require.Equal(t, "new prompt", found.PromptText)
 }
 
+func TestRepositoryUpsertsAndListsSkills(t *testing.T) {
+	repo := newTestPlanningRepository(t)
+	skill := &domain.SpecForgeSkill{
+		RepositoryID: "github_agicto__codingcto",
+		Name:         "go-layering",
+		Description:  "Layering rules",
+		Content:      "Handlers delegate to services.",
+		Active:       true,
+		CreatedBy:    7,
+	}
+	require.NoError(t, repo.UpsertSkill(context.Background(), skill))
+	require.NotZero(t, skill.ID)
+
+	skill.Content = "Handlers bind HTTP and services own business logic."
+	require.NoError(t, repo.UpsertSkill(context.Background(), skill))
+	all, err := repo.ListSkillsByRepositoryID(context.Background(), "github_agicto__codingcto")
+	require.NoError(t, err)
+	require.Len(t, all, 1)
+	require.Equal(t, "Handlers bind HTTP and services own business logic.", all[0].Content)
+
+	active, err := repo.ListActiveSkillsByRepositoryID(context.Background(), "github_agicto__codingcto")
+	require.NoError(t, err)
+	require.Len(t, active, 1)
+}
+
 func newTestPlanningRepository(t *testing.T) *repository {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -75,6 +100,7 @@ func newTestPlanningRepository(t *testing.T) *repository {
 		&ImplementationPlanPO{},
 		&PRNodePO{},
 		&CompiledPromptPO{},
+		&SkillPO{},
 	))
 	return NewRepository(db)
 }

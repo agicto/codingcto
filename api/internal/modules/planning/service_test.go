@@ -18,7 +18,7 @@ func TestCreateIdeaBuildsReviewablePlanBundle(t *testing.T) {
 		CIProvider:    "github_actions",
 		RiskAreas:     []string{"database"},
 	}}
-	svc := NewService(repo, profileRepo)
+	svc := NewService(repo, profileRepo, repo)
 
 	bundle, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
@@ -41,7 +41,7 @@ func TestCreateIdeaBuildsReviewablePlanBundle(t *testing.T) {
 
 func TestApprovePlanRecordsApproverAndRejectsSecondApproval(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, &memoryProfileRepo{})
+	svc := NewService(repo, &memoryProfileRepo{}, repo)
 
 	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
@@ -77,7 +77,7 @@ func TestCompilePromptPersistsVersionedPromptForPRNode(t *testing.T) {
 		RiskAreas:         []string{"auth"},
 		Summary:           "Backend API scaffold",
 	}}
-	svc := NewService(repo, profileRepo)
+	svc := NewService(repo, profileRepo, repo)
 
 	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
@@ -99,10 +99,64 @@ func TestCompilePromptPersistsVersionedPromptForPRNode(t *testing.T) {
 	require.NotNil(t, repo.prompt)
 }
 
+func TestUpsertSkillPersistsRepoInstruction(t *testing.T) {
+	repo := &memoryRepo{}
+	svc := NewService(repo, &memoryProfileRepo{}, repo)
+	active := true
+
+	skill, err := svc.UpsertSkill(context.Background(), 42, "repo_123", &UpsertSkillRequest{
+		Name:        "service-layer",
+		Description: "API route guidance",
+		Content:     "API handlers must delegate business logic to services.",
+		Active:      &active,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "repo_123", skill.RepositoryID)
+	require.Equal(t, uint(42), skill.CreatedBy)
+	require.True(t, skill.Active)
+
+	skills, err := svc.ListSkills(context.Background(), "repo_123")
+	require.NoError(t, err)
+	require.Len(t, skills, 1)
+	require.Equal(t, "service-layer", skills[0].Name)
+	require.Equal(t, "API handlers must delegate business logic to services.", skills[0].Content)
+}
+
+func TestCompilePromptInjectsActiveRepoSkills(t *testing.T) {
+	repo := &memoryRepo{}
+	svc := NewService(repo, &memoryProfileRepo{}, repo)
+	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
+		Input: "Add team invite feature for workspace admins",
+	})
+	require.NoError(t, err)
+	_, err = svc.UpsertSkill(context.Background(), 42, "repo_123", &UpsertSkillRequest{
+		Name:    "go-layering",
+		Content: "Use handlers only for HTTP binding and response mapping.",
+	})
+	require.NoError(t, err)
+	inactive := false
+	_, err = svc.UpsertSkill(context.Background(), 42, "repo_123", &UpsertSkillRequest{
+		Name:    "inactive-guidance",
+		Content: "This should not appear.",
+		Active:  &inactive,
+	})
+	require.NoError(t, err)
+
+	prompt, err := svc.CompilePrompt(context.Background(), 42, created.PRNodes[0].ID, &CompilePromptRequest{})
+
+	require.NoError(t, err)
+	require.Contains(t, prompt.PromptText, "Repository skills")
+	require.Contains(t, prompt.PromptText, "go-layering")
+	require.Contains(t, prompt.PromptText, "Use handlers only for HTTP binding and response mapping.")
+	require.NotContains(t, prompt.PromptText, "This should not appear.")
+}
+
 type memoryRepo struct {
 	nextID uint
 	bundle *domain.SpecForgePlanBundle
 	prompt *domain.SpecForgeCompiledPrompt
+	skills []*domain.SpecForgeSkill
 }
 
 type memoryProfileRepo struct {
@@ -206,6 +260,48 @@ func (r *memoryRepo) FindLatestCompiledPromptByPRNodeID(ctx context.Context, prN
 	}
 	copied := *r.prompt
 	return &copied, nil
+}
+
+func (r *memoryRepo) UpsertSkill(ctx context.Context, skill *domain.SpecForgeSkill) error {
+	r.nextID++
+	copied := *skill
+	for i, existing := range r.skills {
+		if existing.RepositoryID == skill.RepositoryID && existing.Name == skill.Name {
+			copied.ID = existing.ID
+			r.skills[i] = &copied
+			return nil
+		}
+	}
+	copied.ID = r.nextID
+	skill.ID = copied.ID
+	r.skills = append(r.skills, &copied)
+	return nil
+}
+
+func (r *memoryRepo) ListActiveSkillsByRepositoryID(ctx context.Context, repositoryID string) ([]*domain.SpecForgeSkill, error) {
+	all, err := r.ListSkillsByRepositoryID(ctx, repositoryID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*domain.SpecForgeSkill, 0, len(all))
+	for _, skill := range all {
+		if skill.Active {
+			out = append(out, skill)
+		}
+	}
+	return out, nil
+}
+
+func (r *memoryRepo) ListSkillsByRepositoryID(ctx context.Context, repositoryID string) ([]*domain.SpecForgeSkill, error) {
+	out := make([]*domain.SpecForgeSkill, 0, len(r.skills))
+	for _, skill := range r.skills {
+		if skill.RepositoryID != repositoryID {
+			continue
+		}
+		copied := *skill
+		out = append(out, &copied)
+	}
+	return out, nil
 }
 
 func cloneBundle(bundle *domain.SpecForgePlanBundle) *domain.SpecForgePlanBundle {
