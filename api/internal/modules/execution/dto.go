@@ -45,6 +45,10 @@ type RuntimeHeartbeatResponse struct {
 	ClaimPending bool                     `json:"claim_pending"`
 }
 
+type RuntimePendingTasksResponse struct {
+	Tasks []*domain.SpecForgeAgentTask `json:"tasks"`
+}
+
 type ClaimAgentTaskResponse struct {
 	Task             *ClaimedAgentTask            `json:"task,omitempty"`
 	PRNode           *ClaimedTaskPRNode           `json:"pr_node,omitempty"`

@@ -171,6 +171,19 @@ func (h *Handler) SweepStaleTasks(c *gin.Context) {
 	response.Success(c, result)
 }
 
+func (h *Handler) ListRuntimePendingTasks(c *gin.Context) {
+	runtimeID := c.Param("runtime_id")
+	executor := c.Query("executor")
+
+	result, err := h.service.ListRuntimePendingTasks(c.Request.Context(), runtimeID, executor)
+	if err != nil {
+		response.HandleError(c, "Failed to list runtime pending tasks", err)
+		return
+	}
+
+	response.Success(c, result)
+}
+
 func (h *Handler) ClaimTask(c *gin.Context) {
 	runtimeID := c.Param("runtime_id")
 

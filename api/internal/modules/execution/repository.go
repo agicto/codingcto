@@ -78,6 +78,36 @@ func (r *repository) FindAgentTaskByID(ctx context.Context, taskID uint) (*domai
 	return po.toDomain(), nil
 }
 
+func (r *repository) ListPendingAgentTasksByRuntime(ctx context.Context, runtimeID, executor string) ([]*domain.SpecForgeAgentTask, error) {
+	runtimeID = strings.TrimSpace(runtimeID)
+	executor = strings.TrimSpace(executor)
+	if runtimeID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	var pos []*AgentTaskPO
+	query := r.db.WithContext(ctx).
+		Where(
+			"(status = ? AND (runtime_id = '' OR runtime_id IS NULL OR runtime_id = ?)) OR (status = ? AND runtime_id = ?)",
+			domain.AgentTaskStatusDispatched,
+			runtimeID,
+			domain.AgentTaskStatusRunning,
+			runtimeID,
+		)
+	if executor != "" {
+		query = query.Where("executor = ?", executor)
+	}
+	if err := query.
+		Order("CASE WHEN status = '" + domain.AgentTaskStatusDispatched + "' THEN 0 ELSE 1 END ASC, dispatched_at ASC, started_at ASC, id ASC").
+		Find(&pos).Error; err != nil {
+		return nil, err
+	}
+	tasks := make([]*domain.SpecForgeAgentTask, len(pos))
+	for i, po := range pos {
+		tasks[i] = po.toDomain()
+	}
+	return tasks, nil
+}
+
 func (r *repository) CreateTaskEvent(ctx context.Context, event *domain.SpecForgeTaskEvent) error {
 	if event == nil || event.TaskID == 0 || strings.TrimSpace(event.Type) == "" {
 		return domain.ErrInvalidInput

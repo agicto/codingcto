@@ -390,6 +390,13 @@ export const specForgeService = {
       payload
     ),
 
+  listRuntimePendingTasks: (runtimeId: string, executor?: string) => {
+    const query = executor ? `?executor=${encodeURIComponent(executor)}` : "";
+    return request.get<{ tasks: SpecForgeExecutionBundleDTO["tasks"] }>(
+      `/runtimes/${runtimeId}/tasks/pending${query}`
+    );
+  },
+
   sweepStaleTasks: (payload?: StaleTaskSweepPayload) =>
     request.post<SpecForgeTaskSweepResultDTO, StaleTaskSweepPayload | undefined>(
       `/tasks/sweep`,

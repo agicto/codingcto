@@ -95,6 +95,39 @@ func TestRepositoryCreatesAndListsTaskEventsInSequence(t *testing.T) {
 	require.Equal(t, "ok", events[0].Output)
 }
 
+func TestRepositoryListsRuntimePendingTasks(t *testing.T) {
+	repo := newTestExecutionRepository(t)
+	oldDispatchedAt := time.Now().Add(-2 * time.Minute)
+	newDispatchedAt := time.Now()
+	startedAt := time.Now().Add(-1 * time.Minute)
+	bundle := &domain.SpecForgeExecutionBundle{
+		Run: &domain.SpecForgeExecutionRun{
+			PlanID:    1,
+			Status:    domain.ExecutionRunStatusRunning,
+			StartedBy: 7,
+			StartedAt: time.Now(),
+		},
+		Tasks: []*domain.SpecForgeAgentTask{
+			{PRNodeID: 10, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusDispatched, DispatchedAt: &oldDispatchedAt, AttemptNumber: 1},
+			{PRNodeID: 11, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusDispatched, RuntimeID: "runtime_123", DispatchedAt: &newDispatchedAt, AttemptNumber: 1},
+			{PRNodeID: 12, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusRunning, RuntimeID: "runtime_123", StartedAt: &startedAt, AttemptNumber: 1},
+			{PRNodeID: 13, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusDispatched, RuntimeID: "runtime_other", DispatchedAt: &oldDispatchedAt, AttemptNumber: 1},
+			{PRNodeID: 14, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusQueued, AttemptNumber: 1},
+			{PRNodeID: 15, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusCompleted, RuntimeID: "runtime_123", AttemptNumber: 1},
+			{PRNodeID: 16, Executor: "other_executor", Status: domain.AgentTaskStatusDispatched, DispatchedAt: &oldDispatchedAt, AttemptNumber: 1},
+		},
+	}
+	require.NoError(t, repo.CreateExecutionBundle(context.Background(), bundle))
+
+	tasks, err := repo.ListPendingAgentTasksByRuntime(context.Background(), "runtime_123", ExecutorNameCodexCLI)
+
+	require.NoError(t, err)
+	require.Len(t, tasks, 3)
+	require.Equal(t, bundle.Tasks[0].ID, tasks[0].ID)
+	require.Equal(t, bundle.Tasks[1].ID, tasks[1].ID)
+	require.Equal(t, bundle.Tasks[2].ID, tasks[2].ID)
+}
+
 func TestRepositorySweepsOfflineRuntimesAndFailsActiveTasks(t *testing.T) {
 	repo := newTestExecutionRepository(t)
 	oldSeen := time.Now().Add(-10 * time.Minute)
