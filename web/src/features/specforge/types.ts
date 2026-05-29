@@ -7,6 +7,9 @@ export interface RepoProfile {
   codingConventions: string[];
   riskAreas: string[];
   summary: string;
+  source: string;
+  warnings: string[];
+  lastIndexedAt?: string;
 }
 
 export interface ProductSpec {

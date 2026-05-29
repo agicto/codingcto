@@ -179,6 +179,8 @@ export interface SpecForgeRepoProfileDTO {
   coding_conventions: string[];
   risk_areas: string[];
   summary: string;
+  source: string;
+  warnings: string[];
   created_by: number;
   last_indexed_at: string;
   created_at: string;

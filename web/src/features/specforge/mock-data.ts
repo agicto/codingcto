@@ -40,6 +40,9 @@ export const demoPlan: PlanBundle = {
     riskAreas: ["auth", "database migrations", "runner isolation"],
     summary:
       "Luas is split into a Go API and a Next.js web app. SpecForge work should keep contracts explicit and avoid shared runtime code between halves.",
+    source: "demo",
+    warnings: [],
+    lastIndexedAt: new Date(demoRuntimeNow - 5 * 60_000).toISOString(),
   },
   productSpec: {
     goals: [
