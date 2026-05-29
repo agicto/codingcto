@@ -30,6 +30,26 @@ export interface CompilePromptPayload {
   type?: "implementation" | "fix" | "review_patch";
 }
 
+export interface PreparePRNodeBranchPayload {
+  repository_id: string;
+  pr_node_id: number;
+  base_branch?: string;
+}
+
+export interface DeliverPRNodePayload {
+  repository_id: string;
+  pr_node_id: number;
+  title?: string;
+  body?: string;
+  base_branch?: string;
+  draft?: boolean;
+}
+
+export interface RefreshPRNodeCIPayload {
+  repository_id: string;
+  pr_node_id: number;
+}
+
 export interface CreateFixAttemptFromCIPayload {
   repository_id: string;
 }
@@ -217,6 +237,9 @@ export interface SpecForgePRNodeDTO {
   acceptance_criteria: string[];
   test_commands: string[];
   branch_name: string;
+  github_pr_number?: number;
+  github_pr_url?: string;
+  head_sha?: string;
   status: string;
   created_at: string;
   updated_at: string;
@@ -413,6 +436,21 @@ export const specForgeService = {
   compilePrompt: (prNodeId: number, payload?: CompilePromptPayload) =>
     request.post<{ prompt: SpecForgeCompiledPromptDTO }, CompilePromptPayload | undefined>(
       `/pr-nodes/${prNodeId}/prompts`,
+      payload
+    ),
+
+  preparePRNodeBranch: (payload: PreparePRNodeBranchPayload) =>
+    request.post<SpecForgePRNodeDTO, PreparePRNodeBranchPayload>(
+      "/github/pr-nodes/prepare-branch",
+      payload
+    ),
+
+  deliverPRNode: (payload: DeliverPRNodePayload) =>
+    request.post<SpecForgePRNodeDTO, DeliverPRNodePayload>("/github/pr-nodes/deliver", payload),
+
+  refreshPRNodeCI: (payload: RefreshPRNodeCIPayload) =>
+    request.post<SpecForgePRNodeDTO, RefreshPRNodeCIPayload>(
+      "/github/pr-nodes/refresh-ci",
       payload
     ),
 

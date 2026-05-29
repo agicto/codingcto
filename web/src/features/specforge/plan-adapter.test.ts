@@ -82,6 +82,9 @@ const baseBundle: SpecForgePlanBundleDTO = {
       acceptance_criteria: ['Model exists.'],
       test_commands: ['go test ./...'],
       branch_name: 'specforge/team-invite-01-model',
+      github_pr_number: 42,
+      github_pr_url: 'https://github.com/acme/web/pull/42',
+      head_sha: 'abc123',
       status: 'planned',
       created_at: '2026-05-29T12:00:00Z',
       updated_at: '2026-05-29T12:00:00Z',
@@ -117,6 +120,9 @@ describe('planBundleFromDTO', () => {
           nodeKey: 'PR-001',
           type: 'foundation',
           estimatedRisk: 'medium',
+          githubPrNumber: 42,
+          githubPrUrl: 'https://github.com/acme/web/pull/42',
+          headSha: 'abc123',
           status: 'planned',
         },
       ],
@@ -158,7 +164,7 @@ describe('planBundleFromDTO', () => {
         {
           type: 'foundation',
           estimatedRisk: 'medium',
-          status: 'planned',
+          status: 'blocked',
         },
       ],
     });
