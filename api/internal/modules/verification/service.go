@@ -6,6 +6,7 @@ import (
 	"strings"
 
 	"github.com/zgiai/luas/api/internal/domain"
+	"github.com/zgiai/luas/api/internal/infra/events"
 	"github.com/zgiai/luas/api/internal/modules/githubintegration"
 )
 
@@ -26,10 +27,11 @@ type CIFailureReader interface {
 type service struct {
 	repo          domain.SpecForgeVerificationRepository
 	failureReader CIFailureReader
+	eventBus      *events.EventBus
 }
 
-func NewService(repo domain.SpecForgeVerificationRepository, failureReader CIFailureReader) *service {
-	return &service{repo: repo, failureReader: failureReader}
+func NewService(repo domain.SpecForgeVerificationRepository, failureReader CIFailureReader, eventBus *events.EventBus) *service {
+	return &service{repo: repo, failureReader: failureReader, eventBus: eventBus}
 }
 
 func (s *service) CreateFixAttempt(ctx context.Context, userID, prNodeID uint, req *CreateFixAttemptRequest) (*domain.SpecForgeFixAttempt, error) {
@@ -70,7 +72,17 @@ func (s *service) CreateFixAttempt(ctx context.Context, userID, prNodeID uint, r
 	if err := s.repo.CreateFixAttempt(ctx, attempt); err != nil {
 		return nil, fmt.Errorf("create fix attempt: %w", err)
 	}
+	if err := s.publishFixAttemptQueued(ctx, attempt); err != nil {
+		return nil, err
+	}
 	return attempt, nil
+}
+
+func (s *service) publishFixAttemptQueued(ctx context.Context, attempt *domain.SpecForgeFixAttempt) error {
+	if s.eventBus == nil || attempt == nil || attempt.Status != domain.FixAttemptStatusQueued || !attempt.CanAutoFix {
+		return nil
+	}
+	return s.eventBus.Publish(ctx, domain.NewSpecForgeFixAttemptQueuedEvent(attempt))
 }
 
 func consecutiveFailureTypeCount(attempts []*domain.SpecForgeFixAttempt, failureType string) int {

@@ -45,6 +45,14 @@ type ReviewPatchAgentTaskRequest struct {
 	ForceFreshSession bool   `json:"force_fresh_session" binding:"omitempty"`
 }
 
+type FixAgentTaskRequest struct {
+	FailureType       string `json:"failure_type" binding:"required,max=100"`
+	CILogExcerpt      string `json:"ci_log_excerpt" binding:"omitempty,max=200000"`
+	LikelyCause       string `json:"likely_cause" binding:"omitempty,max=5000"`
+	RecommendedAction string `json:"recommended_action" binding:"omitempty,max=5000"`
+	ForceFreshSession bool   `json:"force_fresh_session" binding:"omitempty"`
+}
+
 type ClaimAgentTaskRequest struct {
 	Executor  string `json:"executor" binding:"omitempty,max=100"`
 	SessionID string `json:"session_id" binding:"omitempty,max=255"`

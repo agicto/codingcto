@@ -183,6 +183,43 @@ func TestRetryTaskCanForceFreshSession(t *testing.T) {
 	require.Empty(t, retry.Workdir)
 }
 
+func TestCreateFixTaskForPRNodeCreatesQueuedFixAttempt(t *testing.T) {
+	planningRepo := memoryPlanningRepoWithPrompt()
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+	completed := dispatched.Tasks[0]
+	completed.Status = domain.AgentTaskStatusCompleted
+	completed.SessionID = "session_123"
+	completed.Workdir = "/tmp/specforge/task"
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), completed))
+
+	updated, err := svc.CreateFixTaskForPRNode(context.Background(), completed.PRNodeID, &FixAgentTaskRequest{
+		FailureType:       "unit_test_failure",
+		CILogExcerpt:      "--- FAIL: TestInvite",
+		LikelyCause:       "GitHub Actions job \"API\" failed at step \"go test\".",
+		RecommendedAction: "Patch the failing assertion.",
+	})
+
+	require.NoError(t, err)
+	require.Len(t, updated.Tasks, 3)
+	fixTask := updated.Tasks[2]
+	require.Equal(t, completed.ID, *fixTask.ParentTaskID)
+	require.Equal(t, completed.PRNodeID, fixTask.PRNodeID)
+	require.Equal(t, domain.AgentTaskStatusQueued, fixTask.Status)
+	require.Equal(t, domain.PromptTypeFix, fixTask.PromptType)
+	require.Equal(t, "session_123", fixTask.SessionID)
+	require.Equal(t, "/tmp/specforge/task", fixTask.Workdir)
+	fixPrompt := latestMemoryPromptByType(planningRepo, completed.PRNodeID, domain.PromptTypeFix)
+	require.NotNil(t, fixPrompt)
+	require.Contains(t, fixPrompt.PromptText, "unit_test_failure")
+	require.Contains(t, fixPrompt.PromptText, "TestInvite")
+	require.Contains(t, fixPrompt.PromptText, "Patch the failing assertion.")
+}
+
 func TestRetryTaskRejectsNonTerminalTask(t *testing.T) {
 	planningRepo := memoryPlanningRepoWithPrompt()
 	runRepo := &memoryExecutionRepo{}
