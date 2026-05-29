@@ -176,6 +176,28 @@ describe('planBundleFromDTO', () => {
       ],
     });
   });
+
+  it('keeps backend node types and terminal GitHub PR states', () => {
+    const bundle: SpecForgePlanBundleDTO = {
+      ...baseBundle,
+      pr_nodes: [
+        {
+          ...baseBundle.pr_nodes[0],
+          type: 'backend',
+          status: 'merged',
+        },
+      ],
+    };
+
+    expect(planBundleFromDTO(bundle)).toMatchObject({
+      prNodes: [
+        {
+          type: 'backend',
+          status: 'merged',
+        },
+      ],
+    });
+  });
 });
 
 describe('executionRunFromDTO', () => {

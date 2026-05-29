@@ -211,6 +211,72 @@ func TestRecordWebhookLinksPullRequestToPRNode(t *testing.T) {
 	require.Equal(t, domain.PRNodeStatusPROpened, node.Status)
 }
 
+func TestRecordWebhookMarksMergedPullRequestNode(t *testing.T) {
+	repo := &memoryRepo{}
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, BranchName: "specforge/team-invite-02-api", Status: domain.PRNodeStatusReadyForReview},
+		},
+	}
+	svc := NewService(repo, planningRepo, nil, nil, nil)
+	body := []byte(`{
+		"action": "closed",
+		"installation": {"id": 123},
+		"repository": {"full_name": "agicto/codingcto"},
+		"pull_request": {
+			"number": 42,
+			"state": "closed",
+			"merged": true,
+			"html_url": "https://github.com/agicto/codingcto/pull/42",
+			"head": {"ref": "specforge/team-invite-02-api", "sha": "abc123"},
+			"base": {"ref": "main"}
+		}
+	}`)
+
+	_, err := svc.RecordWebhook(context.Background(), &GitHubWebhookRequest{
+		EventType:  GitHubWebhookEventPullRequest,
+		DeliveryID: "delivery-pr-merged",
+		Signature:  "sha256=abc",
+		Body:       body,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, domain.PRNodeStatusMerged, planningRepo.nodes[0].Status)
+}
+
+func TestRecordWebhookMarksClosedUnmergedPullRequestNode(t *testing.T) {
+	repo := &memoryRepo{}
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, BranchName: "specforge/team-invite-02-api", Status: domain.PRNodeStatusReadyForReview},
+		},
+	}
+	svc := NewService(repo, planningRepo, nil, nil, nil)
+	body := []byte(`{
+		"action": "closed",
+		"installation": {"id": 123},
+		"repository": {"full_name": "agicto/codingcto"},
+		"pull_request": {
+			"number": 42,
+			"state": "closed",
+			"merged": false,
+			"html_url": "https://github.com/agicto/codingcto/pull/42",
+			"head": {"ref": "specforge/team-invite-02-api", "sha": "abc123"},
+			"base": {"ref": "main"}
+		}
+	}`)
+
+	_, err := svc.RecordWebhook(context.Background(), &GitHubWebhookRequest{
+		EventType:  GitHubWebhookEventPullRequest,
+		DeliveryID: "delivery-pr-closed",
+		Signature:  "sha256=abc",
+		Body:       body,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, domain.PRNodeStatusClosed, planningRepo.nodes[0].Status)
+}
+
 func TestRecordWebhookLinksPullRequestByGitHubPRNumberFallback(t *testing.T) {
 	repo := &memoryRepo{}
 	prNumber := 42

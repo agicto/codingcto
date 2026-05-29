@@ -12,7 +12,15 @@ import type {
   RepoProfile,
 } from '@/features/specforge/types';
 
-const nodeTypes = new Set<PRNode['type']>(['foundation', 'api', 'ui', 'verification']);
+const nodeTypes = new Set<PRNode['type']>([
+  'foundation',
+  'backend',
+  'frontend',
+  'implementation',
+  'api',
+  'ui',
+  'verification',
+]);
 const riskLevels = new Set<PRNode['estimatedRisk']>(['low', 'medium', 'high']);
 const nodeStatuses = new Set<PRNode['status']>([
   'planned',
@@ -23,6 +31,8 @@ const nodeStatuses = new Set<PRNode['status']>([
   'ci_running',
   'ready_for_review',
   'blocked',
+  'merged',
+  'closed',
   'completed',
   'failed',
   'cancelled',

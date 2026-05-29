@@ -595,11 +595,24 @@ func (s *service) updatePRNodeFromPullRequest(ctx context.Context, pr *WebhookPu
 	node.GitHubPRNumber = &pr.Number
 	node.GitHubPRURL = pr.HTMLURL
 	node.GitHubHeadSHA = pr.HeadSHA
-	node.Status = domain.PRNodeStatusPROpened
+	node.Status = prNodeStatusFromPullRequest(pr)
 	if err := s.planningRepo.UpdatePRNode(ctx, node); err != nil {
 		return nil, err
 	}
 	return node, nil
+}
+
+func prNodeStatusFromPullRequest(pr *WebhookPullRequest) string {
+	if pr == nil {
+		return domain.PRNodeStatusPROpened
+	}
+	if pr.Merged {
+		return domain.PRNodeStatusMerged
+	}
+	if strings.TrimSpace(pr.State) == "closed" {
+		return domain.PRNodeStatusClosed
+	}
+	return domain.PRNodeStatusPROpened
 }
 
 func (s *service) findPRNodeForWebhookPullRequest(ctx context.Context, pr *WebhookPullRequest) (*domain.SpecForgePRNode, error) {

@@ -34,7 +34,7 @@ export interface PRNode {
   nodeKey: string;
   order: number;
   title: string;
-  type: "foundation" | "api" | "ui" | "verification";
+  type: "foundation" | "backend" | "frontend" | "implementation" | "api" | "ui" | "verification";
   goal: string;
   dependsOn: string[];
   estimatedRisk: "low" | "medium" | "high";
@@ -61,6 +61,8 @@ export interface PRNode {
     | "ci_running"
     | "ready_for_review"
     | "blocked"
+    | "merged"
+    | "closed"
     | "completed"
     | "failed"
     | "cancelled";
