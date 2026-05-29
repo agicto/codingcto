@@ -8,6 +8,7 @@ import { z } from 'zod';
 const envSchema = z.object({
   // API entry point — point this at your Luas Go backend (or any backend)
   NEXT_PUBLIC_API_URL: z.string().min(1).default('/api'),
+  NEXT_PUBLIC_SPECFORGE_API_URL: z.string().min(1).default('/v1'),
 
   // Absolute app URL for metadata, sitemap, and robots generation
   NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:3000'),
@@ -26,6 +27,7 @@ const envSchema = z.object({
 
 const parsed = envSchema.safeParse({
   NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
+  NEXT_PUBLIC_SPECFORGE_API_URL: process.env.NEXT_PUBLIC_SPECFORGE_API_URL,
   NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
   NEXT_PUBLIC_GA_MEASUREMENT_ID: process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID,
   NODE_ENV: process.env.NODE_ENV,
