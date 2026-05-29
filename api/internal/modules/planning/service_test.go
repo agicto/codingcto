@@ -3,6 +3,7 @@ package planning
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/zgiai/luas/api/internal/domain"
@@ -76,6 +77,9 @@ func TestCompilePromptPersistsVersionedPromptForPRNode(t *testing.T) {
 		CodingConventions: []string{"Use service layer for business logic"},
 		RiskAreas:         []string{"auth"},
 		Summary:           "Backend API scaffold",
+		Source:            "github_tree",
+		Warnings:          []string{"No frontend routes were detected from the repository tree."},
+		LastIndexedAt:     time.Date(2026, 5, 29, 9, 30, 0, 0, time.UTC),
 	}}
 	svc := NewService(repo, profileRepo, repo)
 
@@ -94,6 +98,9 @@ func TestCompilePromptPersistsVersionedPromptForPRNode(t *testing.T) {
 	require.Contains(t, prompt.PromptText, created.PRNodes[1].Title)
 	require.Contains(t, prompt.PromptText, "Repository context")
 	require.Contains(t, prompt.PromptText, "Backend API scaffold")
+	require.Contains(t, prompt.PromptText, "Profile source: github_tree")
+	require.Contains(t, prompt.PromptText, "Last indexed at: 2026-05-29T09:30:00Z")
+	require.Contains(t, prompt.PromptText, "No frontend routes were detected from the repository tree.")
 	require.Contains(t, prompt.PromptText, "Use service layer for business logic")
 	require.Contains(t, prompt.PromptText, "Acceptance criteria")
 	require.NotNil(t, repo.prompt)
