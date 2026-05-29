@@ -32,6 +32,7 @@ import { Label } from "@/components/ui/label";
 import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
+import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
 import { cn } from "@/utils";
 import {
   executionRunFromDTO,
@@ -84,6 +85,7 @@ import {
   useUpsertSpecForgeSkill,
 } from "@/features/specforge/hooks/use-specforge";
 import type {
+  CompilePromptPayload,
   SpecForgeFixAttemptDTO,
   SpecForgeEscalationSummaryDTO,
   SpecForgeExecutionBundleDTO,
@@ -120,6 +122,13 @@ const statusLabel: Record<PRNode["status"], string> = {
   cancelled: "Cancelled",
 };
 const maxFixAttemptsPerNode = 3;
+type PromptMode = NonNullable<CompilePromptPayload["type"]>;
+const promptModes: PromptMode[] = ["implementation", "fix", "review_patch"];
+const promptModeLabel: Record<PromptMode, string> = {
+  implementation: "Implement",
+  fix: "Fix",
+  review_patch: "Review",
+};
 
 function statusClassName(status: PRNode["status"]) {
   if (status === "completed" || status === "ready_for_review") {
@@ -399,20 +408,20 @@ export function SpecForgeWorkbench() {
     setRun(next.run);
   }
 
-  async function compileNodePrompt(node: PRNode) {
+  async function compileNodePrompt(node: PRNode, mode: PromptMode) {
     const prNodeId = Number(node.id);
     if (Number.isFinite(prNodeId) && prNodeId > 0) {
       try {
         const response = await compilePrompt.mutateAsync({
           prNodeId,
-          payload: { type: "implementation" },
+          payload: { type: mode },
         });
         return response.prompt.prompt_text;
       } catch {
         // Keep prompt review available for demo plans and offline backend development.
       }
     }
-    return buildPromptPreview(activePlan, node);
+    return `Prompt type: ${mode}\n\n${buildPromptPreview(activePlan, node)}`;
   }
 
   return (
@@ -1152,9 +1161,10 @@ function PRDag({
   nodes: PRNode[];
   repositoryId: string;
   isCompilingPrompt: boolean;
-  onCompilePrompt: (node: PRNode) => Promise<string>;
+  onCompilePrompt: (node: PRNode, mode: PromptMode) => Promise<string>;
 }) {
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
+  const [promptMode, setPromptMode] = useState<PromptMode>("implementation");
   const [selectedFixNode, setSelectedFixNode] = useState<PRNode>();
   const [localFixAttempts, setLocalFixAttempts] = useState<SpecForgeFixAttemptDTO[]>([]);
   const [failureLog, setFailureLog] = useState<SpecForgePRNodeFailureLogDTO>();
@@ -1222,7 +1232,7 @@ function PRDag({
 
   async function handleCompilePrompt(node: PRNode) {
     setSelectedNodeId(node.id);
-    const compiled = await onCompilePrompt(node);
+    const compiled = await onCompilePrompt(node, promptMode);
     setPromptText(compiled);
   }
 
@@ -1289,6 +1299,32 @@ function PRDag({
 
   return (
     <div className="space-y-3">
+      <div className="flex flex-col gap-2 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm md:flex-row md:items-center md:justify-between">
+        <div>
+          <div className="font-medium text-text-main">Prompt mode</div>
+          <div className="mt-1 text-text-muted">
+            Compile implementation, CI fix, or review feedback prompts for the selected PR node.
+          </div>
+        </div>
+        <ToggleGroup
+          type="single"
+          variant="outline"
+          size="sm"
+          value={promptMode}
+          onValueChange={(value) => {
+            if (promptModes.includes(value as PromptMode)) {
+              setPromptMode(value as PromptMode);
+            }
+          }}
+          className="w-full md:w-auto"
+        >
+          {promptModes.map((mode) => (
+            <ToggleGroupItem key={mode} value={mode} aria-label={`${promptModeLabel[mode]} prompt`}>
+              {promptModeLabel[mode]}
+            </ToggleGroupItem>
+          ))}
+        </ToggleGroup>
+      </div>
       <div className="flex flex-col gap-2 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm md:flex-row md:items-center md:justify-between">
         <div>
           <div className="font-medium text-text-main">Auto-fix guardrail</div>
@@ -1365,7 +1401,9 @@ function PRDag({
                     onClick={() => handleCompilePrompt(node)}
                     disabled={isCompilingPrompt && selectedNodeId === node.id}
                   >
-                    {isCompilingPrompt && selectedNodeId === node.id ? "Compiling" : "Prompt"}
+                    {isCompilingPrompt && selectedNodeId === node.id
+                      ? "Compiling"
+                      : promptModeLabel[promptMode]}
                     <ScrollText className="ml-1.5 h-4 w-4" />
                   </Button>
                   <Button
