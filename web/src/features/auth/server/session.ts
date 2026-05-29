@@ -4,6 +4,10 @@ import { authConfig } from '@/config/auth';
 import { isProd } from '@/config/env';
 import { signSession, verifySession } from '@/lib/session-signing';
 import type { AuthUser } from '@/features/auth/types';
+import {
+  parseSignedSessionPayload,
+  type SessionPayload,
+} from '@/features/auth/server/session-payload';
 
 /**
  * Session helpers — MOCK SCHEME.
@@ -15,23 +19,22 @@ import type { AuthUser } from '@/features/auth/types';
  * tokens issued by your real backend before going to production.
  */
 
-type SessionPayload = AuthUser & {
-  iat: number;
-  exp: number;
-};
-
 export async function getSessionUser(): Promise<AuthUser | null> {
   const cookieStore = await cookies();
   const raw = cookieStore.get(authConfig.cookies.session)?.value;
   return parseSession(await verifySession(raw));
 }
 
-export async function setSessionCookie(user: AuthUser): Promise<void> {
+export async function setSessionCookie(
+  user: AuthUser,
+  options: { apiAccessToken?: string } = {}
+): Promise<void> {
   const now = Math.floor(Date.now() / 1000);
   const payload: SessionPayload = {
     ...user,
     iat: now,
     exp: now + authConfig.sessionMaxAge,
+    apiAccessToken: options.apiAccessToken,
   };
   const signed = await signSession(JSON.stringify(payload));
 
@@ -53,34 +56,13 @@ export async function clearSessionCookie(): Promise<void> {
 }
 
 function parseSession(payload: string | null): AuthUser | null {
-  if (!payload) return null;
-
-  let parsed: unknown;
-  try {
-    parsed = JSON.parse(payload);
-  } catch {
-    return null;
-  }
-
-  if (!isSessionPayload(parsed)) return null;
-  if (parsed.exp <= Math.floor(Date.now() / 1000)) return null;
+  const parsed = parseSignedSessionPayload(payload);
+  if (!parsed) return null;
 
   // Strip server-only fields before handing it back as AuthUser.
-  const { iat: _iat, exp: _exp, ...user } = parsed;
+  const { iat: _iat, exp: _exp, apiAccessToken: _apiAccessToken, ...user } = parsed;
   void _iat;
   void _exp;
+  void _apiAccessToken;
   return user;
-}
-
-function isSessionPayload(value: unknown): value is SessionPayload {
-  if (typeof value !== 'object' || value === null) return false;
-  const v = value as Record<string, unknown>;
-  return (
-    typeof v.id === 'string' &&
-    typeof v.email === 'string' &&
-    typeof v.name === 'string' &&
-    typeof v.role === 'string' &&
-    typeof v.iat === 'number' &&
-    typeof v.exp === 'number'
-  );
 }
