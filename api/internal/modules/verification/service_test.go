@@ -36,6 +36,24 @@ func TestCreateFixAttemptAssignsAttemptNumberAndDefaults(t *testing.T) {
 	require.True(t, first.CanAutoFix)
 }
 
+func TestCreateFixAttemptRejectsAfterRetryLimit(t *testing.T) {
+	repo := &memoryRepo{}
+	svc := NewService(repo, nil)
+
+	for i := 0; i < maxFixAttemptsPerPRNode; i++ {
+		_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
+			FailureType: "type_error",
+		})
+		require.NoError(t, err)
+	}
+
+	_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
+		FailureType: "type_error",
+	})
+
+	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
 func TestListFixAttemptsReturnsPRNodeAttempts(t *testing.T) {
 	repo := &memoryRepo{}
 	svc := NewService(repo, nil)
