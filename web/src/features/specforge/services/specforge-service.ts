@@ -298,6 +298,21 @@ export interface SpecForgeFixAttemptDTO {
   updated_at: string;
 }
 
+export interface SpecForgeEscalationSummaryDTO {
+  pr_node_id: number;
+  status: string;
+  attempts_used: number;
+  max_attempts: number;
+  failure_types: string[];
+  reason: string;
+  recommended_option: string;
+  decision_options: string[];
+  latest_failure_type: string;
+  latest_likely_cause: string;
+  latest_action: string;
+  can_continue_auto_fix: boolean;
+}
+
 export interface SpecForgePRNodeFailureLogDTO {
   pr_node_id: number;
   workflow_run_id: number;
@@ -491,6 +506,11 @@ export const specForgeService = {
 
   listFixAttempts: (prNodeId: number) =>
     request.get<SpecForgeFixAttemptDTO[]>(`/pr-nodes/${prNodeId}/fix-attempts`),
+
+  getEscalationSummary: (prNodeId: number) =>
+    request.get<SpecForgeEscalationSummaryDTO>(
+      `/pr-nodes/${prNodeId}/escalation-summary`
+    ),
 
   createFixAttemptFromCI: (prNodeId: number, payload: CreateFixAttemptFromCIPayload) =>
     request.post<SpecForgeFixAttemptDTO, CreateFixAttemptFromCIPayload>(
