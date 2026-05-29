@@ -75,11 +75,15 @@ export function usePlanForIdea(ideaId?: number) {
   });
 }
 
-export function useExecutionRun(runId?: number) {
+export function useExecutionRun(
+  runId?: number,
+  options?: { enabled?: boolean; refetchInterval?: number | false }
+) {
   return useQuery({
     queryKey: specForgeKeys.run(runId ?? 0),
     queryFn: () => specForgeService.getRun(runId ?? 0),
-    enabled: Boolean(runId),
+    enabled: Boolean(runId) && (options?.enabled ?? true),
+    refetchInterval: options?.refetchInterval,
   });
 }
 

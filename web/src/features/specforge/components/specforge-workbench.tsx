@@ -1,6 +1,6 @@
 "use client";
 
-import { useMemo, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 import {
   ArrowRight,
   CheckCircle2,
@@ -44,6 +44,7 @@ import {
   useApproveSpecForgePlan,
   useCreateSpecForgeIdea,
   useDispatchExecutionRun,
+  useExecutionRun,
   useSpecForgeRuntimes,
   useStartExecutionRun,
 } from "@/features/specforge/hooks/use-specforge";
@@ -105,6 +106,7 @@ export function SpecForgeWorkbench() {
   const [idea, setIdea] = useState(defaultIdea);
   const [repoId, setRepoId] = useState(demoPlan.repoProfile.repositoryId);
   const [activePlan, setActivePlan] = useState<PlanBundle>(demoPlan);
+  const activePlanRef = useRef(activePlan);
   const [planSource, setPlanSource] = useState<"api" | "demo">("demo");
   const [hasPlan, setHasPlan] = useState(true);
   const [approved, setApproved] = useState(false);
@@ -119,6 +121,10 @@ export function SpecForgeWorkbench() {
   const startRun = useStartExecutionRun();
   const dispatchRun = useDispatchExecutionRun();
   const isStartingRun = approvePlan.isPending || startRun.isPending || dispatchRun.isPending;
+  const runQuery = useExecutionRun(run.runId, {
+    enabled: Boolean(run.runId),
+    refetchInterval: run.status === "queued" || run.status === "running" ? 5000 : false,
+  });
   const readyCount = run.tasks.filter((task) => task.status === "completed").length;
   const runningCount = run.tasks.filter((task) => task.status === "running").length;
   const runtimesQuery = useSpecForgeRuntimes({ limit: 20 });
@@ -143,6 +149,23 @@ export function SpecForgeWorkbench() {
     }
     return `${readyCount} / ${run.tasks.length} PR nodes completed`;
   }, [readyCount, run.status, run.tasks.length, runtimeSummary.online]);
+
+  useEffect(() => {
+    activePlanRef.current = activePlan;
+  }, [activePlan]);
+
+  useEffect(() => {
+    if (!runQuery.data) {
+      return;
+    }
+
+    const next = executionRunFromDTO(runQuery.data, activePlanRef.current);
+    if (next.plan) {
+      setActivePlan(next.plan);
+    }
+    setRun(next.run);
+    setApproved(true);
+  }, [runQuery.data]);
 
   async function generatePlan() {
     const trimmedIdea = idea.trim();
