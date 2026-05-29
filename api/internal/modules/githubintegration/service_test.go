@@ -633,6 +633,10 @@ type fakeRepositoryClient struct {
 	createBranchName   string
 	createBranchSHA    string
 	createBranchErr    error
+	tree               *GitTree
+	listTreeRef        string
+	listTreeRecursive  bool
+	listTreeErr        error
 	workflowRuns       []WorkflowRun
 	listWorkflowBranch string
 	listWorkflowErr    error
@@ -649,6 +653,12 @@ func (c *fakeRepositoryClient) GetBranchRef(ctx context.Context, owner, repo, br
 	c.getBranchRepo = repo
 	c.getBranchName = branch
 	return c.branchRef, c.getBranchErr
+}
+
+func (c *fakeRepositoryClient) ListRepositoryTree(ctx context.Context, owner, repo, ref string, recursive bool) (*GitTree, error) {
+	c.listTreeRef = ref
+	c.listTreeRecursive = recursive
+	return c.tree, c.listTreeErr
 }
 
 func (c *fakeRepositoryClient) CreateBranch(ctx context.Context, owner, repo, branch, sha string) (*GitReference, error) {

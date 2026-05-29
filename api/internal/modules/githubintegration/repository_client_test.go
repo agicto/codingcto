@@ -37,6 +37,57 @@ func TestGitHubRepositoryClientGetBranchRef(t *testing.T) {
 	require.Equal(t, "abc123", ref.Object.SHA)
 }
 
+func TestGitHubRepositoryClientListRepositoryTree(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "/repos/acme/web/git/trees/main", r.URL.Path)
+		require.Equal(t, "1", r.URL.Query().Get("recursive"))
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"sha":       "tree123",
+			"truncated": false,
+			"tree": []map[string]any{
+				{
+					"path": "go.mod",
+					"mode": "100644",
+					"type": "blob",
+					"sha":  "gomod123",
+					"size": 72,
+					"url":  "https://api.github.com/repos/acme/web/git/blobs/gomod123",
+				},
+				{
+					"path": "web/package.json",
+					"mode": "100644",
+					"type": "blob",
+					"sha":  "package123",
+					"size": 512,
+					"url":  "https://api.github.com/repos/acme/web/git/blobs/package123",
+				},
+				{
+					"path": ".github/workflows/ci.yml",
+					"mode": "100644",
+					"type": "blob",
+					"sha":  "workflow123",
+					"size": 256,
+					"url":  "https://api.github.com/repos/acme/web/git/blobs/workflow123",
+				},
+			},
+		})
+	}))
+	defer server.Close()
+	client := newTestRepositoryClient(t, server.URL)
+
+	tree, err := client.ListRepositoryTree(context.Background(), "acme", "web", "main", true)
+
+	require.NoError(t, err)
+	require.Equal(t, "tree123", tree.SHA)
+	require.False(t, tree.Truncated)
+	require.Len(t, tree.Tree, 3)
+	require.Equal(t, "go.mod", tree.Tree[0].Path)
+	require.Equal(t, "blob", tree.Tree[0].Type)
+	require.Equal(t, int64(72), tree.Tree[0].Size)
+	require.Equal(t, ".github/workflows/ci.yml", tree.Tree[2].Path)
+}
+
 func TestGitHubRepositoryClientCreateBranch(t *testing.T) {
 	var payload map[string]string
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

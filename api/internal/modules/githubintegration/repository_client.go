@@ -20,6 +20,7 @@ type GitHubRepositoryClient struct {
 
 type RepositoryClient interface {
 	GetBranchRef(ctx context.Context, owner, repo, branch string) (*GitReference, error)
+	ListRepositoryTree(ctx context.Context, owner, repo, ref string, recursive bool) (*GitTree, error)
 	CreateBranch(ctx context.Context, owner, repo, branch, sha string) (*GitReference, error)
 	CreatePullRequest(ctx context.Context, input CreatePullRequestInput) (*PullRequest, error)
 	ListWorkflowRuns(ctx context.Context, owner, repo, branch string) ([]WorkflowRun, error)
@@ -83,6 +84,21 @@ type GitReference struct {
 type GitRefObject struct {
 	Type string `json:"type"`
 	SHA  string `json:"sha"`
+	URL  string `json:"url"`
+}
+
+type GitTree struct {
+	SHA       string         `json:"sha"`
+	Truncated bool           `json:"truncated"`
+	Tree      []GitTreeEntry `json:"tree"`
+}
+
+type GitTreeEntry struct {
+	Path string `json:"path"`
+	Mode string `json:"mode"`
+	Type string `json:"type"`
+	SHA  string `json:"sha"`
+	Size int64  `json:"size,omitempty"`
 	URL  string `json:"url"`
 }
 
@@ -157,6 +173,28 @@ func (c *GitHubRepositoryClient) GetBranchRef(ctx context.Context, owner, repo, 
 		return nil, err
 	}
 	return &ref, nil
+}
+
+func (c *GitHubRepositoryClient) ListRepositoryTree(ctx context.Context, owner, repo, ref string, recursive bool) (*GitTree, error) {
+	if err := requireRepoArgs(owner, repo); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(ref) == "" {
+		return nil, fmt.Errorf("github repository client: tree ref is required")
+	}
+	query := url.Values{}
+	if recursive {
+		query.Set("recursive", "1")
+	}
+	path := fmt.Sprintf("/repos/%s/%s/git/trees/%s", url.PathEscape(owner), url.PathEscape(repo), url.PathEscape(strings.TrimSpace(ref)))
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var tree GitTree
+	if err := c.do(ctx, http.MethodGet, path, nil, &tree); err != nil {
+		return nil, err
+	}
+	return &tree, nil
 }
 
 func (c *GitHubRepositoryClient) CreateBranch(ctx context.Context, owner, repo, branch, sha string) (*GitReference, error) {
