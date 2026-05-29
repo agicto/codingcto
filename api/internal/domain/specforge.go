@@ -270,6 +270,7 @@ type SpecForgeExecutionRepository interface {
 	CreateTaskEvent(ctx context.Context, event *SpecForgeTaskEvent) error
 	ListTaskEvents(ctx context.Context, taskID uint, afterSeq int) ([]*SpecForgeTaskEvent, error)
 	UpsertRuntime(ctx context.Context, runtime *SpecForgeRuntime) error
+	ListRuntimes(ctx context.Context, executor, status string, limit int) ([]*SpecForgeRuntime, error)
 	MarkStaleRuntimesOffline(ctx context.Context, staleBefore time.Time) ([]*SpecForgeRuntime, error)
 	MarkRuntimesOfflineByRuntimeIDs(ctx context.Context, runtimeIDs []string) ([]*SpecForgeRuntime, error)
 	FailTasksForOfflineRuntimes(ctx context.Context) ([]*SpecForgeAgentTask, error)

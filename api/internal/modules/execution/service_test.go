@@ -3,6 +3,7 @@ package execution
 import (
 	"context"
 	"fmt"
+	"sort"
 	"strings"
 	"testing"
 	"time"
@@ -894,6 +895,40 @@ func TestDeregisterRuntimesMarksOfflineAndFailsTasks(t *testing.T) {
 	require.Equal(t, domain.AgentTaskStatusDispatched, updated.Tasks[1].Status)
 }
 
+func TestListRuntimesAppliesFiltersAndLimit(t *testing.T) {
+	now := time.Now()
+	runRepo := &memoryExecutionRepo{}
+	require.NoError(t, runRepo.UpsertRuntime(context.Background(), &domain.SpecForgeRuntime{
+		RuntimeID:  "runtime-old",
+		Executor:   ExecutorNameCodexCLI,
+		Status:     domain.RuntimeStatusOnline,
+		LastSeenAt: now.Add(-2 * time.Minute),
+	}))
+	require.NoError(t, runRepo.UpsertRuntime(context.Background(), &domain.SpecForgeRuntime{
+		RuntimeID:  "runtime-new",
+		Executor:   ExecutorNameCodexCLI,
+		Status:     domain.RuntimeStatusOnline,
+		LastSeenAt: now,
+	}))
+	require.NoError(t, runRepo.UpsertRuntime(context.Background(), &domain.SpecForgeRuntime{
+		RuntimeID:  "runtime-other",
+		Executor:   "other_executor",
+		Status:     domain.RuntimeStatusOffline,
+		LastSeenAt: now.Add(time.Minute),
+	}))
+	svc := NewService(runRepo, &memoryPlanningRepo{}, nil, nil, nil, nil, nil)
+
+	result, err := svc.ListRuntimes(context.Background(), &ListRuntimesRequest{
+		Executor: ExecutorNameCodexCLI,
+		Status:   domain.RuntimeStatusOnline,
+		Limit:    1,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, result.Runtimes, 1)
+	require.Equal(t, "runtime-new", result.Runtimes[0].RuntimeID)
+}
+
 func TestSweepStaleTasksFailsTimedOutTasks(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
 	runRepo := &memoryExecutionRepo{}
@@ -1048,6 +1083,38 @@ func (r *memoryExecutionRepo) UpsertRuntime(ctx context.Context, runtime *domain
 	runtime.ID = copied.ID
 	r.runtimes[runtime.RuntimeID] = &copied
 	return nil
+}
+
+func (r *memoryExecutionRepo) ListRuntimes(ctx context.Context, executor, status string, limit int) ([]*domain.SpecForgeRuntime, error) {
+	executor = strings.TrimSpace(executor)
+	status = strings.TrimSpace(status)
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	if r.runtimes == nil {
+		return []*domain.SpecForgeRuntime{}, nil
+	}
+	out := make([]*domain.SpecForgeRuntime, 0, len(r.runtimes))
+	for _, runtime := range r.runtimes {
+		if executor != "" && runtime.Executor != executor {
+			continue
+		}
+		if status != "" && runtime.Status != status {
+			continue
+		}
+		copied := *runtime
+		out = append(out, &copied)
+	}
+	sort.Slice(out, func(i, j int) bool {
+		if out[i].LastSeenAt.Equal(out[j].LastSeenAt) {
+			return out[i].ID > out[j].ID
+		}
+		return out[i].LastSeenAt.After(out[j].LastSeenAt)
+	})
+	if len(out) > limit {
+		out = out[:limit]
+	}
+	return out, nil
 }
 
 func (r *memoryExecutionRepo) MarkStaleRuntimesOffline(ctx context.Context, staleBefore time.Time) ([]*domain.SpecForgeRuntime, error) {

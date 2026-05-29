@@ -55,6 +55,12 @@ export interface RuntimeDeregisterPayload {
   runtime_ids: string[];
 }
 
+export interface ListSpecForgeRuntimesParams {
+  executor?: string;
+  status?: string;
+  limit?: number;
+}
+
 export interface StaleTaskSweepPayload {
   dispatch_timeout_seconds?: number;
   running_timeout_seconds?: number;
@@ -407,6 +413,15 @@ export const specForgeService = {
       { runtime: SpecForgeRuntimeDTO; claim_pending: boolean },
       RuntimeHeartbeatPayload
     >(`/runtimes/heartbeat`, payload),
+
+  listRuntimes: (params?: ListSpecForgeRuntimesParams) => {
+    const query = new URLSearchParams();
+    if (params?.executor) query.set("executor", params.executor);
+    if (params?.status) query.set("status", params.status);
+    if (params?.limit) query.set("limit", String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : "";
+    return request.get<{ runtimes: SpecForgeRuntimeDTO[] }>(`/runtimes${suffix}`);
+  },
 
   sweepStaleRuntimes: (payload?: RuntimeSweepPayload) =>
     request.post<SpecForgeRuntimeSweepResultDTO, RuntimeSweepPayload | undefined>(

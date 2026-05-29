@@ -173,6 +173,30 @@ func (r *repository) UpsertRuntime(ctx context.Context, runtime *domain.SpecForg
 	return nil
 }
 
+func (r *repository) ListRuntimes(ctx context.Context, executor, status string, limit int) ([]*domain.SpecForgeRuntime, error) {
+	executor = strings.TrimSpace(executor)
+	status = strings.TrimSpace(status)
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	query := r.db.WithContext(ctx).Model(&RuntimePO{})
+	if executor != "" {
+		query = query.Where("executor = ?", executor)
+	}
+	if status != "" {
+		query = query.Where("status = ?", status)
+	}
+	var pos []*RuntimePO
+	if err := query.Order("last_seen_at DESC, id DESC").Limit(limit).Find(&pos).Error; err != nil {
+		return nil, err
+	}
+	runtimes := make([]*domain.SpecForgeRuntime, len(pos))
+	for i, po := range pos {
+		runtimes[i] = po.toDomain()
+	}
+	return runtimes, nil
+}
+
 func (r *repository) MarkStaleRuntimesOffline(ctx context.Context, staleBefore time.Time) ([]*domain.SpecForgeRuntime, error) {
 	var pos []*RuntimePO
 	if err := r.db.WithContext(ctx).

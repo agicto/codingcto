@@ -12,6 +12,7 @@ func (h *Handler) RegisterRoutes(r *router.Router) {
 		auth.POST("/runs/:id/cancel", h.CancelRun).Name("specforge.runs.cancel").WhereNumber("id")
 		auth.POST("/runtimes/heartbeat", h.HeartbeatRuntime).Name("specforge.runtimes.heartbeat")
 		auth.POST("/runtimes/deregister", h.DeregisterRuntimes).Name("specforge.runtimes.deregister")
+		auth.GET("/runtimes", h.ListRuntimes).Name("specforge.runtimes.index")
 		auth.POST("/runtimes/sweep", h.SweepStaleRuntimes).Name("specforge.runtimes.sweep")
 		auth.GET("/runtimes/:runtime_id/tasks/pending", h.ListRuntimePendingTasks).Name("specforge.runtimes.tasks.pending")
 		auth.POST("/runtimes/:runtime_id/claim", h.ClaimTask).Name("specforge.runtimes.claim")
