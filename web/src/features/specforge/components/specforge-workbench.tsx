@@ -11,6 +11,7 @@ import {
   ListChecks,
   ScrollText,
   Play,
+  RotateCcw,
   ShieldAlert,
   Sparkles,
   Terminal,
@@ -65,6 +66,8 @@ import {
   usePrepareSpecForgePRNodeBranch,
   useRepoProfile,
   useRefreshSpecForgePRNodeCI,
+  useCompleteExecutionTask,
+  useRetryExecutionTask,
   useSpecForgeFixAttempts,
   useSpecForgeSkills,
   useSpecForgeTaskEvents,
@@ -75,6 +78,7 @@ import {
 } from "@/features/specforge/hooks/use-specforge";
 import type {
   SpecForgeFixAttemptDTO,
+  SpecForgeExecutionBundleDTO,
   GitHubWebhookEventDTO,
   SpecForgeRepoProfileDTO,
   SpecForgeSkillDTO,
@@ -353,6 +357,14 @@ export function SpecForgeWorkbench() {
     }));
   }
 
+  function applyExecutionBundle(bundle: SpecForgeExecutionBundleDTO) {
+    const next = executionRunFromDTO(bundle, activePlanRef.current);
+    if (next.plan) {
+      setActivePlan(next.plan);
+    }
+    setRun(next.run);
+  }
+
   async function compileNodePrompt(node: PRNode) {
     const prNodeId = Number(node.id);
     if (Number.isFinite(prNodeId) && prNodeId > 0) {
@@ -475,6 +487,7 @@ export function SpecForgeWorkbench() {
                   isCancelling={cancelRun.isPending}
                   onAdvance={advanceRun}
                   onCancel={cancelActiveRun}
+                  onExecutionBundle={applyExecutionBundle}
                 />
               </TabsContent>
             </Tabs>
@@ -1224,18 +1237,64 @@ function ExecutionStatus({
   isCancelling,
   onAdvance,
   onCancel,
+  onExecutionBundle,
 }: {
   run: ExecutionRun;
   isCancelling: boolean;
   onAdvance: () => void;
   onCancel: () => void;
+  onExecutionBundle: (bundle: SpecForgeExecutionBundleDTO) => void;
 }) {
   const canAdvance = run.status === "running";
   const canCancel = run.status === "queued" || run.status === "running";
   const [selectedTask, setSelectedTask] = useState<PRNode>();
+  const [taskActionError, setTaskActionError] = useState("");
+  const [taskActionId, setTaskActionId] = useState<number>();
+  const retryTask = useRetryExecutionTask();
+  const completeTask = useCompleteExecutionTask();
   const selectedTaskId = selectedTask?.taskId;
   const taskEventsQuery = useSpecForgeTaskEvents(selectedTaskId);
   const taskEvents = taskEventsQuery.data?.events ?? [];
+  const isTaskActionPending = retryTask.isPending || completeTask.isPending;
+
+  async function retryExecutionTask(task: PRNode) {
+    if (!task.taskId) {
+      setTaskActionError("Retry requires a persisted backend task.");
+      return;
+    }
+
+    setTaskActionError("");
+    setTaskActionId(task.taskId);
+    try {
+      const bundle = await retryTask.mutateAsync({
+        taskId: task.taskId,
+        payload: { force_fresh_session: true },
+      });
+      onExecutionBundle(bundle);
+    } catch {
+      setTaskActionError("Retry requires a failed or cancelled task and the SpecForge backend.");
+    } finally {
+      setTaskActionId(undefined);
+    }
+  }
+
+  async function completeExecutionTask(task: PRNode) {
+    if (!task.taskId) {
+      setTaskActionError("Complete requires a persisted backend task.");
+      return;
+    }
+
+    setTaskActionError("");
+    setTaskActionId(task.taskId);
+    try {
+      const bundle = await completeTask.mutateAsync(task.taskId);
+      onExecutionBundle(bundle);
+    } catch {
+      setTaskActionError("Complete requires a dispatched or running task and the SpecForge backend.");
+    } finally {
+      setTaskActionId(undefined);
+    }
+  }
 
   return (
     <Card>
@@ -1258,6 +1317,11 @@ function ExecutionStatus({
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
+        {taskActionError && (
+          <div className="rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm text-warning">
+            {taskActionError}
+          </div>
+        )}
         {run.tasks.map((task) => (
           <div
             key={`${task.id}-${task.taskId ?? "planned"}`}
@@ -1292,6 +1356,29 @@ function ExecutionStatus({
                 >
                   Events
                   <Terminal className="ml-1.5 h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => retryExecutionTask(task)}
+                  disabled={
+                    isTaskActionPending ||
+                    !(task.status === "failed" || task.status === "cancelled")
+                  }
+                >
+                  {retryTask.isPending && taskActionId === task.taskId ? "Retrying" : "Retry"}
+                  <RotateCcw className="ml-1.5 h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => completeExecutionTask(task)}
+                  disabled={isTaskActionPending || task.status !== "running"}
+                >
+                  {completeTask.isPending && taskActionId === task.taskId
+                    ? "Completing"
+                    : "Complete"}
+                  <CheckCircle2 className="ml-1.5 h-4 w-4" />
                 </Button>
               </div>
             </div>
