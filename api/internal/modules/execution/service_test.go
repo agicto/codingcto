@@ -386,6 +386,32 @@ func TestSubmitTaskResultMarksFailureWithoutUnlockingDependents(t *testing.T) {
 	require.Equal(t, domain.AgentTaskStatusWaiting, updated.Tasks[1].Status)
 }
 
+func TestSubmitTaskResultRedactsPersistedLogs(t *testing.T) {
+	planningRepo := memoryPlanningRepoWithPrompt()
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	_, err = svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+	claim, err := svc.ClaimTask(context.Background(), "runtime_123", &ClaimAgentTaskRequest{Executor: "codex_cli"})
+	require.NoError(t, err)
+
+	updated, err := svc.SubmitTaskResult(context.Background(), claim.Task.ID, &SubmitTaskResultRequest{
+		RuntimeID: "runtime_123",
+		Status:    "failed",
+		Output:    "OPENAI_API_KEY=sk-proj-abc123def456ghi789jkl012mno345",
+		Error:     "Authorization: Bearer eyJhbGciOiJIUzI1NiJ9.eyJzdWIiOiIxMjM0NTY3ODkwIn0.abc123",
+		ExitCode:  1,
+	})
+
+	require.NoError(t, err)
+	require.NotContains(t, updated.Tasks[0].OutputLog, "sk-proj-abc123")
+	require.Contains(t, updated.Tasks[0].OutputLog, "[REDACTED CREDENTIAL]")
+	require.NotContains(t, updated.Tasks[0].ErrorLog, "eyJhbGci")
+	require.Contains(t, updated.Tasks[0].ErrorLog, "Bearer [REDACTED]")
+}
+
 func TestSubmitTaskResultRejectsRuntimeMismatch(t *testing.T) {
 	planningRepo := memoryPlanningRepoWithPrompt()
 	runRepo := &memoryExecutionRepo{}
@@ -773,6 +799,30 @@ func TestCreateTaskEventRecordsOrderedRuntimeOutput(t *testing.T) {
 	require.Len(t, events, 1)
 	require.Equal(t, second.ID, events[0].ID)
 	require.Equal(t, "go test", events[0].Tool)
+}
+
+func TestCreateTaskEventRedactsRuntimeOutput(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{})
+	require.NoError(t, err)
+
+	event, err := svc.CreateTaskEvent(context.Background(), dispatched.Tasks[0].ID, &CreateTaskEventRequest{
+		Type:    "tool",
+		Content: "using ghp_ABCDEFGHIJKLMNOPQRSTUVWXYZabcdefghijklmn",
+		Input:   "DATABASE_URL=postgres://admin:s3cret@db.example.com:5432/app",
+		Output:  "ok",
+	})
+
+	require.NoError(t, err)
+	require.NotContains(t, event.Content, "ghp_")
+	require.Contains(t, event.Content, "[REDACTED GITHUB TOKEN]")
+	require.NotContains(t, event.Input, "s3cret")
+	require.Contains(t, event.Input, "[REDACTED CREDENTIAL]")
+	require.Equal(t, "ok", event.Output)
 }
 
 func TestSweepStaleRuntimesMarksRuntimeOfflineAndFailsTasks(t *testing.T) {
