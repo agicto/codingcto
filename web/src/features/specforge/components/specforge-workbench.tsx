@@ -117,6 +117,7 @@ const statusLabel: Record<PRNode["status"], string> = {
   failed: "Failed",
   cancelled: "Cancelled",
 };
+const maxFixAttemptsPerNode = 3;
 
 function statusClassName(status: PRNode["status"]) {
   if (status === "completed" || status === "ready_for_review") {
@@ -1172,6 +1173,9 @@ function PRDag({
   const fixAttempts = canReadFixAttempts
     ? (fixAttemptsQuery.data ?? localFixAttempts)
     : localFixAttempts;
+  const highestFixAttempt = Math.max(0, ...fixAttempts.map((attempt) => attempt.attempt_number));
+  const remainingFixAttempts = Math.max(0, maxFixAttemptsPerNode - highestFixAttempt);
+  const fixBudgetExhausted = highestFixAttempt >= maxFixAttemptsPerNode;
   const effectiveNodes = nodes.map((node) => deliveryNodes[node.id] ?? node);
   const isDeliveryActionPending =
     prepareBranch.isPending || deliverPR.isPending || refreshCI.isPending;
@@ -1280,6 +1284,16 @@ function PRDag({
 
   return (
     <div className="space-y-3">
+      <div className="flex flex-col gap-2 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm md:flex-row md:items-center md:justify-between">
+        <div>
+          <div className="font-medium text-text-main">Auto-fix guardrail</div>
+          <div className="mt-1 text-text-muted">
+            Each PR node can use up to {maxFixAttemptsPerNode} automatic fix attempts before
+            SpecForge escalates with a decision summary.
+          </div>
+        </div>
+        <Badge variant="outline">3 attempts max</Badge>
+      </div>
       {deliveryError && (
         <div className="rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm text-warning">
           {deliveryError}
@@ -1396,6 +1410,23 @@ function PRDag({
                 {failureLogError}
               </div>
             )}
+            <div className="flex flex-col gap-2 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm md:flex-row md:items-center md:justify-between">
+              <div>
+                <div className="font-medium text-text-main">Auto-fix retry budget</div>
+                <div className="mt-1 text-text-muted">
+                  {highestFixAttempt} / {maxFixAttemptsPerNode} attempts used
+                  {fixBudgetExhausted
+                    ? "; escalate with a decision summary before retrying."
+                    : `; ${remainingFixAttempts} automatic ${remainingFixAttempts === 1 ? "retry" : "retries"} remaining.`}
+                </div>
+              </div>
+              <Badge
+                variant="outline"
+                className={fixBudgetExhausted ? statusClassName("blocked") : statusClassName("running")}
+              >
+                {fixBudgetExhausted ? "Escalation needed" : "Auto-fix available"}
+              </Badge>
+            </div>
             {failureLog && <FailureLogSummary failureLog={failureLog} />}
             {fixAttempts.length === 0 && (
               <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
