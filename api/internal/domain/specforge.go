@@ -248,6 +248,7 @@ type SpecForgePlanningRepository interface {
 	FindPlanBundleByPlanID(ctx context.Context, planID uint) (*SpecForgePlanBundle, error)
 	FindPRNodeByID(ctx context.Context, prNodeID uint) (*SpecForgePRNode, error)
 	FindPRNodeByBranchName(ctx context.Context, branchName string) (*SpecForgePRNode, error)
+	FindPRNodeByGitHubPRNumber(ctx context.Context, prNumber int) (*SpecForgePRNode, error)
 	UpdatePRNode(ctx context.Context, node *SpecForgePRNode) error
 	CreateCompiledPrompt(ctx context.Context, prompt *SpecForgeCompiledPrompt) error
 	FindLatestCompiledPromptByPRNodeID(ctx context.Context, prNodeID uint) (*SpecForgeCompiledPrompt, error)

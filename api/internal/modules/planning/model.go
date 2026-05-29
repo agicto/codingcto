@@ -80,9 +80,9 @@ type PRNodePO struct {
 	AcceptanceCriteria string `gorm:"type:text"`
 	TestCommands       string `gorm:"type:text"`
 	BranchName         string `gorm:"size:255;not null"`
-	GitHubPRNumber     *int   `gorm:"index"`
-	GitHubPRURL        string `gorm:"size:511"`
-	GitHubHeadSHA      string `gorm:"size:100;index"`
+	GitHubPRNumber     *int   `gorm:"column:github_pr_number;index"`
+	GitHubPRURL        string `gorm:"column:github_pr_url;size:511"`
+	GitHubHeadSHA      string `gorm:"column:github_head_sha;size:100;index"`
 	Status             string `gorm:"size:50;not null;index"`
 	CreatedAt          time.Time
 	UpdatedAt          time.Time

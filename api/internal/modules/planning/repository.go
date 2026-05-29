@@ -105,6 +105,20 @@ func (r *repository) FindPRNodeByBranchName(ctx context.Context, branchName stri
 	return po.toDomain(), nil
 }
 
+func (r *repository) FindPRNodeByGitHubPRNumber(ctx context.Context, prNumber int) (*domain.SpecForgePRNode, error) {
+	if prNumber <= 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	var po PRNodePO
+	if err := r.db.WithContext(ctx).Where("github_pr_number = ?", prNumber).First(&po).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return po.toDomain(), nil
+}
+
 func (r *repository) UpdatePRNode(ctx context.Context, node *domain.SpecForgePRNode) error {
 	if node == nil || node.ID == 0 {
 		return domain.ErrInvalidInput
