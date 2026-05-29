@@ -10,6 +10,7 @@ import (
 )
 
 const maxFixAttemptsPerPRNode = 3
+const maxConsecutiveFixAttemptsPerFailureType = 2
 
 type Service interface {
 	CreateFixAttempt(ctx context.Context, userID, prNodeID uint, req *CreateFixAttemptRequest) (*domain.SpecForgeFixAttempt, error)
@@ -42,13 +43,21 @@ func (s *service) CreateFixAttempt(ctx context.Context, userID, prNodeID uint, r
 	if count >= maxFixAttemptsPerPRNode {
 		return nil, domain.ErrConflict
 	}
+	failureType := strings.TrimSpace(req.FailureType)
+	attempts, err := s.repo.ListFixAttemptsByPRNodeID(ctx, prNodeID)
+	if err != nil {
+		return nil, fmt.Errorf("list fix attempts: %w", err)
+	}
+	if consecutiveFailureTypeCount(attempts, failureType) >= maxConsecutiveFixAttemptsPerFailureType {
+		return nil, domain.ErrConflict
+	}
 	status := strings.TrimSpace(req.Status)
 	if status == "" {
 		status = domain.FixAttemptStatusQueued
 	}
 	attempt := &domain.SpecForgeFixAttempt{
 		PRNodeID:          prNodeID,
-		FailureType:       strings.TrimSpace(req.FailureType),
+		FailureType:       failureType,
 		CILogExcerpt:      strings.TrimSpace(req.CILogExcerpt),
 		AttemptNumber:     count + 1,
 		Status:            status,
@@ -62,6 +71,22 @@ func (s *service) CreateFixAttempt(ctx context.Context, userID, prNodeID uint, r
 		return nil, fmt.Errorf("create fix attempt: %w", err)
 	}
 	return attempt, nil
+}
+
+func consecutiveFailureTypeCount(attempts []*domain.SpecForgeFixAttempt, failureType string) int {
+	failureType = strings.TrimSpace(failureType)
+	count := 0
+	for i := len(attempts) - 1; i >= 0; i-- {
+		attempt := attempts[i]
+		if attempt == nil {
+			continue
+		}
+		if strings.TrimSpace(attempt.FailureType) != failureType {
+			break
+		}
+		count++
+	}
+	return count
 }
 
 func (s *service) CreateFixAttemptFromCI(ctx context.Context, userID, prNodeID uint, req *CreateFixAttemptFromCIRequest) (*domain.SpecForgeFixAttempt, error) {
