@@ -8,6 +8,7 @@ import {
   CircleX,
   GitBranch,
   GitPullRequest,
+  ListChecks,
   ScrollText,
   Play,
   ShieldAlert,
@@ -25,6 +26,8 @@ import {
   CardTitle,
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
+import { Label } from "@/components/ui/label";
+import { Switch } from "@/components/ui/switch";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/utils";
@@ -50,9 +53,12 @@ import {
   useCreateSpecForgeIdea,
   useDispatchExecutionRun,
   useExecutionRun,
+  useSpecForgeSkills,
   useSpecForgeRuntimes,
   useStartExecutionRun,
+  useUpsertSpecForgeSkill,
 } from "@/features/specforge/hooks/use-specforge";
+import type { SpecForgeSkillDTO } from "@/features/specforge/services/specforge-service";
 import type {
   ExecutionRun,
   PlanBundle,
@@ -382,6 +388,7 @@ export function SpecForgeWorkbench() {
               </Button>
             </div>
             <RepoProfileSummary repoProfile={activePlan.repoProfile} planSource={planSource} />
+            <RepoSkillsPanel repoId={repoId.trim()} />
           </CardContent>
         </Card>
 
@@ -517,6 +524,107 @@ function RepoProfileSummary({
             {item}
           </Badge>
         ))}
+      </div>
+    </div>
+  );
+}
+
+function RepoSkillsPanel({ repoId }: { repoId: string }) {
+  const [name, setName] = useState("Repo coding guidelines");
+  const [description, setDescription] = useState("Instructions injected into SpecForge prompts.");
+  const [content, setContent] = useState("");
+  const [active, setActive] = useState(true);
+  const [savedSkill, setSavedSkill] = useState<SpecForgeSkillDTO>();
+
+  const skillsQuery = useSpecForgeSkills(repoId);
+  const upsertSkill = useUpsertSpecForgeSkill(repoId);
+  const skills = skillsQuery.data?.skills ?? [];
+  const latestSkill = savedSkill ?? skills[0];
+
+  async function saveSkill() {
+    const trimmedName = name.trim();
+    const trimmedContent = content.trim();
+    if (!repoId || !trimmedName || !trimmedContent) {
+      return;
+    }
+
+    const response = await upsertSkill.mutateAsync({
+      name: trimmedName,
+      description: description.trim(),
+      content: trimmedContent,
+      active,
+    });
+    setSavedSkill(response.skill);
+  }
+
+  return (
+    <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <ListChecks className="h-4 w-4 text-primary" />
+            Repo skills
+          </div>
+          <p className="mt-1 text-sm leading-6 text-text-muted">
+            Store repository instructions for planning and prompt compilation.
+          </p>
+        </div>
+        <Badge
+          variant="outline"
+          className={skills.length > 0 || savedSkill ? statusClassName("completed") : ""}
+        >
+          {skillsQuery.isLoading
+            ? "Checking"
+            : skills.length > 0
+              ? `${skills.length} saved`
+              : savedSkill
+                ? "Saved"
+                : "No skills"}
+        </Badge>
+      </div>
+
+      <div className="mt-4 space-y-3">
+        <Input
+          value={name}
+          onChange={(event) => setName(event.target.value)}
+          aria-label="Skill name"
+          placeholder="Skill name"
+        />
+        <Input
+          value={description}
+          onChange={(event) => setDescription(event.target.value)}
+          aria-label="Skill description"
+          placeholder="Skill description"
+        />
+        <Textarea
+          value={content}
+          onChange={(event) => setContent(event.target.value)}
+          className="min-h-24"
+          aria-label="Skill content"
+          placeholder="Use service layer for data access. Keep API routes thin. Run pnpm type-check before UI PRs."
+        />
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <Label className="flex items-center gap-2">
+            <Switch checked={active} onCheckedChange={setActive} />
+            Active
+          </Label>
+          <Button
+            onClick={saveSkill}
+            disabled={!repoId || !name.trim() || !content.trim() || upsertSkill.isPending}
+          >
+            {upsertSkill.isPending ? "Saving" : "Save skill"}
+          </Button>
+        </div>
+        {skillsQuery.isError && (
+          <p className="text-xs leading-5 text-text-muted">
+            Skills will save when the SpecForge backend is available.
+          </p>
+        )}
+        {latestSkill && (
+          <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-xs leading-5 text-text-muted">
+            Latest: {latestSkill.name}
+          </div>
+        )}
       </div>
     </div>
   );
