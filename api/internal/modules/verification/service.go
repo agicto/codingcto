@@ -9,6 +9,8 @@ import (
 	"github.com/zgiai/luas/api/internal/modules/githubintegration"
 )
 
+const maxFixAttemptsPerPRNode = 3
+
 type Service interface {
 	CreateFixAttempt(ctx context.Context, userID, prNodeID uint, req *CreateFixAttemptRequest) (*domain.SpecForgeFixAttempt, error)
 	CreateFixAttemptFromCI(ctx context.Context, userID, prNodeID uint, req *CreateFixAttemptFromCIRequest) (*domain.SpecForgeFixAttempt, error)
@@ -35,6 +37,9 @@ func (s *service) CreateFixAttempt(ctx context.Context, userID, prNodeID uint, r
 	count, err := s.repo.CountFixAttemptsByPRNodeID(ctx, prNodeID)
 	if err != nil {
 		return nil, fmt.Errorf("count fix attempts: %w", err)
+	}
+	if count >= maxFixAttemptsPerPRNode {
+		return nil, domain.ErrConflict
 	}
 	status := strings.TrimSpace(req.Status)
 	if status == "" {
