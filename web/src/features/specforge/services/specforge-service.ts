@@ -50,6 +50,11 @@ export interface RefreshPRNodeCIPayload {
   pr_node_id: number;
 }
 
+export interface ReadPRNodeFailureLogPayload {
+  repository_id: string;
+  pr_node_id: number;
+}
+
 export interface CreateFixAttemptFromCIPayload {
   repository_id: string;
 }
@@ -285,6 +290,16 @@ export interface SpecForgeFixAttemptDTO {
   updated_at: string;
 }
 
+export interface SpecForgePRNodeFailureLogDTO {
+  pr_node_id: number;
+  workflow_run_id: number;
+  job_id: number;
+  job_name: string;
+  head_sha: string;
+  log_excerpt: string;
+  failed_steps: string[];
+}
+
 export interface SpecForgeRuntimeDTO {
   id: number;
   runtime_id: string;
@@ -451,6 +466,12 @@ export const specForgeService = {
   refreshPRNodeCI: (payload: RefreshPRNodeCIPayload) =>
     request.post<SpecForgePRNodeDTO, RefreshPRNodeCIPayload>(
       "/github/pr-nodes/refresh-ci",
+      payload
+    ),
+
+  readPRNodeFailureLog: (payload: ReadPRNodeFailureLogPayload) =>
+    request.post<SpecForgePRNodeFailureLogDTO, ReadPRNodeFailureLogPayload>(
+      "/github/pr-nodes/failure-log",
       payload
     ),
 

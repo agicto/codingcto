@@ -13,6 +13,7 @@ import {
   type ListGitHubWebhookEventsParams,
   type ListSpecForgeRuntimesParams,
   type PreparePRNodeBranchPayload,
+  type ReadPRNodeFailureLogPayload,
   type RepoProfilePayload,
   type DeliverPRNodePayload,
   type RefreshPRNodeCIPayload,
@@ -194,6 +195,13 @@ export function useDeliverSpecForgePRNode() {
 export function useRefreshSpecForgePRNodeCI() {
   return useMutation({
     mutationFn: (payload: RefreshPRNodeCIPayload) => specForgeService.refreshPRNodeCI(payload),
+  });
+}
+
+export function useReadSpecForgePRNodeFailureLog() {
+  return useMutation({
+    mutationFn: (payload: ReadPRNodeFailureLogPayload) =>
+      specForgeService.readPRNodeFailureLog(payload),
   });
 }
 

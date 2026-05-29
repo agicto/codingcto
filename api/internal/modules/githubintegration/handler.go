@@ -139,6 +139,19 @@ func (h *Handler) RefreshPRNodeCI(c *gin.Context) {
 	response.Success(c, node)
 }
 
+func (h *Handler) ReadPRNodeFailureLog(c *gin.Context) {
+	var req ReadPRNodeFailureLogRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+	failure, err := h.service.ReadPRNodeFailureLog(c.Request.Context(), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to read PR node failure log", err)
+		return
+	}
+	response.Success(c, failure)
+}
+
 func (h *Handler) ReceiveWebhook(c *gin.Context) {
 	body, err := io.ReadAll(c.Request.Body)
 	if err != nil {
