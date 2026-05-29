@@ -69,6 +69,24 @@ function coerceRunStatus(status: string): ExecutionRun['status'] {
     : 'idle';
 }
 
+function statusForExecutionTask(
+  taskStatus: string,
+  nodeStatus?: PRNode['status']
+): PRNode['status'] {
+  const coercedTaskStatus = coerceNodeStatus(taskStatus);
+  if (
+    nodeStatus === 'pr_opened' ||
+    nodeStatus === 'ci_running' ||
+    nodeStatus === 'ready_for_review' ||
+    nodeStatus === 'blocked' ||
+    nodeStatus === 'merged' ||
+    nodeStatus === 'closed'
+  ) {
+    return nodeStatus;
+  }
+  return coercedTaskStatus;
+}
+
 function repoProfileFromDTO(
   repoProfile: SpecForgeRepoProfileDTO | undefined,
   repositoryId: string
@@ -171,7 +189,7 @@ export function executionRunFromDTO(
       logsUrl: task.logs_url,
       outputLog: task.output_log,
       errorLog: task.error_log,
-      status: coerceNodeStatus(task.status),
+      status: statusForExecutionTask(task.status, node?.status),
     };
   });
 

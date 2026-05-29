@@ -296,4 +296,86 @@ describe('executionRunFromDTO', () => {
       },
     });
   });
+
+  it('keeps PR lifecycle status visible after an agent task completes', () => {
+    const planWithCI = {
+      ...baseBundle,
+      pr_nodes: [
+        {
+          ...baseBundle.pr_nodes[0],
+          status: 'ci_running',
+        },
+      ],
+    };
+    const bundle: SpecForgeExecutionBundleDTO = {
+      run: {
+        id: 9,
+        plan_id: 1,
+        status: 'running',
+        started_by: 1,
+        started_at: '2026-05-29T12:00:00Z',
+        created_at: '2026-05-29T12:00:00Z',
+        updated_at: '2026-05-29T12:00:00Z',
+      },
+      plan: planWithCI,
+      tasks: [
+        {
+          id: 12,
+          run_id: 9,
+          pr_node_id: 1,
+          executor: 'codex_cli',
+          status: 'completed',
+          attempt_number: 1,
+          created_at: '2026-05-29T12:00:00Z',
+          updated_at: '2026-05-29T12:00:00Z',
+        },
+      ],
+    };
+
+    expect(executionRunFromDTO(bundle).run.tasks[0]).toMatchObject({
+      taskId: 12,
+      status: 'ci_running',
+    });
+  });
+
+  it('keeps ready PR lifecycle status visible after verification passes', () => {
+    const planWithReadyNode = {
+      ...baseBundle,
+      pr_nodes: [
+        {
+          ...baseBundle.pr_nodes[0],
+          status: 'ready_for_review',
+        },
+      ],
+    };
+    const bundle: SpecForgeExecutionBundleDTO = {
+      run: {
+        id: 10,
+        plan_id: 1,
+        status: 'running',
+        started_by: 1,
+        started_at: '2026-05-29T12:00:00Z',
+        created_at: '2026-05-29T12:00:00Z',
+        updated_at: '2026-05-29T12:00:00Z',
+      },
+      plan: planWithReadyNode,
+      tasks: [
+        {
+          id: 13,
+          run_id: 10,
+          pr_node_id: 1,
+          executor: 'codex_cli',
+          status: 'completed',
+          attempt_number: 1,
+          created_at: '2026-05-29T12:00:00Z',
+          updated_at: '2026-05-29T12:00:00Z',
+        },
+      ],
+    };
+
+    expect(executionRunFromDTO(bundle).run.tasks[0]).toMatchObject({
+      taskId: 13,
+      status: 'ready_for_review',
+    });
+  });
 });
