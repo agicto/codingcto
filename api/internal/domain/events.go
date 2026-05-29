@@ -164,6 +164,7 @@ func NewRoleRevokedEvent(userID, roleID uint, roleName string) RoleRevokedEvent 
 }
 
 const EventSpecForgeReviewFeedbackReceived = "specforge.review_feedback.received"
+const EventSpecForgeFixAttemptQueued = "specforge.fix_attempt.queued"
 
 // SpecForgeReviewFeedbackReceivedEvent is fired when GitHub review feedback can be mapped to a SpecForge PR node.
 type SpecForgeReviewFeedbackReceivedEvent struct {
@@ -194,6 +195,35 @@ func NewSpecForgeReviewFeedbackReceivedEvent(prNodeID uint, prNumber int, reposi
 		Path:               path,
 		CommitSHA:          commitSHA,
 	}
+}
+
+// SpecForgeFixAttemptQueuedEvent is fired when a CI failure has been classified and can be auto-fixed.
+type SpecForgeFixAttemptQueuedEvent struct {
+	BaseEvent
+	FixAttemptID      uint
+	PRNodeID          uint
+	FailureType       string
+	CILogExcerpt      string
+	LikelyCause       string
+	RecommendedAction string
+}
+
+func (e SpecForgeFixAttemptQueuedEvent) EventName() string {
+	return EventSpecForgeFixAttemptQueued
+}
+
+func NewSpecForgeFixAttemptQueuedEvent(attempt *SpecForgeFixAttempt) SpecForgeFixAttemptQueuedEvent {
+	event := SpecForgeFixAttemptQueuedEvent{BaseEvent: NewBaseEvent()}
+	if attempt == nil {
+		return event
+	}
+	event.FixAttemptID = attempt.ID
+	event.PRNodeID = attempt.PRNodeID
+	event.FailureType = attempt.FailureType
+	event.CILogExcerpt = attempt.CILogExcerpt
+	event.LikelyCause = attempt.LikelyCause
+	event.RecommendedAction = attempt.RecommendedAction
+	return event
 }
 
 // EventHandler handles domain events

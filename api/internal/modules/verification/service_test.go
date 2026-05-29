@@ -6,12 +6,13 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/zgiai/luas/api/internal/domain"
+	infraevents "github.com/zgiai/luas/api/internal/infra/events"
 	"github.com/zgiai/luas/api/internal/modules/githubintegration"
 )
 
 func TestCreateFixAttemptAssignsAttemptNumberAndDefaults(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil)
+	svc := NewService(repo, nil, nil)
 
 	first, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
 		FailureType:       " type_error ",
@@ -38,7 +39,7 @@ func TestCreateFixAttemptAssignsAttemptNumberAndDefaults(t *testing.T) {
 
 func TestCreateFixAttemptRejectsAfterRetryLimit(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil)
+	svc := NewService(repo, nil, nil)
 
 	failureTypes := []string{"type_error", "lint_failure", "type_error"}
 	for _, failureType := range failureTypes {
@@ -57,7 +58,7 @@ func TestCreateFixAttemptRejectsAfterRetryLimit(t *testing.T) {
 
 func TestCreateFixAttemptRejectsRepeatedSameFailureType(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil)
+	svc := NewService(repo, nil, nil)
 
 	for i := 0; i < maxConsecutiveFixAttemptsPerFailureType; i++ {
 		_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
@@ -75,7 +76,7 @@ func TestCreateFixAttemptRejectsRepeatedSameFailureType(t *testing.T) {
 
 func TestCreateFixAttemptAllowsSameFailureTypeAfterDifferentFailure(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil)
+	svc := NewService(repo, nil, nil)
 
 	for _, failureType := range []string{"type_error", "lint_failure"} {
 		_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
@@ -94,7 +95,7 @@ func TestCreateFixAttemptAllowsSameFailureTypeAfterDifferentFailure(t *testing.T
 
 func TestListFixAttemptsReturnsPRNodeAttempts(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil)
+	svc := NewService(repo, nil, nil)
 	_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{FailureType: "type_error"})
 	require.NoError(t, err)
 	_, err = svc.CreateFixAttempt(context.Background(), 7, 99, &CreateFixAttemptRequest{FailureType: "lint_failure"})
@@ -117,7 +118,7 @@ func TestCreateFixAttemptFromCIClassifiesFailedLogs(t *testing.T) {
 			FailedSteps: []string{"go test"},
 		},
 	}
-	svc := NewService(repo, reader)
+	svc := NewService(repo, reader, nil)
 
 	attempt, err := svc.CreateFixAttemptFromCI(context.Background(), 7, 42, &CreateFixAttemptFromCIRequest{
 		RepositoryID: "github_agicto__codingcto",
@@ -133,9 +134,46 @@ func TestCreateFixAttemptFromCIClassifiesFailedLogs(t *testing.T) {
 	require.True(t, attempt.CanAutoFix)
 }
 
+func TestCreateFixAttemptFromCIPublishesQueuedAutoFixEvent(t *testing.T) {
+	repo := &memoryRepo{}
+	reader := &fakeFailureReader{
+		failure: &githubintegration.PRNodeFailureLog{
+			PRNodeID:    42,
+			JobName:     "Web",
+			LogExcerpt:  "pnpm typecheck\nTS2322: Type mismatch\n",
+			FailedSteps: []string{"pnpm typecheck"},
+		},
+	}
+	bus := infraevents.NewEventBus()
+	var published domain.SpecForgeFixAttemptQueuedEvent
+	bus.Subscribe(domain.EventSpecForgeFixAttemptQueued, func(ctx context.Context, event infraevents.Event) error {
+		var underlying any = event
+		if wrapped, ok := event.(infraevents.WrappedEvent); ok {
+			underlying = wrapped.Event
+		}
+		typed, ok := underlying.(domain.SpecForgeFixAttemptQueuedEvent)
+		require.True(t, ok)
+		published = typed
+		return nil
+	})
+	svc := NewService(repo, reader, bus)
+
+	attempt, err := svc.CreateFixAttemptFromCI(context.Background(), 7, 42, &CreateFixAttemptFromCIRequest{
+		RepositoryID: "github_agicto__codingcto",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, attempt.ID, published.FixAttemptID)
+	require.Equal(t, uint(42), published.PRNodeID)
+	require.Equal(t, "type_error", published.FailureType)
+	require.Contains(t, published.CILogExcerpt, "TS2322")
+	require.Contains(t, published.LikelyCause, "pnpm typecheck")
+	require.NotEmpty(t, published.RecommendedAction)
+}
+
 func TestCreateFixAttemptFromCIRejectsMissingReader(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil)
+	svc := NewService(repo, nil, nil)
 
 	_, err := svc.CreateFixAttemptFromCI(context.Background(), 7, 42, &CreateFixAttemptFromCIRequest{
 		RepositoryID: "github_agicto__codingcto",
@@ -146,7 +184,7 @@ func TestCreateFixAttemptFromCIRejectsMissingReader(t *testing.T) {
 
 func TestGetEscalationSummaryAllowsAutoFixBeforeLimit(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil)
+	svc := NewService(repo, nil, nil)
 	_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
 		FailureType:       "type_error",
 		LikelyCause:       "GitHub Actions job failed at typecheck.",
@@ -170,7 +208,7 @@ func TestGetEscalationSummaryAllowsAutoFixBeforeLimit(t *testing.T) {
 
 func TestGetEscalationSummaryRequiresDecisionAfterLimit(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil)
+	svc := NewService(repo, nil, nil)
 	for i := 0; i < maxFixAttemptsPerPRNode; i++ {
 		_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
 			FailureType:       []string{"unit_test_failure", "lint_failure", "unit_test_failure"}[i],

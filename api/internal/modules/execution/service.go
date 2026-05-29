@@ -28,6 +28,7 @@ type Service interface {
 	SweepStaleTasks(ctx context.Context, req *StaleTaskSweepRequest) (*domain.SpecForgeTaskSweepResult, error)
 	ClaimTask(ctx context.Context, runtimeID string, req *ClaimAgentTaskRequest) (*ClaimAgentTaskResponse, error)
 	RetryTask(ctx context.Context, taskID uint, req *RetryAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
+	CreateFixTaskForPRNode(ctx context.Context, prNodeID uint, req *FixAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	CreateReviewPatchTask(ctx context.Context, taskID uint, req *ReviewPatchAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	CreateReviewPatchTaskForGitHubPR(ctx context.Context, prNumber int, req *ReviewPatchAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	PinTaskSession(ctx context.Context, taskID uint, req *PinAgentTaskSessionRequest) (*domain.SpecForgeExecutionBundle, error)
@@ -425,6 +426,42 @@ func (s *service) RetryTask(ctx context.Context, taskID uint, req *RetryAgentTas
 	return s.GetRun(ctx, parent.RunID)
 }
 
+func (s *service) CreateFixTaskForPRNode(ctx context.Context, prNodeID uint, req *FixAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error) {
+	if prNodeID == 0 || req == nil || strings.TrimSpace(req.FailureType) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	parent, err := s.repo.FindLatestTerminalAgentTaskByPRNodeID(ctx, prNodeID)
+	if err != nil {
+		return nil, err
+	}
+	bundle, err := s.GetRun(ctx, parent.RunID)
+	if err != nil {
+		return nil, err
+	}
+	if bundle.Run.Status == domain.ExecutionRunStatusCompleted || bundle.Run.Status == domain.ExecutionRunStatusCancelled {
+		return nil, domain.ErrConflict
+	}
+	node := nodeByID(bundle.Plan.PRNodes)[parent.PRNodeID]
+	if node == nil {
+		return nil, domain.ErrNotFound
+	}
+	status := domain.AgentTaskStatusWaiting
+	if dependenciesComplete(node, completedNodeKeySet(bundle)) {
+		status = domain.AgentTaskStatusQueued
+	}
+	fixParent := *parent
+	fixParent.PromptType = domain.PromptTypeFix
+	fixParent.FailureReason = strings.TrimSpace(req.FailureType)
+	fixParent.ErrorLog = fixTaskFailureContext(req)
+	if err := s.createPromptForPRNode(ctx, 0, bundle.Plan, node, domain.PromptTypeFix, &fixParent); err != nil {
+		return nil, err
+	}
+	if _, err := s.repo.CreateRetryAgentTask(ctx, &fixParent, status, req.ForceFreshSession); err != nil {
+		return nil, fmt.Errorf("create fix agent task: %w", err)
+	}
+	return s.GetRun(ctx, parent.RunID)
+}
+
 func (s *service) CreateReviewPatchTask(ctx context.Context, taskID uint, req *ReviewPatchAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error) {
 	if taskID == 0 || req == nil || strings.TrimSpace(req.Feedback) == "" {
 		return nil, domain.ErrInvalidInput
@@ -462,6 +499,23 @@ func (s *service) CreateReviewPatchTask(ctx context.Context, taskID uint, req *R
 		return nil, fmt.Errorf("create review patch agent task: %w", err)
 	}
 	return s.GetRun(ctx, parent.RunID)
+}
+
+func fixTaskFailureContext(req *FixAgentTaskRequest) string {
+	if req == nil {
+		return ""
+	}
+	parts := make([]string, 0, 3)
+	if value := strings.TrimSpace(req.LikelyCause); value != "" {
+		parts = append(parts, "Likely cause: "+value)
+	}
+	if value := strings.TrimSpace(req.RecommendedAction); value != "" {
+		parts = append(parts, "Recommended action: "+value)
+	}
+	if value := strings.TrimSpace(req.CILogExcerpt); value != "" {
+		parts = append(parts, "CI log excerpt:\n"+value)
+	}
+	return strings.Join(parts, "\n\n")
 }
 
 func (s *service) CreateReviewPatchTaskForGitHubPR(ctx context.Context, prNumber int, req *ReviewPatchAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error) {
