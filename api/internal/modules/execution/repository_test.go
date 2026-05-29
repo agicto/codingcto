@@ -175,6 +175,41 @@ func TestRepositorySweepsOfflineRuntimesAndFailsActiveTasks(t *testing.T) {
 	require.NotNil(t, failedTasks[0].FinishedAt)
 }
 
+func TestRepositoryListsRuntimesWithFiltersAndLimit(t *testing.T) {
+	repo := newTestExecutionRepository(t)
+	now := time.Now()
+	require.NoError(t, repo.UpsertRuntime(context.Background(), &domain.SpecForgeRuntime{
+		RuntimeID:  "runtime-old",
+		Executor:   ExecutorNameCodexCLI,
+		Status:     domain.RuntimeStatusOnline,
+		LastSeenAt: now.Add(-2 * time.Minute),
+	}))
+	require.NoError(t, repo.UpsertRuntime(context.Background(), &domain.SpecForgeRuntime{
+		RuntimeID:  "runtime-new",
+		Executor:   ExecutorNameCodexCLI,
+		Status:     domain.RuntimeStatusOnline,
+		LastSeenAt: now,
+	}))
+	require.NoError(t, repo.UpsertRuntime(context.Background(), &domain.SpecForgeRuntime{
+		RuntimeID:  "runtime-other",
+		Executor:   "other_executor",
+		Status:     domain.RuntimeStatusOffline,
+		LastSeenAt: now.Add(time.Minute),
+	}))
+
+	runtimes, err := repo.ListRuntimes(context.Background(), ExecutorNameCodexCLI, domain.RuntimeStatusOnline, 1)
+
+	require.NoError(t, err)
+	require.Len(t, runtimes, 1)
+	require.Equal(t, "runtime-new", runtimes[0].RuntimeID)
+
+	all, err := repo.ListRuntimes(context.Background(), "", "", 2)
+	require.NoError(t, err)
+	require.Len(t, all, 2)
+	require.Equal(t, "runtime-other", all[0].RuntimeID)
+	require.Equal(t, "runtime-new", all[1].RuntimeID)
+}
+
 func TestRepositoryDeregistersRuntimeAndFailsOnlyItsTasks(t *testing.T) {
 	repo := newTestExecutionRepository(t)
 	require.NoError(t, repo.UpsertRuntime(context.Background(), &domain.SpecForgeRuntime{

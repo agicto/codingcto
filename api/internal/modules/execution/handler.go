@@ -139,6 +139,22 @@ func (h *Handler) DeregisterRuntimes(c *gin.Context) {
 	response.Success(c, result)
 }
 
+func (h *Handler) ListRuntimes(c *gin.Context) {
+	var req ListRuntimesRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		response.BadRequest(c, "Invalid request parameters", err)
+		return
+	}
+
+	result, err := h.service.ListRuntimes(c.Request.Context(), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to list runtimes", err)
+		return
+	}
+
+	response.Success(c, result)
+}
+
 func (h *Handler) SweepStaleRuntimes(c *gin.Context) {
 	var req RuntimeSweepRequest
 	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {

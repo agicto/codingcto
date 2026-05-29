@@ -20,6 +20,7 @@ type Service interface {
 	CancelRun(ctx context.Context, runID uint) (*domain.SpecForgeExecutionBundle, error)
 	HeartbeatRuntime(ctx context.Context, req *RuntimeHeartbeatRequest) (*RuntimeHeartbeatResponse, error)
 	DeregisterRuntimes(ctx context.Context, req *RuntimeDeregisterRequest) (*domain.SpecForgeRuntimeSweepResult, error)
+	ListRuntimes(ctx context.Context, req *ListRuntimesRequest) (*RuntimeListResponse, error)
 	ListRuntimePendingTasks(ctx context.Context, runtimeID, executor string) (*RuntimePendingTasksResponse, error)
 	SweepStaleRuntimes(ctx context.Context, req *RuntimeSweepRequest) (*domain.SpecForgeRuntimeSweepResult, error)
 	SweepStaleTasks(ctx context.Context, req *StaleTaskSweepRequest) (*domain.SpecForgeTaskSweepResult, error)
@@ -223,6 +224,21 @@ func (s *service) DeregisterRuntimes(ctx context.Context, req *RuntimeDeregister
 		OfflineRuntimes: runtimes,
 		FailedTasks:     tasks,
 	}, nil
+}
+
+func (s *service) ListRuntimes(ctx context.Context, req *ListRuntimesRequest) (*RuntimeListResponse, error) {
+	if req == nil {
+		req = &ListRuntimesRequest{}
+	}
+	limit := req.Limit
+	if limit <= 0 || limit > 100 {
+		limit = 50
+	}
+	runtimes, err := s.repo.ListRuntimes(ctx, strings.TrimSpace(req.Executor), strings.TrimSpace(req.Status), limit)
+	if err != nil {
+		return nil, fmt.Errorf("list runtimes: %w", err)
+	}
+	return &RuntimeListResponse{Runtimes: runtimes}, nil
 }
 
 func (s *service) ListRuntimePendingTasks(ctx context.Context, runtimeID, executor string) (*RuntimePendingTasksResponse, error) {

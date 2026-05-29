@@ -10,6 +10,7 @@ import {
   type CreateIdeaPayload,
   type DispatchRunPayload,
   type ListGitHubWebhookEventsParams,
+  type ListSpecForgeRuntimesParams,
   type RepoProfilePayload,
   type RetryTaskPayload,
   type RuntimeDeregisterPayload,
@@ -32,6 +33,14 @@ export const specForgeKeys = {
     [...specForgeKeys.all, "task-events", taskId, afterSeq ?? 0] as const,
   runtimePendingTasks: (runtimeId: string, executor?: string) =>
     [...specForgeKeys.all, "runtime-pending-tasks", runtimeId, executor ?? ""] as const,
+  runtimes: (params?: ListSpecForgeRuntimesParams) =>
+    [
+      ...specForgeKeys.all,
+      "runtimes",
+      params?.executor ?? "",
+      params?.status ?? "",
+      params?.limit ?? 50,
+    ] as const,
   githubWebhookEvents: (params?: ListGitHubWebhookEventsParams) =>
     [
       ...specForgeKeys.all,
@@ -87,6 +96,13 @@ export function useSpecForgeRuntimePendingTasks(runtimeId?: string, executor?: s
     queryKey: specForgeKeys.runtimePendingTasks(runtimeId ?? "", executor),
     queryFn: () => specForgeService.listRuntimePendingTasks(runtimeId ?? "", executor),
     enabled: Boolean(runtimeId),
+  });
+}
+
+export function useSpecForgeRuntimes(params?: ListSpecForgeRuntimesParams) {
+  return useQuery({
+    queryKey: specForgeKeys.runtimes(params),
+    queryFn: () => specForgeService.listRuntimes(params),
   });
 }
 

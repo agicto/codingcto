@@ -25,6 +25,12 @@ type RuntimeDeregisterRequest struct {
 	RuntimeIDs []string `json:"runtime_ids" binding:"required,min=1,max=100,dive,required,max=100"`
 }
 
+type ListRuntimesRequest struct {
+	Executor string `form:"executor" binding:"omitempty,max=100"`
+	Status   string `form:"status" binding:"omitempty,max=50"`
+	Limit    int    `form:"limit" binding:"omitempty,min=1,max=100"`
+}
+
 type StaleTaskSweepRequest struct {
 	DispatchTimeoutSeconds int `json:"dispatch_timeout_seconds" binding:"omitempty,min=1,max=86400"`
 	RunningTimeoutSeconds  int `json:"running_timeout_seconds" binding:"omitempty,min=1,max=86400"`
@@ -47,6 +53,10 @@ type RuntimeHeartbeatResponse struct {
 
 type RuntimePendingTasksResponse struct {
 	Tasks []*domain.SpecForgeAgentTask `json:"tasks"`
+}
+
+type RuntimeListResponse struct {
+	Runtimes []*domain.SpecForgeRuntime `json:"runtimes"`
 }
 
 type ClaimAgentTaskResponse struct {
