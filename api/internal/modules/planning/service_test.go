@@ -36,9 +36,46 @@ func TestCreateIdeaBuildsReviewablePlanBundle(t *testing.T) {
 	require.Equal(t, domain.PlanStatusDraft, bundle.Plan.Status)
 	require.Len(t, bundle.PRNodes, 3)
 	require.Equal(t, "PR-001", bundle.PRNodes[0].NodeKey)
+	require.Contains(t, bundle.ProductSpec.Goals[0], "Add team invite feature for workspace admins")
+	require.Contains(t, bundle.Plan.TechnicalSummary, "Add team invite feature for workspace admins")
+	require.Contains(t, bundle.PRNodes[0].Title, "Add team invite feature for workspace admins")
+	require.Contains(t, bundle.PRNodes[1].Title, "backend support")
+	require.NotContains(t, bundle.Plan.TechnicalSummary, "SpecForge planning aggregate")
 	require.Empty(t, bundle.PRNodes[0].DependsOn)
 	require.Contains(t, bundle.PRNodes[1].DependsOn, "PR-001")
 	require.Contains(t, bundle.ProductSpec.Assumptions, "PR DAG review: validation passed for 3 reviewable PR nodes; dependencies resolve within the generated plan.")
+}
+
+func TestCreateIdeaBuildsFrontendAndBackendPRDAGFromRepoProfile(t *testing.T) {
+	repo := &memoryRepo{}
+	profileRepo := &memoryProfileRepo{profile: &domain.SpecForgeRepoProfile{
+		RepositoryID:  "repo_123",
+		DefaultBranch: "main",
+		Stack:         []string{"Go", "Gin", "Next.js", "React", "TypeScript"},
+		TestCommands:  []string{"go test ./...", "pnpm test"},
+		CIProvider:    "github_actions",
+		AppStructure:  []string{"api/internal/modules", "web/src/features"},
+	}}
+	svc := NewService(repo, profileRepo, repo)
+
+	bundle, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
+		Input: "Add team invite UI and API for workspace admins",
+		Type:  "feature",
+	})
+
+	require.NoError(t, err)
+	require.Len(t, bundle.PRNodes, 4)
+	require.Equal(t, "foundation", bundle.PRNodes[0].Type)
+	require.Equal(t, "backend", bundle.PRNodes[1].Type)
+	require.Equal(t, "frontend", bundle.PRNodes[2].Type)
+	require.Equal(t, "verification", bundle.PRNodes[3].Type)
+	require.Contains(t, bundle.PRNodes[2].DependsOn, "PR-002")
+	require.Contains(t, bundle.PRNodes[3].DependsOn, "PR-003")
+	require.Contains(t, bundle.Plan.AffectedAreas, "api/internal/modules")
+	require.Contains(t, bundle.Plan.AffectedAreas, "web/src/features")
+	require.Contains(t, bundle.Plan.APIChanges[0], "team invite")
+	require.Contains(t, bundle.Plan.UIChanges[0], "team invite")
+	require.Contains(t, bundle.ProductSpec.Assumptions, "PR DAG review: validation passed for 4 reviewable PR nodes; dependencies resolve within the generated plan.")
 }
 
 func TestApprovePlanRecordsApproverAndRejectsSecondApproval(t *testing.T) {
