@@ -14,6 +14,8 @@ const (
 	PRNodeStatusCIRunning       = "ci_running"
 	PRNodeStatusReadyForReview  = "ready_for_review"
 	PRNodeStatusBlocked         = "blocked"
+	PRNodeStatusMerged          = "merged"
+	PRNodeStatusClosed          = "closed"
 	ExecutionRunStatusQueued    = "queued"
 	ExecutionRunStatusRunning   = "running"
 	ExecutionRunStatusCompleted = "completed"

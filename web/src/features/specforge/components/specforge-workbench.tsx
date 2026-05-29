@@ -117,6 +117,8 @@ const statusLabel: Record<PRNode["status"], string> = {
   ci_running: "CI running",
   ready_for_review: "Ready",
   blocked: "Blocked",
+  merged: "Merged",
+  closed: "Closed",
   completed: "Completed",
   failed: "Failed",
   cancelled: "Cancelled",
@@ -131,7 +133,7 @@ const promptModeLabel: Record<PromptMode, string> = {
 };
 
 function statusClassName(status: PRNode["status"]) {
-  if (status === "completed" || status === "ready_for_review") {
+  if (status === "completed" || status === "ready_for_review" || status === "merged") {
     return "border-success/30 bg-success-subtle text-success";
   }
   if (status === "running" || status === "ci_running") {
@@ -140,7 +142,7 @@ function statusClassName(status: PRNode["status"]) {
   if (status === "waiting_on_dependencies" || status === "pr_opened") {
     return "border-warning/30 bg-warning-subtle text-warning";
   }
-  if (status === "failed" || status === "cancelled" || status === "blocked") {
+  if (status === "failed" || status === "cancelled" || status === "blocked" || status === "closed") {
     return "border-error/30 bg-error-subtle text-error";
   }
   return "border-border bg-bg-surface text-text-subtle";
