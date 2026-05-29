@@ -572,10 +572,10 @@ func (s *service) applyWebhookToPRNode(ctx context.Context, eventType string, bo
 }
 
 func (s *service) updatePRNodeFromPullRequest(ctx context.Context, pr *WebhookPullRequest) error {
-	if strings.TrimSpace(pr.HeadBranch) == "" {
+	if strings.TrimSpace(pr.HeadBranch) == "" && pr.Number <= 0 {
 		return nil
 	}
-	node, err := s.planningRepo.FindPRNodeByBranchName(ctx, pr.HeadBranch)
+	node, err := s.findPRNodeForWebhookPullRequest(ctx, pr)
 	if errors.Is(err, domain.ErrNotFound) {
 		return nil
 	}
@@ -587,6 +587,16 @@ func (s *service) updatePRNodeFromPullRequest(ctx context.Context, pr *WebhookPu
 	node.GitHubHeadSHA = pr.HeadSHA
 	node.Status = domain.PRNodeStatusPROpened
 	return s.planningRepo.UpdatePRNode(ctx, node)
+}
+
+func (s *service) findPRNodeForWebhookPullRequest(ctx context.Context, pr *WebhookPullRequest) (*domain.SpecForgePRNode, error) {
+	if strings.TrimSpace(pr.HeadBranch) != "" {
+		node, err := s.planningRepo.FindPRNodeByBranchName(ctx, pr.HeadBranch)
+		if err == nil || !errors.Is(err, domain.ErrNotFound) || pr.Number <= 0 {
+			return node, err
+		}
+	}
+	return s.planningRepo.FindPRNodeByGitHubPRNumber(ctx, pr.Number)
 }
 
 func (s *service) updatePRNodeFromWorkflowRun(ctx context.Context, run *WebhookWorkflowRun) error {

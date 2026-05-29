@@ -1477,6 +1477,10 @@ func (r *memoryPlanningRepo) FindPRNodeByBranchName(ctx context.Context, branchN
 	return nil, domain.ErrNotFound
 }
 
+func (r *memoryPlanningRepo) FindPRNodeByGitHubPRNumber(ctx context.Context, prNumber int) (*domain.SpecForgePRNode, error) {
+	return nil, domain.ErrNotFound
+}
+
 func (r *memoryPlanningRepo) UpdatePRNode(ctx context.Context, node *domain.SpecForgePRNode) error {
 	return nil
 }

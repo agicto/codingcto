@@ -341,6 +341,16 @@ func (r *memoryRepo) FindPRNodeByBranchName(ctx context.Context, branchName stri
 	return nil, domain.ErrNotFound
 }
 
+func (r *memoryRepo) FindPRNodeByGitHubPRNumber(ctx context.Context, prNumber int) (*domain.SpecForgePRNode, error) {
+	for _, node := range r.bundle.PRNodes {
+		if node.GitHubPRNumber != nil && *node.GitHubPRNumber == prNumber {
+			copied := *node
+			return &copied, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
 func (r *memoryRepo) UpdatePRNode(ctx context.Context, node *domain.SpecForgePRNode) error {
 	for i, existing := range r.bundle.PRNodes {
 		if existing.ID == node.ID {

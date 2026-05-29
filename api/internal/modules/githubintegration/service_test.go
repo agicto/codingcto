@@ -210,6 +210,46 @@ func TestRecordWebhookLinksPullRequestToPRNode(t *testing.T) {
 	require.Equal(t, domain.PRNodeStatusPROpened, node.Status)
 }
 
+func TestRecordWebhookLinksPullRequestByGitHubPRNumberFallback(t *testing.T) {
+	repo := &memoryRepo{}
+	prNumber := 42
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, BranchName: "specforge/team-invite-02-api", GitHubPRNumber: &prNumber, Status: domain.PRNodeStatusPROpened},
+		},
+	}
+	svc := NewService(repo, planningRepo, nil, nil)
+	body := []byte(`{
+		"action": "created",
+		"installation": {"id": 123},
+		"repository": {"full_name": "agicto/codingcto"},
+		"issue": {
+			"number": 42,
+			"state": "open",
+			"pull_request": {"html_url": "https://github.com/agicto/codingcto/pull/42"}
+		},
+		"comment": {
+			"body": "Please handle nil workspace roles.",
+			"html_url": "https://github.com/agicto/codingcto/pull/42#issuecomment-1",
+			"user": {"login": "reviewer"}
+		}
+	}`)
+
+	_, err := svc.RecordWebhook(context.Background(), &GitHubWebhookRequest{
+		EventType:  GitHubWebhookEventIssueComment,
+		DeliveryID: "delivery-pr-comment",
+		Signature:  "sha256=abc",
+		Body:       body,
+	})
+
+	require.NoError(t, err)
+	node := planningRepo.nodes[0]
+	require.NotNil(t, node.GitHubPRNumber)
+	require.Equal(t, 42, *node.GitHubPRNumber)
+	require.Equal(t, "https://github.com/agicto/codingcto/pull/42", node.GitHubPRURL)
+	require.Equal(t, domain.PRNodeStatusPROpened, node.Status)
+}
+
 func TestRecordWebhookUpdatesPRNodeFromWorkflowRun(t *testing.T) {
 	repo := &memoryRepo{}
 	planningRepo := &memoryPlanningRepo{
@@ -809,6 +849,16 @@ func (r *memoryPlanningRepo) FindPRNodeByID(ctx context.Context, prNodeID uint) 
 func (r *memoryPlanningRepo) FindPRNodeByBranchName(ctx context.Context, branchName string) (*domain.SpecForgePRNode, error) {
 	for _, node := range r.nodes {
 		if node.BranchName == branchName {
+			copied := *node
+			return &copied, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryPlanningRepo) FindPRNodeByGitHubPRNumber(ctx context.Context, prNumber int) (*domain.SpecForgePRNode, error) {
+	for _, node := range r.nodes {
+		if node.GitHubPRNumber != nil && *node.GitHubPRNumber == prNumber {
 			copied := *node
 			return &copied, nil
 		}

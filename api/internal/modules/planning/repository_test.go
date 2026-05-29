@@ -32,6 +32,22 @@ func TestRepositoryUpdatesPRNodeGitHubLink(t *testing.T) {
 	require.Equal(t, domain.PRNodeStatusPROpened, found.Status)
 }
 
+func TestRepositoryFindsPRNodeByGitHubPRNumber(t *testing.T) {
+	repo := newTestPlanningRepository(t)
+	bundle := testPlanBundle()
+	require.NoError(t, repo.CreatePlanBundle(context.Background(), bundle))
+	node := bundle.PRNodes[0]
+	prNumber := 42
+	node.GitHubPRNumber = &prNumber
+	require.NoError(t, repo.UpdatePRNode(context.Background(), node))
+
+	found, err := repo.FindPRNodeByGitHubPRNumber(context.Background(), 42)
+
+	require.NoError(t, err)
+	require.Equal(t, node.ID, found.ID)
+	require.Equal(t, node.BranchName, found.BranchName)
+}
+
 func TestRepositoryFindsLatestCompiledPromptForPRNode(t *testing.T) {
 	repo := newTestPlanningRepository(t)
 	bundle := testPlanBundle()
