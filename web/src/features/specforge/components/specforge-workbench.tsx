@@ -50,15 +50,20 @@ import {
   useApproveSpecForgePlan,
   useCancelExecutionRun,
   useCompileSpecForgePrompt,
+  useCreateSpecForgeFixAttemptFromCI,
   useCreateSpecForgeIdea,
   useDispatchExecutionRun,
   useExecutionRun,
+  useSpecForgeFixAttempts,
   useSpecForgeSkills,
   useSpecForgeRuntimes,
   useStartExecutionRun,
   useUpsertSpecForgeSkill,
 } from "@/features/specforge/hooks/use-specforge";
-import type { SpecForgeSkillDTO } from "@/features/specforge/services/specforge-service";
+import type {
+  SpecForgeFixAttemptDTO,
+  SpecForgeSkillDTO,
+} from "@/features/specforge/services/specforge-service";
 import type {
   ExecutionRun,
   PlanBundle,
@@ -419,6 +424,7 @@ export function SpecForgeWorkbench() {
               <TabsContent value="dag">
                 <PRDag
                   nodes={activePlan.prNodes}
+                  repositoryId={activePlan.repoProfile.repositoryId}
                   isCompilingPrompt={compilePrompt.isPending}
                   onCompilePrompt={compileNodePrompt}
                 />
@@ -739,20 +745,67 @@ function ListBlock({
 
 function PRDag({
   nodes,
+  repositoryId,
   isCompilingPrompt,
   onCompilePrompt,
 }: {
   nodes: PRNode[];
+  repositoryId: string;
   isCompilingPrompt: boolean;
   onCompilePrompt: (node: PRNode) => Promise<string>;
 }) {
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
+  const [selectedFixNode, setSelectedFixNode] = useState<PRNode>();
+  const [localFixAttempts, setLocalFixAttempts] = useState<SpecForgeFixAttemptDTO[]>([]);
   const [promptText, setPromptText] = useState("");
+  const selectedFixNodeId = selectedFixNode ? Number(selectedFixNode.id) : undefined;
+  const canReadFixAttempts =
+    selectedFixNodeId !== undefined && Number.isFinite(selectedFixNodeId) && selectedFixNodeId > 0;
+  const fixAttemptsQuery = useSpecForgeFixAttempts(canReadFixAttempts ? selectedFixNodeId : undefined);
+  const createFixAttempt = useCreateSpecForgeFixAttemptFromCI();
+  const fixAttempts = canReadFixAttempts
+    ? (fixAttemptsQuery.data ?? localFixAttempts)
+    : localFixAttempts;
 
   async function handleCompilePrompt(node: PRNode) {
     setSelectedNodeId(node.id);
     const compiled = await onCompilePrompt(node);
     setPromptText(compiled);
+  }
+
+  async function inspectFailure(node: PRNode) {
+    setSelectedFixNode(node);
+    const prNodeId = Number(node.id);
+    if (Number.isFinite(prNodeId) && prNodeId > 0) {
+      try {
+        const attempt = await createFixAttempt.mutateAsync({
+          prNodeId,
+          payload: { repository_id: repositoryId },
+        });
+        setLocalFixAttempts([attempt]);
+        return;
+      } catch {
+        // Keep failure review available for demo plans and offline backend development.
+      }
+    }
+
+    setLocalFixAttempts([
+      {
+        id: 0,
+        pr_node_id: Number.isFinite(prNodeId) ? prNodeId : 0,
+        failure_type: "ci_failure",
+        ci_log_excerpt: "No live CI log is available in demo mode.",
+        attempt_number: 1,
+        status: "queued",
+        confidence: 0.7,
+        likely_cause: "CI diagnostics require a GitHub workflow run for this PR node.",
+        recommended_action: "Run CI for the branch, then inspect the failed job logs.",
+        can_auto_fix: false,
+        created_by: 0,
+        created_at: new Date().toISOString(),
+        updated_at: new Date().toISOString(),
+      },
+    ]);
   }
 
   return (
@@ -786,6 +839,17 @@ function PRDag({
                     {isCompilingPrompt && selectedNodeId === node.id ? "Compiling" : "Prompt"}
                     <ScrollText className="ml-1.5 h-4 w-4" />
                   </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => inspectFailure(node)}
+                    disabled={createFixAttempt.isPending && selectedFixNode?.id === node.id}
+                  >
+                    {createFixAttempt.isPending && selectedFixNode?.id === node.id
+                      ? "Checking"
+                      : "Fixes"}
+                    <ShieldAlert className="ml-1.5 h-4 w-4" />
+                  </Button>
                 </div>
               </div>
             </CardHeader>
@@ -797,6 +861,43 @@ function PRDag({
           </Card>
         </div>
       ))}
+      {selectedFixNode && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Fix attempts</CardTitle>
+            <CardDescription>{selectedFixNode.title}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-3">
+            {fixAttempts.length === 0 && (
+              <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
+                {fixAttemptsQuery.isLoading ? "Checking CI diagnostics." : "No fix attempts yet."}
+              </div>
+            )}
+            {fixAttempts.map((attempt) => (
+              <div
+                key={`${attempt.id}-${attempt.attempt_number}`}
+                className="rounded-lg border border-border-subtle bg-bg-subtle p-4"
+              >
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div className="text-sm font-medium">
+                    Attempt {attempt.attempt_number}: {attempt.failure_type}
+                  </div>
+                  <Badge variant="outline">{attempt.status}</Badge>
+                </div>
+                <p className="mt-2 text-sm leading-6 text-text-muted">{attempt.likely_cause}</p>
+                <p className="mt-2 text-sm leading-6 text-text-main">
+                  {attempt.recommended_action}
+                </p>
+              </div>
+            ))}
+            {fixAttemptsQuery.isError && (
+              <p className="text-xs leading-5 text-text-muted">
+                Live fix attempts will load when the SpecForge backend is available.
+              </p>
+            )}
+          </CardContent>
+        </Card>
+      )}
       {promptText && (
         <Card>
           <CardHeader>

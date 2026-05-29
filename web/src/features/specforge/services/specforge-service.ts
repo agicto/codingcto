@@ -30,6 +30,10 @@ export interface CompilePromptPayload {
   type?: "implementation" | "fix" | "review_patch";
 }
 
+export interface CreateFixAttemptFromCIPayload {
+  repository_id: string;
+}
+
 export interface UpsertSkillPayload {
   name: string;
   description?: string;
@@ -242,6 +246,22 @@ export interface SpecForgeSkillDTO {
   updated_at: string;
 }
 
+export interface SpecForgeFixAttemptDTO {
+  id: number;
+  pr_node_id: number;
+  failure_type: string;
+  ci_log_excerpt: string;
+  attempt_number: number;
+  status: string;
+  confidence: number;
+  likely_cause: string;
+  recommended_action: string;
+  can_auto_fix: boolean;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SpecForgeRuntimeDTO {
   id: number;
   runtime_id: string;
@@ -393,6 +413,15 @@ export const specForgeService = {
   compilePrompt: (prNodeId: number, payload?: CompilePromptPayload) =>
     request.post<{ prompt: SpecForgeCompiledPromptDTO }, CompilePromptPayload | undefined>(
       `/pr-nodes/${prNodeId}/prompts`,
+      payload
+    ),
+
+  listFixAttempts: (prNodeId: number) =>
+    request.get<SpecForgeFixAttemptDTO[]>(`/pr-nodes/${prNodeId}/fix-attempts`),
+
+  createFixAttemptFromCI: (prNodeId: number, payload: CreateFixAttemptFromCIPayload) =>
+    request.post<SpecForgeFixAttemptDTO, CreateFixAttemptFromCIPayload>(
+      `/pr-nodes/${prNodeId}/fix-attempts/from-ci`,
       payload
     ),
 

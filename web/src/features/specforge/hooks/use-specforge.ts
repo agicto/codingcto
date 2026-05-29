@@ -6,6 +6,7 @@ import {
   type ApprovePlanPayload,
   type CompilePromptPayload,
   type ClaimTaskPayload,
+  type CreateFixAttemptFromCIPayload,
   type CreateTaskEventPayload,
   type CreateIdeaPayload,
   type DispatchRunPayload,
@@ -31,6 +32,8 @@ export const specForgeKeys = {
   run: (runId: number) => [...specForgeKeys.all, "run", runId] as const,
   taskEvents: (taskId: number, afterSeq?: number) =>
     [...specForgeKeys.all, "task-events", taskId, afterSeq ?? 0] as const,
+  fixAttempts: (prNodeId: number) =>
+    [...specForgeKeys.all, "fix-attempts", prNodeId] as const,
   runtimePendingTasks: (runtimeId: string, executor?: string) =>
     [...specForgeKeys.all, "runtime-pending-tasks", runtimeId, executor ?? ""] as const,
   runtimes: (params?: ListSpecForgeRuntimesParams) =>
@@ -92,6 +95,14 @@ export function useSpecForgeTaskEvents(taskId?: number, afterSeq?: number) {
     queryKey: specForgeKeys.taskEvents(taskId ?? 0, afterSeq),
     queryFn: () => specForgeService.listTaskEvents(taskId ?? 0, afterSeq),
     enabled: Boolean(taskId),
+  });
+}
+
+export function useSpecForgeFixAttempts(prNodeId?: number) {
+  return useQuery({
+    queryKey: specForgeKeys.fixAttempts(prNodeId ?? 0),
+    queryFn: () => specForgeService.listFixAttempts(prNodeId ?? 0),
+    enabled: Boolean(prNodeId),
   });
 }
 
@@ -161,6 +172,23 @@ export function useCompileSpecForgePrompt() {
   return useMutation({
     mutationFn: ({ prNodeId, payload }: { prNodeId: number; payload?: CompilePromptPayload }) =>
       specForgeService.compilePrompt(prNodeId, payload),
+  });
+}
+
+export function useCreateSpecForgeFixAttemptFromCI() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      prNodeId,
+      payload,
+    }: {
+      prNodeId: number;
+      payload: CreateFixAttemptFromCIPayload;
+    }) => specForgeService.createFixAttemptFromCI(prNodeId, payload),
+    onSuccess: (attempt) => {
+      queryClient.invalidateQueries({ queryKey: specForgeKeys.fixAttempts(attempt.pr_node_id) });
+    },
   });
 }
 
