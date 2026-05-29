@@ -29,6 +29,9 @@ func TestStartRunCreatesTasksFromApprovedPlanDAG(t *testing.T) {
 	require.Equal(t, 1, bundle.Tasks[0].AttemptNumber)
 	require.Equal(t, "codex_cli", bundle.Tasks[0].Executor)
 	require.Equal(t, domain.PromptTypeImplementation, bundle.Tasks[0].PromptType)
+	require.Len(t, planningRepo.prompts, 2)
+	require.Equal(t, domain.PromptTypeImplementation, planningRepo.prompts[0].Type)
+	require.Contains(t, planningRepo.prompts[0].PromptText, "approved plan snapshot")
 }
 
 func TestStartRunRejectsUnapprovedPlan(t *testing.T) {
@@ -319,6 +322,8 @@ func TestClaimTaskRevertsWhenPromptContextIsMissing(t *testing.T) {
 	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
 	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
 	require.NoError(t, err)
+	planningRepo.prompt = nil
+	planningRepo.prompts = nil
 	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
 	require.NoError(t, err)
 
@@ -1430,7 +1435,9 @@ func (r *memoryPlanningRepo) UpdatePRNode(ctx context.Context, node *domain.Spec
 }
 
 func (r *memoryPlanningRepo) CreateCompiledPrompt(ctx context.Context, prompt *domain.SpecForgeCompiledPrompt) error {
-	r.prompt = prompt
+	if r.prompt == nil {
+		r.prompt = prompt
+	}
 	r.prompts = append(r.prompts, prompt)
 	return nil
 }

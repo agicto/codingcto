@@ -133,6 +133,9 @@ func (r *repository) FindLatestCompiledPromptByPRNodeID(ctx context.Context, prN
 	}
 	var po CompiledPromptPO
 	if err := r.db.WithContext(ctx).Where("pr_node_id = ?", prNodeID).Order("id DESC").First(&po).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
 		return nil, err
 	}
 	return po.toDomain(), nil
@@ -145,6 +148,9 @@ func (r *repository) FindLatestCompiledPromptByPRNodeIDAndType(ctx context.Conte
 	}
 	var po CompiledPromptPO
 	if err := r.db.WithContext(ctx).Where("pr_node_id = ? AND type = ?", prNodeID, promptType).Order("id DESC").First(&po).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
 		return nil, err
 	}
 	return po.toDomain(), nil
