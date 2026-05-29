@@ -114,6 +114,36 @@ func TestStartRunRejectsUnapprovedPlan(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrConflict)
 }
 
+func TestStartRunRejectsDuplicateActiveRunForPlan(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	_, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+
+	_, err = svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+
+	require.ErrorIs(t, err, domain.ErrConflict)
+	require.Len(t, runRepo.bundle.Tasks, 2)
+	require.Len(t, planningRepo.prompts, 2)
+}
+
+func TestStartRunAllowsNewRunAfterPreviousRunCancelled(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	first, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	_, err = svc.CancelRun(context.Background(), first.Run.ID)
+	require.NoError(t, err)
+
+	next, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+
+	require.NoError(t, err)
+	require.NotEqual(t, first.Run.ID, next.Run.ID)
+	require.Equal(t, domain.ExecutionRunStatusQueued, next.Run.Status)
+}
+
 func TestGetRunAttachesPlanBundle(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
 	runRepo := &memoryExecutionRepo{}
