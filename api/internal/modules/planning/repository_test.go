@@ -65,6 +65,49 @@ func TestRepositoryFindsLatestCompiledPromptForPRNode(t *testing.T) {
 	require.Equal(t, "new prompt", found.PromptText)
 }
 
+func TestRepositoryFindsLatestCompiledPromptForPRNodeByType(t *testing.T) {
+	repo := newTestPlanningRepository(t)
+	bundle := testPlanBundle()
+	require.NoError(t, repo.CreatePlanBundle(context.Background(), bundle))
+	implementation := &domain.SpecForgeCompiledPrompt{
+		PRNodeID:   bundle.PRNodes[0].ID,
+		PlanID:     bundle.Plan.ID,
+		Type:       domain.PromptTypeImplementation,
+		Version:    "prompt_impl_v1",
+		PromptText: "implementation prompt",
+		PromptHash: "hash1",
+		CreatedBy:  7,
+	}
+	firstFix := &domain.SpecForgeCompiledPrompt{
+		PRNodeID:   bundle.PRNodes[0].ID,
+		PlanID:     bundle.Plan.ID,
+		Type:       domain.PromptTypeFix,
+		Version:    "prompt_fix_v1",
+		PromptText: "old fix prompt",
+		PromptHash: "hash2",
+		CreatedBy:  7,
+	}
+	secondFix := &domain.SpecForgeCompiledPrompt{
+		PRNodeID:   bundle.PRNodes[0].ID,
+		PlanID:     bundle.Plan.ID,
+		Type:       domain.PromptTypeFix,
+		Version:    "prompt_fix_v2",
+		PromptText: "new fix prompt",
+		PromptHash: "hash3",
+		CreatedBy:  7,
+	}
+	require.NoError(t, repo.CreateCompiledPrompt(context.Background(), implementation))
+	require.NoError(t, repo.CreateCompiledPrompt(context.Background(), firstFix))
+	require.NoError(t, repo.CreateCompiledPrompt(context.Background(), secondFix))
+
+	found, err := repo.FindLatestCompiledPromptByPRNodeIDAndType(context.Background(), bundle.PRNodes[0].ID, domain.PromptTypeFix)
+
+	require.NoError(t, err)
+	require.Equal(t, secondFix.ID, found.ID)
+	require.Equal(t, domain.PromptTypeFix, found.Type)
+	require.Equal(t, "new fix prompt", found.PromptText)
+}
+
 func TestRepositoryUpsertsAndListsSkills(t *testing.T) {
 	repo := newTestPlanningRepository(t)
 	skill := &domain.SpecForgeSkill{

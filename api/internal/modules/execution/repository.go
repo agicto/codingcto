@@ -474,6 +474,7 @@ func (r *repository) CreateRetryAgentTask(ctx context.Context, parent *domain.Sp
 		PRNodeID:      parent.PRNodeID,
 		Executor:      parent.Executor,
 		Status:        strings.TrimSpace(status),
+		PromptType:    retryPromptType(parent),
 		AttemptNumber: parent.AttemptNumber + 1,
 		ParentTaskID:  &parent.ID,
 	}

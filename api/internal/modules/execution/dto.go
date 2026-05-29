@@ -72,6 +72,7 @@ type ClaimedAgentTask struct {
 	PRNodeID      uint   `json:"pr_node_id"`
 	Executor      string `json:"executor"`
 	Status        string `json:"status"`
+	PromptType    string `json:"prompt_type"`
 	RuntimeID     string `json:"runtime_id"`
 	AttemptNumber int    `json:"attempt_number"`
 	ParentTaskID  *uint  `json:"parent_task_id,omitempty"`

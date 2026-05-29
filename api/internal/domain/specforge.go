@@ -27,6 +27,9 @@ const (
 	AgentTaskStatusCompleted    = "completed"
 	AgentTaskStatusFailed       = "failed"
 	AgentTaskStatusCancelled    = "cancelled"
+	PromptTypeImplementation    = "implementation"
+	PromptTypeFix               = "fix"
+	PromptTypeReviewPatch       = "review_patch"
 )
 
 // SpecForgeIdea captures the original product intent submitted for a repository.
@@ -160,6 +163,7 @@ type SpecForgeAgentTask struct {
 	PRNodeID      uint       `json:"pr_node_id"`
 	Executor      string     `json:"executor"`
 	Status        string     `json:"status"`
+	PromptType    string     `json:"prompt_type"`
 	RuntimeID     string     `json:"runtime_id,omitempty"`
 	AttemptNumber int        `json:"attempt_number"`
 	ParentTaskID  *uint      `json:"parent_task_id,omitempty"`
@@ -247,6 +251,7 @@ type SpecForgePlanningRepository interface {
 	UpdatePRNode(ctx context.Context, node *SpecForgePRNode) error
 	CreateCompiledPrompt(ctx context.Context, prompt *SpecForgeCompiledPrompt) error
 	FindLatestCompiledPromptByPRNodeID(ctx context.Context, prNodeID uint) (*SpecForgeCompiledPrompt, error)
+	FindLatestCompiledPromptByPRNodeIDAndType(ctx context.Context, prNodeID uint, promptType string) (*SpecForgeCompiledPrompt, error)
 	UpdatePlan(ctx context.Context, plan *SpecForgeImplementationPlan) error
 }
 

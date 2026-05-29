@@ -26,7 +26,7 @@ func TestDefaultManifestsRegisterDefaultAssets(t *testing.T) {
 	}
 
 	migrations := registry.Migrations()
-	assert.Len(t, migrations, 22)
+	assert.Len(t, migrations, 23)
 	assert.Contains(t, migrations, "2026_04_26_000000_create_audit_logs_table")
 	assert.Contains(t, migrations, "2026_04_27_000002_add_business_fields_to_audit_logs")
 	assert.Contains(t, migrations, "2025_06_18_000000_create_users_table")
@@ -49,6 +49,7 @@ func TestDefaultManifestsRegisterDefaultAssets(t *testing.T) {
 	assert.Contains(t, migrations, "2026_05_25_000012_create_specforge_task_events_table")
 	assert.Contains(t, migrations, "2026_05_25_000013_add_parent_task_to_specforge_agent_tasks")
 	assert.Contains(t, migrations, "2026_05_25_000014_add_source_to_specforge_repo_profiles")
+	assert.Contains(t, migrations, "2026_05_25_000015_add_prompt_type_to_specforge_agent_tasks")
 
 	seeders := registry.Seeders()
 	require.Len(t, seeders, 1)

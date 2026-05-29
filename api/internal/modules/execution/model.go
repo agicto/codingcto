@@ -27,6 +27,7 @@ type AgentTaskPO struct {
 	PRNodeID      uint   `gorm:"not null;index"`
 	Executor      string `gorm:"size:100;not null;index"`
 	Status        string `gorm:"size:50;not null;index"`
+	PromptType    string `gorm:"size:50;not null;default:implementation;index"`
 	RuntimeID     string `gorm:"size:100;index"`
 	AttemptNumber int    `gorm:"not null;default:1"`
 	ParentTaskID  *uint  `gorm:"index"`
@@ -113,6 +114,7 @@ func newAgentTaskPO(task *domain.SpecForgeAgentTask) *AgentTaskPO {
 		PRNodeID:      task.PRNodeID,
 		Executor:      task.Executor,
 		Status:        task.Status,
+		PromptType:    taskPromptType(task),
 		RuntimeID:     task.RuntimeID,
 		AttemptNumber: task.AttemptNumber,
 		ParentTaskID:  task.ParentTaskID,
@@ -138,6 +140,7 @@ func (po *AgentTaskPO) toDomain() *domain.SpecForgeAgentTask {
 		PRNodeID:      po.PRNodeID,
 		Executor:      po.Executor,
 		Status:        po.Status,
+		PromptType:    taskPromptType(&domain.SpecForgeAgentTask{PromptType: po.PromptType}),
 		RuntimeID:     po.RuntimeID,
 		AttemptNumber: po.AttemptNumber,
 		ParentTaskID:  po.ParentTaskID,
