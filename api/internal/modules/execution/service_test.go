@@ -35,6 +35,34 @@ func TestStartRunCreatesTasksFromApprovedPlanDAG(t *testing.T) {
 	require.Contains(t, planningRepo.prompts[0].PromptText, "approved plan snapshot")
 }
 
+func TestStartRunIncludesRepoProfileInCompiledPrompt(t *testing.T) {
+	bundle := approvedPlanBundle()
+	bundle.RepoProfile = &domain.SpecForgeRepoProfile{
+		Summary:           "Next.js app with a Go API backend.",
+		Stack:             []string{"Next.js", "Go", "PostgreSQL"},
+		CIProvider:        "GitHub Actions",
+		TestCommands:      []string{"go test ./...", "pnpm type-check"},
+		AppStructure:      []string{"api/internal/modules", "web/src/features"},
+		CodingConventions: []string{"Keep API and web contracts explicit."},
+		RiskAreas:         []string{"auth", "database migrations"},
+	}
+	planningRepo := &memoryPlanningRepo{bundle: bundle}
+	svc := NewService(&memoryExecutionRepo{}, planningRepo, nil, nil, nil, nil, nil)
+
+	_, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+
+	require.NoError(t, err)
+	require.NotEmpty(t, planningRepo.prompts)
+	prompt := planningRepo.prompts[0].PromptText
+	require.Contains(t, prompt, "Repository context")
+	require.Contains(t, prompt, "Next.js app with a Go API backend.")
+	require.Contains(t, prompt, "GitHub Actions")
+	require.Contains(t, prompt, "pnpm type-check")
+	require.Contains(t, prompt, "api/internal/modules")
+	require.Contains(t, prompt, "Keep API and web contracts explicit.")
+	require.Contains(t, prompt, "database migrations")
+}
+
 func TestStartRunRejectsUnapprovedPlan(t *testing.T) {
 	bundle := approvedPlanBundle()
 	bundle.Plan.Status = domain.PlanStatusDraft
@@ -1917,6 +1945,10 @@ func clonePlanBundle(bundle *domain.SpecForgePlanBundle) *domain.SpecForgePlanBu
 	out.Idea = &idea
 	out.ProductSpec = &spec
 	out.Plan = &plan
+	if bundle.RepoProfile != nil {
+		profile := *bundle.RepoProfile
+		out.RepoProfile = &profile
+	}
 	out.PRNodes = make([]*domain.SpecForgePRNode, len(bundle.PRNodes))
 	for i, node := range bundle.PRNodes {
 		copied := *node

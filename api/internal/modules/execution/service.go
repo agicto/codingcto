@@ -981,6 +981,7 @@ func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecF
 	if bundle != nil && bundle.Plan != nil && strings.TrimSpace(bundle.Plan.TechnicalSummary) != "" {
 		b.WriteString("Technical plan:\n" + strings.TrimSpace(bundle.Plan.TechnicalSummary) + "\n\n")
 	}
+	writeExecutionRepoProfile(&b, bundle)
 	writeExecutionList(&b, "Expected files", node.ExpectedFiles)
 	writeExecutionList(&b, "Dependencies", node.DependsOn)
 	writeExecutionList(&b, "Non-goals", node.NonGoals)
@@ -992,6 +993,25 @@ func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecF
 	b.WriteString("- Run the listed test commands before submitting the result.\n")
 	b.WriteString("- Prepare a PR description with summary, scope, non-goals, tests, risks, and dependencies.\n")
 	return b.String()
+}
+
+func writeExecutionRepoProfile(b *strings.Builder, bundle *domain.SpecForgePlanBundle) {
+	if bundle == nil || bundle.RepoProfile == nil {
+		return
+	}
+	profile := bundle.RepoProfile
+	b.WriteString("Repository context:\n")
+	if strings.TrimSpace(profile.Summary) != "" {
+		b.WriteString(strings.TrimSpace(profile.Summary) + "\n")
+	}
+	writeExecutionList(b, "Stack", profile.Stack)
+	if strings.TrimSpace(profile.CIProvider) != "" {
+		b.WriteString("CI provider:\n- " + strings.TrimSpace(profile.CIProvider) + "\n\n")
+	}
+	writeExecutionList(b, "Repository test commands", profile.TestCommands)
+	writeExecutionList(b, "App structure", profile.AppStructure)
+	writeExecutionList(b, "Coding conventions", profile.CodingConventions)
+	writeExecutionList(b, "Risk areas", profile.RiskAreas)
 }
 
 func writeExecutionPromptModeInstructions(b *strings.Builder, promptType string, parent *domain.SpecForgeAgentTask) {
