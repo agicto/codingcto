@@ -35,7 +35,7 @@ func NewService(repo domain.SpecForgeVerificationRepository, failureReader CIFai
 }
 
 func (s *service) CreateFixAttempt(ctx context.Context, userID, prNodeID uint, req *CreateFixAttemptRequest) (*domain.SpecForgeFixAttempt, error) {
-	if userID == 0 || prNodeID == 0 || req == nil || strings.TrimSpace(req.FailureType) == "" {
+	if prNodeID == 0 || req == nil || strings.TrimSpace(req.FailureType) == "" {
 		return nil, domain.ErrInvalidInput
 	}
 	count, err := s.repo.CountFixAttemptsByPRNodeID(ctx, prNodeID)
@@ -102,7 +102,7 @@ func consecutiveFailureTypeCount(attempts []*domain.SpecForgeFixAttempt, failure
 }
 
 func (s *service) CreateFixAttemptFromCI(ctx context.Context, userID, prNodeID uint, req *CreateFixAttemptFromCIRequest) (*domain.SpecForgeFixAttempt, error) {
-	if userID == 0 || prNodeID == 0 || req == nil || strings.TrimSpace(req.RepositoryID) == "" || s.failureReader == nil {
+	if prNodeID == 0 || req == nil || strings.TrimSpace(req.RepositoryID) == "" || s.failureReader == nil {
 		return nil, domain.ErrInvalidInput
 	}
 	failure, err := s.failureReader.ReadPRNodeFailureLog(ctx, &githubintegration.ReadPRNodeFailureLogRequest{

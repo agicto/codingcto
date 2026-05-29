@@ -165,6 +165,7 @@ func NewRoleRevokedEvent(userID, roleID uint, roleName string) RoleRevokedEvent 
 
 const EventSpecForgeReviewFeedbackReceived = "specforge.review_feedback.received"
 const EventSpecForgeFixAttemptQueued = "specforge.fix_attempt.queued"
+const EventSpecForgePRNodeCIFailed = "specforge.pr_node.ci_failed"
 
 // SpecForgeReviewFeedbackReceivedEvent is fired when GitHub review feedback can be mapped to a SpecForge PR node.
 type SpecForgeReviewFeedbackReceivedEvent struct {
@@ -224,6 +225,35 @@ func NewSpecForgeFixAttemptQueuedEvent(attempt *SpecForgeFixAttempt) SpecForgeFi
 	event.LikelyCause = attempt.LikelyCause
 	event.RecommendedAction = attempt.RecommendedAction
 	return event
+}
+
+// SpecForgePRNodeCIFailedEvent is fired when a GitHub workflow failure maps to a SpecForge PR node.
+type SpecForgePRNodeCIFailedEvent struct {
+	BaseEvent
+	PRNodeID           uint
+	RepositoryID       string
+	RepositoryFullName string
+	WorkflowRunID      int64
+	WorkflowRunURL     string
+	HeadSHA            string
+	Conclusion         string
+}
+
+func (e SpecForgePRNodeCIFailedEvent) EventName() string {
+	return EventSpecForgePRNodeCIFailed
+}
+
+func NewSpecForgePRNodeCIFailedEvent(prNodeID uint, repositoryID, repositoryFullName string, runID int64, runURL, headSHA, conclusion string) SpecForgePRNodeCIFailedEvent {
+	return SpecForgePRNodeCIFailedEvent{
+		BaseEvent:          NewBaseEvent(),
+		PRNodeID:           prNodeID,
+		RepositoryID:       repositoryID,
+		RepositoryFullName: repositoryFullName,
+		WorkflowRunID:      runID,
+		WorkflowRunURL:     runURL,
+		HeadSHA:            headSHA,
+		Conclusion:         conclusion,
+	}
 }
 
 // EventHandler handles domain events

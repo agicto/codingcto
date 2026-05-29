@@ -171,6 +171,38 @@ func TestCreateFixAttemptFromCIPublishesQueuedAutoFixEvent(t *testing.T) {
 	require.NotEmpty(t, published.RecommendedAction)
 }
 
+func TestHandlerCreatesFixAttemptFromPRNodeCIFailedEvent(t *testing.T) {
+	repo := &memoryRepo{}
+	reader := &fakeFailureReader{
+		failure: &githubintegration.PRNodeFailureLog{
+			PRNodeID:    42,
+			JobName:     "API",
+			LogExcerpt:  "go test ./...\n--- FAIL: TestInvite\n",
+			FailedSteps: []string{"go test"},
+		},
+	}
+	handler := NewHandler(NewService(repo, reader, nil))
+	bus := infraevents.NewEventBus()
+	handler.RegisterEvents(bus)
+
+	err := bus.Publish(context.Background(), domain.NewSpecForgePRNodeCIFailedEvent(
+		42,
+		"github_agicto__codingcto",
+		"agicto/codingcto",
+		987,
+		"https://github.com/agicto/codingcto/actions/runs/987",
+		"abc123",
+		"failure",
+	))
+
+	require.NoError(t, err)
+	require.Len(t, repo.attempts, 1)
+	require.Equal(t, uint(42), repo.attempts[0].PRNodeID)
+	require.Equal(t, "unit_test_failure", repo.attempts[0].FailureType)
+	require.Equal(t, uint(0), repo.attempts[0].CreatedBy)
+	require.Equal(t, "github_agicto__codingcto", reader.request.RepositoryID)
+}
+
 func TestCreateFixAttemptFromCIRejectsMissingReader(t *testing.T) {
 	repo := &memoryRepo{}
 	svc := NewService(repo, nil, nil)

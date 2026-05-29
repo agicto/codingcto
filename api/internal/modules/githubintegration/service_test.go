@@ -307,11 +307,26 @@ func TestRecordWebhookPublishesReviewFeedbackEvent(t *testing.T) {
 func TestRecordWebhookUpdatesPRNodeFromWorkflowRun(t *testing.T) {
 	repo := &memoryRepo{}
 	planningRepo := &memoryPlanningRepo{
+		bundle: &domain.SpecForgePlanBundle{
+			Idea: &domain.SpecForgeIdea{RepositoryID: "github_agicto__codingcto"},
+		},
 		nodes: []*domain.SpecForgePRNode{
-			{ID: 10, BranchName: "specforge/team-invite-02-api", Status: domain.PRNodeStatusPROpened},
+			{ID: 10, PlanID: 20, BranchName: "specforge/team-invite-02-api", Status: domain.PRNodeStatusPROpened},
 		},
 	}
-	svc := NewService(repo, planningRepo, nil, nil, nil)
+	bus := infraevents.NewEventBus()
+	var published domain.SpecForgePRNodeCIFailedEvent
+	bus.Subscribe(domain.EventSpecForgePRNodeCIFailed, func(ctx context.Context, event infraevents.Event) error {
+		var underlying any = event
+		if wrapped, ok := event.(infraevents.WrappedEvent); ok {
+			underlying = wrapped.Event
+		}
+		typed, ok := underlying.(domain.SpecForgePRNodeCIFailedEvent)
+		require.True(t, ok)
+		published = typed
+		return nil
+	})
+	svc := NewService(repo, planningRepo, nil, nil, bus)
 	body := []byte(`{
 		"action": "completed",
 		"installation": {"id": 123},
@@ -337,6 +352,11 @@ func TestRecordWebhookUpdatesPRNodeFromWorkflowRun(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "def456", planningRepo.nodes[0].GitHubHeadSHA)
 	require.Equal(t, domain.PRNodeStatusBlocked, planningRepo.nodes[0].Status)
+	require.Equal(t, uint(10), published.PRNodeID)
+	require.Equal(t, "github_agicto__codingcto", published.RepositoryID)
+	require.Equal(t, "agicto/codingcto", published.RepositoryFullName)
+	require.Equal(t, int64(987), published.WorkflowRunID)
+	require.Equal(t, "failure", published.Conclusion)
 }
 
 func TestRecordWebhookDoesNotReapplyExistingDeliveryToPRNode(t *testing.T) {
@@ -874,6 +894,7 @@ func (p *fakeInstallationTokenProvider) InstallationToken(ctx context.Context, i
 }
 
 type memoryPlanningRepo struct {
+	bundle    *domain.SpecForgePlanBundle
 	nodes     []*domain.SpecForgePRNode
 	updateErr error
 }
@@ -887,7 +908,10 @@ func (r *memoryPlanningRepo) FindPlanBundleByIdeaID(ctx context.Context, ideaID 
 }
 
 func (r *memoryPlanningRepo) FindPlanBundleByPlanID(ctx context.Context, planID uint) (*domain.SpecForgePlanBundle, error) {
-	return nil, domain.ErrNotFound
+	if r.bundle == nil {
+		return nil, domain.ErrNotFound
+	}
+	return r.bundle, nil
 }
 
 func (r *memoryPlanningRepo) FindPRNodeByID(ctx context.Context, prNodeID uint) (*domain.SpecForgePRNode, error) {
