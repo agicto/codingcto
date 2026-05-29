@@ -318,6 +318,9 @@ func compileInitialPlan(userID uint, repoID, input, ideaType string, profile *do
 	if slug == "" {
 		slug = "feature"
 	}
+	featureName := ideaTitle(input)
+	affectedAreas := inferredAffectedAreas(profile)
+	testStrategy := inferredTestStrategy(profile)
 
 	idea := &domain.SpecForgeIdea{
 		RepositoryID: repoID,
@@ -328,17 +331,20 @@ func compileInitialPlan(userID uint, repoID, input, ideaType string, profile *do
 	}
 	spec := &domain.SpecForgeProductSpec{
 		Goals: []string{
+			"Deliver: " + featureName + ".",
 			"Turn the submitted product idea into a reviewable implementation plan.",
 			"Preserve one approval checkpoint before any autonomous execution starts.",
 		},
 		UserStories: []string{
-			"As a technical lead, I can review the product understanding before code is written.",
+			"As a product owner, I can review the intended behavior before code is written.",
 			"As a technical lead, I can review the proposed PR DAG and risks before execution.",
+			"As an engineer, I can verify each PR node independently.",
 		},
 		BusinessRules: []string{
 			"Plan approval is required before execution.",
 			"Each PR node must have scope, non-goals, acceptance criteria, and test commands.",
 			"Single-run MVP plans must stay within one repository and at most five PR nodes.",
+			"Ambiguous product decisions should use conservative defaults and remain visible in the plan.",
 		},
 		PermissionRules: []string{
 			"Only authenticated workspace users can create ideas.",
@@ -347,66 +353,261 @@ func compileInitialPlan(userID uint, repoID, input, ideaType string, profile *do
 		EdgeCases: []string{
 			"Overlarge ideas should be split before execution.",
 			"Plans with unclear dependencies should remain in review instead of executing.",
+			"High-risk areas from the repo profile should be called out before execution starts.",
 		},
 		NonGoals: []string{
-			"No code execution is performed by this planning slice.",
-			"No GitHub branches or pull requests are created by this planning slice.",
+			"Do not implement unrelated product scope while delivering this idea.",
+			"Do not change deployment or production configuration unless a PR node explicitly requires it.",
 		},
 		AcceptanceCriteria: []string{
-			"Creating an idea returns product plan, technical plan, and PR DAG nodes.",
-			"The plan can be fetched by idea ID.",
-			"The plan can be approved once and records the approver and approval time.",
+			"The generated plan describes the intended behavior for: " + featureName + ".",
+			"The PR DAG has clear dependencies and each node is independently reviewable.",
+			"The plan can be approved once and then used to start execution.",
 		},
 		Assumptions: []string{
 			repoContextAssumption(profile),
-			"Executor-specific prompts will be compiled from PR nodes in a later slice.",
+			"Generated PR nodes are scoped from repository profile signals and may need user adjustment before approval.",
 		},
 	}
 	plan := &domain.SpecForgeImplementationPlan{
-		TechnicalSummary: "Establish the SpecForge planning aggregate: idea intake, generated product spec, technical plan, PR DAG, and approval state.",
-		AffectedAreas: []string{
-			"api/internal/modules/planning",
-			"api/internal/domain",
-			"api/database/migrations",
-		},
-		DataModelChanges: []string{
-			"Add persisted ideas, product specs, implementation plans, and PR nodes.",
-		},
-		APIChanges: []string{
-			"POST /v1/repositories/:repo_id/ideas",
-			"GET /v1/ideas/:id/plan",
-			"POST /v1/plans/:id/approve",
-		},
-		UIChanges: []string{
-			"No UI changes in this backend foundation slice.",
-		},
-		TestStrategy: []string{
-			"go test ./internal/modules/planning/...",
-			"go test ./...",
-		},
+		TechnicalSummary: "Implement " + featureName + " using the existing repository architecture and conventions.",
+		AffectedAreas:    affectedAreas,
+		DataModelChanges: inferredDataModelChanges(input, profile),
+		APIChanges:       inferredAPIChanges(input, profile),
+		UIChanges:        inferredUIChanges(input, profile),
+		TestStrategy:     testStrategy,
 		SecurityRisks: []string{
 			"Prompt inputs are user-provided text and must be treated as untrusted.",
-			"Future repo indexing must filter secrets before prompt compilation.",
+			"Permission, auth, and data access behavior must follow existing repository patterns.",
 		},
-		MigrationRisks: []string{
-			"New tables only; no existing table mutation.",
-		},
-		Status: domain.PlanStatusDraft,
+		MigrationRisks: inferredMigrationRisks(input, profile),
+		Status:         domain.PlanStatusDraft,
 	}
+	nodes := featurePRNodes(slug, featureName, input, profile)
 
 	bundle := &domain.SpecForgePlanBundle{
 		Idea:        idea,
 		RepoProfile: profile,
 		ProductSpec: spec,
 		Plan:        plan,
-		PRNodes: []*domain.SpecForgePRNode{
-			prNode(slug, "PR-001", 1, "foundation", "Add SpecForge planning data model", "Create the persisted planning aggregate and migration.", nil, []string{"api/internal/modules/planning/*", "api/database/migrations/*"}, profile),
-			prNode(slug, "PR-002", 2, "api", "Add idea and plan review APIs", "Expose idea creation, plan retrieval, and plan approval endpoints.", []string{"PR-001"}, []string{"api/internal/modules/planning/handler.go", "api/internal/modules/planning/routes.go"}, profile),
-			prNode(slug, "PR-003", 3, "verification", "Add planning service tests", "Cover idea creation, plan retrieval, and single approval behavior.", []string{"PR-001", "PR-002"}, []string{"api/internal/modules/planning/service_test.go"}, profile),
-		},
+		PRNodes:     nodes,
 	}
 	bundle.ProductSpec.Assumptions = append(bundle.ProductSpec.Assumptions, reviewPRDAG(bundle.PRNodes)...)
 	return bundle
+}
+
+func ideaTitle(input string) string {
+	title := strings.TrimSpace(strings.Join(strings.Fields(input), " "))
+	if title == "" {
+		return "the requested product change"
+	}
+	if len(title) > 140 {
+		title = strings.TrimSpace(title[:140])
+	}
+	return title
+}
+
+func inferredAffectedAreas(profile *domain.SpecForgeRepoProfile) []string {
+	if profile != nil && len(profile.AppStructure) > 0 {
+		return normalizePlanList(profile.AppStructure)
+	}
+	areas := []string{}
+	if stackHas(profile, "go", "gin") {
+		areas = append(areas, "backend modules and HTTP handlers")
+	}
+	if stackHas(profile, "next", "react") {
+		areas = append(areas, "frontend feature folders and routes")
+	}
+	if len(areas) > 0 {
+		return normalizePlanList(areas)
+	}
+	return []string{"repository modules related to the requested feature"}
+}
+
+func inferredTestStrategy(profile *domain.SpecForgeRepoProfile) []string {
+	if profile != nil && len(profile.TestCommands) > 0 {
+		return normalizePlanList(profile.TestCommands)
+	}
+	return []string{"Run the repository's relevant lint, typecheck, and test commands."}
+}
+
+func inferredDataModelChanges(input string, profile *domain.SpecForgeRepoProfile) []string {
+	if ideaMentions(input, "database", "schema", "migration", "model", "table", "invite", "workspace", "member") || stackHas(profile, "prisma", "gorm", "postgres") {
+		return []string{"Review whether the feature needs schema or model changes; isolate migrations in an early PR if required."}
+	}
+	return []string{"No data model change is assumed unless implementation discovers an existing persistence boundary that must change."}
+}
+
+func inferredAPIChanges(input string, profile *domain.SpecForgeRepoProfile) []string {
+	if needsBackend(input, profile) {
+		return []string{"Add or update backend endpoints/services needed for " + ideaTitle(input) + "."}
+	}
+	return []string{"No API change is assumed from the current repo profile and idea text."}
+}
+
+func inferredUIChanges(input string, profile *domain.SpecForgeRepoProfile) []string {
+	if needsFrontend(input, profile) {
+		return []string{"Add or update user-facing UI needed for " + ideaTitle(input) + "."}
+	}
+	return []string{"No UI change is assumed from the current repo profile and idea text."}
+}
+
+func inferredMigrationRisks(input string, profile *domain.SpecForgeRepoProfile) []string {
+	if ideaMentions(input, "database", "schema", "migration", "model", "table") || stackHas(profile, "prisma", "gorm") {
+		return []string{"Schema changes should be isolated, reversible where possible, and tested before dependent API/UI work."}
+	}
+	return []string{"No migration risk is assumed for the first plan draft."}
+}
+
+func featurePRNodes(slug, featureName, input string, profile *domain.SpecForgeRepoProfile) []*domain.SpecForgePRNode {
+	nodes := []*domain.SpecForgePRNode{}
+	addNode := func(nodeType, title, goal string, dependsOn, expectedFiles []string) {
+		order := len(nodes) + 1
+		key := fmt.Sprintf("PR-%03d", order)
+		nodes = append(nodes, prNode(slug, key, order, nodeType, title, goal, dependsOn, expectedFiles, profile))
+	}
+
+	addNode(
+		"foundation",
+		"Define "+featureName+" scope and contracts",
+		"Establish the smallest implementation boundary, reusable helpers, and contracts needed before feature work.",
+		nil,
+		inferredAffectedAreas(profile),
+	)
+	last := []string{"PR-001"}
+	if needsBackend(input, profile) {
+		addNode(
+			"backend",
+			"Implement backend support for "+featureName,
+			"Add or update backend services, validation, permissions, and API behavior for the feature.",
+			last,
+			backendExpectedFiles(profile),
+		)
+		last = []string{nodes[len(nodes)-1].NodeKey}
+	}
+	if needsFrontend(input, profile) {
+		addNode(
+			"frontend",
+			"Implement user experience for "+featureName,
+			"Add or update the UI workflow and client-side data handling for the feature.",
+			last,
+			frontendExpectedFiles(profile),
+		)
+		last = []string{nodes[len(nodes)-1].NodeKey}
+	}
+	if len(nodes) == 1 {
+		addNode(
+			"implementation",
+			"Implement "+featureName,
+			"Make the scoped code changes required by the approved product and technical plan.",
+			last,
+			inferredAffectedAreas(profile),
+		)
+		last = []string{nodes[len(nodes)-1].NodeKey}
+	}
+	addNode(
+		"verification",
+		"Verify "+featureName,
+		"Add or update focused tests and run the repository verification commands for the completed feature.",
+		last,
+		testExpectedFiles(profile),
+	)
+	return nodes
+}
+
+func needsBackend(input string, profile *domain.SpecForgeRepoProfile) bool {
+	return stackHas(profile, "go", "gin", "api", "gorm", "prisma") ||
+		ideaMentions(input, "api", "backend", "server", "database", "schema", "auth", "permission", "invite", "workspace", "webhook")
+}
+
+func needsFrontend(input string, profile *domain.SpecForgeRepoProfile) bool {
+	return stackHas(profile, "next", "react", "frontend") ||
+		ideaMentions(input, "ui", "page", "screen", "dashboard", "form", "button", "dialog", "settings", "console")
+}
+
+func stackHas(profile *domain.SpecForgeRepoProfile, needles ...string) bool {
+	if profile == nil {
+		return false
+	}
+	haystack := strings.ToLower(strings.Join(profile.Stack, " ") + " " + strings.Join(profile.AppStructure, " "))
+	for _, needle := range needles {
+		if strings.Contains(haystack, strings.ToLower(strings.TrimSpace(needle))) {
+			return true
+		}
+	}
+	return false
+}
+
+func ideaMentions(input string, needles ...string) bool {
+	haystack := strings.ToLower(input)
+	for _, needle := range needles {
+		if strings.Contains(haystack, strings.ToLower(strings.TrimSpace(needle))) {
+			return true
+		}
+	}
+	return false
+}
+
+func backendExpectedFiles(profile *domain.SpecForgeRepoProfile) []string {
+	if profile != nil && len(profile.AppStructure) > 0 {
+		paths := []string{}
+		for _, path := range profile.AppStructure {
+			lower := strings.ToLower(path)
+			if strings.Contains(lower, "api") || strings.Contains(lower, "server") || strings.Contains(lower, "internal/modules") {
+				paths = append(paths, path)
+			}
+		}
+		if len(paths) > 0 {
+			return normalizePlanList(paths)
+		}
+	}
+	return []string{"backend services, handlers, routes, and domain modules related to the feature"}
+}
+
+func frontendExpectedFiles(profile *domain.SpecForgeRepoProfile) []string {
+	if profile != nil && len(profile.AppStructure) > 0 {
+		paths := []string{}
+		for _, path := range profile.AppStructure {
+			lower := strings.ToLower(path)
+			if strings.Contains(lower, "web") || strings.Contains(lower, "src/features") || strings.Contains(lower, "app/") || strings.Contains(lower, "pages/") {
+				paths = append(paths, path)
+			}
+		}
+		if len(paths) > 0 {
+			return normalizePlanList(paths)
+		}
+	}
+	return []string{"frontend routes, feature components, hooks, and service adapters related to the feature"}
+}
+
+func testExpectedFiles(profile *domain.SpecForgeRepoProfile) []string {
+	if stackHas(profile, "go") && stackHas(profile, "next", "react") {
+		return []string{"backend tests", "frontend tests"}
+	}
+	if stackHas(profile, "go") {
+		return []string{"Go unit and integration tests"}
+	}
+	if stackHas(profile, "next", "react", "typescript") {
+		return []string{"TypeScript unit tests and relevant UI verification"}
+	}
+	return []string{"tests and verification files related to the feature"}
+}
+
+func normalizePlanList(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func repoContextAssumption(profile *domain.SpecForgeRepoProfile) string {
@@ -417,7 +618,7 @@ func repoContextAssumption(profile *domain.SpecForgeRepoProfile) string {
 }
 
 func prNode(slug, key string, order int, nodeType, title, goal string, dependsOn, expectedFiles []string, profile *domain.SpecForgeRepoProfile) *domain.SpecForgePRNode {
-	testCommands := []string{"go test ./internal/modules/planning/...", "go test ./..."}
+	testCommands := []string{"Run the repository's relevant verification commands."}
 	if profile != nil && len(profile.TestCommands) > 0 {
 		testCommands = append([]string(nil), profile.TestCommands...)
 	}
@@ -430,8 +631,8 @@ func prNode(slug, key string, order int, nodeType, title, goal string, dependsOn
 		DependsOn:          dependsOn,
 		EstimatedRisk:      "medium",
 		ExpectedFiles:      expectedFiles,
-		NonGoals:           []string{"Do not execute coding agents in this PR.", "Do not create GitHub pull requests in this PR."},
-		AcceptanceCriteria: []string{"The slice is independently reviewable.", "The relevant Go tests pass.", "The implementation stays within declared scope."},
+		NonGoals:           []string{"Do not broaden scope beyond this PR node.", "Do not change unrelated deployment, billing, or auth behavior."},
+		AcceptanceCriteria: []string{"The slice is independently reviewable.", "The relevant verification commands pass.", "The implementation stays within declared scope."},
 		TestCommands:       testCommands,
 		BranchName:         fmt.Sprintf("specforge/%s-%02d-%s", slug, order, nodeType),
 		Status:             domain.PRNodeStatusPlanned,
