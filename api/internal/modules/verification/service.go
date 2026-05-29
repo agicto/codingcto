@@ -177,6 +177,13 @@ func buildEscalationSummary(prNodeID uint, attempts []*domain.SpecForgeFixAttemp
 		summary.LatestLikelyCause = strings.TrimSpace(latest.LikelyCause)
 		summary.LatestAction = strings.TrimSpace(latest.RecommendedAction)
 	}
+	if summary.LatestFailureType != "" && consecutiveFailureTypeCount(attempts, summary.LatestFailureType) >= maxConsecutiveFixAttemptsPerFailureType {
+		summary.Status = "needs_user_decision"
+		summary.Reason = fmt.Sprintf("The PR node hit the limit of %d consecutive %s fix attempts.", maxConsecutiveFixAttemptsPerFailureType, summary.LatestFailureType)
+		summary.RecommendedOption = "Pause auto-fix and decide whether this failure needs a narrower patch, a different implementation approach, or a PR node replan."
+		summary.DecisionOptions = []string{"Continue with a narrower patch", "Replan this PR node", "Pause this PR node", "Cancel the execution run"}
+		summary.CanContinueAutoFix = false
+	}
 	if attemptsUsed >= maxFixAttemptsPerPRNode {
 		summary.Status = "needs_user_decision"
 		summary.Reason = fmt.Sprintf("The PR node used all %d automatic fix attempts.", maxFixAttemptsPerPRNode)
