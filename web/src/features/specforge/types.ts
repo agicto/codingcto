@@ -39,10 +39,19 @@ export interface PRNode {
   acceptanceCriteria: string[];
   testCommands: string[];
   branchName: string;
-  status: "planned" | "queued" | "running" | "waiting_on_dependencies" | "completed";
+  status:
+    | "planned"
+    | "queued"
+    | "running"
+    | "waiting_on_dependencies"
+    | "completed"
+    | "failed"
+    | "cancelled";
 }
 
 export interface PlanBundle {
+  ideaId?: number;
+  planId?: number;
   idea: string;
   repoProfile: RepoProfile;
   productSpec: ProductSpec;
@@ -51,7 +60,8 @@ export interface PlanBundle {
 }
 
 export interface ExecutionRun {
-  status: "idle" | "queued" | "running" | "completed";
+  runId?: number;
+  status: "idle" | "queued" | "running" | "completed" | "cancelled";
   startedAt?: string;
   tasks: PRNode[];
 }

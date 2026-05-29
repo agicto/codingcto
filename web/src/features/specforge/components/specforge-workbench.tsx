@@ -26,7 +26,10 @@ import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/utils";
-import { planBundleFromDTO } from "@/features/specforge/plan-adapter";
+import {
+  executionRunFromDTO,
+  planBundleFromDTO,
+} from "@/features/specforge/plan-adapter";
 import {
   defaultIdea,
   demoPlan,
@@ -38,8 +41,11 @@ import {
   summarizeRuntimeHealth,
 } from "@/features/specforge/runtime-health";
 import {
+  useApproveSpecForgePlan,
   useCreateSpecForgeIdea,
+  useDispatchExecutionRun,
   useSpecForgeRuntimes,
+  useStartExecutionRun,
 } from "@/features/specforge/hooks/use-specforge";
 import type {
   ExecutionRun,
@@ -54,6 +60,8 @@ const statusLabel: Record<PRNode["status"], string> = {
   running: "Running",
   waiting_on_dependencies: "Waiting",
   completed: "Completed",
+  failed: "Failed",
+  cancelled: "Cancelled",
 };
 
 function statusClassName(status: PRNode["status"]) {
@@ -65,6 +73,9 @@ function statusClassName(status: PRNode["status"]) {
   }
   if (status === "waiting_on_dependencies") {
     return "border-warning/30 bg-warning-subtle text-warning";
+  }
+  if (status === "failed" || status === "cancelled") {
+    return "border-error/30 bg-error-subtle text-error";
   }
   return "border-border bg-bg-surface text-text-subtle";
 }
@@ -104,6 +115,10 @@ export function SpecForgeWorkbench() {
   const [currentRuntimeNow] = useState(() => Date.now());
 
   const createIdea = useCreateSpecForgeIdea(repoId.trim());
+  const approvePlan = useApproveSpecForgePlan();
+  const startRun = useStartExecutionRun();
+  const dispatchRun = useDispatchExecutionRun();
+  const isStartingRun = approvePlan.isPending || startRun.isPending || dispatchRun.isPending;
   const readyCount = run.tasks.filter((task) => task.status === "completed").length;
   const runningCount = run.tasks.filter((task) => task.status === "running").length;
   const runtimesQuery = useSpecForgeRuntimes({ limit: 20 });
@@ -167,7 +182,38 @@ export function SpecForgeWorkbench() {
     setRun({ status: "idle", tasks: demoPlan.prNodes });
   }
 
-  function approveAndStart() {
+  async function approveAndStart() {
+    if (activePlan.planId) {
+      try {
+        const approvedPlan =
+          activePlan.implementationPlan.status === "approved"
+            ? activePlan
+            : planBundleFromDTO(
+                await approvePlan.mutateAsync({
+                  planId: activePlan.planId,
+                  payload: { approved: true },
+                })
+              );
+        setActivePlan(approvedPlan);
+
+        const started = await startRun.mutateAsync({
+          planId: approvedPlan.planId ?? activePlan.planId,
+        });
+        const dispatched = await dispatchRun.mutateAsync({
+          runId: started.run.id,
+        });
+        const next = executionRunFromDTO(dispatched, approvedPlan);
+        if (next.plan) {
+          setActivePlan(next.plan);
+        }
+        setApproved(true);
+        setRun(next.run);
+        return;
+      } catch {
+        // Keep the workbench usable when the API is unavailable in local web-only dev.
+      }
+    }
+
     const startedAt = new Date().toISOString();
     setApproved(true);
     setRun({
@@ -285,7 +331,12 @@ export function SpecForgeWorkbench() {
               </TabsList>
 
               <TabsContent value="plan" className="space-y-4">
-                <PlanReview plan={activePlan} approved={approved} onApprove={approveAndStart} />
+                <PlanReview
+                  plan={activePlan}
+                  approved={approved}
+                  isStarting={isStartingRun}
+                  onApprove={approveAndStart}
+                />
               </TabsContent>
               <TabsContent value="dag">
                 <PRDag nodes={activePlan.prNodes} />
@@ -424,10 +475,12 @@ function RunSummary({
 function PlanReview({
   plan,
   approved,
+  isStarting,
   onApprove,
 }: {
   plan: PlanBundle;
   approved: boolean;
+  isStarting: boolean;
   onApprove: () => void;
 }) {
   const { productSpec, implementationPlan } = plan;
@@ -455,8 +508,12 @@ function PlanReview({
           <ListBlock title="Affected areas" items={implementationPlan.affectedAreas} />
           <ListBlock title="Security risks" items={implementationPlan.securityRisks} icon="risk" />
           <ListBlock title="Migration risks" items={implementationPlan.migrationRisks} />
-          <Button onClick={onApprove} disabled={approved} className="w-full justify-center">
-            {approved ? "Approved" : "Approve & Start"}
+          <Button
+            onClick={onApprove}
+            disabled={approved || isStarting}
+            className="w-full justify-center"
+          >
+            {approved ? "Approved" : isStarting ? "Starting run" : "Approve & Start"}
             {approved ? <CheckCircle2 className="ml-1.5 h-4 w-4" /> : <Play className="ml-1.5 h-4 w-4" />}
           </Button>
         </CardContent>
