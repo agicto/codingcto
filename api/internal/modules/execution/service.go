@@ -10,6 +10,7 @@ import (
 
 	"github.com/zgiai/luas/api/internal/domain"
 	"github.com/zgiai/luas/api/internal/modules/githubintegration"
+	"github.com/zgiai/luas/api/pkg/redact"
 )
 
 type Service interface {
@@ -496,9 +497,9 @@ func (s *service) CreateTaskEvent(ctx context.Context, taskID uint, req *CreateT
 		TaskID:  taskID,
 		Type:    strings.TrimSpace(req.Type),
 		Tool:    strings.TrimSpace(req.Tool),
-		Content: strings.TrimSpace(req.Content),
-		Input:   strings.TrimSpace(req.Input),
-		Output:  strings.TrimSpace(req.Output),
+		Content: redact.Text(strings.TrimSpace(req.Content)),
+		Input:   redact.Text(strings.TrimSpace(req.Input)),
+		Output:  redact.Text(strings.TrimSpace(req.Output)),
 	}
 	if err := s.repo.CreateTaskEvent(ctx, event); err != nil {
 		return nil, fmt.Errorf("create task event: %w", err)
@@ -674,8 +675,8 @@ func (s *service) finalizeTaskResult(ctx context.Context, task *domain.SpecForge
 		result = &ExecutionResult{Status: "failed", Error: "executor returned no result", ExitCode: -1}
 	}
 	finishedAt := time.Now()
-	task.OutputLog = result.Output
-	task.ErrorLog = result.Error
+	task.OutputLog = redact.Text(result.Output)
+	task.ErrorLog = redact.Text(result.Error)
 	task.ExitCode = &result.ExitCode
 	task.FinishedAt = &finishedAt
 	if runErr != nil || result.Status != "completed" || result.ExitCode != 0 {
@@ -718,7 +719,7 @@ func (s *service) finalizeTaskResult(ctx context.Context, task *domain.SpecForge
 }
 
 func appendLogLine(existing, line string) string {
-	line = strings.TrimSpace(line)
+	line = redact.Text(strings.TrimSpace(line))
 	if line == "" {
 		return existing
 	}
