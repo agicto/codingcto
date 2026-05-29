@@ -67,6 +67,7 @@ import {
   useRepoProfile,
   useRefreshSpecForgePRNodeCI,
   useCompleteExecutionTask,
+  useReadSpecForgePRNodeFailureLog,
   useRetryExecutionTask,
   useSpecForgeFixAttempts,
   useSpecForgeSkills,
@@ -82,6 +83,7 @@ import type {
   SpecForgeFixAttemptDTO,
   SpecForgeExecutionBundleDTO,
   GitHubWebhookEventDTO,
+  SpecForgePRNodeFailureLogDTO,
   SpecForgeRepoProfileDTO,
   SpecForgeSkillDTO,
   SpecForgeTaskEventDTO,
@@ -1069,6 +1071,8 @@ function PRDag({
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
   const [selectedFixNode, setSelectedFixNode] = useState<PRNode>();
   const [localFixAttempts, setLocalFixAttempts] = useState<SpecForgeFixAttemptDTO[]>([]);
+  const [failureLog, setFailureLog] = useState<SpecForgePRNodeFailureLogDTO>();
+  const [failureLogError, setFailureLogError] = useState("");
   const [promptText, setPromptText] = useState("");
   const [deliveryNodes, setDeliveryNodes] = useState<Record<string, PRNode>>({});
   const [deliveryActionNodeId, setDeliveryActionNodeId] = useState<string>();
@@ -1081,6 +1085,7 @@ function PRDag({
     selectedFixNodeId !== undefined && Number.isFinite(selectedFixNodeId) && selectedFixNodeId > 0;
   const fixAttemptsQuery = useSpecForgeFixAttempts(canReadFixAttempts ? selectedFixNodeId : undefined);
   const createFixAttempt = useCreateSpecForgeFixAttemptFromCI();
+  const readFailureLog = useReadSpecForgePRNodeFailureLog();
   const fixAttempts = canReadFixAttempts
     ? (fixAttemptsQuery.data ?? localFixAttempts)
     : localFixAttempts;
@@ -1131,6 +1136,8 @@ function PRDag({
 
   async function inspectFailure(node: PRNode) {
     setSelectedFixNode(node);
+    setFailureLog(undefined);
+    setFailureLogError("");
     const prNodeId = Number(node.id);
     if (Number.isFinite(prNodeId) && prNodeId > 0) {
       try {
@@ -1162,6 +1169,30 @@ function PRDag({
         updated_at: new Date().toISOString(),
       },
     ]);
+  }
+
+  async function readSelectedFailureLog() {
+    if (!selectedFixNode || !repositoryId) {
+      setFailureLogError("Failure logs require a selected PR node and repository.");
+      return;
+    }
+
+    const prNodeId = Number(selectedFixNode.id);
+    if (!Number.isFinite(prNodeId) || prNodeId <= 0) {
+      setFailureLogError("Failure logs require a persisted PR node.");
+      return;
+    }
+
+    setFailureLogError("");
+    try {
+      const log = await readFailureLog.mutateAsync({
+        repository_id: repositoryId,
+        pr_node_id: prNodeId,
+      });
+      setFailureLog(log);
+    } catch {
+      setFailureLogError("Failure logs require a failed GitHub workflow run and GitHub App access.");
+    }
   }
 
   return (
@@ -1260,10 +1291,29 @@ function PRDag({
       {selectedFixNode && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">Fix attempts</CardTitle>
-            <CardDescription>{selectedFixNode.title}</CardDescription>
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div>
+                <CardTitle className="text-base">Fix attempts</CardTitle>
+                <CardDescription>{selectedFixNode.title}</CardDescription>
+              </div>
+              <Button
+                variant="outline"
+                size="sm"
+                onClick={readSelectedFailureLog}
+                disabled={readFailureLog.isPending}
+              >
+                {readFailureLog.isPending ? "Reading" : "Read failure log"}
+                <ScrollText className="ml-1.5 h-4 w-4" />
+              </Button>
+            </div>
           </CardHeader>
           <CardContent className="space-y-3">
+            {failureLogError && (
+              <div className="rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm text-warning">
+                {failureLogError}
+              </div>
+            )}
+            {failureLog && <FailureLogSummary failureLog={failureLog} />}
             {fixAttempts.length === 0 && (
               <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
                 {fixAttemptsQuery.isLoading ? "Checking CI diagnostics." : "No fix attempts yet."}
@@ -1495,6 +1545,29 @@ function TaskDiagnostics({ task }: { task: PRNode }) {
           Open logs
         </a>
       )}
+    </div>
+  );
+}
+
+function FailureLogSummary({ failureLog }: { failureLog: SpecForgePRNodeFailureLogDTO }) {
+  return (
+    <div className="rounded-lg border border-border-subtle bg-bg-subtle p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-medium">{failureLog.job_name}</div>
+        <Badge variant="outline">run {failureLog.workflow_run_id}</Badge>
+      </div>
+      {failureLog.failed_steps.length > 0 && (
+        <div className="mt-2 flex flex-wrap gap-2">
+          {failureLog.failed_steps.map((step) => (
+            <Badge key={step} variant="outline" className={statusClassName("failed")}>
+              {step}
+            </Badge>
+          ))}
+        </div>
+      )}
+      <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-border-subtle bg-bg-surface p-3 font-mono text-xs leading-5 text-text-main">
+        {failureLog.log_excerpt || "No log excerpt returned."}
+      </pre>
     </div>
   );
 }
