@@ -3,6 +3,7 @@ package githubintegration
 import (
 	"bytes"
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"fmt"
 	"io"
@@ -21,6 +22,7 @@ type GitHubRepositoryClient struct {
 type RepositoryClient interface {
 	GetBranchRef(ctx context.Context, owner, repo, branch string) (*GitReference, error)
 	ListRepositoryTree(ctx context.Context, owner, repo, ref string, recursive bool) (*GitTree, error)
+	GetRepositoryFile(ctx context.Context, owner, repo, path, ref string) (*RepositoryFile, error)
 	CreateBranch(ctx context.Context, owner, repo, branch, sha string) (*GitReference, error)
 	CreatePullRequest(ctx context.Context, input CreatePullRequestInput) (*PullRequest, error)
 	ListWorkflowRuns(ctx context.Context, owner, repo, branch string) ([]WorkflowRun, error)
@@ -100,6 +102,17 @@ type GitTreeEntry struct {
 	SHA  string `json:"sha"`
 	Size int64  `json:"size,omitempty"`
 	URL  string `json:"url"`
+}
+
+type RepositoryFile struct {
+	Name            string `json:"name"`
+	Path            string `json:"path"`
+	SHA             string `json:"sha"`
+	Size            int64  `json:"size"`
+	Encoding        string `json:"encoding"`
+	Content         string `json:"content"`
+	DecodedContent  string `json:"-"`
+	DownloadHTMLURL string `json:"html_url"`
 }
 
 type PullRequest struct {
@@ -195,6 +208,37 @@ func (c *GitHubRepositoryClient) ListRepositoryTree(ctx context.Context, owner, 
 		return nil, err
 	}
 	return &tree, nil
+}
+
+func (c *GitHubRepositoryClient) GetRepositoryFile(ctx context.Context, owner, repo, filePath, ref string) (*RepositoryFile, error) {
+	if err := requireRepoArgs(owner, repo); err != nil {
+		return nil, err
+	}
+	filePath = strings.Trim(strings.TrimSpace(filePath), "/")
+	if filePath == "" {
+		return nil, fmt.Errorf("github repository client: file path is required")
+	}
+	query := url.Values{}
+	if strings.TrimSpace(ref) != "" {
+		query.Set("ref", strings.TrimSpace(ref))
+	}
+	path := fmt.Sprintf("/repos/%s/%s/contents/%s", url.PathEscape(owner), url.PathEscape(repo), escapePathSegments(filePath))
+	if encoded := query.Encode(); encoded != "" {
+		path += "?" + encoded
+	}
+	var file RepositoryFile
+	if err := c.do(ctx, http.MethodGet, path, nil, &file); err != nil {
+		return nil, err
+	}
+	if strings.EqualFold(file.Encoding, "base64") {
+		content := strings.ReplaceAll(file.Content, "\n", "")
+		decoded, err := base64.StdEncoding.DecodeString(content)
+		if err != nil {
+			return nil, fmt.Errorf("github repository client: decode file content: %w", err)
+		}
+		file.DecodedContent = string(decoded)
+	}
+	return &file, nil
 }
 
 func (c *GitHubRepositoryClient) CreateBranch(ctx context.Context, owner, repo, branch, sha string) (*GitReference, error) {
@@ -385,4 +429,12 @@ func requireRepoArgs(owner, repo string) error {
 		return fmt.Errorf("github repository client: owner and repo are required")
 	}
 	return nil
+}
+
+func escapePathSegments(path string) string {
+	parts := strings.Split(path, "/")
+	for i, part := range parts {
+		parts[i] = url.PathEscape(part)
+	}
+	return strings.Join(parts, "/")
 }

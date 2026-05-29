@@ -19,6 +19,7 @@ type Service interface {
 	UpsertRepository(ctx context.Context, userID uint, req *UpsertRepositoryRequest) (*domain.Repository, error)
 	GetRepository(ctx context.Context, repositoryID string) (*domain.Repository, error)
 	ListRepositoryTree(ctx context.Context, req *ListRepositoryTreeRequest) (*RepositoryTreeSnapshot, error)
+	ReadRepositoryFile(ctx context.Context, req *ReadRepositoryFileRequest) (*RepositoryFileSnapshot, error)
 	PreparePRNodeBranch(ctx context.Context, req *PreparePRNodeBranchRequest) (*domain.SpecForgePRNode, error)
 	DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) (*domain.SpecForgePRNode, error)
 	RefreshPRNodeCI(ctx context.Context, req *RefreshPRNodeCIRequest) (*domain.SpecForgePRNode, error)
@@ -143,6 +144,45 @@ func (s *service) ListRepositoryTree(ctx context.Context, req *ListRepositoryTre
 		Ref:          ref,
 		Truncated:    tree.Truncated,
 		Paths:        paths,
+	}, nil
+}
+
+func (s *service) ReadRepositoryFile(ctx context.Context, req *ReadRepositoryFileRequest) (*RepositoryFileSnapshot, error) {
+	if req == nil || strings.TrimSpace(req.RepositoryID) == "" || strings.TrimSpace(req.Path) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	repository, err := s.repo.FindRepositoryByRepositoryID(ctx, strings.TrimSpace(req.RepositoryID))
+	if err != nil {
+		return nil, err
+	}
+	ref := strings.TrimSpace(req.Ref)
+	if ref == "" {
+		ref = repository.DefaultBranch
+	}
+	if ref == "" {
+		ref = "main"
+	}
+	client, err := s.repositoryClientForRepository(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
+	file, err := client.GetRepositoryFile(ctx, repository.GitHubOwner, repository.GitHubRepo, req.Path, ref)
+	if err != nil {
+		return nil, err
+	}
+	if file == nil {
+		return nil, fmt.Errorf("github integration: repository file response is required")
+	}
+	content := file.DecodedContent
+	if content == "" && !strings.EqualFold(file.Encoding, "base64") {
+		content = file.Content
+	}
+	return &RepositoryFileSnapshot{
+		RepositoryID: repository.RepositoryID,
+		Ref:          ref,
+		Path:         file.Path,
+		SHA:          file.SHA,
+		Content:      content,
 	}, nil
 }
 

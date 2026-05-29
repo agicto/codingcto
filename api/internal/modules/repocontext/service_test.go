@@ -91,6 +91,12 @@ func TestInferProfileUsesRepositoryTreeWhenFileHintsAreAbsent(t *testing.T) {
 				"api/internal/modules/user/service.go",
 			},
 		},
+		files: map[string]*RepositoryFileSnapshot{
+			"web/package.json": {
+				Path:    "web/package.json",
+				Content: `{"scripts":{"lint":"eslint .","type-check":"tsc --noEmit","test":"vitest"}}`,
+			},
+		},
 	}
 	svc := NewService(repo, treeSource)
 
@@ -103,6 +109,7 @@ func TestInferProfileUsesRepositoryTreeWhenFileHintsAreAbsent(t *testing.T) {
 	require.Equal(t, "main", profile.DefaultBranch)
 	require.Equal(t, "github_actions", profile.CIProvider)
 	require.Subset(t, profile.Stack, []string{"Go", "Node.js", "Next.js"})
+	require.Subset(t, profile.TestCommands, []string{"pnpm lint", "pnpm type-check", "pnpm test"})
 	require.Contains(t, profile.AppStructure, "api/internal/modules")
 }
 
@@ -134,6 +141,9 @@ type fakeTreeSource struct {
 	ref          string
 	recursive    bool
 	snapshot     *RepositoryTreeSnapshot
+	files        map[string]*RepositoryFileSnapshot
+	readPath     string
+	readRef      string
 	err          error
 }
 
@@ -142,4 +152,11 @@ func (s *fakeTreeSource) ListRepositoryTree(ctx context.Context, repositoryID, r
 	s.ref = ref
 	s.recursive = recursive
 	return s.snapshot, s.err
+}
+
+func (s *fakeTreeSource) ReadRepositoryFile(ctx context.Context, repositoryID, path, ref string) (*RepositoryFileSnapshot, error) {
+	s.repositoryID = repositoryID
+	s.readPath = path
+	s.readRef = ref
+	return s.files[path], s.err
 }

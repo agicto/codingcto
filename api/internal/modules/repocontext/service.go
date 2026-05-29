@@ -2,6 +2,7 @@ package repocontext
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"strings"
 	"time"
@@ -17,12 +18,19 @@ type Service interface {
 
 type RepositoryTreeSource interface {
 	ListRepositoryTree(ctx context.Context, repositoryID, ref string, recursive bool) (*RepositoryTreeSnapshot, error)
+	ReadRepositoryFile(ctx context.Context, repositoryID, path, ref string) (*RepositoryFileSnapshot, error)
 }
 
 type RepositoryTreeSnapshot struct {
 	Ref       string
 	Truncated bool
 	Paths     []string
+}
+
+type RepositoryFileSnapshot struct {
+	Path    string
+	Ref     string
+	Content string
 }
 
 type service struct {
@@ -73,8 +81,9 @@ func (s *service) InferProfile(ctx context.Context, userID uint, repoID string, 
 	}
 
 	paths := normalizeList(req.FilePaths)
+	treeRef := strings.TrimSpace(req.DefaultBranch)
 	if len(paths) == 0 && s.treeSource != nil {
-		snapshot, err := s.treeSource.ListRepositoryTree(ctx, strings.TrimSpace(repoID), strings.TrimSpace(req.DefaultBranch), true)
+		snapshot, err := s.treeSource.ListRepositoryTree(ctx, strings.TrimSpace(repoID), treeRef, true)
 		if err != nil {
 			return nil, fmt.Errorf("list repository tree: %w", err)
 		}
@@ -83,9 +92,13 @@ func (s *service) InferProfile(ctx context.Context, userID uint, repoID string, 
 			if strings.TrimSpace(req.DefaultBranch) == "" {
 				req.DefaultBranch = strings.TrimSpace(snapshot.Ref)
 			}
+			treeRef = strings.TrimSpace(snapshot.Ref)
 		}
 	}
 	scripts := normalizeScripts(req.PackageScripts)
+	if len(scripts) == 0 && len(paths) > 0 && s.treeSource != nil {
+		scripts = normalizeScripts(s.packageScriptsFromRepository(ctx, strings.TrimSpace(repoID), treeRef, paths))
+	}
 	inferred := inferRepoProfile(paths, scripts)
 	inferred.DefaultBranch = strings.TrimSpace(req.DefaultBranch)
 
@@ -97,6 +110,49 @@ func (s *service) GetProfile(ctx context.Context, repoID string) (*domain.SpecFo
 		return nil, domain.ErrInvalidInput
 	}
 	return s.repo.FindProfileByRepositoryID(ctx, strings.TrimSpace(repoID))
+}
+
+func (s *service) packageScriptsFromRepository(ctx context.Context, repoID, ref string, paths []string) map[string]string {
+	scripts := map[string]string{}
+	for _, path := range packageJSONPaths(paths, 5) {
+		file, err := s.treeSource.ReadRepositoryFile(ctx, repoID, path, ref)
+		if err != nil || file == nil {
+			continue
+		}
+		for name, command := range parsePackageScripts(file.Content) {
+			if _, exists := scripts[name]; !exists {
+				scripts[name] = command
+			}
+		}
+	}
+	return scripts
+}
+
+func packageJSONPaths(paths []string, limit int) []string {
+	out := []string{}
+	for _, path := range paths {
+		trimmed := strings.TrimSpace(path)
+		if trimmed == "" {
+			continue
+		}
+		if strings.EqualFold(trimmed, "package.json") || strings.HasSuffix(strings.ToLower(trimmed), "/package.json") {
+			out = append(out, trimmed)
+			if limit > 0 && len(out) >= limit {
+				return out
+			}
+		}
+	}
+	return out
+}
+
+func parsePackageScripts(content string) map[string]string {
+	var parsed struct {
+		Scripts map[string]string `json:"scripts"`
+	}
+	if err := json.Unmarshal([]byte(content), &parsed); err != nil {
+		return nil
+	}
+	return parsed.Scripts
 }
 
 func normalizeList(values []string) []string {

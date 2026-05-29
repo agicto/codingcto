@@ -111,6 +111,39 @@ func TestListRepositoryTreeUsesInstallationTokenAndDefaultBranch(t *testing.T) {
 	require.Equal(t, "repo_123", snapshot.RepositoryID)
 }
 
+func TestReadRepositoryFileReturnsDecodedContent(t *testing.T) {
+	repo := &memoryRepo{
+		installation: &domain.GitHubInstallation{ID: 3, InstallationID: 123},
+		repository: &domain.Repository{
+			RepositoryID:         "repo_123",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto",
+			DefaultBranch:        "main",
+		},
+	}
+	client := &fakeRepositoryClient{
+		file: &RepositoryFile{
+			Path:           "web/package.json",
+			SHA:            "package123",
+			Encoding:       "base64",
+			DecodedContent: `{"scripts":{"lint":"eslint ."}}`,
+		},
+	}
+	svc := NewService(repo, nil, &fakeRepositoryClientFactory{client: client}, &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}})
+
+	file, err := svc.ReadRepositoryFile(context.Background(), &ReadRepositoryFileRequest{
+		RepositoryID: "repo_123",
+		Path:         "web/package.json",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "web/package.json", client.readFilePath)
+	require.Equal(t, "main", client.readFileRef)
+	require.Equal(t, "package123", file.SHA)
+	require.Equal(t, `{"scripts":{"lint":"eslint ."}}`, file.Content)
+}
+
 func TestRecordWebhookParsesMetadataAndIsIdempotent(t *testing.T) {
 	repo := &memoryRepo{}
 	svc := NewService(repo, nil, nil, nil)
@@ -675,6 +708,10 @@ type fakeRepositoryClient struct {
 	listTreeRef        string
 	listTreeRecursive  bool
 	listTreeErr        error
+	file               *RepositoryFile
+	readFilePath       string
+	readFileRef        string
+	readFileErr        error
 	workflowRuns       []WorkflowRun
 	listWorkflowBranch string
 	listWorkflowErr    error
@@ -697,6 +734,12 @@ func (c *fakeRepositoryClient) ListRepositoryTree(ctx context.Context, owner, re
 	c.listTreeRef = ref
 	c.listTreeRecursive = recursive
 	return c.tree, c.listTreeErr
+}
+
+func (c *fakeRepositoryClient) GetRepositoryFile(ctx context.Context, owner, repo, path, ref string) (*RepositoryFile, error) {
+	c.readFilePath = path
+	c.readFileRef = ref
+	return c.file, c.readFileErr
 }
 
 func (c *fakeRepositoryClient) CreateBranch(ctx context.Context, owner, repo, branch, sha string) (*GitReference, error) {

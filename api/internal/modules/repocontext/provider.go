@@ -45,6 +45,25 @@ func (s *gitHubRepositoryTreeSource) ListRepositoryTree(ctx context.Context, rep
 	}, nil
 }
 
+func (s *gitHubRepositoryTreeSource) ReadRepositoryFile(ctx context.Context, repositoryID, path, ref string) (*RepositoryFileSnapshot, error) {
+	file, err := s.service.ReadRepositoryFile(ctx, &githubintegration.ReadRepositoryFileRequest{
+		RepositoryID: repositoryID,
+		Path:         path,
+		Ref:          ref,
+	})
+	if err != nil {
+		return nil, err
+	}
+	if file == nil {
+		return nil, nil
+	}
+	return &RepositoryFileSnapshot{
+		Path:    file.Path,
+		Ref:     file.Ref,
+		Content: file.Content,
+	}, nil
+}
+
 func NewStarterManifest(handler *Handler) contracts.StarterManifest {
 	return contracts.NewStaticStarterManifest(
 		"repocontext",
