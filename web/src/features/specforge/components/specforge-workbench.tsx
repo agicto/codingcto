@@ -100,6 +100,7 @@ import {
   webhookEventLabel,
   webhookEventRepo,
 } from "@/features/specforge/webhook-events";
+import { isPRNodeActive, isPRNodeDelivered } from "@/features/specforge/status";
 import type {
   ExecutionRun,
   ExecutorRuntime,
@@ -133,10 +134,10 @@ const promptModeLabel: Record<PromptMode, string> = {
 };
 
 function statusClassName(status: PRNode["status"]) {
-  if (status === "completed" || status === "ready_for_review" || status === "merged") {
+  if (isPRNodeDelivered(status)) {
     return "border-success/30 bg-success-subtle text-success";
   }
-  if (status === "running" || status === "ci_running") {
+  if (isPRNodeActive(status)) {
     return "border-info/30 bg-info-subtle text-info";
   }
   if (status === "waiting_on_dependencies" || status === "pr_opened") {
@@ -217,12 +218,8 @@ export function SpecForgeWorkbench() {
     enabled: Boolean(run.runId),
     refetchInterval: run.status === "queued" || run.status === "running" ? 5000 : false,
   });
-  const readyCount = run.tasks.filter(
-    (task) => task.status === "completed" || task.status === "ready_for_review"
-  ).length;
-  const runningCount = run.tasks.filter(
-    (task) => task.status === "running" || task.status === "ci_running"
-  ).length;
+  const readyCount = run.tasks.filter((task) => isPRNodeDelivered(task.status)).length;
+  const runningCount = run.tasks.filter((task) => isPRNodeActive(task.status)).length;
   const runtimesQuery = useSpecForgeRuntimes({ limit: 20 });
   const runtimeDTOs = runtimesQuery.data?.runtimes;
   const runtimes = useMemo(() => {
@@ -243,7 +240,7 @@ export function SpecForgeWorkbench() {
         ? "Awaiting plan approval; a healthy executor is ready"
         : "Awaiting plan approval; no healthy executor is online";
     }
-    return `${readyCount} / ${run.tasks.length} PR nodes completed`;
+    return `${readyCount} / ${run.tasks.length} PR nodes ready or merged`;
   }, [readyCount, run.status, run.tasks.length, runtimeSummary.online]);
 
   useEffect(() => {
