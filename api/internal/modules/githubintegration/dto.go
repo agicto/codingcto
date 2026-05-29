@@ -30,6 +30,19 @@ type ListWebhookEventsRequest struct {
 	Limit              int    `form:"limit" binding:"omitempty,min=1,max=100"`
 }
 
+type ListRepositoryTreeRequest struct {
+	RepositoryID string `json:"repository_id" binding:"required,max=255"`
+	Ref          string `json:"ref" binding:"omitempty,max=100"`
+	Recursive    bool   `json:"recursive"`
+}
+
+type RepositoryTreeSnapshot struct {
+	RepositoryID string   `json:"repository_id"`
+	Ref          string   `json:"ref"`
+	Truncated    bool     `json:"truncated"`
+	Paths        []string `json:"paths"`
+}
+
 type DeliverPRNodeRequest struct {
 	RepositoryID string `json:"repository_id" binding:"required,max=255"`
 	PRNodeID     uint   `json:"pr_node_id" binding:"required"`

@@ -18,6 +18,7 @@ type Service interface {
 	GetInstallation(ctx context.Context, id uint) (*domain.GitHubInstallation, error)
 	UpsertRepository(ctx context.Context, userID uint, req *UpsertRepositoryRequest) (*domain.Repository, error)
 	GetRepository(ctx context.Context, repositoryID string) (*domain.Repository, error)
+	ListRepositoryTree(ctx context.Context, req *ListRepositoryTreeRequest) (*RepositoryTreeSnapshot, error)
 	PreparePRNodeBranch(ctx context.Context, req *PreparePRNodeBranchRequest) (*domain.SpecForgePRNode, error)
 	DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) (*domain.SpecForgePRNode, error)
 	RefreshPRNodeCI(ctx context.Context, req *RefreshPRNodeCIRequest) (*domain.SpecForgePRNode, error)
@@ -101,6 +102,48 @@ func (s *service) GetRepository(ctx context.Context, repositoryID string) (*doma
 		return nil, domain.ErrInvalidInput
 	}
 	return s.repo.FindRepositoryByRepositoryID(ctx, strings.TrimSpace(repositoryID))
+}
+
+func (s *service) ListRepositoryTree(ctx context.Context, req *ListRepositoryTreeRequest) (*RepositoryTreeSnapshot, error) {
+	if req == nil || strings.TrimSpace(req.RepositoryID) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	repository, err := s.repo.FindRepositoryByRepositoryID(ctx, strings.TrimSpace(req.RepositoryID))
+	if err != nil {
+		return nil, err
+	}
+	ref := strings.TrimSpace(req.Ref)
+	if ref == "" {
+		ref = repository.DefaultBranch
+	}
+	if ref == "" {
+		ref = "main"
+	}
+	client, err := s.repositoryClientForRepository(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
+	tree, err := client.ListRepositoryTree(ctx, repository.GitHubOwner, repository.GitHubRepo, ref, req.Recursive)
+	if err != nil {
+		return nil, err
+	}
+	if tree == nil {
+		return nil, fmt.Errorf("github integration: repository tree response is required")
+	}
+	paths := make([]string, 0, len(tree.Tree))
+	for _, entry := range tree.Tree {
+		path := strings.TrimSpace(entry.Path)
+		if path == "" {
+			continue
+		}
+		paths = append(paths, path)
+	}
+	return &RepositoryTreeSnapshot{
+		RepositoryID: repository.RepositoryID,
+		Ref:          ref,
+		Truncated:    tree.Truncated,
+		Paths:        paths,
+	}, nil
 }
 
 func (s *service) PreparePRNodeBranch(ctx context.Context, req *PreparePRNodeBranchRequest) (*domain.SpecForgePRNode, error) {
