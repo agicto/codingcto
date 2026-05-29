@@ -40,7 +40,26 @@ func TestCreateFixAttemptRejectsAfterRetryLimit(t *testing.T) {
 	repo := &memoryRepo{}
 	svc := NewService(repo, nil)
 
-	for i := 0; i < maxFixAttemptsPerPRNode; i++ {
+	failureTypes := []string{"type_error", "lint_failure", "type_error"}
+	for _, failureType := range failureTypes {
+		_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
+			FailureType: failureType,
+		})
+		require.NoError(t, err)
+	}
+
+	_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
+		FailureType: "type_error",
+	})
+
+	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
+func TestCreateFixAttemptRejectsRepeatedSameFailureType(t *testing.T) {
+	repo := &memoryRepo{}
+	svc := NewService(repo, nil)
+
+	for i := 0; i < maxConsecutiveFixAttemptsPerFailureType; i++ {
 		_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
 			FailureType: "type_error",
 		})
@@ -52,6 +71,25 @@ func TestCreateFixAttemptRejectsAfterRetryLimit(t *testing.T) {
 	})
 
 	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
+func TestCreateFixAttemptAllowsSameFailureTypeAfterDifferentFailure(t *testing.T) {
+	repo := &memoryRepo{}
+	svc := NewService(repo, nil)
+
+	for _, failureType := range []string{"type_error", "lint_failure"} {
+		_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
+			FailureType: failureType,
+		})
+		require.NoError(t, err)
+	}
+
+	attempt, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
+		FailureType: "type_error",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, 3, attempt.AttemptNumber)
 }
 
 func TestListFixAttemptsReturnsPRNodeAttempts(t *testing.T) {
@@ -135,7 +173,7 @@ func TestGetEscalationSummaryRequiresDecisionAfterLimit(t *testing.T) {
 	svc := NewService(repo, nil)
 	for i := 0; i < maxFixAttemptsPerPRNode; i++ {
 		_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
-			FailureType:       "unit_test_failure",
+			FailureType:       []string{"unit_test_failure", "lint_failure", "unit_test_failure"}[i],
 			LikelyCause:       "Invite acceptance test failed.",
 			RecommendedAction: "Narrow the failing assertion.",
 		})
