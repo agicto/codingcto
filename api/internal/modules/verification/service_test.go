@@ -261,6 +261,31 @@ func TestGetEscalationSummaryRequiresDecisionAfterLimit(t *testing.T) {
 	require.Equal(t, "unit_test_failure", summary.LatestFailureType)
 }
 
+func TestGetEscalationSummaryRequiresDecisionAfterRepeatedFailureType(t *testing.T) {
+	repo := &memoryRepo{}
+	svc := NewService(repo, nil, nil)
+	for i := 0; i < maxConsecutiveFixAttemptsPerFailureType; i++ {
+		_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
+			FailureType:       "type_error",
+			LikelyCause:       "The invite API returns null where a role is required.",
+			RecommendedAction: "Patch the role guard.",
+		})
+		require.NoError(t, err)
+	}
+
+	summary, err := svc.GetEscalationSummary(context.Background(), 42)
+
+	require.NoError(t, err)
+	require.Equal(t, "needs_user_decision", summary.Status)
+	require.Equal(t, maxConsecutiveFixAttemptsPerFailureType, summary.AttemptsUsed)
+	require.False(t, summary.CanContinueAutoFix)
+	require.Contains(t, summary.Reason, "2 consecutive type_error fix attempts")
+	require.Contains(t, summary.DecisionOptions, "Continue with a narrower patch")
+	require.Contains(t, summary.DecisionOptions, "Replan this PR node")
+	require.Equal(t, "type_error", summary.LatestFailureType)
+	require.Equal(t, "Patch the role guard.", summary.LatestAction)
+}
+
 type fakeFailureReader struct {
 	request githubintegration.ReadPRNodeFailureLogRequest
 	failure *githubintegration.PRNodeFailureLog
