@@ -7,6 +7,7 @@ import (
 	"errors"
 	"fmt"
 	"regexp"
+	"sort"
 	"strings"
 	"time"
 
@@ -371,7 +372,7 @@ func compileInitialPlan(userID uint, repoID, input, ideaType string, profile *do
 		Status: domain.PlanStatusDraft,
 	}
 
-	return &domain.SpecForgePlanBundle{
+	bundle := &domain.SpecForgePlanBundle{
 		Idea:        idea,
 		RepoProfile: profile,
 		ProductSpec: spec,
@@ -382,6 +383,8 @@ func compileInitialPlan(userID uint, repoID, input, ideaType string, profile *do
 			prNode(slug, "PR-003", 3, "verification", "Add planning service tests", "Cover idea creation, plan retrieval, and single approval behavior.", []string{"PR-001", "PR-002"}, []string{"api/internal/modules/planning/service_test.go"}, profile),
 		},
 	}
+	bundle.ProductSpec.Assumptions = append(bundle.ProductSpec.Assumptions, reviewPRDAG(bundle.PRNodes)...)
+	return bundle
 }
 
 func repoContextAssumption(profile *domain.SpecForgeRepoProfile) string {
@@ -411,6 +414,152 @@ func prNode(slug, key string, order int, nodeType, title, goal string, dependsOn
 		BranchName:         fmt.Sprintf("specforge/%s-%02d-%s", slug, order, nodeType),
 		Status:             domain.PRNodeStatusPlanned,
 	}
+}
+
+func reviewPRDAG(nodes []*domain.SpecForgePRNode) []string {
+	const maxMVPPRNodes = 5
+
+	notes := make([]string, 0)
+	if len(nodes) == 0 {
+		return []string{"PR DAG review: no PR nodes were generated; the plan cannot execute until it is split into reviewable work."}
+	}
+	if len(nodes) > maxMVPPRNodes {
+		notes = append(notes, fmt.Sprintf("PR DAG review: generated %d PR nodes, above the MVP limit of %d; split the idea into milestones before execution.", len(nodes), maxMVPPRNodes))
+	}
+
+	keys := make(map[string]int, len(nodes))
+	nodesByKey := make(map[string]*domain.SpecForgePRNode, len(nodes))
+	branches := make(map[string]int, len(nodes))
+	for _, node := range nodes {
+		if node == nil {
+			notes = append(notes, "PR DAG review: a nil PR node was generated.")
+			continue
+		}
+		key := strings.TrimSpace(node.NodeKey)
+		if key == "" {
+			notes = append(notes, "PR DAG review: a PR node is missing its stable node key.")
+		} else {
+			keys[key]++
+			if keys[key] == 1 {
+				nodesByKey[key] = node
+			}
+			if keys[key] > 1 {
+				notes = append(notes, "PR DAG review: duplicate node key "+key+" would make dependencies ambiguous.")
+			}
+		}
+		branch := strings.TrimSpace(node.BranchName)
+		if branch == "" {
+			notes = append(notes, "PR DAG review: "+nodeLabel(node)+" is missing a branch name.")
+		} else {
+			branches[branch]++
+			if branches[branch] > 1 {
+				notes = append(notes, "PR DAG review: duplicate branch name "+branch+" would collide during execution.")
+			}
+		}
+	}
+
+	for _, node := range nodes {
+		if node == nil {
+			continue
+		}
+		label := nodeLabel(node)
+		if strings.TrimSpace(node.Title) == "" || strings.TrimSpace(node.Goal) == "" {
+			notes = append(notes, "PR DAG review: "+label+" must have both title and goal before execution.")
+		}
+		if len(node.ExpectedFiles) == 0 {
+			notes = append(notes, "PR DAG review: "+label+" has no expected file scope.")
+		}
+		if len(node.AcceptanceCriteria) == 0 {
+			notes = append(notes, "PR DAG review: "+label+" has no acceptance criteria.")
+		}
+		if len(node.TestCommands) == 0 {
+			notes = append(notes, "PR DAG review: "+label+" has no test commands.")
+		}
+		for _, dependency := range node.DependsOn {
+			dependency = strings.TrimSpace(dependency)
+			if dependency == "" {
+				notes = append(notes, "PR DAG review: "+label+" has an empty dependency entry.")
+				continue
+			}
+			if dependency == node.NodeKey {
+				notes = append(notes, "PR DAG review: "+label+" depends on itself.")
+				continue
+			}
+			if keys[dependency] == 0 {
+				notes = append(notes, "PR DAG review: "+label+" depends on unknown node "+dependency+".")
+				continue
+			}
+			if dependencyNode := nodesByKey[dependency]; dependencyNode != nil && dependencyNode.Order >= node.Order {
+				notes = append(notes, "PR DAG review: "+label+" depends on "+dependency+", but that dependency is not ordered before it.")
+			}
+		}
+	}
+	if cycleKey := firstPRDAGCycle(nodesByKey); cycleKey != "" {
+		notes = append(notes, "PR DAG review: dependency cycle detected involving "+cycleKey+".")
+	}
+
+	if len(notes) == 0 {
+		return []string{fmt.Sprintf("PR DAG review: validation passed for %d reviewable PR nodes; dependencies resolve within the generated plan.", len(nodes))}
+	}
+	return notes
+}
+
+func nodeLabel(node *domain.SpecForgePRNode) string {
+	if node == nil {
+		return "unknown node"
+	}
+	if strings.TrimSpace(node.NodeKey) != "" {
+		return strings.TrimSpace(node.NodeKey)
+	}
+	if strings.TrimSpace(node.Title) != "" {
+		return strings.TrimSpace(node.Title)
+	}
+	return "unnamed node"
+}
+
+func firstPRDAGCycle(nodesByKey map[string]*domain.SpecForgePRNode) string {
+	const (
+		visiting = 1
+		visited  = 2
+	)
+	states := make(map[string]int, len(nodesByKey))
+	var visit func(string) string
+	visit = func(key string) string {
+		switch states[key] {
+		case visiting:
+			return key
+		case visited:
+			return ""
+		}
+		node := nodesByKey[key]
+		if node == nil {
+			return ""
+		}
+		states[key] = visiting
+		for _, dependency := range node.DependsOn {
+			dependency = strings.TrimSpace(dependency)
+			if dependency == "" || nodesByKey[dependency] == nil {
+				continue
+			}
+			if cycleKey := visit(dependency); cycleKey != "" {
+				return cycleKey
+			}
+		}
+		states[key] = visited
+		return ""
+	}
+
+	keys := make([]string, 0, len(nodesByKey))
+	for key := range nodesByKey {
+		keys = append(keys, key)
+	}
+	sort.Strings(keys)
+	for _, key := range keys {
+		if cycleKey := visit(key); cycleKey != "" {
+			return cycleKey
+		}
+	}
+	return ""
 }
 
 func slugify(value string) string {
