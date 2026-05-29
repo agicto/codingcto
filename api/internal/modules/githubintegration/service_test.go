@@ -73,6 +73,44 @@ func TestGetRepositoryReturnsStoredRepository(t *testing.T) {
 	require.Equal(t, "develop", found.DefaultBranch)
 }
 
+func TestListRepositoryTreeUsesInstallationTokenAndDefaultBranch(t *testing.T) {
+	repo := &memoryRepo{
+		installation: &domain.GitHubInstallation{ID: 3, InstallationID: 123},
+		repository: &domain.Repository{
+			RepositoryID:         "repo_123",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto",
+			DefaultBranch:        "main",
+		},
+	}
+	client := &fakeRepositoryClient{
+		tree: &GitTree{
+			Truncated: false,
+			Tree: []GitTreeEntry{
+				{Path: "go.mod", Type: "blob"},
+				{Path: "web/package.json", Type: "blob"},
+				{Path: " ", Type: "blob"},
+			},
+		},
+	}
+	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
+	svc := NewService(repo, nil, &fakeRepositoryClientFactory{client: client}, tokenProvider)
+
+	snapshot, err := svc.ListRepositoryTree(context.Background(), &ListRepositoryTreeRequest{
+		RepositoryID: "repo_123",
+		Recursive:    true,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, int64(123), tokenProvider.installationID)
+	require.Equal(t, "ghs_installation_token", svc.clientFactory.(*fakeRepositoryClientFactory).token)
+	require.Equal(t, "main", client.listTreeRef)
+	require.True(t, client.listTreeRecursive)
+	require.Equal(t, []string{"go.mod", "web/package.json"}, snapshot.Paths)
+	require.Equal(t, "repo_123", snapshot.RepositoryID)
+}
+
 func TestRecordWebhookParsesMetadataAndIsIdempotent(t *testing.T) {
 	repo := &memoryRepo{}
 	svc := NewService(repo, nil, nil, nil)

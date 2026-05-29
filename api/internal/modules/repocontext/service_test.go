@@ -10,7 +10,7 @@ import (
 
 func TestUpsertProfileNormalizesDefaultsAndLists(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 
 	profile, err := svc.UpsertProfile(context.Background(), 12, "repo_123", &UpsertRepoProfileRequest{
 		Stack:        []string{"Next.js", "Next.js", "Go", ""},
@@ -29,7 +29,7 @@ func TestUpsertProfileNormalizesDefaultsAndLists(t *testing.T) {
 
 func TestGetProfileReturnsStoredProfile(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 
 	created, err := svc.UpsertProfile(context.Background(), 12, "repo_123", &UpsertRepoProfileRequest{
 		DefaultBranch: "develop",
@@ -46,7 +46,7 @@ func TestGetProfileReturnsStoredProfile(t *testing.T) {
 
 func TestInferProfileDetectsStackCommandsAndRisks(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo)
+	svc := NewService(repo, nil)
 
 	profile, err := svc.InferProfile(context.Background(), 12, "repo_123", &InferRepoProfileRequest{
 		DefaultBranch: "develop",
@@ -78,6 +78,34 @@ func TestInferProfileDetectsStackCommandsAndRisks(t *testing.T) {
 	require.Equal(t, uint(12), profile.CreatedBy)
 }
 
+func TestInferProfileUsesRepositoryTreeWhenFileHintsAreAbsent(t *testing.T) {
+	repo := &memoryRepo{}
+	treeSource := &fakeTreeSource{
+		snapshot: &RepositoryTreeSnapshot{
+			Ref: "main",
+			Paths: []string{
+				"go.mod",
+				"web/package.json",
+				"web/next.config.ts",
+				".github/workflows/ci.yml",
+				"api/internal/modules/user/service.go",
+			},
+		},
+	}
+	svc := NewService(repo, treeSource)
+
+	profile, err := svc.InferProfile(context.Background(), 12, "repo_123", &InferRepoProfileRequest{})
+
+	require.NoError(t, err)
+	require.Equal(t, "repo_123", treeSource.repositoryID)
+	require.Empty(t, treeSource.ref)
+	require.True(t, treeSource.recursive)
+	require.Equal(t, "main", profile.DefaultBranch)
+	require.Equal(t, "github_actions", profile.CIProvider)
+	require.Subset(t, profile.Stack, []string{"Go", "Node.js", "Next.js"})
+	require.Contains(t, profile.AppStructure, "api/internal/modules")
+}
+
 type memoryRepo struct {
 	nextID  uint
 	profile *domain.SpecForgeRepoProfile
@@ -99,4 +127,19 @@ func (r *memoryRepo) FindProfileByRepositoryID(ctx context.Context, repositoryID
 	}
 	copied := *r.profile
 	return &copied, nil
+}
+
+type fakeTreeSource struct {
+	repositoryID string
+	ref          string
+	recursive    bool
+	snapshot     *RepositoryTreeSnapshot
+	err          error
+}
+
+func (s *fakeTreeSource) ListRepositoryTree(ctx context.Context, repositoryID, ref string, recursive bool) (*RepositoryTreeSnapshot, error) {
+	s.repositoryID = repositoryID
+	s.ref = ref
+	s.recursive = recursive
+	return s.snapshot, s.err
 }

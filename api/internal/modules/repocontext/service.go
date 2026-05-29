@@ -15,12 +15,23 @@ type Service interface {
 	GetProfile(ctx context.Context, repoID string) (*domain.SpecForgeRepoProfile, error)
 }
 
-type service struct {
-	repo domain.SpecForgeRepoProfileRepository
+type RepositoryTreeSource interface {
+	ListRepositoryTree(ctx context.Context, repositoryID, ref string, recursive bool) (*RepositoryTreeSnapshot, error)
 }
 
-func NewService(repo domain.SpecForgeRepoProfileRepository) *service {
-	return &service{repo: repo}
+type RepositoryTreeSnapshot struct {
+	Ref       string
+	Truncated bool
+	Paths     []string
+}
+
+type service struct {
+	repo       domain.SpecForgeRepoProfileRepository
+	treeSource RepositoryTreeSource
+}
+
+func NewService(repo domain.SpecForgeRepoProfileRepository, treeSource RepositoryTreeSource) *service {
+	return &service{repo: repo, treeSource: treeSource}
 }
 
 func (s *service) UpsertProfile(ctx context.Context, userID uint, repoID string, req *UpsertRepoProfileRequest) (*domain.SpecForgeRepoProfile, error) {
@@ -62,6 +73,18 @@ func (s *service) InferProfile(ctx context.Context, userID uint, repoID string, 
 	}
 
 	paths := normalizeList(req.FilePaths)
+	if len(paths) == 0 && s.treeSource != nil {
+		snapshot, err := s.treeSource.ListRepositoryTree(ctx, strings.TrimSpace(repoID), strings.TrimSpace(req.DefaultBranch), true)
+		if err != nil {
+			return nil, fmt.Errorf("list repository tree: %w", err)
+		}
+		if snapshot != nil {
+			paths = normalizeList(snapshot.Paths)
+			if strings.TrimSpace(req.DefaultBranch) == "" {
+				req.DefaultBranch = strings.TrimSpace(snapshot.Ref)
+			}
+		}
+	}
 	scripts := normalizeScripts(req.PackageScripts)
 	inferred := inferRepoProfile(paths, scripts)
 	inferred.DefaultBranch = strings.TrimSpace(req.DefaultBranch)
