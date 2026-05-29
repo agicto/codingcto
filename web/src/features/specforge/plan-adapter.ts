@@ -144,6 +144,13 @@ export function executionRunFromDTO(
         testCommands: [],
         branchName: '',
       }),
+      taskId: task.id,
+      executor: task.executor,
+      attemptNumber: task.attempt_number,
+      failureReason: task.failure_reason,
+      logsUrl: task.logs_url,
+      outputLog: task.output_log,
+      errorLog: task.error_log,
       status: coerceNodeStatus(task.status),
     };
   });

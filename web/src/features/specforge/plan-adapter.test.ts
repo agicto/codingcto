@@ -186,6 +186,9 @@ describe('executionRunFromDTO', () => {
           executor: 'codex_cli',
           status: 'dispatched',
           attempt_number: 1,
+          runtime_id: 'runtime-local',
+          failure_reason: 'typecheck failed',
+          logs_url: 'https://logs.example/task-10',
           created_at: '2026-05-29T12:00:00Z',
           updated_at: '2026-05-29T12:00:00Z',
         },
@@ -203,7 +206,12 @@ describe('executionRunFromDTO', () => {
         tasks: [
           {
             id: '1',
+            taskId: 10,
             title: 'Add invitation model',
+            executor: 'codex_cli',
+            attemptNumber: 1,
+            failureReason: 'typecheck failed',
+            logsUrl: 'https://logs.example/task-10',
             status: 'running',
           },
         ],

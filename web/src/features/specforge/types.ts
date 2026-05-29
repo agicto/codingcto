@@ -27,6 +27,7 @@ export interface ImplementationPlan {
 
 export interface PRNode {
   id: string;
+  taskId?: number;
   nodeKey: string;
   order: number;
   title: string;
@@ -39,6 +40,12 @@ export interface PRNode {
   acceptanceCriteria: string[];
   testCommands: string[];
   branchName: string;
+  executor?: string;
+  attemptNumber?: number;
+  failureReason?: string;
+  logsUrl?: string;
+  outputLog?: string;
+  errorLog?: string;
   status:
     | "planned"
     | "queued"
