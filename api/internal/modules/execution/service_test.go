@@ -155,6 +155,10 @@ func TestRetryTaskCreatesQueuedAttemptForFailedTask(t *testing.T) {
 	require.Equal(t, "session_123", retry.SessionID)
 	require.Equal(t, "/tmp/specforge/task", retry.Workdir)
 	require.Equal(t, domain.AgentTaskStatusFailed, retried.Tasks[0].Status)
+	fixPrompt := latestMemoryPromptByType(planningRepo, failed.PRNodeID, domain.PromptTypeFix)
+	require.NotNil(t, fixPrompt)
+	require.Contains(t, fixPrompt.PromptText, "targeted repair")
+	require.Contains(t, fixPrompt.PromptText, "test_failure")
 }
 
 func TestRetryTaskCanForceFreshSession(t *testing.T) {
@@ -1482,6 +1486,17 @@ func promptTypeMatches(actual, expected string) bool {
 		actual = domain.PromptTypeImplementation
 	}
 	return actual == expected
+}
+
+func latestMemoryPromptByType(repo *memoryPlanningRepo, prNodeID uint, promptType string) *domain.SpecForgeCompiledPrompt {
+	if repo == nil {
+		return nil
+	}
+	prompt, err := repo.FindLatestCompiledPromptByPRNodeIDAndType(context.Background(), prNodeID, promptType)
+	if err != nil {
+		return nil
+	}
+	return prompt
 }
 
 func (r *memoryPlanningRepo) UpdatePlan(ctx context.Context, plan *domain.SpecForgeImplementationPlan) error {
