@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/zgiai/luas/api/internal/domain"
+	"github.com/zgiai/luas/api/internal/infra/events"
 )
 
 type Service interface {
@@ -33,16 +34,17 @@ type service struct {
 	planningRepo  domain.SpecForgePlanningRepository
 	clientFactory RepositoryClientFactory
 	tokenProvider InstallationTokenProvider
+	eventBus      *events.EventBus
 }
 
-func NewService(repo domain.GitHubIntegrationRepository, planningRepo domain.SpecForgePlanningRepository, clientFactory RepositoryClientFactory, tokenProvider InstallationTokenProvider) *service {
+func NewService(repo domain.GitHubIntegrationRepository, planningRepo domain.SpecForgePlanningRepository, clientFactory RepositoryClientFactory, tokenProvider InstallationTokenProvider, eventBus *events.EventBus) *service {
 	if clientFactory == nil {
 		clientFactory = defaultRepositoryClientFactory{}
 	}
 	if tokenProvider == nil {
 		tokenProvider = defaultInstallationTokenProvider{}
 	}
-	return &service{repo: repo, planningRepo: planningRepo, clientFactory: clientFactory, tokenProvider: tokenProvider}
+	return &service{repo: repo, planningRepo: planningRepo, clientFactory: clientFactory, tokenProvider: tokenProvider, eventBus: eventBus}
 }
 
 func (s *service) UpsertInstallation(ctx context.Context, userID uint, req *UpsertInstallationRequest) (*domain.GitHubInstallation, error) {
@@ -563,7 +565,11 @@ func (s *service) applyWebhookToPRNode(ctx context.Context, eventType string, bo
 	}
 	switch {
 	case event.PullRequest != nil:
-		return s.updatePRNodeFromPullRequest(ctx, event.PullRequest)
+		node, err := s.updatePRNodeFromPullRequest(ctx, event.PullRequest)
+		if err != nil {
+			return err
+		}
+		return s.publishReviewFeedback(ctx, event, node)
 	case event.WorkflowRun != nil:
 		return s.updatePRNodeFromWorkflowRun(ctx, event.WorkflowRun)
 	default:
@@ -571,22 +577,25 @@ func (s *service) applyWebhookToPRNode(ctx context.Context, eventType string, bo
 	}
 }
 
-func (s *service) updatePRNodeFromPullRequest(ctx context.Context, pr *WebhookPullRequest) error {
+func (s *service) updatePRNodeFromPullRequest(ctx context.Context, pr *WebhookPullRequest) (*domain.SpecForgePRNode, error) {
 	if strings.TrimSpace(pr.HeadBranch) == "" && pr.Number <= 0 {
-		return nil
+		return nil, nil
 	}
 	node, err := s.findPRNodeForWebhookPullRequest(ctx, pr)
 	if errors.Is(err, domain.ErrNotFound) {
-		return nil
+		return nil, nil
 	}
 	if err != nil {
-		return err
+		return nil, err
 	}
 	node.GitHubPRNumber = &pr.Number
 	node.GitHubPRURL = pr.HTMLURL
 	node.GitHubHeadSHA = pr.HeadSHA
 	node.Status = domain.PRNodeStatusPROpened
-	return s.planningRepo.UpdatePRNode(ctx, node)
+	if err := s.planningRepo.UpdatePRNode(ctx, node); err != nil {
+		return nil, err
+	}
+	return node, nil
 }
 
 func (s *service) findPRNodeForWebhookPullRequest(ctx context.Context, pr *WebhookPullRequest) (*domain.SpecForgePRNode, error) {
@@ -597,6 +606,26 @@ func (s *service) findPRNodeForWebhookPullRequest(ctx context.Context, pr *Webho
 		}
 	}
 	return s.planningRepo.FindPRNodeByGitHubPRNumber(ctx, pr.Number)
+}
+
+func (s *service) publishReviewFeedback(ctx context.Context, event *StructuredGitHubWebhook, node *domain.SpecForgePRNode) error {
+	if s.eventBus == nil || event == nil || node == nil || event.ReviewComment == nil {
+		return nil
+	}
+	comment := event.ReviewComment
+	if strings.TrimSpace(comment.Body) == "" || comment.PullRequestNumber <= 0 {
+		return nil
+	}
+	return s.eventBus.Publish(ctx, domain.NewSpecForgeReviewFeedbackReceivedEvent(
+		node.ID,
+		comment.PullRequestNumber,
+		event.RepositoryFullName,
+		comment.Body,
+		comment.AuthorLogin,
+		comment.HTMLURL,
+		comment.Path,
+		comment.CommitSHA,
+	))
 }
 
 func (s *service) updatePRNodeFromWorkflowRun(ctx context.Context, run *WebhookWorkflowRun) error {

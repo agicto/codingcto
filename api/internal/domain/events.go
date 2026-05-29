@@ -163,6 +163,39 @@ func NewRoleRevokedEvent(userID, roleID uint, roleName string) RoleRevokedEvent 
 	}
 }
 
+const EventSpecForgeReviewFeedbackReceived = "specforge.review_feedback.received"
+
+// SpecForgeReviewFeedbackReceivedEvent is fired when GitHub review feedback can be mapped to a SpecForge PR node.
+type SpecForgeReviewFeedbackReceivedEvent struct {
+	BaseEvent
+	PRNodeID           uint
+	GitHubPRNumber     int
+	RepositoryFullName string
+	Feedback           string
+	AuthorLogin        string
+	HTMLURL            string
+	Path               string
+	CommitSHA          string
+}
+
+func (e SpecForgeReviewFeedbackReceivedEvent) EventName() string {
+	return EventSpecForgeReviewFeedbackReceived
+}
+
+func NewSpecForgeReviewFeedbackReceivedEvent(prNodeID uint, prNumber int, repositoryFullName, feedback, authorLogin, htmlURL, path, commitSHA string) SpecForgeReviewFeedbackReceivedEvent {
+	return SpecForgeReviewFeedbackReceivedEvent{
+		BaseEvent:          NewBaseEvent(),
+		PRNodeID:           prNodeID,
+		GitHubPRNumber:     prNumber,
+		RepositoryFullName: repositoryFullName,
+		Feedback:           feedback,
+		AuthorLogin:        authorLogin,
+		HTMLURL:            htmlURL,
+		Path:               path,
+		CommitSHA:          commitSHA,
+	}
+}
+
 // EventHandler handles domain events
 type EventHandler func(ctx context.Context, event Event) error
 

@@ -243,6 +243,36 @@ func TestCreateReviewPatchTaskCreatesQueuedReviewAttempt(t *testing.T) {
 	require.Contains(t, reviewPrompt.PromptText, "Please handle nil workspace roles.")
 }
 
+func TestCreateReviewPatchTaskForGitHubPRCreatesQueuedReviewAttempt(t *testing.T) {
+	planningRepo := memoryPlanningRepoWithPrompt()
+	prNumber := 42
+	planningRepo.bundle.PRNodes[0].GitHubPRNumber = &prNumber
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+	completed := dispatched.Tasks[0]
+	completed.Status = domain.AgentTaskStatusCompleted
+	completed.SessionID = "session_123"
+	completed.Workdir = "/tmp/specforge/task"
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), completed))
+
+	updated, err := svc.CreateReviewPatchTaskForGitHubPR(context.Background(), prNumber, &ReviewPatchAgentTaskRequest{Feedback: "Please preserve the existing API response shape."})
+
+	require.NoError(t, err)
+	require.Len(t, updated.Tasks, 3)
+	reviewTask := updated.Tasks[2]
+	require.Equal(t, completed.ID, *reviewTask.ParentTaskID)
+	require.Equal(t, completed.PRNodeID, reviewTask.PRNodeID)
+	require.Equal(t, domain.AgentTaskStatusQueued, reviewTask.Status)
+	require.Equal(t, domain.PromptTypeReviewPatch, reviewTask.PromptType)
+	reviewPrompt := latestMemoryPromptByType(planningRepo, completed.PRNodeID, domain.PromptTypeReviewPatch)
+	require.NotNil(t, reviewPrompt)
+	require.Contains(t, reviewPrompt.PromptText, "Please preserve the existing API response shape.")
+}
+
 func TestCreateReviewPatchTaskRejectsNonTerminalTask(t *testing.T) {
 	planningRepo := memoryPlanningRepoWithPrompt()
 	runRepo := &memoryExecutionRepo{}
@@ -1103,6 +1133,27 @@ func (r *memoryExecutionRepo) FindAgentTaskByID(ctx context.Context, taskID uint
 	return nil, domain.ErrNotFound
 }
 
+func (r *memoryExecutionRepo) FindLatestTerminalAgentTaskByPRNodeID(ctx context.Context, prNodeID uint) (*domain.SpecForgeAgentTask, error) {
+	if prNodeID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	if r.bundle == nil {
+		return nil, domain.ErrNotFound
+	}
+	for i := len(r.bundle.Tasks) - 1; i >= 0; i-- {
+		task := r.bundle.Tasks[i]
+		if task.PRNodeID != prNodeID {
+			continue
+		}
+		if task.Status != domain.AgentTaskStatusCompleted && task.Status != domain.AgentTaskStatusFailed && task.Status != domain.AgentTaskStatusCancelled {
+			continue
+		}
+		copied := *task
+		return &copied, nil
+	}
+	return nil, domain.ErrNotFound
+}
+
 func (r *memoryExecutionRepo) ListPendingAgentTasksByRuntime(ctx context.Context, runtimeID, executor string) ([]*domain.SpecForgeAgentTask, error) {
 	runtimeID = strings.TrimSpace(runtimeID)
 	executor = strings.TrimSpace(executor)
@@ -1478,6 +1529,15 @@ func (r *memoryPlanningRepo) FindPRNodeByBranchName(ctx context.Context, branchN
 }
 
 func (r *memoryPlanningRepo) FindPRNodeByGitHubPRNumber(ctx context.Context, prNumber int) (*domain.SpecForgePRNode, error) {
+	if r.bundle == nil || prNumber <= 0 {
+		return nil, domain.ErrNotFound
+	}
+	for _, node := range r.bundle.PRNodes {
+		if node.GitHubPRNumber != nil && *node.GitHubPRNumber == prNumber {
+			copied := *node
+			return &copied, nil
+		}
+	}
 	return nil, domain.ErrNotFound
 }
 

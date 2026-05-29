@@ -11,11 +11,12 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/zgiai/luas/api/internal/domain"
+	infraevents "github.com/zgiai/luas/api/internal/infra/events"
 )
 
 func TestUpsertInstallationNormalizesPermissions(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil, nil, nil)
+	svc := NewService(repo, nil, nil, nil, nil)
 
 	installation, err := svc.UpsertInstallation(context.Background(), 7, &UpsertInstallationRequest{
 		WorkspaceID:    " workspace_123 ",
@@ -36,7 +37,7 @@ func TestUpsertInstallationNormalizesPermissions(t *testing.T) {
 
 func TestUpsertRepositoryDefaultsRepositoryIDAndBranch(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil, nil, nil)
+	svc := NewService(repo, nil, nil, nil, nil)
 
 	repository, err := svc.UpsertRepository(context.Background(), 9, &UpsertRepositoryRequest{
 		WorkspaceID:          "workspace_123",
@@ -55,7 +56,7 @@ func TestUpsertRepositoryDefaultsRepositoryIDAndBranch(t *testing.T) {
 
 func TestGetRepositoryReturnsStoredRepository(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil, nil, nil)
+	svc := NewService(repo, nil, nil, nil, nil)
 	created, err := svc.UpsertRepository(context.Background(), 9, &UpsertRepositoryRequest{
 		RepositoryID:         "repo_123",
 		WorkspaceID:          "workspace_123",
@@ -95,7 +96,7 @@ func TestListRepositoryTreeUsesInstallationTokenAndDefaultBranch(t *testing.T) {
 		},
 	}
 	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
-	svc := NewService(repo, nil, &fakeRepositoryClientFactory{client: client}, tokenProvider)
+	svc := NewService(repo, nil, &fakeRepositoryClientFactory{client: client}, tokenProvider, nil)
 
 	snapshot, err := svc.ListRepositoryTree(context.Background(), &ListRepositoryTreeRequest{
 		RepositoryID: "repo_123",
@@ -130,7 +131,7 @@ func TestReadRepositoryFileReturnsDecodedContent(t *testing.T) {
 			DecodedContent: `{"scripts":{"lint":"eslint ."}}`,
 		},
 	}
-	svc := NewService(repo, nil, &fakeRepositoryClientFactory{client: client}, &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}})
+	svc := NewService(repo, nil, &fakeRepositoryClientFactory{client: client}, &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}, nil)
 
 	file, err := svc.ReadRepositoryFile(context.Background(), &ReadRepositoryFileRequest{
 		RepositoryID: "repo_123",
@@ -146,7 +147,7 @@ func TestReadRepositoryFileReturnsDecodedContent(t *testing.T) {
 
 func TestRecordWebhookParsesMetadataAndIsIdempotent(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil, nil, nil)
+	svc := NewService(repo, nil, nil, nil, nil)
 	body := []byte(`{"action":"completed","installation":{"id":123},"repository":{"full_name":"agicto/codingcto"}}`)
 
 	first, err := svc.RecordWebhook(context.Background(), &GitHubWebhookRequest{
@@ -180,7 +181,7 @@ func TestRecordWebhookLinksPullRequestToPRNode(t *testing.T) {
 			{ID: 10, BranchName: "specforge/team-invite-02-api", Status: domain.PRNodeStatusPlanned},
 		},
 	}
-	svc := NewService(repo, planningRepo, nil, nil)
+	svc := NewService(repo, planningRepo, nil, nil, nil)
 	body := []byte(`{
 		"action": "opened",
 		"installation": {"id": 123},
@@ -218,7 +219,7 @@ func TestRecordWebhookLinksPullRequestByGitHubPRNumberFallback(t *testing.T) {
 			{ID: 10, BranchName: "specforge/team-invite-02-api", GitHubPRNumber: &prNumber, Status: domain.PRNodeStatusPROpened},
 		},
 	}
-	svc := NewService(repo, planningRepo, nil, nil)
+	svc := NewService(repo, planningRepo, nil, nil, nil)
 	body := []byte(`{
 		"action": "created",
 		"installation": {"id": 123},
@@ -250,6 +251,59 @@ func TestRecordWebhookLinksPullRequestByGitHubPRNumberFallback(t *testing.T) {
 	require.Equal(t, domain.PRNodeStatusPROpened, node.Status)
 }
 
+func TestRecordWebhookPublishesReviewFeedbackEvent(t *testing.T) {
+	repo := &memoryRepo{}
+	prNumber := 42
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, BranchName: "specforge/team-invite-02-api", GitHubPRNumber: &prNumber, Status: domain.PRNodeStatusPROpened},
+		},
+	}
+	bus := infraevents.NewEventBus()
+	var published domain.SpecForgeReviewFeedbackReceivedEvent
+	bus.Subscribe(domain.EventSpecForgeReviewFeedbackReceived, func(ctx context.Context, event infraevents.Event) error {
+		var underlying any = event
+		if wrapped, ok := event.(infraevents.WrappedEvent); ok {
+			underlying = wrapped.Event
+		}
+		typed, ok := underlying.(domain.SpecForgeReviewFeedbackReceivedEvent)
+		require.True(t, ok)
+		published = typed
+		return nil
+	})
+	svc := NewService(repo, planningRepo, nil, nil, bus)
+	body := []byte(`{
+		"action": "created",
+		"installation": {"id": 123},
+		"repository": {"full_name": "agicto/codingcto"},
+		"issue": {
+			"number": 42,
+			"state": "open",
+			"pull_request": {"html_url": "https://github.com/agicto/codingcto/pull/42"}
+		},
+		"comment": {
+			"body": "Please preserve the existing API response shape.",
+			"html_url": "https://github.com/agicto/codingcto/pull/42#issuecomment-1",
+			"user": {"login": "reviewer"}
+		}
+	}`)
+
+	_, err := svc.RecordWebhook(context.Background(), &GitHubWebhookRequest{
+		EventType:  GitHubWebhookEventIssueComment,
+		DeliveryID: "delivery-review-feedback",
+		Signature:  "sha256=abc",
+		Body:       body,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, uint(10), published.PRNodeID)
+	require.Equal(t, 42, published.GitHubPRNumber)
+	require.Equal(t, "agicto/codingcto", published.RepositoryFullName)
+	require.Equal(t, "Please preserve the existing API response shape.", published.Feedback)
+	require.Equal(t, "reviewer", published.AuthorLogin)
+	require.Equal(t, "https://github.com/agicto/codingcto/pull/42#issuecomment-1", published.HTMLURL)
+}
+
 func TestRecordWebhookUpdatesPRNodeFromWorkflowRun(t *testing.T) {
 	repo := &memoryRepo{}
 	planningRepo := &memoryPlanningRepo{
@@ -257,7 +311,7 @@ func TestRecordWebhookUpdatesPRNodeFromWorkflowRun(t *testing.T) {
 			{ID: 10, BranchName: "specforge/team-invite-02-api", Status: domain.PRNodeStatusPROpened},
 		},
 	}
-	svc := NewService(repo, planningRepo, nil, nil)
+	svc := NewService(repo, planningRepo, nil, nil, nil)
 	body := []byte(`{
 		"action": "completed",
 		"installation": {"id": 123},
@@ -292,7 +346,7 @@ func TestRecordWebhookDoesNotReapplyExistingDeliveryToPRNode(t *testing.T) {
 			{ID: 10, BranchName: "specforge/team-invite-02-api", Status: domain.PRNodeStatusPlanned},
 		},
 	}
-	svc := NewService(repo, nil, nil, nil)
+	svc := NewService(repo, nil, nil, nil, nil)
 	body := []byte(`{
 		"action": "opened",
 		"installation": {"id": 123},
@@ -335,7 +389,7 @@ func TestRecordWebhookMarksFailedWhenApplyFails(t *testing.T) {
 		},
 		updateErr: fmt.Errorf("database unavailable"),
 	}
-	svc := NewService(repo, planningRepo, nil, nil)
+	svc := NewService(repo, planningRepo, nil, nil, nil)
 	body := []byte(`{
 		"action": "opened",
 		"installation": {"id": 123},
@@ -369,7 +423,7 @@ func TestListWebhookEventsAppliesFiltersAndLimit(t *testing.T) {
 			{ID: 3, DeliveryID: "delivery-3", Status: GitHubWebhookStatusFailed, RepositoryFullName: "other/repo", ReceivedAt: time.Now()},
 		},
 	}
-	svc := NewService(repo, nil, nil, nil)
+	svc := NewService(repo, nil, nil, nil, nil)
 
 	events, err := svc.ListWebhookEvents(context.Background(), &ListWebhookEventsRequest{
 		Status:             GitHubWebhookStatusFailed,
@@ -415,7 +469,7 @@ func TestDeliverPRNodeCreatesDraftPRAndUpdatesNode(t *testing.T) {
 	}
 	factory := &fakeRepositoryClientFactory{client: client}
 	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
-	svc := NewService(repo, planningRepo, factory, tokenProvider)
+	svc := NewService(repo, planningRepo, factory, tokenProvider, nil)
 
 	node, err := svc.DeliverPRNode(context.Background(), &DeliverPRNodeRequest{
 		RepositoryID: "github_agicto__codingcto",
@@ -463,7 +517,7 @@ func TestPreparePRNodeBranchCreatesBranchFromDefaultBranch(t *testing.T) {
 	}
 	client := &fakeRepositoryClient{branchRef: &GitReference{Object: GitRefObject{SHA: "abc123"}}}
 	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
-	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider)
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider, nil)
 
 	node, err := svc.PreparePRNodeBranch(context.Background(), &PreparePRNodeBranchRequest{
 		RepositoryID: "github_agicto__codingcto",
@@ -504,7 +558,7 @@ func TestPreparePRNodeBranchIgnoresExistingBranch(t *testing.T) {
 		createBranchErr: fmt.Errorf("github repository client: request failed: Reference already exists"),
 	}
 	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
-	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider)
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider, nil)
 
 	_, err := svc.PreparePRNodeBranch(context.Background(), &PreparePRNodeBranchRequest{
 		RepositoryID: "github_agicto__codingcto",
@@ -541,7 +595,7 @@ func TestRefreshPRNodeCIUpdatesFromLatestWorkflowRun(t *testing.T) {
 		},
 	}
 	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
-	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider)
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider, nil)
 
 	node, err := svc.RefreshPRNodeCI(context.Background(), &RefreshPRNodeCIRequest{
 		RepositoryID: "github_agicto__codingcto",
@@ -579,7 +633,7 @@ func TestRefreshPRNodeCIMarksFailedRunBlocked(t *testing.T) {
 		workflowRuns: []WorkflowRun{{HeadSHA: "failed", Status: "completed", Conclusion: "failure", CreatedAt: time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC)}},
 	}
 	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
-	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider)
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider, nil)
 
 	node, err := svc.RefreshPRNodeCI(context.Background(), &RefreshPRNodeCIRequest{
 		RepositoryID: "github_agicto__codingcto",
@@ -619,7 +673,7 @@ func TestReadPRNodeFailureLogReturnsLatestFailedJobLogs(t *testing.T) {
 		workflowLogs: "go test ./...\n--- FAIL: TestInvite\n",
 	}
 	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
-	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider)
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider, nil)
 
 	failure, err := svc.ReadPRNodeFailureLog(context.Background(), &ReadPRNodeFailureLogRequest{
 		RepositoryID: "github_agicto__codingcto",
@@ -658,7 +712,7 @@ func TestDeliverPRNodeAllowsOverrides(t *testing.T) {
 	}
 	client := &fakeRepositoryClient{pr: &PullRequest{Number: 43, HTMLURL: "https://github.com/agicto/codingcto/pull/43"}}
 	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
-	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider)
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider, nil)
 	ready := false
 
 	_, err := svc.DeliverPRNode(context.Background(), &DeliverPRNodeRequest{
@@ -699,7 +753,7 @@ func TestDeliverPRNodeRejectsMalformedPullRequestResponse(t *testing.T) {
 	}
 	client := &fakeRepositoryClient{pr: &PullRequest{Number: 0, HTMLURL: ""}}
 	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
-	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider)
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider, nil)
 
 	_, err := svc.DeliverPRNode(context.Background(), &DeliverPRNodeRequest{
 		RepositoryID: "github_agicto__codingcto",

@@ -29,6 +29,7 @@ type Service interface {
 	ClaimTask(ctx context.Context, runtimeID string, req *ClaimAgentTaskRequest) (*ClaimAgentTaskResponse, error)
 	RetryTask(ctx context.Context, taskID uint, req *RetryAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	CreateReviewPatchTask(ctx context.Context, taskID uint, req *ReviewPatchAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
+	CreateReviewPatchTaskForGitHubPR(ctx context.Context, prNumber int, req *ReviewPatchAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	PinTaskSession(ctx context.Context, taskID uint, req *PinAgentTaskSessionRequest) (*domain.SpecForgeExecutionBundle, error)
 	ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	SubmitTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.SpecForgeExecutionBundle, error)
@@ -461,6 +462,21 @@ func (s *service) CreateReviewPatchTask(ctx context.Context, taskID uint, req *R
 		return nil, fmt.Errorf("create review patch agent task: %w", err)
 	}
 	return s.GetRun(ctx, parent.RunID)
+}
+
+func (s *service) CreateReviewPatchTaskForGitHubPR(ctx context.Context, prNumber int, req *ReviewPatchAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error) {
+	if prNumber <= 0 || req == nil || strings.TrimSpace(req.Feedback) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	node, err := s.planningRepo.FindPRNodeByGitHubPRNumber(ctx, prNumber)
+	if err != nil {
+		return nil, err
+	}
+	parent, err := s.repo.FindLatestTerminalAgentTaskByPRNodeID(ctx, node.ID)
+	if err != nil {
+		return nil, err
+	}
+	return s.CreateReviewPatchTask(ctx, parent.ID, req)
 }
 
 func (s *service) PinTaskSession(ctx context.Context, taskID uint, req *PinAgentTaskSessionRequest) (*domain.SpecForgeExecutionBundle, error) {
