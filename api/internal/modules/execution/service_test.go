@@ -147,6 +147,53 @@ func TestSatisfiedDependencyNodeKeySetIncludesReadyAndMergedPRNodes(t *testing.T
 	require.NotContains(t, completed, "PR-005")
 }
 
+func TestSatisfiedDependencyNodeKeySetDoesNotUseCompletedTaskForOpenedPRNode(t *testing.T) {
+	prNumber := 42
+	bundle := &domain.SpecForgeExecutionBundle{
+		Plan: &domain.SpecForgePlanBundle{
+			PRNodes: []*domain.SpecForgePRNode{
+				{
+					ID:             1,
+					NodeKey:        "PR-001",
+					Status:         domain.PRNodeStatusPROpened,
+					GitHubPRNumber: &prNumber,
+					GitHubPRURL:    "https://github.com/agicto/codingcto/pull/42",
+				},
+				{ID: 2, NodeKey: "PR-002", Status: domain.PRNodeStatusPlanned},
+			},
+		},
+		Tasks: []*domain.SpecForgeAgentTask{
+			{PRNodeID: 1, Status: domain.AgentTaskStatusCompleted},
+			{PRNodeID: 2, Status: domain.AgentTaskStatusCompleted},
+		},
+	}
+
+	completed := satisfiedDependencyNodeKeySet(bundle)
+
+	require.NotContains(t, completed, "PR-001")
+	require.Contains(t, completed, "PR-002")
+}
+
+func TestDependenciesCompleteWaitsForReadyPRStatusAfterTaskCompletion(t *testing.T) {
+	bundle := &domain.SpecForgeExecutionBundle{
+		Plan: &domain.SpecForgePlanBundle{
+			PRNodes: []*domain.SpecForgePRNode{
+				{ID: 1, NodeKey: "PR-001", Status: domain.PRNodeStatusPROpened, GitHubPRURL: "https://github.com/agicto/codingcto/pull/42"},
+				{ID: 2, NodeKey: "PR-002", DependsOn: []string{"PR-001"}, Status: domain.PRNodeStatusPlanned},
+			},
+		},
+		Tasks: []*domain.SpecForgeAgentTask{
+			{PRNodeID: 1, Status: domain.AgentTaskStatusCompleted},
+		},
+	}
+
+	node := bundle.Plan.PRNodes[1]
+
+	require.False(t, dependenciesComplete(node, satisfiedDependencyNodeKeySet(bundle)))
+	bundle.Plan.PRNodes[0].Status = domain.PRNodeStatusReadyForReview
+	require.True(t, dependenciesComplete(node, satisfiedDependencyNodeKeySet(bundle)))
+}
+
 func TestDependenciesCompleteUsesReadyForReviewPRStatus(t *testing.T) {
 	bundle := &domain.SpecForgeExecutionBundle{
 		Plan: &domain.SpecForgePlanBundle{
