@@ -86,18 +86,18 @@ func (s *service) InferProfile(ctx context.Context, userID uint, repoID string, 
 		return nil, domain.ErrInvalidInput
 	}
 
-	paths := normalizeList(req.FilePaths)
+	rawPaths := normalizeList(req.FilePaths)
 	treeRef := strings.TrimSpace(req.DefaultBranch)
 	source := "request_hints"
 	warnings := []string{}
-	if len(paths) == 0 && s.treeSource != nil {
+	if len(rawPaths) == 0 && s.treeSource != nil {
 		snapshot, err := s.treeSource.ListRepositoryTree(ctx, strings.TrimSpace(repoID), treeRef, true)
 		if err != nil {
 			return nil, fmt.Errorf("list repository tree: %w", err)
 		}
 		if snapshot != nil {
 			source = "github_tree"
-			paths = normalizeList(snapshot.Paths)
+			rawPaths = normalizeList(snapshot.Paths)
 			if strings.TrimSpace(req.DefaultBranch) == "" {
 				req.DefaultBranch = strings.TrimSpace(snapshot.Ref)
 			}
@@ -106,6 +106,10 @@ func (s *service) InferProfile(ctx context.Context, userID uint, repoID string, 
 		if snapshot != nil && snapshot.Truncated {
 			warnings = append(warnings, "GitHub tree response was truncated; inferred profile may miss files.")
 		}
+	}
+	paths, filteredCount := filterSensitivePaths(rawPaths)
+	if filteredCount > 0 {
+		warnings = append(warnings, fmt.Sprintf("SpecForge filtered %d sensitive repository paths from the inferred profile.", filteredCount))
 	}
 	scripts := normalizeScripts(req.PackageScripts)
 	if len(scripts) == 0 && len(paths) > 0 && s.treeSource != nil {
@@ -146,7 +150,7 @@ func packageJSONPaths(paths []string, limit int) []string {
 	out := []string{}
 	for _, path := range paths {
 		trimmed := strings.TrimSpace(path)
-		if trimmed == "" {
+		if trimmed == "" || isSensitiveRepoPath(trimmed) {
 			continue
 		}
 		if strings.EqualFold(trimmed, "package.json") || strings.HasSuffix(strings.ToLower(trimmed), "/package.json") {
@@ -157,6 +161,41 @@ func packageJSONPaths(paths []string, limit int) []string {
 		}
 	}
 	return out
+}
+
+func filterSensitivePaths(paths []string) ([]string, int) {
+	out := make([]string, 0, len(paths))
+	filtered := 0
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		if isSensitiveRepoPath(path) {
+			filtered++
+			continue
+		}
+		out = append(out, path)
+	}
+	return normalizeList(out), filtered
+}
+
+func isSensitiveRepoPath(path string) bool {
+	lower := strings.ToLower(strings.TrimSpace(path))
+	if lower == "" {
+		return false
+	}
+	base := lower
+	if idx := strings.LastIndex(base, "/"); idx >= 0 {
+		base = base[idx+1:]
+	}
+	if base == ".env" || strings.HasPrefix(base, ".env.") || strings.HasSuffix(base, ".pem") || strings.HasSuffix(base, ".key") || strings.HasSuffix(base, ".p12") || strings.HasSuffix(base, ".pfx") {
+		return true
+	}
+	if strings.Contains(base, "secret") || strings.Contains(base, "token") || strings.Contains(base, "credential") || strings.Contains(base, "private-key") {
+		return true
+	}
+	return strings.Contains(lower, "/.env/") || strings.Contains(lower, "/secrets/") || strings.HasPrefix(lower, "secrets/")
 }
 
 func parsePackageScripts(content string) map[string]string {
