@@ -31,6 +31,8 @@ const baseBundle: SpecForgePlanBundleDTO = {
     coding_conventions: ['Keep contracts explicit.'],
     risk_areas: ['auth'],
     summary: 'Split Go API and Next.js web app.',
+    source: 'github_tree',
+    warnings: ['GitHub tree response was truncated; inferred profile may miss files.'],
     created_by: 1,
     last_indexed_at: '2026-05-29T12:00:00Z',
     created_at: '2026-05-29T12:00:00Z',
@@ -102,6 +104,9 @@ describe('planBundleFromDTO', () => {
         repositoryId: 'repo_abc',
         defaultBranch: 'main',
         stack: ['Go', 'Next.js'],
+        source: 'github_tree',
+        warnings: ['GitHub tree response was truncated; inferred profile may miss files.'],
+        lastIndexedAt: '2026-05-29T12:00:00Z',
       },
       productSpec: {
         goals: ['Invite workspace members.'],
@@ -138,6 +143,8 @@ describe('planBundleFromDTO', () => {
       stack: [],
       testCommands: [],
       ciProvider: 'unknown',
+      source: 'unknown',
+      warnings: [],
     });
   });
 

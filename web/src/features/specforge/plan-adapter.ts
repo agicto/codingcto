@@ -74,6 +74,9 @@ function repoProfileFromDTO(
     summary:
       repoProfile?.summary ??
       'Repository context has not been indexed yet. The generated plan is using available idea context only.',
+    source: repoProfile?.source ?? 'unknown',
+    warnings: repoProfile?.warnings ?? [],
+    lastIndexedAt: repoProfile?.last_indexed_at,
   };
 }
 

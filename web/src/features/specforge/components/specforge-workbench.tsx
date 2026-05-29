@@ -8,6 +8,7 @@ import {
   CircleX,
   GitBranch,
   GitPullRequest,
+  Info,
   ListChecks,
   ScrollText,
   Play,
@@ -131,6 +132,29 @@ function statusClassName(status: PRNode["status"]) {
     return "border-error/30 bg-error-subtle text-error";
   }
   return "border-border bg-bg-surface text-text-subtle";
+}
+
+function repoProfileSourceLabel(source: string) {
+  switch (source) {
+    case "github_tree":
+      return "GitHub tree";
+    case "request_hints":
+      return "Request hints";
+    case "manual":
+      return "Manual profile";
+    case "demo":
+      return "Demo profile";
+    default:
+      return "Unknown source";
+  }
+}
+
+function formatTimestamp(value: string) {
+  const time = new Date(value);
+  if (Number.isNaN(time.getTime())) {
+    return value;
+  }
+  return time.toLocaleString();
 }
 
 function riskClassName(risk: PRNode["estimatedRisk"]) {
@@ -678,6 +702,27 @@ function RepoProfileSummary({
           {planSource === "api" ? "API plan" : "Demo fallback"}
         </Badge>
       </div>
+      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-text-muted">
+        <Badge variant="outline">{repoProfileSourceLabel(effectiveProfile.source)}</Badge>
+        {effectiveProfile.lastIndexedAt ? (
+          <span>Indexed {formatTimestamp(effectiveProfile.lastIndexedAt)}</span>
+        ) : (
+          <span>Not indexed yet</span>
+        )}
+      </div>
+      {effectiveProfile.warnings.length > 0 ? (
+        <div className="mt-3 space-y-2">
+          {effectiveProfile.warnings.map((warning) => (
+            <div
+              key={warning}
+              className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900"
+            >
+              <Info className="mt-0.5 h-3.5 w-3.5 flex-none" />
+              <span>{warning}</span>
+            </div>
+          ))}
+        </div>
+      ) : null}
       <p className="mt-2 text-sm leading-6 text-text-muted">{effectiveProfile.summary}</p>
       <div className="mt-3 flex flex-wrap gap-2">
         {effectiveProfile.stack.map((item) => (

@@ -45,5 +45,8 @@ export function repoProfileFromDTO(dto: SpecForgeRepoProfileDTO): RepoProfile {
     codingConventions: dto.coding_conventions ?? [],
     riskAreas: dto.risk_areas ?? [],
     summary: dto.summary,
+    source: dto.source ?? 'unknown',
+    warnings: dto.warnings ?? [],
+    lastIndexedAt: dto.last_indexed_at,
   };
 }
