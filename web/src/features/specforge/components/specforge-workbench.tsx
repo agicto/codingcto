@@ -53,7 +53,7 @@ import {
   repoProfileFromDTO,
   repoProfilePayloadFromForm,
 } from "@/features/specforge/repo-profile-form";
-import { luasProfileInferencePayload } from "@/features/specforge/repo-profile-inference";
+import { githubTreeProfileInferencePayload } from "@/features/specforge/repo-profile-inference";
 import {
   useApproveSpecForgePlan,
   useCancelExecutionRun,
@@ -746,7 +746,7 @@ function RepoProfileEditor({
       return;
     }
 
-    const inferred = await inferProfile.mutateAsync(luasProfileInferencePayload(defaultBranch));
+    const inferred = await inferProfile.mutateAsync(githubTreeProfileInferencePayload(defaultBranch));
     onSaved(inferred);
   }
 

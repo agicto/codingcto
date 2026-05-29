@@ -1,22 +1,17 @@
 import { describe, expect, it } from 'vitest';
 
-import { luasProfileInferencePayload } from '@/features/specforge/repo-profile-inference';
+import { githubTreeProfileInferencePayload } from '@/features/specforge/repo-profile-inference';
 
-describe('luasProfileInferencePayload', () => {
-  it('builds the file and script hints expected by the backend infer endpoint', () => {
-    const payload = luasProfileInferencePayload(' develop ');
+describe('githubTreeProfileInferencePayload', () => {
+  it('requests backend inference from the connected GitHub repository tree', () => {
+    const payload = githubTreeProfileInferencePayload(' develop ');
 
     expect(payload.default_branch).toBe('develop');
-    expect(payload.file_paths).toContain('api/go.mod');
-    expect(payload.file_paths).toContain('web/src/features/specforge/components/specforge-workbench.tsx');
-    expect(payload.package_scripts).toMatchObject({
-      lint: 'eslint .',
-      'type-check': 'tsc --noEmit',
-      test: 'vitest',
-    });
+    expect(payload.file_paths).toEqual([]);
+    expect(payload.package_scripts).toEqual({});
   });
 
   it('defaults the branch when empty', () => {
-    expect(luasProfileInferencePayload('').default_branch).toBe('main');
+    expect(githubTreeProfileInferencePayload('').default_branch).toBe('main');
   });
 });
