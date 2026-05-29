@@ -1,4 +1,9 @@
-import request from "@/http";
+import { env } from "@/config/env";
+import { createRequest } from "@/http";
+
+const request = createRequest({
+  baseURL: env.NEXT_PUBLIC_SPECFORGE_API_URL,
+});
 
 export interface RepoProfilePayload {
   default_branch?: string;

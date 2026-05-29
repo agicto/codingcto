@@ -25,6 +25,17 @@ const nextConfig: NextConfig = {
   productionBrowserSourceMaps: false,
   turbopack: {},
 
+  async rewrites() {
+    const apiProxyTarget = process.env.LUAS_API_PROXY_TARGET ?? 'http://localhost:8025';
+
+    return [
+      {
+        source: '/v1/:path*',
+        destination: `${apiProxyTarget}/v1/:path*`,
+      },
+    ];
+  },
+
   // Security headers only (no caching headers)
   async headers() {
     return [
