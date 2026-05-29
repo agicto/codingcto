@@ -2,6 +2,7 @@ import { NextResponse } from 'next/server';
 import type { NextRequest } from 'next/server';
 
 import { authConfig } from '@/config/auth';
+import { parseSignedSessionPayload } from '@/features/auth/server/session-payload';
 import { verifySession } from '@/lib/session-signing';
 
 function matchesPrefix(pathname: string, prefix: string): boolean {
@@ -24,25 +25,36 @@ function isPublicOnlyPath(pathname: string): boolean {
  * reject them, but the request would land on app code). By verifying
  * the HMAC here we short-circuit invalid sessions at the edge.
  *
- * Returns true only when the cookie is present AND signed correctly
- * AND not expired.
+ * Returns a session payload only when the cookie is present AND signed
+ * correctly AND not expired.
  */
-async function hasValidSession(request: NextRequest): Promise<boolean> {
+async function getSessionPayload(request: NextRequest) {
   const raw = request.cookies.get(authConfig.cookies.session)?.value;
-  if (!raw) return false;
+  if (!raw) return null;
   const payload = await verifySession(raw);
-  if (!payload) return false;
-  try {
-    const obj = JSON.parse(payload) as { exp?: number };
-    return typeof obj.exp === 'number' && obj.exp > Math.floor(Date.now() / 1000);
-  } catch {
-    return false;
-  }
+  return parseSignedSessionPayload(payload);
+}
+
+function isAPIProxyPath(pathname: string): boolean {
+  return matchesPrefix(pathname, '/v1');
 }
 
 export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
-  const valid = await hasValidSession(request);
+  const session = await getSessionPayload(request);
+  const valid = Boolean(session);
+
+  if (isAPIProxyPath(pathname) && session?.apiAccessToken) {
+    const requestHeaders = new Headers(request.headers);
+    if (!requestHeaders.has('authorization')) {
+      requestHeaders.set('authorization', `Bearer ${session.apiAccessToken}`);
+    }
+    return NextResponse.next({
+      request: {
+        headers: requestHeaders,
+      },
+    });
+  }
 
   if (!valid && isProtectedPath(pathname)) {
     const loginUrl = new URL(authConfig.routes.login, request.url);
@@ -62,6 +74,7 @@ export const config = {
     '/console/:path*',
     '/styleguide/:path*',
     '/i18n-test/:path*',
+    '/v1/:path*',
     '/login',
     '/register',
   ],
