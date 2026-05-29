@@ -22,9 +22,11 @@ import {
   CardHeader,
   CardTitle,
 } from "@/components/ui/card";
+import { Input } from "@/components/ui/input";
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/utils";
+import { planBundleFromDTO } from "@/features/specforge/plan-adapter";
 import {
   defaultIdea,
   demoPlan,
@@ -35,8 +37,16 @@ import {
   runtimeFromDTO,
   summarizeRuntimeHealth,
 } from "@/features/specforge/runtime-health";
-import { useSpecForgeRuntimes } from "@/features/specforge/hooks/use-specforge";
-import type { ExecutionRun, PRNode } from "@/features/specforge/types";
+import {
+  useCreateSpecForgeIdea,
+  useSpecForgeRuntimes,
+} from "@/features/specforge/hooks/use-specforge";
+import type {
+  ExecutionRun,
+  PlanBundle,
+  PRNode,
+  RepoProfile,
+} from "@/features/specforge/types";
 
 const statusLabel: Record<PRNode["status"], string> = {
   planned: "Planned",
@@ -69,8 +79,22 @@ function riskClassName(risk: PRNode["estimatedRisk"]) {
   return "border-success/30 bg-success-subtle text-success";
 }
 
+function demoPlanForInput(idea: string, repositoryId: string): PlanBundle {
+  return {
+    ...demoPlan,
+    idea,
+    repoProfile: {
+      ...demoPlan.repoProfile,
+      repositoryId,
+    },
+  };
+}
+
 export function SpecForgeWorkbench() {
   const [idea, setIdea] = useState(defaultIdea);
+  const [repoId, setRepoId] = useState(demoPlan.repoProfile.repositoryId);
+  const [activePlan, setActivePlan] = useState<PlanBundle>(demoPlan);
+  const [planSource, setPlanSource] = useState<"api" | "demo">("demo");
   const [hasPlan, setHasPlan] = useState(true);
   const [approved, setApproved] = useState(false);
   const [run, setRun] = useState<ExecutionRun>({
@@ -79,6 +103,7 @@ export function SpecForgeWorkbench() {
   });
   const [currentRuntimeNow] = useState(() => Date.now());
 
+  const createIdea = useCreateSpecForgeIdea(repoId.trim());
   const readyCount = run.tasks.filter((task) => task.status === "completed").length;
   const runningCount = run.tasks.filter((task) => task.status === "running").length;
   const runtimesQuery = useSpecForgeRuntimes({ limit: 20 });
@@ -104,7 +129,39 @@ export function SpecForgeWorkbench() {
     return `${readyCount} / ${run.tasks.length} PR nodes completed`;
   }, [readyCount, run.status, run.tasks.length, runtimeSummary.online]);
 
-  function generatePlan() {
+  async function generatePlan() {
+    const trimmedIdea = idea.trim();
+    const trimmedRepoId = repoId.trim();
+    if (!trimmedIdea || !trimmedRepoId) {
+      return;
+    }
+
+    setApproved(false);
+    try {
+      const bundle = await createIdea.mutateAsync({
+        input: trimmedIdea,
+        type: "feature",
+      });
+      const nextPlan = planBundleFromDTO(bundle);
+      setActivePlan(nextPlan);
+      setIdea(nextPlan.idea);
+      setPlanSource("api");
+      setHasPlan(true);
+      setRun({ status: "idle", tasks: nextPlan.prNodes });
+    } catch {
+      const fallbackPlan = demoPlanForInput(trimmedIdea, trimmedRepoId);
+      setActivePlan(fallbackPlan);
+      setPlanSource("demo");
+      setHasPlan(true);
+      setRun({ status: "idle", tasks: fallbackPlan.prNodes });
+    }
+  }
+
+  function resetIdea() {
+    setIdea(defaultIdea);
+    setRepoId(demoPlan.repoProfile.repositoryId);
+    setActivePlan(demoPlan);
+    setPlanSource("demo");
     setHasPlan(true);
     setApproved(false);
     setRun({ status: "idle", tasks: demoPlan.prNodes });
@@ -116,9 +173,9 @@ export function SpecForgeWorkbench() {
     setRun({
       status: "running",
       startedAt,
-      tasks: demoPlan.prNodes.map((node, index) => ({
+      tasks: activePlan.prNodes.map((node) => ({
         ...node,
-        status: index === 0 ? "running" : "waiting_on_dependencies",
+        status: node.dependsOn.length === 0 ? "running" : "waiting_on_dependencies",
       })),
     });
   }
@@ -189,16 +246,25 @@ export function SpecForgeWorkbench() {
               aria-label="Describe the feature SpecForge should turn into reviewable PRs"
               placeholder="Describe the product outcome, constraints, and any implementation boundaries..."
             />
+            <Input
+              value={repoId}
+              onChange={(event) => setRepoId(event.target.value)}
+              aria-label="Repository ID"
+              placeholder="Repository ID"
+            />
             <div className="flex flex-wrap gap-2">
-              <Button onClick={generatePlan} disabled={!idea.trim()}>
-                Generate implementation plan
+              <Button
+                onClick={generatePlan}
+                disabled={!idea.trim() || !repoId.trim() || createIdea.isPending}
+              >
+                {createIdea.isPending ? "Generating plan" : "Generate implementation plan"}
                 <ArrowRight className="ml-1.5 h-4 w-4" />
               </Button>
-              <Button variant="outline" onClick={() => setIdea(defaultIdea)}>
+              <Button variant="outline" onClick={resetIdea}>
                 Reset
               </Button>
             </div>
-            <RepoProfileSummary />
+            <RepoProfileSummary repoProfile={activePlan.repoProfile} planSource={planSource} />
           </CardContent>
         </Card>
 
@@ -219,10 +285,10 @@ export function SpecForgeWorkbench() {
               </TabsList>
 
               <TabsContent value="plan" className="space-y-4">
-                <PlanReview approved={approved} onApprove={approveAndStart} />
+                <PlanReview plan={activePlan} approved={approved} onApprove={approveAndStart} />
               </TabsContent>
               <TabsContent value="dag">
-                <PRDag nodes={demoPlan.prNodes} />
+                <PRDag nodes={activePlan.prNodes} />
               </TabsContent>
               <TabsContent value="run">
                 <ExecutionStatus run={run} onAdvance={advanceRun} />
@@ -292,14 +358,26 @@ function Metric({ label, value }: { label: string; value: string }) {
   );
 }
 
-function RepoProfileSummary() {
-  const { repoProfile } = demoPlan;
-
+function RepoProfileSummary({
+  repoProfile,
+  planSource,
+}: {
+  repoProfile: RepoProfile;
+  planSource: "api" | "demo";
+}) {
   return (
     <div className="rounded-lg border border-border-subtle bg-muted/30 p-4">
-      <div className="flex items-center gap-2 text-sm font-medium">
-        <GitBranch className="h-4 w-4 text-primary" />
-        Repo profile
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <GitBranch className="h-4 w-4 text-primary" />
+          Repo profile
+        </div>
+        <Badge
+          variant="outline"
+          className={planSource === "api" ? statusClassName("completed") : ""}
+        >
+          {planSource === "api" ? "API plan" : "Demo fallback"}
+        </Badge>
       </div>
       <p className="mt-2 text-sm leading-6 text-text-muted">{repoProfile.summary}</p>
       <div className="mt-3 flex flex-wrap gap-2">
@@ -332,7 +410,10 @@ function RunSummary({
         <Badge variant="outline" className={approved ? statusClassName("completed") : ""}>
           {approved ? "Plan approved" : "Plan approval required"}
         </Badge>
-        <Badge variant="outline" className={run.status === "running" ? statusClassName("running") : ""}>
+        <Badge
+          variant="outline"
+          className={run.status === "running" ? statusClassName("running") : ""}
+        >
           {run.status === "idle" ? "No run started" : run.status}
         </Badge>
       </div>
@@ -340,8 +421,16 @@ function RunSummary({
   );
 }
 
-function PlanReview({ approved, onApprove }: { approved: boolean; onApprove: () => void }) {
-  const { productSpec, implementationPlan } = demoPlan;
+function PlanReview({
+  plan,
+  approved,
+  onApprove,
+}: {
+  plan: PlanBundle;
+  approved: boolean;
+  onApprove: () => void;
+}) {
+  const { productSpec, implementationPlan } = plan;
 
   return (
     <div className="grid gap-4 xl:grid-cols-2">
