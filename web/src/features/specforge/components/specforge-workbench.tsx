@@ -1061,6 +1061,12 @@ function PlanReview({
   onApprove: () => void;
 }) {
   const { productSpec, implementationPlan } = plan;
+  const dagReviewNotes = productSpec.assumptions.filter((item) =>
+    item.startsWith("PR DAG review:")
+  );
+  const planAssumptions = productSpec.assumptions.filter(
+    (item) => !item.startsWith("PR DAG review:")
+  );
 
   return (
     <div className="grid gap-4 xl:grid-cols-2">
@@ -1073,6 +1079,7 @@ function PlanReview({
           <ListBlock title="Goals" items={productSpec.goals} />
           <ListBlock title="Business rules" items={productSpec.businessRules} />
           <ListBlock title="Acceptance criteria" items={productSpec.acceptanceCriteria} />
+          <ListBlock title="Plan assumptions" items={planAssumptions} />
         </CardContent>
       </Card>
 
@@ -1083,6 +1090,7 @@ function PlanReview({
         </CardHeader>
         <CardContent className="space-y-5">
           <ListBlock title="Affected areas" items={implementationPlan.affectedAreas} />
+          <ListBlock title="PR DAG review" items={dagReviewNotes} />
           <ListBlock title="Security risks" items={implementationPlan.securityRisks} icon="risk" />
           <ListBlock title="Migration risks" items={implementationPlan.migrationRisks} />
           <Button
@@ -1115,6 +1123,12 @@ function ListBlock({
         {title}
       </h3>
       <ul className="mt-2 space-y-2 text-sm leading-6 text-text-muted">
+        {items.length === 0 && (
+          <li className="flex gap-2">
+            <CircleDot className="mt-1.5 h-3 w-3 shrink-0 text-text-muted" />
+            <span>None recorded.</span>
+          </li>
+        )}
         {items.map((item) => (
           <li key={item} className="flex gap-2">
             <CircleDot className="mt-1.5 h-3 w-3 shrink-0 text-primary" />
