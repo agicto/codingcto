@@ -160,6 +160,45 @@ func TestCompilePromptInjectsActiveRepoSkills(t *testing.T) {
 	require.NotContains(t, prompt.PromptText, "This should not appear.")
 }
 
+func TestCompilePromptInjectsFixModeInstructions(t *testing.T) {
+	repo := &memoryRepo{}
+	svc := NewService(repo, &memoryProfileRepo{}, repo)
+	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
+		Input: "Add team invite feature for workspace admins",
+	})
+	require.NoError(t, err)
+
+	prompt, err := svc.CompilePrompt(context.Background(), 42, created.PRNodes[0].ID, &CompilePromptRequest{
+		Type: "fix",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "fix", prompt.Type)
+	require.Contains(t, prompt.PromptText, "Execution mode instructions")
+	require.Contains(t, prompt.PromptText, "targeted repair for a failed PR node")
+	require.Contains(t, prompt.PromptText, "fix budget is exhausted")
+	require.Contains(t, prompt.PromptText, "produce an escalation summary")
+}
+
+func TestCompilePromptInjectsReviewPatchModeInstructions(t *testing.T) {
+	repo := &memoryRepo{}
+	svc := NewService(repo, &memoryProfileRepo{}, repo)
+	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
+		Input: "Add team invite feature for workspace admins",
+	})
+	require.NoError(t, err)
+
+	prompt, err := svc.CompilePrompt(context.Background(), 42, created.PRNodes[0].ID, &CompilePromptRequest{
+		Type: "review_patch",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "review_patch", prompt.Type)
+	require.Contains(t, prompt.PromptText, "response to human PR review feedback")
+	require.Contains(t, prompt.PromptText, "Address only actionable review comments")
+	require.Contains(t, prompt.PromptText, "Do not add unrelated cleanup")
+}
+
 func TestReviewPRDAGReportsInvalidDependenciesAndMissingScope(t *testing.T) {
 	notes := reviewPRDAG([]*domain.SpecForgePRNode{
 		{
