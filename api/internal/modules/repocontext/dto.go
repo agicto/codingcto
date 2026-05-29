@@ -9,6 +9,8 @@ type UpsertRepoProfileRequest struct {
 	CodingConventions []string `json:"coding_conventions"`
 	RiskAreas         []string `json:"risk_areas"`
 	Summary           string   `json:"summary" binding:"omitempty,max=10000"`
+	Source            string   `json:"source" binding:"omitempty,max=100"`
+	Warnings          []string `json:"warnings"`
 }
 
 type InferRepoProfileRequest struct {

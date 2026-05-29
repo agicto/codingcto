@@ -24,6 +24,7 @@ func TestUpsertProfileNormalizesDefaultsAndLists(t *testing.T) {
 	require.Equal(t, "unknown", profile.CIProvider)
 	require.Equal(t, []string{"Next.js", "Go"}, profile.Stack)
 	require.Equal(t, "compact repo summary", profile.Summary)
+	require.Equal(t, "manual", profile.Source)
 	require.Equal(t, uint(12), profile.CreatedBy)
 }
 
@@ -75,6 +76,7 @@ func TestInferProfileDetectsStackCommandsAndRisks(t *testing.T) {
 	require.Subset(t, profile.TestCommands, []string{"go test ./...", "go vet ./...", "pnpm lint", "pnpm type-check", "pnpm test"})
 	require.Subset(t, profile.RiskAreas, []string{"database migrations", "auth", "billing"})
 	require.Contains(t, profile.Summary, "SpecForge inferred")
+	require.Equal(t, "request_hints", profile.Source)
 	require.Equal(t, uint(12), profile.CreatedBy)
 }
 
@@ -82,7 +84,8 @@ func TestInferProfileUsesRepositoryTreeWhenFileHintsAreAbsent(t *testing.T) {
 	repo := &memoryRepo{}
 	treeSource := &fakeTreeSource{
 		snapshot: &RepositoryTreeSnapshot{
-			Ref: "main",
+			Ref:       "main",
+			Truncated: true,
 			Paths: []string{
 				"go.mod",
 				"web/package.json",
@@ -111,6 +114,8 @@ func TestInferProfileUsesRepositoryTreeWhenFileHintsAreAbsent(t *testing.T) {
 	require.Subset(t, profile.Stack, []string{"Go", "Node.js", "Next.js"})
 	require.Subset(t, profile.TestCommands, []string{"pnpm lint", "pnpm type-check", "pnpm test"})
 	require.Contains(t, profile.AppStructure, "api/internal/modules")
+	require.Equal(t, "github_tree", profile.Source)
+	require.Contains(t, profile.Warnings, "GitHub tree response was truncated; inferred profile may miss files.")
 }
 
 type memoryRepo struct {

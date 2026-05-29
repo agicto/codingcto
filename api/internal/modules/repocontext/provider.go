@@ -69,5 +69,6 @@ func NewStarterManifest(handler *Handler) contracts.StarterManifest {
 		"repocontext",
 		contracts.WithStarterModule(handler),
 		contracts.WithStarterMigrationNames("2026_05_25_000002_create_specforge_repo_profiles_table"),
+		contracts.WithStarterMigrationNames("2026_05_25_000014_add_source_to_specforge_repo_profiles"),
 	)
 }

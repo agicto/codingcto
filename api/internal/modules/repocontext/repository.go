@@ -23,7 +23,7 @@ func (r *repository) UpsertProfile(ctx context.Context, profile *domain.SpecForg
 		Columns: []clause.Column{{Name: "repository_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"default_branch", "stack", "test_commands", "ci_provider", "app_structure",
-			"coding_conventions", "risk_areas", "summary", "created_by", "last_indexed_at", "updated_at",
+			"coding_conventions", "risk_areas", "summary", "source", "warnings", "created_by", "last_indexed_at", "updated_at",
 		}),
 	}).Create(po).Error; err != nil {
 		return err

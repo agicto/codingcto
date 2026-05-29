@@ -18,6 +18,8 @@ type RepoProfilePO struct {
 	CodingConventions string `gorm:"type:text"`
 	RiskAreas         string `gorm:"type:text"`
 	Summary           string `gorm:"type:text"`
+	Source            string `gorm:"size:100;not null;default:manual"`
+	Warnings          string `gorm:"type:text"`
 	CreatedBy         uint   `gorm:"not null;index"`
 	LastIndexedAt     time.Time
 	CreatedAt         time.Time
@@ -40,6 +42,8 @@ func newRepoProfilePO(profile *domain.SpecForgeRepoProfile) *RepoProfilePO {
 		CodingConventions: encodeStrings(profile.CodingConventions),
 		RiskAreas:         encodeStrings(profile.RiskAreas),
 		Summary:           profile.Summary,
+		Source:            profile.Source,
+		Warnings:          encodeStrings(profile.Warnings),
 		CreatedBy:         profile.CreatedBy,
 		LastIndexedAt:     profile.LastIndexedAt,
 		CreatedAt:         profile.CreatedAt,
@@ -59,6 +63,8 @@ func (po *RepoProfilePO) toDomain() *domain.SpecForgeRepoProfile {
 		CodingConventions: decodeStrings(po.CodingConventions),
 		RiskAreas:         decodeStrings(po.RiskAreas),
 		Summary:           po.Summary,
+		Source:            po.Source,
+		Warnings:          decodeStrings(po.Warnings),
 		CreatedBy:         po.CreatedBy,
 		LastIndexedAt:     po.LastIndexedAt,
 		CreatedAt:         po.CreatedAt,
