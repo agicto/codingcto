@@ -106,27 +106,38 @@ func (s *service) ensureImplementationPrompts(ctx context.Context, userID uint, 
 		if node == nil || node.ID == 0 {
 			continue
 		}
-		_, err := s.planningRepo.FindLatestCompiledPromptByPRNodeIDAndType(ctx, node.ID, domain.PromptTypeImplementation)
-		if err == nil {
-			continue
+		if err := s.ensurePromptForPRNode(ctx, userID, bundle, node, domain.PromptTypeImplementation, nil); err != nil {
+			return err
 		}
-		if !errors.Is(err, domain.ErrNotFound) {
-			return fmt.Errorf("find implementation prompt for PR node: %w", err)
-		}
-		text := compileRunPromptText(bundle, node)
-		hash := sha256.Sum256([]byte(text))
-		prompt := &domain.SpecForgeCompiledPrompt{
-			PRNodeID:   node.ID,
-			PlanID:     bundle.Plan.ID,
-			Type:       domain.PromptTypeImplementation,
-			Version:    "prompt_v1",
-			PromptText: text,
-			PromptHash: hex.EncodeToString(hash[:]),
-			CreatedBy:  userID,
-		}
-		if err := s.planningRepo.CreateCompiledPrompt(ctx, prompt); err != nil {
-			return fmt.Errorf("create implementation prompt for PR node: %w", err)
-		}
+	}
+	return nil
+}
+
+func (s *service) ensurePromptForPRNode(ctx context.Context, userID uint, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, promptType string, parent *domain.SpecForgeAgentTask) error {
+	promptType = strings.TrimSpace(promptType)
+	if bundle == nil || bundle.Plan == nil || node == nil || node.ID == 0 || promptType == "" {
+		return domain.ErrInvalidInput
+	}
+	_, err := s.planningRepo.FindLatestCompiledPromptByPRNodeIDAndType(ctx, node.ID, promptType)
+	if err == nil {
+		return nil
+	}
+	if !errors.Is(err, domain.ErrNotFound) {
+		return fmt.Errorf("find %s prompt for PR node: %w", promptType, err)
+	}
+	text := compileRunPromptText(bundle, node, promptType, parent)
+	hash := sha256.Sum256([]byte(text))
+	prompt := &domain.SpecForgeCompiledPrompt{
+		PRNodeID:   node.ID,
+		PlanID:     bundle.Plan.ID,
+		Type:       promptType,
+		Version:    "prompt_v1",
+		PromptText: text,
+		PromptHash: hex.EncodeToString(hash[:]),
+		CreatedBy:  userID,
+	}
+	if err := s.planningRepo.CreateCompiledPrompt(ctx, prompt); err != nil {
+		return fmt.Errorf("create %s prompt for PR node: %w", promptType, err)
 	}
 	return nil
 }
@@ -393,6 +404,10 @@ func (s *service) RetryTask(ctx context.Context, taskID uint, req *RetryAgentTas
 	}
 	if dependenciesComplete(node, completedNodeKeySet(bundle)) {
 		status = domain.AgentTaskStatusQueued
+	}
+	promptType := retryPromptType(parent)
+	if err := s.ensurePromptForPRNode(ctx, 0, bundle.Plan, node, promptType, parent); err != nil {
+		return nil, err
 	}
 	if _, err := s.repo.CreateRetryAgentTask(ctx, parent, status, req.ForceFreshSession); err != nil {
 		return nil, fmt.Errorf("create retry agent task: %w", err)
@@ -803,12 +818,17 @@ func buildInitialTasks(nodes []*domain.SpecForgePRNode, executor string) []*doma
 	return tasks
 }
 
-func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode) string {
+func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, promptType string, parent *domain.SpecForgeAgentTask) string {
+	promptType = strings.TrimSpace(promptType)
+	if promptType == "" {
+		promptType = domain.PromptTypeImplementation
+	}
 	var b strings.Builder
 	b.WriteString("You are implementing a SpecForge PR node from an approved plan snapshot.\n\n")
-	b.WriteString("Prompt type: " + domain.PromptTypeImplementation + "\n")
+	b.WriteString("Prompt type: " + promptType + "\n")
 	b.WriteString("PR node: " + node.NodeKey + " - " + node.Title + "\n")
 	b.WriteString("Goal:\n" + strings.TrimSpace(node.Goal) + "\n\n")
+	writeExecutionPromptModeInstructions(&b, promptType, parent)
 	if bundle != nil && bundle.ProductSpec != nil {
 		writeExecutionList(&b, "Product goals", bundle.ProductSpec.Goals)
 		writeExecutionList(&b, "Product acceptance criteria", bundle.ProductSpec.AcceptanceCriteria)
@@ -827,6 +847,37 @@ func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecF
 	b.WriteString("- Run the listed test commands before submitting the result.\n")
 	b.WriteString("- Prepare a PR description with summary, scope, non-goals, tests, risks, and dependencies.\n")
 	return b.String()
+}
+
+func writeExecutionPromptModeInstructions(b *strings.Builder, promptType string, parent *domain.SpecForgeAgentTask) {
+	b.WriteString("Execution mode instructions:\n")
+	switch promptType {
+	case domain.PromptTypeFix:
+		b.WriteString("- Treat this as a targeted repair for a failed PR node, not a fresh implementation.\n")
+		b.WriteString("- Inspect the failure context below and patch the smallest cause that explains it.\n")
+		b.WriteString("- Keep the fix inside the PR node scope and preserve its non-goals.\n")
+		if parent != nil {
+			b.WriteString("\nFailure context:\n")
+			if strings.TrimSpace(parent.FailureReason) != "" {
+				b.WriteString("- Failure reason: " + strings.TrimSpace(parent.FailureReason) + "\n")
+			}
+			if strings.TrimSpace(parent.ErrorLog) != "" {
+				b.WriteString("- Error log:\n" + strings.TrimSpace(parent.ErrorLog) + "\n")
+			}
+			if strings.TrimSpace(parent.OutputLog) != "" {
+				b.WriteString("- Output log:\n" + strings.TrimSpace(parent.OutputLog) + "\n")
+			}
+		}
+	case domain.PromptTypeReviewPatch:
+		b.WriteString("- Treat this as a response to human PR review feedback.\n")
+		b.WriteString("- Address only actionable review comments that belong to this PR node.\n")
+		b.WriteString("- Do not add unrelated cleanup or new feature scope while addressing review feedback.\n")
+	default:
+		b.WriteString("- Implement the PR node from the approved plan snapshot.\n")
+		b.WriteString("- Prefer established repo patterns over new abstractions unless the node explicitly requires one.\n")
+		b.WriteString("- Keep scope, tests, and PR description aligned with the node acceptance criteria.\n")
+	}
+	b.WriteString("\n")
 }
 
 func writeExecutionList(b *strings.Builder, title string, values []string) {
