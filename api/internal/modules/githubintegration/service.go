@@ -571,7 +571,11 @@ func (s *service) applyWebhookToPRNode(ctx context.Context, eventType string, bo
 		}
 		return s.publishReviewFeedback(ctx, event, node)
 	case event.WorkflowRun != nil:
-		return s.updatePRNodeFromWorkflowRun(ctx, event.WorkflowRun)
+		node, err := s.updatePRNodeFromWorkflowRun(ctx, event.WorkflowRun)
+		if err != nil {
+			return err
+		}
+		return s.publishPRNodeCIFailed(ctx, event, node)
 	default:
 		return nil
 	}
@@ -628,19 +632,55 @@ func (s *service) publishReviewFeedback(ctx context.Context, event *StructuredGi
 	))
 }
 
-func (s *service) updatePRNodeFromWorkflowRun(ctx context.Context, run *WebhookWorkflowRun) error {
+func (s *service) updatePRNodeFromWorkflowRun(ctx context.Context, run *WebhookWorkflowRun) (*domain.SpecForgePRNode, error) {
 	if strings.TrimSpace(run.HeadBranch) == "" {
-		return nil
+		return nil, nil
 	}
 	node, err := s.planningRepo.FindPRNodeByBranchName(ctx, run.HeadBranch)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	applyWorkflowRunState(node, run.HeadSHA, run.Status, run.Conclusion)
+	if err := s.planningRepo.UpdatePRNode(ctx, node); err != nil {
+		return nil, err
+	}
+	return node, nil
+}
+
+func (s *service) publishPRNodeCIFailed(ctx context.Context, event *StructuredGitHubWebhook, node *domain.SpecForgePRNode) error {
+	if s.eventBus == nil || event == nil || event.WorkflowRun == nil || node == nil {
+		return nil
+	}
+	run := event.WorkflowRun
+	if run.Status != "completed" || run.Conclusion != "failure" {
+		return nil
+	}
+	bundle, err := s.planningRepo.FindPlanBundleByPlanID(ctx, node.PlanID)
 	if errors.Is(err, domain.ErrNotFound) {
 		return nil
 	}
 	if err != nil {
 		return err
 	}
-	applyWorkflowRunState(node, run.HeadSHA, run.Status, run.Conclusion)
-	return s.planningRepo.UpdatePRNode(ctx, node)
+	repositoryID := ""
+	if bundle != nil && bundle.Idea != nil {
+		repositoryID = strings.TrimSpace(bundle.Idea.RepositoryID)
+	}
+	if repositoryID == "" {
+		return nil
+	}
+	return s.eventBus.Publish(ctx, domain.NewSpecForgePRNodeCIFailedEvent(
+		node.ID,
+		repositoryID,
+		event.RepositoryFullName,
+		run.ID,
+		run.HTMLURL,
+		run.HeadSHA,
+		run.Conclusion,
+	))
 }
 
 func normalizePermissions(permissions map[string]string) map[string]string {
