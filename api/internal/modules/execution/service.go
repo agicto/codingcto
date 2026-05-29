@@ -82,6 +82,11 @@ func (s *service) StartRun(ctx context.Context, userID, planID uint, req *StartE
 	if plan.Plan.Status != domain.PlanStatusApproved {
 		return nil, domain.ErrConflict
 	}
+	if _, err := s.repo.FindLatestActiveExecutionBundleByPlanID(ctx, planID); err == nil {
+		return nil, domain.ErrConflict
+	} else if !errors.Is(err, domain.ErrNotFound) {
+		return nil, fmt.Errorf("find active execution run: %w", err)
+	}
 	if err := s.ensureImplementationPrompts(ctx, userID, plan); err != nil {
 		return nil, err
 	}
