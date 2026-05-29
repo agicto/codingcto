@@ -83,3 +83,17 @@ func (h *Handler) ListFixAttempts(c *gin.Context) {
 	}
 	response.Success(c, attempts)
 }
+
+func (h *Handler) GetEscalationSummary(c *gin.Context) {
+	prNodeID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || prNodeID == 0 {
+		response.HandleError(c, "Invalid PR node id", err)
+		return
+	}
+	summary, err := h.service.GetEscalationSummary(c.Request.Context(), uint(prNodeID))
+	if err != nil {
+		response.HandleError(c, "Failed to build escalation summary", err)
+		return
+	}
+	response.Success(c, summary)
+}

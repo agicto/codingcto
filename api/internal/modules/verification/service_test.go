@@ -106,6 +106,53 @@ func TestCreateFixAttemptFromCIRejectsMissingReader(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrInvalidInput)
 }
 
+func TestGetEscalationSummaryAllowsAutoFixBeforeLimit(t *testing.T) {
+	repo := &memoryRepo{}
+	svc := NewService(repo, nil)
+	_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
+		FailureType:       "type_error",
+		LikelyCause:       "GitHub Actions job failed at typecheck.",
+		RecommendedAction: "Patch the type guard.",
+		CanAutoFix:        true,
+	})
+	require.NoError(t, err)
+
+	summary, err := svc.GetEscalationSummary(context.Background(), 42)
+
+	require.NoError(t, err)
+	require.Equal(t, uint(42), summary.PRNodeID)
+	require.Equal(t, "auto_fix_available", summary.Status)
+	require.Equal(t, 1, summary.AttemptsUsed)
+	require.Equal(t, maxFixAttemptsPerPRNode, summary.MaxAttempts)
+	require.Equal(t, []string{"type_error"}, summary.FailureTypes)
+	require.True(t, summary.CanContinueAutoFix)
+	require.Contains(t, summary.RecommendedOption, "Continue auto-fix")
+	require.Equal(t, "Patch the type guard.", summary.LatestAction)
+}
+
+func TestGetEscalationSummaryRequiresDecisionAfterLimit(t *testing.T) {
+	repo := &memoryRepo{}
+	svc := NewService(repo, nil)
+	for i := 0; i < maxFixAttemptsPerPRNode; i++ {
+		_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
+			FailureType:       "unit_test_failure",
+			LikelyCause:       "Invite acceptance test failed.",
+			RecommendedAction: "Narrow the failing assertion.",
+		})
+		require.NoError(t, err)
+	}
+
+	summary, err := svc.GetEscalationSummary(context.Background(), 42)
+
+	require.NoError(t, err)
+	require.Equal(t, "needs_user_decision", summary.Status)
+	require.Equal(t, maxFixAttemptsPerPRNode, summary.AttemptsUsed)
+	require.False(t, summary.CanContinueAutoFix)
+	require.Contains(t, summary.Reason, "used all 3 automatic fix attempts")
+	require.Contains(t, summary.DecisionOptions, "Replan this PR node")
+	require.Equal(t, "unit_test_failure", summary.LatestFailureType)
+}
+
 type fakeFailureReader struct {
 	request githubintegration.ReadPRNodeFailureLogRequest
 	failure *githubintegration.PRNodeFailureLog
