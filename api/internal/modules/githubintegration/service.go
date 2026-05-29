@@ -569,10 +569,16 @@ func (s *service) applyWebhookToPRNode(ctx context.Context, eventType string, bo
 		if err != nil {
 			return err
 		}
+		if err := s.publishPRNodeDependencySatisfied(ctx, node); err != nil {
+			return err
+		}
 		return s.publishReviewFeedback(ctx, event, node)
 	case event.WorkflowRun != nil:
 		node, err := s.updatePRNodeFromWorkflowRun(ctx, event.WorkflowRun)
 		if err != nil {
+			return err
+		}
+		if err := s.publishPRNodeDependencySatisfied(ctx, node); err != nil {
 			return err
 		}
 		return s.publishPRNodeCIFailed(ctx, event, node)
@@ -643,6 +649,18 @@ func (s *service) publishReviewFeedback(ctx context.Context, event *StructuredGi
 		comment.Path,
 		comment.CommitSHA,
 	))
+}
+
+func (s *service) publishPRNodeDependencySatisfied(ctx context.Context, node *domain.SpecForgePRNode) error {
+	if s.eventBus == nil || node == nil {
+		return nil
+	}
+	switch node.Status {
+	case domain.PRNodeStatusReadyForReview, domain.PRNodeStatusMerged:
+		return s.eventBus.Publish(ctx, domain.NewSpecForgePRNodeDependencySatisfiedEvent(node))
+	default:
+		return nil
+	}
 }
 
 func (s *service) updatePRNodeFromWorkflowRun(ctx context.Context, run *WebhookWorkflowRun) (*domain.SpecForgePRNode, error) {

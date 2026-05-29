@@ -95,6 +95,41 @@ func TestRepositoryCreatesAndListsTaskEventsInSequence(t *testing.T) {
 	require.Equal(t, "ok", events[0].Output)
 }
 
+func TestRepositoryFindsLatestActiveExecutionBundleByPlanID(t *testing.T) {
+	repo := newTestExecutionRepository(t)
+	cancelled := &domain.SpecForgeExecutionBundle{
+		Run: &domain.SpecForgeExecutionRun{
+			PlanID:    1,
+			Status:    domain.ExecutionRunStatusCancelled,
+			StartedBy: 7,
+			StartedAt: time.Now(),
+		},
+		Tasks: []*domain.SpecForgeAgentTask{
+			{PRNodeID: 10, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusCancelled, AttemptNumber: 1},
+		},
+	}
+	active := &domain.SpecForgeExecutionBundle{
+		Run: &domain.SpecForgeExecutionRun{
+			PlanID:    1,
+			Status:    domain.ExecutionRunStatusRunning,
+			StartedBy: 7,
+			StartedAt: time.Now(),
+		},
+		Tasks: []*domain.SpecForgeAgentTask{
+			{PRNodeID: 11, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusWaiting, AttemptNumber: 1},
+		},
+	}
+	require.NoError(t, repo.CreateExecutionBundle(context.Background(), cancelled))
+	require.NoError(t, repo.CreateExecutionBundle(context.Background(), active))
+
+	found, err := repo.FindLatestActiveExecutionBundleByPlanID(context.Background(), 1)
+
+	require.NoError(t, err)
+	require.Equal(t, active.Run.ID, found.Run.ID)
+	require.Len(t, found.Tasks, 1)
+	require.Equal(t, uint(11), found.Tasks[0].PRNodeID)
+}
+
 func TestRepositoryFindsLatestTerminalAgentTaskByPRNodeID(t *testing.T) {
 	repo := newTestExecutionRepository(t)
 	bundle := &domain.SpecForgeExecutionBundle{

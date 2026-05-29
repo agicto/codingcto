@@ -39,6 +39,7 @@ func (h *Handler) RegisterEvents(bus *events.EventBus) {
 	}
 	bus.Subscribe(domain.EventSpecForgeReviewFeedbackReceived, h.handleReviewFeedbackReceived)
 	bus.Subscribe(domain.EventSpecForgeFixAttemptQueued, h.handleFixAttemptQueued)
+	bus.Subscribe(domain.EventSpecForgePRNodeDependencySatisfied, h.handlePRNodeDependencySatisfied)
 }
 
 func (h *Handler) handleReviewFeedbackReceived(ctx context.Context, e events.Event) error {
@@ -80,6 +81,22 @@ func (h *Handler) handleFixAttemptQueued(ctx context.Context, e events.Event) er
 		LikelyCause:       event.LikelyCause,
 		RecommendedAction: event.RecommendedAction,
 	})
+	if errors.Is(err, domain.ErrNotFound) || errors.Is(err, domain.ErrConflict) {
+		return nil
+	}
+	return err
+}
+
+func (h *Handler) handlePRNodeDependencySatisfied(ctx context.Context, e events.Event) error {
+	var underlying any = e
+	if wrapped, ok := e.(events.WrappedEvent); ok {
+		underlying = wrapped.Event
+	}
+	event, ok := underlying.(domain.SpecForgePRNodeDependencySatisfiedEvent)
+	if !ok {
+		return nil
+	}
+	_, err := h.service.UnlockReadyTasksForPRNode(ctx, event.PRNodeID)
 	if errors.Is(err, domain.ErrNotFound) || errors.Is(err, domain.ErrConflict) {
 		return nil
 	}
