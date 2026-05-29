@@ -97,6 +97,95 @@ func TestParseGitHubWebhookPayloadUnsupportedEventStillReturnsMetadata(t *testin
 	require.Nil(t, event.WorkflowRun)
 }
 
+func TestParseGitHubWebhookPayloadIssueCommentOnPullRequest(t *testing.T) {
+	body := []byte(`{
+		"action": "created",
+		"installation": {"id": 123},
+		"repository": {
+			"full_name": "agicto/codingcto",
+			"name": "codingcto",
+			"owner": {"login": "agicto"}
+		},
+		"issue": {
+			"number": 42,
+			"state": "open",
+			"pull_request": {"html_url": "https://github.com/agicto/codingcto/pull/42"}
+		},
+		"comment": {
+			"body": "Please handle nil workspace roles.",
+			"html_url": "https://github.com/agicto/codingcto/pull/42#issuecomment-1",
+			"user": {"login": "reviewer"}
+		}
+	}`)
+
+	event, err := ParseGitHubWebhookPayload(GitHubWebhookEventIssueComment, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, event.PullRequest)
+	require.Equal(t, 42, event.PullRequest.Number)
+	require.NotNil(t, event.ReviewComment)
+	require.Equal(t, 42, event.ReviewComment.PullRequestNumber)
+	require.Equal(t, "Please handle nil workspace roles.", event.ReviewComment.Body)
+	require.Equal(t, "reviewer", event.ReviewComment.AuthorLogin)
+}
+
+func TestParseGitHubWebhookPayloadPullRequestReviewComment(t *testing.T) {
+	body := []byte(`{
+		"action": "created",
+		"installation": {"id": 123},
+		"repository": {
+			"full_name": "agicto/codingcto",
+			"name": "codingcto",
+			"owner": {"login": "agicto"}
+		},
+		"pull_request": {
+			"number": 42,
+			"head": {"ref": "specforge/team-invite-02-api", "sha": "abc123"},
+			"base": {"ref": "main"}
+		},
+		"comment": {
+			"body": "This branch needs a bounds check.",
+			"html_url": "https://github.com/agicto/codingcto/pull/42#discussion_r1",
+			"path": "api/internal/foo.go",
+			"commit_id": "abc123",
+			"user": {"login": "reviewer"}
+		}
+	}`)
+
+	event, err := ParseGitHubWebhookPayload(GitHubWebhookEventPullRequestReviewComment, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, event.PullRequest)
+	require.Equal(t, "specforge/team-invite-02-api", event.PullRequest.HeadBranch)
+	require.NotNil(t, event.ReviewComment)
+	require.Equal(t, "This branch needs a bounds check.", event.ReviewComment.Body)
+	require.Equal(t, "api/internal/foo.go", event.ReviewComment.Path)
+	require.Equal(t, "abc123", event.ReviewComment.CommitSHA)
+}
+
+func TestParseGitHubWebhookPayloadPullRequestReview(t *testing.T) {
+	body := []byte(`{
+		"action": "submitted",
+		"installation": {"id": 123},
+		"repository": {"full_name": "agicto/codingcto"},
+		"pull_request": {"number": 42},
+		"review": {
+			"body": "Please add the missing API test.",
+			"html_url": "https://github.com/agicto/codingcto/pull/42#pullrequestreview-1",
+			"commit_id": "abc123",
+			"user": {"login": "reviewer"}
+		}
+	}`)
+
+	event, err := ParseGitHubWebhookPayload(GitHubWebhookEventPullRequestReview, body)
+
+	require.NoError(t, err)
+	require.NotNil(t, event.ReviewComment)
+	require.Equal(t, 42, event.ReviewComment.PullRequestNumber)
+	require.Equal(t, "Please add the missing API test.", event.ReviewComment.Body)
+	require.Equal(t, "reviewer", event.ReviewComment.AuthorLogin)
+}
+
 func TestParseGitHubWebhookPayloadRejectsInvalidJSON(t *testing.T) {
 	_, err := ParseGitHubWebhookPayload(GitHubWebhookEventPullRequest, []byte(`{`))
 
