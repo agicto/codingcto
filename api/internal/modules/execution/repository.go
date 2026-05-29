@@ -78,6 +78,27 @@ func (r *repository) FindAgentTaskByID(ctx context.Context, taskID uint) (*domai
 	return po.toDomain(), nil
 }
 
+func (r *repository) FindLatestTerminalAgentTaskByPRNodeID(ctx context.Context, prNodeID uint) (*domain.SpecForgeAgentTask, error) {
+	if prNodeID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	var po AgentTaskPO
+	if err := r.db.WithContext(ctx).
+		Where("pr_node_id = ? AND status IN ?", prNodeID, []string{
+			domain.AgentTaskStatusCompleted,
+			domain.AgentTaskStatusFailed,
+			domain.AgentTaskStatusCancelled,
+		}).
+		Order("id DESC").
+		First(&po).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return po.toDomain(), nil
+}
+
 func (r *repository) ListPendingAgentTasksByRuntime(ctx context.Context, runtimeID, executor string) ([]*domain.SpecForgeAgentTask, error) {
 	runtimeID = strings.TrimSpace(runtimeID)
 	executor = strings.TrimSpace(executor)

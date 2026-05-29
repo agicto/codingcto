@@ -95,6 +95,32 @@ func TestRepositoryCreatesAndListsTaskEventsInSequence(t *testing.T) {
 	require.Equal(t, "ok", events[0].Output)
 }
 
+func TestRepositoryFindsLatestTerminalAgentTaskByPRNodeID(t *testing.T) {
+	repo := newTestExecutionRepository(t)
+	bundle := &domain.SpecForgeExecutionBundle{
+		Run: &domain.SpecForgeExecutionRun{
+			PlanID:    1,
+			Status:    domain.ExecutionRunStatusRunning,
+			StartedBy: 7,
+			StartedAt: time.Now(),
+		},
+		Tasks: []*domain.SpecForgeAgentTask{
+			{PRNodeID: 10, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusCompleted, AttemptNumber: 1},
+			{PRNodeID: 10, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusRunning, AttemptNumber: 2},
+			{PRNodeID: 10, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusFailed, AttemptNumber: 3},
+			{PRNodeID: 11, Executor: ExecutorNameCodexCLI, Status: domain.AgentTaskStatusCompleted, AttemptNumber: 1},
+		},
+	}
+	require.NoError(t, repo.CreateExecutionBundle(context.Background(), bundle))
+
+	task, err := repo.FindLatestTerminalAgentTaskByPRNodeID(context.Background(), 10)
+
+	require.NoError(t, err)
+	require.Equal(t, bundle.Tasks[2].ID, task.ID)
+	require.Equal(t, domain.AgentTaskStatusFailed, task.Status)
+	require.Equal(t, 3, task.AttemptNumber)
+}
+
 func TestRepositoryListsRuntimePendingTasks(t *testing.T) {
 	repo := newTestExecutionRepository(t)
 	oldDispatchedAt := time.Now().Add(-2 * time.Minute)

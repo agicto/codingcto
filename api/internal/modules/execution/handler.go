@@ -1,12 +1,16 @@
 package execution
 
 import (
+	"context"
 	"errors"
 	"io"
 	"strconv"
+	"strings"
 
 	"github.com/gin-gonic/gin"
 	"github.com/zgiai/luas/api/internal/contracts"
+	"github.com/zgiai/luas/api/internal/domain"
+	"github.com/zgiai/luas/api/internal/infra/events"
 	"github.com/zgiai/luas/api/pkg/handler"
 	"github.com/zgiai/luas/api/pkg/response"
 )
@@ -18,6 +22,7 @@ type Handler struct {
 var (
 	_ contracts.Module      = (*Handler)(nil)
 	_ contracts.RouteModule = (*Handler)(nil)
+	_ contracts.EventModule = (*Handler)(nil)
 )
 
 func NewHandler(service Service) *Handler {
@@ -26,6 +31,37 @@ func NewHandler(service Service) *Handler {
 
 func (h *Handler) Name() string {
 	return "execution"
+}
+
+func (h *Handler) RegisterEvents(bus *events.EventBus) {
+	if bus == nil {
+		return
+	}
+	bus.Subscribe(domain.EventSpecForgeReviewFeedbackReceived, h.handleReviewFeedbackReceived)
+}
+
+func (h *Handler) handleReviewFeedbackReceived(ctx context.Context, e events.Event) error {
+	var event domain.SpecForgeReviewFeedbackReceivedEvent
+	var underlying any = e
+	if wrapped, ok := e.(events.WrappedEvent); ok {
+		underlying = wrapped.Event
+	}
+	typed, ok := underlying.(domain.SpecForgeReviewFeedbackReceivedEvent)
+	if !ok {
+		return nil
+	}
+	event = typed
+	feedback := event.Feedback
+	if event.HTMLURL != "" {
+		feedback += "\n\nSource: " + event.HTMLURL
+	}
+	_, err := h.service.CreateReviewPatchTaskForGitHubPR(ctx, event.GitHubPRNumber, &ReviewPatchAgentTaskRequest{
+		Feedback: strings.TrimSpace(feedback),
+	})
+	if errors.Is(err, domain.ErrNotFound) || errors.Is(err, domain.ErrConflict) {
+		return nil
+	}
+	return err
 }
 
 func (h *Handler) StartRun(c *gin.Context) {
