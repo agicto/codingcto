@@ -118,6 +118,61 @@ func TestInferProfileUsesRepositoryTreeWhenFileHintsAreAbsent(t *testing.T) {
 	require.Contains(t, profile.Warnings, "GitHub tree response was truncated; inferred profile may miss files.")
 }
 
+func TestInferProfileFiltersSensitiveRepositoryPaths(t *testing.T) {
+	repo := &memoryRepo{}
+	svc := NewService(repo, nil)
+
+	profile, err := svc.InferProfile(context.Background(), 12, "repo_123", &InferRepoProfileRequest{
+		FilePaths: []string{
+			"go.mod",
+			".env",
+			"web/.env.production",
+			"config/private.key",
+			"deploy/service-account-token.json",
+			"api/internal/modules/user/service.go",
+		},
+	})
+
+	require.NoError(t, err)
+	require.Contains(t, profile.Stack, "Go")
+	require.Contains(t, profile.AppStructure, "api/internal/modules")
+	require.Contains(t, profile.Warnings, "SpecForge filtered 4 sensitive repository paths from the inferred profile.")
+	require.NotContains(t, profile.Summary, ".env")
+	require.NotContains(t, profile.Summary, "private.key")
+}
+
+func TestInferProfileDoesNotReadSensitivePackageJSONPaths(t *testing.T) {
+	repo := &memoryRepo{}
+	treeSource := &fakeTreeSource{
+		snapshot: &RepositoryTreeSnapshot{
+			Ref: "main",
+			Paths: []string{
+				"web/package.json",
+				"secrets/package.json",
+			},
+		},
+		files: map[string]*RepositoryFileSnapshot{
+			"web/package.json": {
+				Path:    "web/package.json",
+				Content: `{"scripts":{"test":"vitest"}}`,
+			},
+			"secrets/package.json": {
+				Path:    "secrets/package.json",
+				Content: `{"scripts":{"test":"should-not-read"}}`,
+			},
+		},
+	}
+	svc := NewService(repo, treeSource)
+
+	profile, err := svc.InferProfile(context.Background(), 12, "repo_123", &InferRepoProfileRequest{})
+
+	require.NoError(t, err)
+	require.Equal(t, "web/package.json", treeSource.readPaths[0])
+	require.Len(t, treeSource.readPaths, 1)
+	require.Contains(t, profile.TestCommands, "pnpm test")
+	require.Contains(t, profile.Warnings, "SpecForge filtered 1 sensitive repository paths from the inferred profile.")
+}
+
 type memoryRepo struct {
 	nextID  uint
 	profile *domain.SpecForgeRepoProfile
@@ -148,6 +203,7 @@ type fakeTreeSource struct {
 	snapshot     *RepositoryTreeSnapshot
 	files        map[string]*RepositoryFileSnapshot
 	readPath     string
+	readPaths    []string
 	readRef      string
 	err          error
 }
@@ -162,6 +218,7 @@ func (s *fakeTreeSource) ListRepositoryTree(ctx context.Context, repositoryID, r
 func (s *fakeTreeSource) ReadRepositoryFile(ctx context.Context, repositoryID, path, ref string) (*RepositoryFileSnapshot, error) {
 	s.repositoryID = repositoryID
 	s.readPath = path
+	s.readPaths = append(s.readPaths, path)
 	s.readRef = ref
 	return s.files[path], s.err
 }
