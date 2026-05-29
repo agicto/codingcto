@@ -775,11 +775,23 @@ func TestRefreshPRNodeCIUpdatesFromLatestWorkflowRun(t *testing.T) {
 	client := &fakeRepositoryClient{
 		workflowRuns: []WorkflowRun{
 			{HeadBranch: "specforge/team-invite-01-api", HeadSHA: "old", Status: "completed", Conclusion: "failure", CreatedAt: time.Date(2026, 5, 24, 10, 0, 0, 0, time.UTC)},
-			{HeadBranch: "specforge/team-invite-01-api", HeadSHA: "new", Status: "completed", Conclusion: "success", CreatedAt: time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC)},
+			{ID: 456, HeadBranch: "specforge/team-invite-01-api", HeadSHA: "new", Status: "completed", Conclusion: "success", HTMLURL: "https://github.com/agicto/codingcto/actions/runs/456", CreatedAt: time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC)},
 		},
 	}
 	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
-	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider, nil)
+	bus := infraevents.NewEventBus()
+	var published domain.SpecForgePRNodeDependencySatisfiedEvent
+	bus.Subscribe(domain.EventSpecForgePRNodeDependencySatisfied, func(ctx context.Context, event infraevents.Event) error {
+		var underlying any = event
+		if wrapped, ok := event.(infraevents.WrappedEvent); ok {
+			underlying = wrapped.Event
+		}
+		typed, ok := underlying.(domain.SpecForgePRNodeDependencySatisfiedEvent)
+		require.True(t, ok)
+		published = typed
+		return nil
+	})
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider, bus)
 
 	node, err := svc.RefreshPRNodeCI(context.Background(), &RefreshPRNodeCIRequest{
 		RepositoryID: "github_agicto__codingcto",
@@ -791,6 +803,8 @@ func TestRefreshPRNodeCIUpdatesFromLatestWorkflowRun(t *testing.T) {
 	require.Equal(t, "new", node.GitHubHeadSHA)
 	require.Equal(t, domain.PRNodeStatusReadyForReview, node.Status)
 	require.Equal(t, domain.PRNodeStatusReadyForReview, planningRepo.nodes[0].Status)
+	require.Equal(t, uint(10), published.PRNodeID)
+	require.Equal(t, domain.PRNodeStatusReadyForReview, published.Status)
 }
 
 func TestRefreshPRNodeCIMarksFailedRunBlocked(t *testing.T) {
@@ -814,10 +828,22 @@ func TestRefreshPRNodeCIMarksFailedRunBlocked(t *testing.T) {
 		},
 	}
 	client := &fakeRepositoryClient{
-		workflowRuns: []WorkflowRun{{HeadSHA: "failed", Status: "completed", Conclusion: "failure", CreatedAt: time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC)}},
+		workflowRuns: []WorkflowRun{{ID: 789, HeadSHA: "failed", Status: "completed", Conclusion: "failure", HTMLURL: "https://github.com/agicto/codingcto/actions/runs/789", CreatedAt: time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC)}},
 	}
 	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
-	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider, nil)
+	bus := infraevents.NewEventBus()
+	var published domain.SpecForgePRNodeCIFailedEvent
+	bus.Subscribe(domain.EventSpecForgePRNodeCIFailed, func(ctx context.Context, event infraevents.Event) error {
+		var underlying any = event
+		if wrapped, ok := event.(infraevents.WrappedEvent); ok {
+			underlying = wrapped.Event
+		}
+		typed, ok := underlying.(domain.SpecForgePRNodeCIFailedEvent)
+		require.True(t, ok)
+		published = typed
+		return nil
+	})
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider, bus)
 
 	node, err := svc.RefreshPRNodeCI(context.Background(), &RefreshPRNodeCIRequest{
 		RepositoryID: "github_agicto__codingcto",
@@ -827,6 +853,11 @@ func TestRefreshPRNodeCIMarksFailedRunBlocked(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "failed", node.GitHubHeadSHA)
 	require.Equal(t, domain.PRNodeStatusBlocked, node.Status)
+	require.Equal(t, uint(10), published.PRNodeID)
+	require.Equal(t, "github_agicto__codingcto", published.RepositoryID)
+	require.Equal(t, "agicto/codingcto", published.RepositoryFullName)
+	require.Equal(t, int64(789), published.WorkflowRunID)
+	require.Equal(t, "failure", published.Conclusion)
 }
 
 func TestReadPRNodeFailureLogReturnsLatestFailedJobLogs(t *testing.T) {

@@ -321,6 +321,12 @@ func (s *service) RefreshPRNodeCI(ctx context.Context, req *RefreshPRNodeCIReque
 	if err := s.planningRepo.UpdatePRNode(ctx, node); err != nil {
 		return nil, err
 	}
+	if err := s.publishPRNodeDependencySatisfied(ctx, node); err != nil {
+		return nil, err
+	}
+	if err := s.publishPRNodeCIFailedFromWorkflowRun(ctx, repository, node, latest); err != nil {
+		return nil, err
+	}
 	return node, nil
 }
 
@@ -707,6 +713,28 @@ func (s *service) publishPRNodeCIFailed(ctx context.Context, event *StructuredGi
 		node.ID,
 		repositoryID,
 		event.RepositoryFullName,
+		run.ID,
+		run.HTMLURL,
+		run.HeadSHA,
+		run.Conclusion,
+	))
+}
+
+func (s *service) publishPRNodeCIFailedFromWorkflowRun(ctx context.Context, repository *domain.Repository, node *domain.SpecForgePRNode, run WorkflowRun) error {
+	if s.eventBus == nil || repository == nil || node == nil {
+		return nil
+	}
+	if run.Status != "completed" || run.Conclusion != "failure" {
+		return nil
+	}
+	repositoryFullName := strings.TrimSpace(repository.GitHubOwner + "/" + repository.GitHubRepo)
+	if repositoryFullName == "/" {
+		repositoryFullName = ""
+	}
+	return s.eventBus.Publish(ctx, domain.NewSpecForgePRNodeCIFailedEvent(
+		node.ID,
+		repository.RepositoryID,
+		repositoryFullName,
 		run.ID,
 		run.HTMLURL,
 		run.HeadSHA,
