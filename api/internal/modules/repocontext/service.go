@@ -55,6 +55,10 @@ func (s *service) UpsertProfile(ctx context.Context, userID uint, repoID string,
 	if ciProvider == "" {
 		ciProvider = "unknown"
 	}
+	source := strings.TrimSpace(req.Source)
+	if source == "" {
+		source = "manual"
+	}
 
 	profile := &domain.SpecForgeRepoProfile{
 		RepositoryID:      strings.TrimSpace(repoID),
@@ -66,6 +70,8 @@ func (s *service) UpsertProfile(ctx context.Context, userID uint, repoID string,
 		CodingConventions: normalizeList(req.CodingConventions),
 		RiskAreas:         normalizeList(req.RiskAreas),
 		Summary:           strings.TrimSpace(req.Summary),
+		Source:            source,
+		Warnings:          normalizeList(req.Warnings),
 		CreatedBy:         userID,
 		LastIndexedAt:     time.Now(),
 	}
@@ -82,17 +88,23 @@ func (s *service) InferProfile(ctx context.Context, userID uint, repoID string, 
 
 	paths := normalizeList(req.FilePaths)
 	treeRef := strings.TrimSpace(req.DefaultBranch)
+	source := "request_hints"
+	warnings := []string{}
 	if len(paths) == 0 && s.treeSource != nil {
 		snapshot, err := s.treeSource.ListRepositoryTree(ctx, strings.TrimSpace(repoID), treeRef, true)
 		if err != nil {
 			return nil, fmt.Errorf("list repository tree: %w", err)
 		}
 		if snapshot != nil {
+			source = "github_tree"
 			paths = normalizeList(snapshot.Paths)
 			if strings.TrimSpace(req.DefaultBranch) == "" {
 				req.DefaultBranch = strings.TrimSpace(snapshot.Ref)
 			}
 			treeRef = strings.TrimSpace(snapshot.Ref)
+		}
+		if snapshot != nil && snapshot.Truncated {
+			warnings = append(warnings, "GitHub tree response was truncated; inferred profile may miss files.")
 		}
 	}
 	scripts := normalizeScripts(req.PackageScripts)
@@ -101,6 +113,8 @@ func (s *service) InferProfile(ctx context.Context, userID uint, repoID string, 
 	}
 	inferred := inferRepoProfile(paths, scripts)
 	inferred.DefaultBranch = strings.TrimSpace(req.DefaultBranch)
+	inferred.Source = source
+	inferred.Warnings = normalizeList(warnings)
 
 	return s.UpsertProfile(ctx, userID, repoID, inferred)
 }

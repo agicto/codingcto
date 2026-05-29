@@ -220,6 +220,8 @@ type SpecForgeRepoProfile struct {
 	CodingConventions []string  `json:"coding_conventions"`
 	RiskAreas         []string  `json:"risk_areas"`
 	Summary           string    `json:"summary"`
+	Source            string    `json:"source"`
+	Warnings          []string  `json:"warnings"`
 	CreatedBy         uint      `json:"created_by"`
 	LastIndexedAt     time.Time `json:"last_indexed_at"`
 	CreatedAt         time.Time `json:"created_at"`
