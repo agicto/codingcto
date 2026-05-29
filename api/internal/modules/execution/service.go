@@ -2,6 +2,8 @@ package execution
 
 import (
 	"context"
+	"crypto/sha256"
+	"encoding/hex"
 	"errors"
 	"fmt"
 	"strconv"
@@ -71,6 +73,9 @@ func (s *service) StartRun(ctx context.Context, userID, planID uint, req *StartE
 	if plan.Plan.Status != domain.PlanStatusApproved {
 		return nil, domain.ErrConflict
 	}
+	if err := s.ensureImplementationPrompts(ctx, userID, plan); err != nil {
+		return nil, err
+	}
 
 	executor := "codex_cli"
 	if req != nil && strings.TrimSpace(req.Executor) != "" {
@@ -91,6 +96,39 @@ func (s *service) StartRun(ctx context.Context, userID, planID uint, req *StartE
 		return nil, fmt.Errorf("create execution run: %w", err)
 	}
 	return bundle, nil
+}
+
+func (s *service) ensureImplementationPrompts(ctx context.Context, userID uint, bundle *domain.SpecForgePlanBundle) error {
+	if bundle == nil || bundle.Plan == nil {
+		return domain.ErrInvalidInput
+	}
+	for _, node := range bundle.PRNodes {
+		if node == nil || node.ID == 0 {
+			continue
+		}
+		_, err := s.planningRepo.FindLatestCompiledPromptByPRNodeIDAndType(ctx, node.ID, domain.PromptTypeImplementation)
+		if err == nil {
+			continue
+		}
+		if !errors.Is(err, domain.ErrNotFound) {
+			return fmt.Errorf("find implementation prompt for PR node: %w", err)
+		}
+		text := compileRunPromptText(bundle, node)
+		hash := sha256.Sum256([]byte(text))
+		prompt := &domain.SpecForgeCompiledPrompt{
+			PRNodeID:   node.ID,
+			PlanID:     bundle.Plan.ID,
+			Type:       domain.PromptTypeImplementation,
+			Version:    "prompt_v1",
+			PromptText: text,
+			PromptHash: hex.EncodeToString(hash[:]),
+			CreatedBy:  userID,
+		}
+		if err := s.planningRepo.CreateCompiledPrompt(ctx, prompt); err != nil {
+			return fmt.Errorf("create implementation prompt for PR node: %w", err)
+		}
+	}
+	return nil
 }
 
 func (s *service) GetRun(ctx context.Context, runID uint) (*domain.SpecForgeExecutionBundle, error) {
@@ -763,6 +801,48 @@ func buildInitialTasks(nodes []*domain.SpecForgePRNode, executor string) []*doma
 		})
 	}
 	return tasks
+}
+
+func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode) string {
+	var b strings.Builder
+	b.WriteString("You are implementing a SpecForge PR node from an approved plan snapshot.\n\n")
+	b.WriteString("Prompt type: " + domain.PromptTypeImplementation + "\n")
+	b.WriteString("PR node: " + node.NodeKey + " - " + node.Title + "\n")
+	b.WriteString("Goal:\n" + strings.TrimSpace(node.Goal) + "\n\n")
+	if bundle != nil && bundle.ProductSpec != nil {
+		writeExecutionList(&b, "Product goals", bundle.ProductSpec.Goals)
+		writeExecutionList(&b, "Product acceptance criteria", bundle.ProductSpec.AcceptanceCriteria)
+	}
+	if bundle != nil && bundle.Plan != nil && strings.TrimSpace(bundle.Plan.TechnicalSummary) != "" {
+		b.WriteString("Technical plan:\n" + strings.TrimSpace(bundle.Plan.TechnicalSummary) + "\n\n")
+	}
+	writeExecutionList(&b, "Expected files", node.ExpectedFiles)
+	writeExecutionList(&b, "Dependencies", node.DependsOn)
+	writeExecutionList(&b, "Non-goals", node.NonGoals)
+	writeExecutionList(&b, "Acceptance criteria", node.AcceptanceCriteria)
+	writeExecutionList(&b, "Test commands", node.TestCommands)
+	b.WriteString("Execution instructions:\n")
+	b.WriteString("- Implement this PR node only; do not broaden scope beyond its non-goals.\n")
+	b.WriteString("- Prefer established repository patterns discovered while editing.\n")
+	b.WriteString("- Run the listed test commands before submitting the result.\n")
+	b.WriteString("- Prepare a PR description with summary, scope, non-goals, tests, risks, and dependencies.\n")
+	return b.String()
+}
+
+func writeExecutionList(b *strings.Builder, title string, values []string) {
+	b.WriteString(title + ":\n")
+	if len(values) == 0 {
+		b.WriteString("- None\n\n")
+		return
+	}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		b.WriteString("- " + value + "\n")
+	}
+	b.WriteString("\n")
 }
 
 func taskPromptType(task *domain.SpecForgeAgentTask) string {
