@@ -39,6 +39,8 @@ export const specForgeKeys = {
     [...specForgeKeys.all, "task-events", taskId, afterSeq ?? 0] as const,
   fixAttempts: (prNodeId: number) =>
     [...specForgeKeys.all, "fix-attempts", prNodeId] as const,
+  escalationSummary: (prNodeId: number) =>
+    [...specForgeKeys.all, "escalation-summary", prNodeId] as const,
   runtimePendingTasks: (runtimeId: string, executor?: string) =>
     [...specForgeKeys.all, "runtime-pending-tasks", runtimeId, executor ?? ""] as const,
   runtimes: (params?: ListSpecForgeRuntimesParams) =>
@@ -119,6 +121,14 @@ export function useSpecForgeFixAttempts(prNodeId?: number) {
   return useQuery({
     queryKey: specForgeKeys.fixAttempts(prNodeId ?? 0),
     queryFn: () => specForgeService.listFixAttempts(prNodeId ?? 0),
+    enabled: Boolean(prNodeId),
+  });
+}
+
+export function useSpecForgeEscalationSummary(prNodeId?: number) {
+  return useQuery({
+    queryKey: specForgeKeys.escalationSummary(prNodeId ?? 0),
+    queryFn: () => specForgeService.getEscalationSummary(prNodeId ?? 0),
     enabled: Boolean(prNodeId),
   });
 }
@@ -231,6 +241,9 @@ export function useCreateSpecForgeFixAttemptFromCI() {
     }) => specForgeService.createFixAttemptFromCI(prNodeId, payload),
     onSuccess: (attempt) => {
       queryClient.invalidateQueries({ queryKey: specForgeKeys.fixAttempts(attempt.pr_node_id) });
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.escalationSummary(attempt.pr_node_id),
+      });
     },
   });
 }

@@ -72,6 +72,7 @@ import {
   useCompleteExecutionTask,
   useReadSpecForgePRNodeFailureLog,
   useRetryExecutionTask,
+  useSpecForgeEscalationSummary,
   useSpecForgeFixAttempts,
   useSpecForgeSkills,
   useSpecForgeTaskEvents,
@@ -84,6 +85,7 @@ import {
 } from "@/features/specforge/hooks/use-specforge";
 import type {
   SpecForgeFixAttemptDTO,
+  SpecForgeEscalationSummaryDTO,
   SpecForgeExecutionBundleDTO,
   GitHubWebhookEventDTO,
   SpecForgePRNodeFailureLogDTO,
@@ -1168,6 +1170,9 @@ function PRDag({
   const canReadFixAttempts =
     selectedFixNodeId !== undefined && Number.isFinite(selectedFixNodeId) && selectedFixNodeId > 0;
   const fixAttemptsQuery = useSpecForgeFixAttempts(canReadFixAttempts ? selectedFixNodeId : undefined);
+  const escalationSummaryQuery = useSpecForgeEscalationSummary(
+    canReadFixAttempts ? selectedFixNodeId : undefined
+  );
   const createFixAttempt = useCreateSpecForgeFixAttemptFromCI();
   const readFailureLog = useReadSpecForgePRNodeFailureLog();
   const fixAttempts = canReadFixAttempts
@@ -1410,6 +1415,9 @@ function PRDag({
                 {failureLogError}
               </div>
             )}
+            {escalationSummaryQuery.data && (
+              <EscalationSummary summary={escalationSummaryQuery.data} />
+            )}
             <div className="flex flex-col gap-2 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm md:flex-row md:items-center md:justify-between">
               <div>
                 <div className="font-medium text-text-main">Auto-fix retry budget</div>
@@ -1455,6 +1463,11 @@ function PRDag({
                 Live fix attempts will load when the SpecForge backend is available.
               </p>
             )}
+            {escalationSummaryQuery.isError && (
+              <p className="text-xs leading-5 text-text-muted">
+                Escalation summaries require the SpecForge backend.
+              </p>
+            )}
           </CardContent>
         </Card>
       )}
@@ -1470,6 +1483,45 @@ function PRDag({
             </pre>
           </CardContent>
         </Card>
+      )}
+    </div>
+  );
+}
+
+function EscalationSummary({ summary }: { summary: SpecForgeEscalationSummaryDTO }) {
+  const needsDecision = summary.status === "needs_user_decision";
+
+  return (
+    <div
+      className={cn(
+        "rounded-lg border p-4 text-sm",
+        needsDecision
+          ? "border-warning/30 bg-warning-subtle text-warning"
+          : "border-border-subtle bg-bg-subtle text-text-muted"
+      )}
+    >
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="font-medium text-text-main">Escalation summary</div>
+        <Badge
+          variant="outline"
+          className={needsDecision ? statusClassName("blocked") : statusClassName("running")}
+        >
+          {needsDecision ? "Needs decision" : "Auto-fix can continue"}
+        </Badge>
+      </div>
+      <p className="mt-2 leading-6">{summary.reason}</p>
+      <p className="mt-2 leading-6 text-text-main">{summary.recommended_option}</p>
+      {summary.latest_likely_cause && (
+        <p className="mt-2 leading-6">Latest cause: {summary.latest_likely_cause}</p>
+      )}
+      {summary.decision_options.length > 0 && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {summary.decision_options.map((option) => (
+            <Badge key={option} variant="outline">
+              {option}
+            </Badge>
+          ))}
+        </div>
       )}
     </div>
   );
