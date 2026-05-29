@@ -557,6 +557,9 @@ func (s *service) UnlockReadyTasksForPRNode(ctx context.Context, prNodeID uint) 
 	if err := s.unlockReadyTasks(ctx, bundle); err != nil {
 		return nil, err
 	}
+	if err := s.completeRunIfDeliveryReady(ctx, bundle, time.Now()); err != nil {
+		return nil, err
+	}
 	return s.GetRun(ctx, bundle.Run.ID)
 }
 
@@ -765,12 +768,8 @@ func (s *service) CompleteTask(ctx context.Context, taskID uint) (*domain.SpecFo
 	if err := s.unlockReadyTasks(ctx, bundle); err != nil {
 		return nil, err
 	}
-	if allTasksCompleted(bundle.Tasks) {
-		bundle.Run.Status = domain.ExecutionRunStatusCompleted
-		bundle.Run.CompletedAt = &now
-		if err := s.repo.UpdateExecutionRun(ctx, bundle.Run); err != nil {
-			return nil, fmt.Errorf("complete execution run: %w", err)
-		}
+	if err := s.completeRunIfDeliveryReady(ctx, bundle, now); err != nil {
+		return nil, err
 	}
 	return s.GetRun(ctx, task.RunID)
 }
@@ -923,14 +922,28 @@ func (s *service) finalizeTaskResult(ctx context.Context, task *domain.SpecForge
 	if err := s.unlockReadyTasks(ctx, bundle); err != nil {
 		return nil, err
 	}
-	if allTasksCompleted(bundle.Tasks) {
-		bundle.Run.Status = domain.ExecutionRunStatusCompleted
-		bundle.Run.CompletedAt = &finishedAt
-		if err := s.repo.UpdateExecutionRun(ctx, bundle.Run); err != nil {
-			return nil, fmt.Errorf("complete execution run: %w", err)
-		}
+	if err := s.completeRunIfDeliveryReady(ctx, bundle, finishedAt); err != nil {
+		return nil, err
 	}
 	return s.GetRun(ctx, task.RunID)
+}
+
+func (s *service) completeRunIfDeliveryReady(ctx context.Context, bundle *domain.SpecForgeExecutionBundle, completedAt time.Time) error {
+	if bundle == nil || bundle.Run == nil {
+		return nil
+	}
+	if bundle.Run.Status == domain.ExecutionRunStatusCompleted || bundle.Run.Status == domain.ExecutionRunStatusCancelled {
+		return nil
+	}
+	if !runDeliveryComplete(bundle) {
+		return nil
+	}
+	bundle.Run.Status = domain.ExecutionRunStatusCompleted
+	bundle.Run.CompletedAt = &completedAt
+	if err := s.repo.UpdateExecutionRun(ctx, bundle.Run); err != nil {
+		return fmt.Errorf("complete execution run: %w", err)
+	}
+	return nil
 }
 
 func appendLogLine(existing, line string) string {
@@ -1166,6 +1179,21 @@ func allTasksCompleted(tasks []*domain.SpecForgeAgentTask) bool {
 	}
 	for _, task := range tasks {
 		if task.Status != domain.AgentTaskStatusCompleted {
+			return false
+		}
+	}
+	return true
+}
+
+func runDeliveryComplete(bundle *domain.SpecForgeExecutionBundle) bool {
+	if bundle == nil || !allTasksCompleted(bundle.Tasks) {
+		return false
+	}
+	if bundle.Plan == nil {
+		return true
+	}
+	for _, node := range bundle.Plan.PRNodes {
+		if prNodeRequiresStatusGate(node) && !prNodeStatusSatisfiesDependency(node.Status) {
 			return false
 		}
 	}

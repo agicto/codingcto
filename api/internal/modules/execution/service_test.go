@@ -1115,6 +1115,51 @@ func TestCompleteTaskCompletesRunWhenAllTasksDone(t *testing.T) {
 	require.Equal(t, domain.AgentTaskStatusCompleted, completed.Tasks[1].Status)
 }
 
+func TestCompleteTaskWaitsForPRReadinessBeforeCompletingRun(t *testing.T) {
+	bundle := approvedPlanBundle()
+	bundle.PRNodes = bundle.PRNodes[:1]
+	bundle.PRNodes[0].Status = domain.PRNodeStatusPROpened
+	bundle.PRNodes[0].GitHubPRURL = "https://github.com/agicto/codingcto/pull/42"
+	planningRepo := &memoryPlanningRepo{bundle: bundle}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{})
+	require.NoError(t, err)
+
+	updated, err := svc.CompleteTask(context.Background(), dispatched.Tasks[0].ID)
+
+	require.NoError(t, err)
+	require.Equal(t, domain.AgentTaskStatusCompleted, updated.Tasks[0].Status)
+	require.Equal(t, domain.ExecutionRunStatusRunning, updated.Run.Status)
+	require.Nil(t, updated.Run.CompletedAt)
+}
+
+func TestUnlockReadyTasksForPRNodeCompletesRunWhenAllPRNodesReady(t *testing.T) {
+	bundle := approvedPlanBundle()
+	bundle.PRNodes = bundle.PRNodes[:1]
+	bundle.PRNodes[0].Status = domain.PRNodeStatusPROpened
+	bundle.PRNodes[0].GitHubPRURL = "https://github.com/agicto/codingcto/pull/42"
+	planningRepo := &memoryPlanningRepo{bundle: bundle}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{})
+	require.NoError(t, err)
+	updated, err := svc.CompleteTask(context.Background(), dispatched.Tasks[0].ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.ExecutionRunStatusRunning, updated.Run.Status)
+	planningRepo.bundle.PRNodes[0].Status = domain.PRNodeStatusReadyForReview
+
+	completed, err := svc.UnlockReadyTasksForPRNode(context.Background(), planningRepo.bundle.PRNodes[0].ID)
+
+	require.NoError(t, err)
+	require.Equal(t, domain.ExecutionRunStatusCompleted, completed.Run.Status)
+	require.NotNil(t, completed.Run.CompletedAt)
+}
+
 func TestCreateTaskEventRecordsOrderedRuntimeOutput(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
 	runRepo := &memoryExecutionRepo{}
