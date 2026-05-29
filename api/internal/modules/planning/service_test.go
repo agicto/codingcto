@@ -38,6 +38,7 @@ func TestCreateIdeaBuildsReviewablePlanBundle(t *testing.T) {
 	require.Equal(t, "PR-001", bundle.PRNodes[0].NodeKey)
 	require.Empty(t, bundle.PRNodes[0].DependsOn)
 	require.Contains(t, bundle.PRNodes[1].DependsOn, "PR-001")
+	require.Contains(t, bundle.ProductSpec.Assumptions, "PR DAG review: validation passed for 3 reviewable PR nodes; dependencies resolve within the generated plan.")
 }
 
 func TestApprovePlanRecordsApproverAndRejectsSecondApproval(t *testing.T) {
@@ -157,6 +158,65 @@ func TestCompilePromptInjectsActiveRepoSkills(t *testing.T) {
 	require.Contains(t, prompt.PromptText, "go-layering")
 	require.Contains(t, prompt.PromptText, "Use handlers only for HTTP binding and response mapping.")
 	require.NotContains(t, prompt.PromptText, "This should not appear.")
+}
+
+func TestReviewPRDAGReportsInvalidDependenciesAndMissingScope(t *testing.T) {
+	notes := reviewPRDAG([]*domain.SpecForgePRNode{
+		{
+			NodeKey:            "PR-001",
+			Title:              "Foundation",
+			Goal:               "Add the foundation.",
+			ExpectedFiles:      []string{"api/internal/modules/planning/*"},
+			AcceptanceCriteria: []string{"Foundation exists."},
+			TestCommands:       []string{"go test ./..."},
+			BranchName:         "specforge/foundation",
+		},
+		{
+			NodeKey:    "PR-001",
+			Title:      "API",
+			Goal:       "Add the API.",
+			DependsOn:  []string{"PR-404", "PR-001"},
+			BranchName: "specforge/foundation",
+		},
+	})
+
+	require.Contains(t, notes, "PR DAG review: duplicate node key PR-001 would make dependencies ambiguous.")
+	require.Contains(t, notes, "PR DAG review: duplicate branch name specforge/foundation would collide during execution.")
+	require.Contains(t, notes, "PR DAG review: PR-001 has no expected file scope.")
+	require.Contains(t, notes, "PR DAG review: PR-001 has no acceptance criteria.")
+	require.Contains(t, notes, "PR DAG review: PR-001 has no test commands.")
+	require.Contains(t, notes, "PR DAG review: PR-001 depends on unknown node PR-404.")
+	require.Contains(t, notes, "PR DAG review: PR-001 depends on itself.")
+}
+
+func TestReviewPRDAGReportsCyclesAndOutOfOrderDependencies(t *testing.T) {
+	notes := reviewPRDAG([]*domain.SpecForgePRNode{
+		{
+			NodeKey:            "PR-001",
+			Order:              1,
+			Title:              "Foundation",
+			Goal:               "Add the foundation.",
+			DependsOn:          []string{"PR-002"},
+			ExpectedFiles:      []string{"api/internal/modules/planning/*"},
+			AcceptanceCriteria: []string{"Foundation exists."},
+			TestCommands:       []string{"go test ./..."},
+			BranchName:         "specforge/foundation",
+		},
+		{
+			NodeKey:            "PR-002",
+			Order:              2,
+			Title:              "API",
+			Goal:               "Add the API.",
+			DependsOn:          []string{"PR-001"},
+			ExpectedFiles:      []string{"api/internal/modules/planning/handler.go"},
+			AcceptanceCriteria: []string{"API exists."},
+			TestCommands:       []string{"go test ./..."},
+			BranchName:         "specforge/api",
+		},
+	})
+
+	require.Contains(t, notes, "PR DAG review: PR-001 depends on PR-002, but that dependency is not ordered before it.")
+	require.Contains(t, notes, "PR DAG review: dependency cycle detected involving PR-001.")
 }
 
 type memoryRepo struct {
