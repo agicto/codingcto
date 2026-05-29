@@ -53,6 +53,7 @@ import {
   repoProfileFromDTO,
   repoProfilePayloadFromForm,
 } from "@/features/specforge/repo-profile-form";
+import { luasProfileInferencePayload } from "@/features/specforge/repo-profile-inference";
 import {
   useApproveSpecForgePlan,
   useCancelExecutionRun,
@@ -63,6 +64,7 @@ import {
   useDispatchExecutionRun,
   useExecutionRun,
   useGitHubWebhookEvents,
+  useInferRepoProfile,
   usePrepareSpecForgePRNodeBranch,
   useRepoProfile,
   useRefreshSpecForgePRNodeCI,
@@ -710,6 +712,7 @@ function RepoProfileEditor({
   onSaved: (profile: SpecForgeRepoProfileDTO) => void;
 }) {
   const upsertProfile = useUpsertRepoProfile(repoId);
+  const inferProfile = useInferRepoProfile(repoId);
   const [defaultBranch, setDefaultBranch] = useState(initialProfile.defaultBranch);
   const [stack, setStack] = useState(profileListValue(initialProfile.stack));
   const [testCommands, setTestCommands] = useState(profileListValue(initialProfile.testCommands));
@@ -736,6 +739,15 @@ function RepoProfileEditor({
     });
     const saved = await upsertProfile.mutateAsync(payload);
     onSaved(saved);
+  }
+
+  async function inferFromRepositoryHints() {
+    if (!repoId) {
+      return;
+    }
+
+    const inferred = await inferProfile.mutateAsync(luasProfileInferencePayload(defaultBranch));
+    onSaved(inferred);
   }
 
   return (
@@ -791,9 +803,21 @@ function RepoProfileEditor({
             ? "Start the SpecForge backend to save profile changes."
             : "Profile context feeds planning, PR DAG, and prompt compilation."}
         </p>
-        <Button onClick={saveProfile} disabled={!repoId || isOffline || upsertProfile.isPending}>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            variant="outline"
+            onClick={inferFromRepositoryHints}
+            disabled={!repoId || isOffline || inferProfile.isPending}
+          >
+            {inferProfile.isPending ? "Inferring" : "Infer profile"}
+          </Button>
+          <Button
+            onClick={saveProfile}
+            disabled={!repoId || isOffline || upsertProfile.isPending}
+          >
           {upsertProfile.isPending ? "Saving" : "Save profile"}
-        </Button>
+          </Button>
+        </div>
       </div>
     </div>
   );

@@ -10,6 +10,7 @@ import {
   type CreateTaskEventPayload,
   type CreateIdeaPayload,
   type DispatchRunPayload,
+  type InferRepoProfilePayload,
   type ListGitHubWebhookEventsParams,
   type ListSpecForgeRuntimesParams,
   type PreparePRNodeBranchPayload,
@@ -63,6 +64,18 @@ export function useRepoProfile(repoId: string) {
     queryKey: specForgeKeys.repoProfile(repoId),
     queryFn: () => specForgeService.getRepoProfile(repoId),
     enabled: Boolean(repoId),
+  });
+}
+
+export function useInferRepoProfile(repoId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: InferRepoProfilePayload) =>
+      specForgeService.inferRepoProfile(repoId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: specForgeKeys.repoProfile(repoId) });
+    },
   });
 }
 

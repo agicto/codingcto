@@ -16,6 +16,12 @@ export interface RepoProfilePayload {
   summary?: string;
 }
 
+export interface InferRepoProfilePayload {
+  default_branch?: string;
+  file_paths?: string[];
+  package_scripts?: Record<string, string>;
+}
+
 export interface CreateIdeaPayload {
   input: string;
   type?: "feature" | "bugfix" | "refactor" | "docs" | "test";
@@ -418,6 +424,12 @@ export const specForgeService = {
 
   getRepoProfile: (repoId: string) =>
     request.get<SpecForgeRepoProfileDTO>(`/repositories/${repoId}/profile`),
+
+  inferRepoProfile: (repoId: string, payload: InferRepoProfilePayload) =>
+    request.post<SpecForgeRepoProfileDTO, InferRepoProfilePayload>(
+      `/repositories/${repoId}/profile/infer`,
+      payload
+    ),
 
   listGitHubWebhookEvents: (params?: ListGitHubWebhookEventsParams) => {
     const query = new URLSearchParams();
