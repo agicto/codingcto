@@ -13,3 +13,18 @@ type CreateFixAttemptRequest struct {
 type CreateFixAttemptFromCIRequest struct {
 	RepositoryID string `json:"repository_id" binding:"required,max=255"`
 }
+
+type EscalationSummary struct {
+	PRNodeID           uint     `json:"pr_node_id"`
+	Status             string   `json:"status"`
+	AttemptsUsed       int      `json:"attempts_used"`
+	MaxAttempts        int      `json:"max_attempts"`
+	FailureTypes       []string `json:"failure_types"`
+	Reason             string   `json:"reason"`
+	RecommendedOption  string   `json:"recommended_option"`
+	DecisionOptions    []string `json:"decision_options"`
+	LatestFailureType  string   `json:"latest_failure_type"`
+	LatestLikelyCause  string   `json:"latest_likely_cause"`
+	LatestAction       string   `json:"latest_action"`
+	CanContinueAutoFix bool     `json:"can_continue_auto_fix"`
+}

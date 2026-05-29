@@ -15,6 +15,7 @@ type Service interface {
 	CreateFixAttempt(ctx context.Context, userID, prNodeID uint, req *CreateFixAttemptRequest) (*domain.SpecForgeFixAttempt, error)
 	CreateFixAttemptFromCI(ctx context.Context, userID, prNodeID uint, req *CreateFixAttemptFromCIRequest) (*domain.SpecForgeFixAttempt, error)
 	ListFixAttempts(ctx context.Context, prNodeID uint) ([]*domain.SpecForgeFixAttempt, error)
+	GetEscalationSummary(ctx context.Context, prNodeID uint) (*EscalationSummary, error)
 }
 
 type CIFailureReader interface {
@@ -92,6 +93,61 @@ func (s *service) ListFixAttempts(ctx context.Context, prNodeID uint) ([]*domain
 		return nil, domain.ErrInvalidInput
 	}
 	return s.repo.ListFixAttemptsByPRNodeID(ctx, prNodeID)
+}
+
+func (s *service) GetEscalationSummary(ctx context.Context, prNodeID uint) (*EscalationSummary, error) {
+	attempts, err := s.ListFixAttempts(ctx, prNodeID)
+	if err != nil {
+		return nil, err
+	}
+	return buildEscalationSummary(prNodeID, attempts), nil
+}
+
+func buildEscalationSummary(prNodeID uint, attempts []*domain.SpecForgeFixAttempt) *EscalationSummary {
+	types := make([]string, 0, len(attempts))
+	seenTypes := map[string]struct{}{}
+	var latest *domain.SpecForgeFixAttempt
+	for _, attempt := range attempts {
+		if attempt == nil {
+			continue
+		}
+		failureType := strings.TrimSpace(attempt.FailureType)
+		if failureType != "" {
+			if _, ok := seenTypes[failureType]; !ok {
+				types = append(types, failureType)
+				seenTypes[failureType] = struct{}{}
+			}
+		}
+		if latest == nil || attempt.AttemptNumber >= latest.AttemptNumber {
+			latest = attempt
+		}
+	}
+
+	attemptsUsed := len(attempts)
+	summary := &EscalationSummary{
+		PRNodeID:           prNodeID,
+		Status:             "auto_fix_available",
+		AttemptsUsed:       attemptsUsed,
+		MaxAttempts:        maxFixAttemptsPerPRNode,
+		FailureTypes:       types,
+		Reason:             fmt.Sprintf("%d of %d automatic fix attempts have been used.", attemptsUsed, maxFixAttemptsPerPRNode),
+		RecommendedOption:  "Continue auto-fix if the next patch is local, testable, and within the PR node scope.",
+		DecisionOptions:    []string{"Continue auto-fix", "Pause this PR node", "Cancel the execution run"},
+		CanContinueAutoFix: attemptsUsed < maxFixAttemptsPerPRNode,
+	}
+	if latest != nil {
+		summary.LatestFailureType = strings.TrimSpace(latest.FailureType)
+		summary.LatestLikelyCause = strings.TrimSpace(latest.LikelyCause)
+		summary.LatestAction = strings.TrimSpace(latest.RecommendedAction)
+	}
+	if attemptsUsed >= maxFixAttemptsPerPRNode {
+		summary.Status = "needs_user_decision"
+		summary.Reason = fmt.Sprintf("The PR node used all %d automatic fix attempts.", maxFixAttemptsPerPRNode)
+		summary.RecommendedOption = "Pause auto-fix and choose whether to continue with a narrower patch, replan the PR node, or cancel this execution path."
+		summary.DecisionOptions = []string{"Continue with a narrower patch", "Replan this PR node", "Pause this PR node", "Cancel the execution run"}
+		summary.CanContinueAutoFix = false
+	}
+	return summary
 }
 
 func classifyFailureType(failure *githubintegration.PRNodeFailureLog) string {
