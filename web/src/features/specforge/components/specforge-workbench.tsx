@@ -47,6 +47,11 @@ import {
   summarizeRuntimeHealth,
 } from "@/features/specforge/runtime-health";
 import {
+  profileListValue,
+  repoProfileFromDTO,
+  repoProfilePayloadFromForm,
+} from "@/features/specforge/repo-profile-form";
+import {
   useApproveSpecForgePlan,
   useCancelExecutionRun,
   useCompileSpecForgePrompt,
@@ -54,14 +59,17 @@ import {
   useCreateSpecForgeIdea,
   useDispatchExecutionRun,
   useExecutionRun,
+  useRepoProfile,
   useSpecForgeFixAttempts,
   useSpecForgeSkills,
   useSpecForgeRuntimes,
   useStartExecutionRun,
+  useUpsertRepoProfile,
   useUpsertSpecForgeSkill,
 } from "@/features/specforge/hooks/use-specforge";
 import type {
   SpecForgeFixAttemptDTO,
+  SpecForgeRepoProfileDTO,
   SpecForgeSkillDTO,
 } from "@/features/specforge/services/specforge-service";
 import type {
@@ -392,7 +400,17 @@ export function SpecForgeWorkbench() {
                 Reset
               </Button>
             </div>
-            <RepoProfileSummary repoProfile={activePlan.repoProfile} planSource={planSource} />
+            <RepoProfileSummary
+              repoId={repoId.trim()}
+              repoProfile={activePlan.repoProfile}
+              planSource={planSource}
+              onProfileSaved={(profile) => {
+                setActivePlan((current) => ({
+                  ...current,
+                  repoProfile: profile,
+                }));
+              }}
+            />
             <RepoSkillsPanel repoId={repoId.trim()} />
           </CardContent>
         </Card>
@@ -503,12 +521,31 @@ function Metric({ label, value }: { label: string; value: string }) {
 }
 
 function RepoProfileSummary({
+  repoId,
   repoProfile,
   planSource,
+  onProfileSaved,
 }: {
+  repoId: string;
   repoProfile: RepoProfile;
   planSource: "api" | "demo";
+  onProfileSaved: (profile: RepoProfile) => void;
 }) {
+  const profileQuery = useRepoProfile(repoId);
+  const [savedProfile, setSavedProfile] = useState<SpecForgeRepoProfileDTO>();
+  const effectiveProfile = savedProfile
+    ? repoProfileFromDTO(savedProfile)
+    : profileQuery.data
+      ? repoProfileFromDTO(profileQuery.data)
+      : repoProfile;
+  const editorKey = [
+    effectiveProfile.repositoryId,
+    effectiveProfile.defaultBranch,
+    effectiveProfile.stack.join("|"),
+    effectiveProfile.testCommands.join("|"),
+    effectiveProfile.ciProvider,
+  ].join(":");
+
   return (
     <div className="rounded-lg border border-border-subtle bg-muted/30 p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -523,13 +560,124 @@ function RepoProfileSummary({
           {planSource === "api" ? "API plan" : "Demo fallback"}
         </Badge>
       </div>
-      <p className="mt-2 text-sm leading-6 text-text-muted">{repoProfile.summary}</p>
+      <p className="mt-2 text-sm leading-6 text-text-muted">{effectiveProfile.summary}</p>
       <div className="mt-3 flex flex-wrap gap-2">
-        {repoProfile.stack.map((item) => (
+        {effectiveProfile.stack.map((item) => (
           <Badge key={item} variant="outline">
             {item}
           </Badge>
         ))}
+      </div>
+      <RepoProfileEditor
+        key={editorKey}
+        repoId={repoId}
+        initialProfile={effectiveProfile}
+        isOffline={profileQuery.isError}
+        onSaved={(profile) => {
+          setSavedProfile(profile);
+          onProfileSaved(repoProfileFromDTO(profile));
+        }}
+      />
+    </div>
+  );
+}
+
+function RepoProfileEditor({
+  repoId,
+  initialProfile,
+  isOffline,
+  onSaved,
+}: {
+  repoId: string;
+  initialProfile: RepoProfile;
+  isOffline: boolean;
+  onSaved: (profile: SpecForgeRepoProfileDTO) => void;
+}) {
+  const upsertProfile = useUpsertRepoProfile(repoId);
+  const [defaultBranch, setDefaultBranch] = useState(initialProfile.defaultBranch);
+  const [stack, setStack] = useState(profileListValue(initialProfile.stack));
+  const [testCommands, setTestCommands] = useState(profileListValue(initialProfile.testCommands));
+  const [ciProvider, setCIProvider] = useState(initialProfile.ciProvider);
+  const [codingConventions, setCodingConventions] = useState(
+    profileListValue(initialProfile.codingConventions)
+  );
+  const [riskAreas, setRiskAreas] = useState(profileListValue(initialProfile.riskAreas));
+  const [summary, setSummary] = useState(initialProfile.summary);
+
+  async function saveProfile() {
+    if (!repoId) {
+      return;
+    }
+
+    const payload = repoProfilePayloadFromForm({
+      defaultBranch,
+      stack,
+      testCommands,
+      ciProvider,
+      codingConventions,
+      riskAreas,
+      summary,
+    });
+    const saved = await upsertProfile.mutateAsync(payload);
+    onSaved(saved);
+  }
+
+  return (
+    <div className="mt-4 space-y-3">
+      <div className="grid gap-3 md:grid-cols-2">
+        <Input
+          value={defaultBranch}
+          onChange={(event) => setDefaultBranch(event.target.value)}
+          aria-label="Default branch"
+          placeholder="Default branch"
+        />
+        <Input
+          value={ciProvider}
+          onChange={(event) => setCIProvider(event.target.value)}
+          aria-label="CI provider"
+          placeholder="CI provider"
+        />
+      </div>
+      <Input
+        value={stack}
+        onChange={(event) => setStack(event.target.value)}
+        aria-label="Repository stack"
+        placeholder="Stack: Go, Next.js, TypeScript"
+      />
+      <Input
+        value={testCommands}
+        onChange={(event) => setTestCommands(event.target.value)}
+        aria-label="Test commands"
+        placeholder="Test commands: go test ./..., pnpm lint"
+      />
+      <Input
+        value={codingConventions}
+        onChange={(event) => setCodingConventions(event.target.value)}
+        aria-label="Coding conventions"
+        placeholder="Coding conventions"
+      />
+      <Input
+        value={riskAreas}
+        onChange={(event) => setRiskAreas(event.target.value)}
+        aria-label="Risk areas"
+        placeholder="Risk areas: auth, migrations"
+      />
+      <Textarea
+        value={summary}
+        onChange={(event) => setSummary(event.target.value)}
+        className="min-h-24"
+        aria-label="Repo profile summary"
+        placeholder="Summarize the repository structure and implementation conventions."
+      />
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <p className="text-xs leading-5 text-text-muted">
+          {isOffline
+            ? "Start the SpecForge backend to save profile changes."
+            : "Profile context feeds planning, PR DAG, and prompt compilation."}
+        </p>
+        <Button onClick={saveProfile} disabled={!repoId || isOffline || upsertProfile.isPending}>
+          {upsertProfile.isPending ? "Saving" : "Save profile"}
+        </Button>
       </div>
     </div>
   );
