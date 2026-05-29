@@ -8,6 +8,7 @@ import {
   CircleX,
   GitBranch,
   GitPullRequest,
+  ScrollText,
   Play,
   ShieldAlert,
   Sparkles,
@@ -31,6 +32,7 @@ import {
   executionRunFromDTO,
   planBundleFromDTO,
 } from "@/features/specforge/plan-adapter";
+import { buildPromptPreview } from "@/features/specforge/prompt-preview";
 import {
   defaultIdea,
   demoPlan,
@@ -44,6 +46,7 @@ import {
 import {
   useApproveSpecForgePlan,
   useCancelExecutionRun,
+  useCompileSpecForgePrompt,
   useCreateSpecForgeIdea,
   useDispatchExecutionRun,
   useExecutionRun,
@@ -123,6 +126,7 @@ export function SpecForgeWorkbench() {
   const startRun = useStartExecutionRun();
   const dispatchRun = useDispatchExecutionRun();
   const cancelRun = useCancelExecutionRun();
+  const compilePrompt = useCompileSpecForgePrompt();
   const isStartingRun = approvePlan.isPending || startRun.isPending || dispatchRun.isPending;
   const runQuery = useExecutionRun(run.runId, {
     enabled: Boolean(run.runId),
@@ -309,6 +313,22 @@ export function SpecForgeWorkbench() {
     }));
   }
 
+  async function compileNodePrompt(node: PRNode) {
+    const prNodeId = Number(node.id);
+    if (Number.isFinite(prNodeId) && prNodeId > 0) {
+      try {
+        const response = await compilePrompt.mutateAsync({
+          prNodeId,
+          payload: { type: "implementation" },
+        });
+        return response.prompt.prompt_text;
+      } catch {
+        // Keep prompt review available for demo plans and offline backend development.
+      }
+    }
+    return buildPromptPreview(activePlan, node);
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
       <header className="flex flex-col gap-4 border-b border-border-subtle pb-6 lg:flex-row lg:items-end lg:justify-between">
@@ -390,7 +410,11 @@ export function SpecForgeWorkbench() {
                 />
               </TabsContent>
               <TabsContent value="dag">
-                <PRDag nodes={activePlan.prNodes} />
+                <PRDag
+                  nodes={activePlan.prNodes}
+                  isCompilingPrompt={compilePrompt.isPending}
+                  onCompilePrompt={compileNodePrompt}
+                />
               </TabsContent>
               <TabsContent value="run">
                 <ExecutionStatus
@@ -605,7 +629,24 @@ function ListBlock({
   );
 }
 
-function PRDag({ nodes }: { nodes: PRNode[] }) {
+function PRDag({
+  nodes,
+  isCompilingPrompt,
+  onCompilePrompt,
+}: {
+  nodes: PRNode[];
+  isCompilingPrompt: boolean;
+  onCompilePrompt: (node: PRNode) => Promise<string>;
+}) {
+  const [selectedNodeId, setSelectedNodeId] = useState<string>();
+  const [promptText, setPromptText] = useState("");
+
+  async function handleCompilePrompt(node: PRNode) {
+    setSelectedNodeId(node.id);
+    const compiled = await onCompilePrompt(node);
+    setPromptText(compiled);
+  }
+
   return (
     <div className="space-y-3">
       {nodes.map((node, index) => (
@@ -628,6 +669,15 @@ function PRDag({ nodes }: { nodes: PRNode[] }) {
                   <Badge variant="outline" className={riskClassName(node.estimatedRisk)}>
                     {node.estimatedRisk} risk
                   </Badge>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => handleCompilePrompt(node)}
+                    disabled={isCompilingPrompt && selectedNodeId === node.id}
+                  >
+                    {isCompilingPrompt && selectedNodeId === node.id ? "Compiling" : "Prompt"}
+                    <ScrollText className="ml-1.5 h-4 w-4" />
+                  </Button>
                 </div>
               </div>
             </CardHeader>
@@ -639,6 +689,19 @@ function PRDag({ nodes }: { nodes: PRNode[] }) {
           </Card>
         </div>
       ))}
+      {promptText && (
+        <Card>
+          <CardHeader>
+            <CardTitle className="text-base">Compiled prompt</CardTitle>
+            <CardDescription>Implementation prompt for the selected PR node.</CardDescription>
+          </CardHeader>
+          <CardContent>
+            <pre className="max-h-96 overflow-auto rounded-lg border border-border-subtle bg-bg-subtle p-4 text-xs leading-5 text-text-main">
+              {promptText}
+            </pre>
+          </CardContent>
+        </Card>
+      )}
     </div>
   );
 }
