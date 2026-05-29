@@ -1,9 +1,11 @@
 import type {
+  SpecForgeExecutionBundleDTO,
   SpecForgePlanBundleDTO,
   SpecForgePRNodeDTO,
   SpecForgeRepoProfileDTO,
 } from '@/features/specforge/services/specforge-service';
 import type {
+  ExecutionRun,
   ImplementationPlan,
   PlanBundle,
   PRNode,
@@ -18,6 +20,14 @@ const nodeStatuses = new Set<PRNode['status']>([
   'running',
   'waiting_on_dependencies',
   'completed',
+  'failed',
+  'cancelled',
+]);
+const runStatuses = new Set<ExecutionRun['status']>([
+  'queued',
+  'running',
+  'completed',
+  'cancelled',
 ]);
 
 function coerceNodeType(type: string): PRNode['type'] {
@@ -31,9 +41,18 @@ function coerceRiskLevel(risk: string): PRNode['estimatedRisk'] {
 }
 
 function coerceNodeStatus(status: string): PRNode['status'] {
+  if (status === 'dispatched') {
+    return 'running';
+  }
   return nodeStatuses.has(status as PRNode['status'])
     ? (status as PRNode['status'])
     : 'planned';
+}
+
+function coerceRunStatus(status: string): ExecutionRun['status'] {
+  return runStatuses.has(status as ExecutionRun['status'])
+    ? (status as ExecutionRun['status'])
+    : 'idle';
 }
 
 function repoProfileFromDTO(
@@ -79,6 +98,8 @@ function prNodeFromDTO(node: SpecForgePRNodeDTO): PRNode {
 
 export function planBundleFromDTO(bundle: SpecForgePlanBundleDTO): PlanBundle {
   return {
+    ideaId: bundle.idea.id,
+    planId: bundle.implementation_plan.id,
     idea: bundle.idea.raw_input,
     repoProfile: repoProfileFromDTO(bundle.repo_profile, bundle.idea.repository_id),
     productSpec: {
@@ -96,5 +117,44 @@ export function planBundleFromDTO(bundle: SpecForgePlanBundleDTO): PlanBundle {
       status: implementationStatus(bundle.implementation_plan.status),
     },
     prNodes: (bundle.pr_nodes ?? []).map(prNodeFromDTO),
+  };
+}
+
+export function executionRunFromDTO(
+  bundle: SpecForgeExecutionBundleDTO,
+  fallbackPlan?: PlanBundle
+): { plan?: PlanBundle; run: ExecutionRun } {
+  const plan = bundle.plan ? planBundleFromDTO(bundle.plan) : fallbackPlan;
+  const nodesById = new Map((plan?.prNodes ?? []).map((node) => [Number(node.id), node]));
+  const tasks = bundle.tasks.map((task) => {
+    const node = nodesById.get(task.pr_node_id);
+    return {
+      ...(node ?? {
+        id: String(task.pr_node_id),
+        nodeKey: `PR-${task.pr_node_id}`,
+        order: task.pr_node_id,
+        title: `PR node ${task.pr_node_id}`,
+        type: 'foundation' as const,
+        goal: 'Execution task returned without plan node details.',
+        dependsOn: [],
+        estimatedRisk: 'medium' as const,
+        expectedFiles: [],
+        nonGoals: [],
+        acceptanceCriteria: [],
+        testCommands: [],
+        branchName: '',
+      }),
+      status: coerceNodeStatus(task.status),
+    };
+  });
+
+  return {
+    plan,
+    run: {
+      runId: bundle.run.id,
+      status: coerceRunStatus(bundle.run.status),
+      startedAt: bundle.run.started_at,
+      tasks,
+    },
   };
 }

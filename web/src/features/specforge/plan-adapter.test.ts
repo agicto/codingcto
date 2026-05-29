@@ -1,7 +1,13 @@
 import { describe, expect, it } from 'vitest';
 
-import { planBundleFromDTO } from '@/features/specforge/plan-adapter';
-import type { SpecForgePlanBundleDTO } from '@/features/specforge/services/specforge-service';
+import {
+  executionRunFromDTO,
+  planBundleFromDTO,
+} from '@/features/specforge/plan-adapter';
+import type {
+  SpecForgeExecutionBundleDTO,
+  SpecForgePlanBundleDTO,
+} from '@/features/specforge/services/specforge-service';
 
 const baseBundle: SpecForgePlanBundleDTO = {
   idea: {
@@ -87,6 +93,8 @@ describe('planBundleFromDTO', () => {
   it('maps the planning API bundle into the workbench model', () => {
     expect(planBundleFromDTO(baseBundle)).toMatchObject({
       idea: 'Add team invites',
+      ideaId: 1,
+      planId: 1,
       repoProfile: {
         repositoryId: 'repo_abc',
         defaultBranch: 'main',
@@ -153,6 +161,96 @@ describe('planBundleFromDTO', () => {
           status: 'planned',
         },
       ],
+    });
+  });
+});
+
+describe('executionRunFromDTO', () => {
+  it('maps execution tasks onto their PR nodes', () => {
+    const bundle: SpecForgeExecutionBundleDTO = {
+      run: {
+        id: 7,
+        plan_id: 1,
+        status: 'running',
+        started_by: 1,
+        started_at: '2026-05-29T12:00:00Z',
+        created_at: '2026-05-29T12:00:00Z',
+        updated_at: '2026-05-29T12:00:00Z',
+      },
+      plan: baseBundle,
+      tasks: [
+        {
+          id: 10,
+          run_id: 7,
+          pr_node_id: 1,
+          executor: 'codex_cli',
+          status: 'dispatched',
+          attempt_number: 1,
+          created_at: '2026-05-29T12:00:00Z',
+          updated_at: '2026-05-29T12:00:00Z',
+        },
+      ],
+    };
+
+    expect(executionRunFromDTO(bundle)).toMatchObject({
+      plan: {
+        planId: 1,
+      },
+      run: {
+        runId: 7,
+        status: 'running',
+        startedAt: '2026-05-29T12:00:00Z',
+        tasks: [
+          {
+            id: '1',
+            title: 'Add invitation model',
+            status: 'running',
+          },
+        ],
+      },
+    });
+  });
+
+  it('can map execution state with fallback plan context', () => {
+    const fallbackPlan = planBundleFromDTO(baseBundle);
+    const bundle: SpecForgeExecutionBundleDTO = {
+      run: {
+        id: 8,
+        plan_id: 1,
+        status: 'queued',
+        started_by: 1,
+        started_at: '2026-05-29T12:00:00Z',
+        created_at: '2026-05-29T12:00:00Z',
+        updated_at: '2026-05-29T12:00:00Z',
+      },
+      tasks: [
+        {
+          id: 11,
+          run_id: 8,
+          pr_node_id: 1,
+          executor: 'codex_cli',
+          status: 'waiting_on_dependencies',
+          attempt_number: 1,
+          created_at: '2026-05-29T12:00:00Z',
+          updated_at: '2026-05-29T12:00:00Z',
+        },
+      ],
+    };
+
+    expect(executionRunFromDTO(bundle, fallbackPlan)).toMatchObject({
+      plan: {
+        idea: 'Add team invites',
+      },
+      run: {
+        runId: 8,
+        status: 'queued',
+        tasks: [
+          {
+            nodeKey: 'PR-001',
+            status: 'waiting_on_dependencies',
+          },
+        ],
+      },
     });
   });
 });
