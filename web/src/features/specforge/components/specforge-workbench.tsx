@@ -61,6 +61,7 @@ import {
   useDeliverSpecForgePRNode,
   useDispatchExecutionRun,
   useExecutionRun,
+  useGitHubWebhookEvents,
   usePrepareSpecForgePRNodeBranch,
   useRepoProfile,
   useRefreshSpecForgePRNodeCI,
@@ -74,10 +75,16 @@ import {
 } from "@/features/specforge/hooks/use-specforge";
 import type {
   SpecForgeFixAttemptDTO,
+  GitHubWebhookEventDTO,
   SpecForgeRepoProfileDTO,
   SpecForgeSkillDTO,
   SpecForgeTaskEventDTO,
 } from "@/features/specforge/services/specforge-service";
+import {
+  sortWebhookEvents,
+  webhookEventLabel,
+  webhookEventRepo,
+} from "@/features/specforge/webhook-events";
 import type {
   ExecutionRun,
   PlanBundle,
@@ -426,6 +433,7 @@ export function SpecForgeWorkbench() {
               }}
             />
             <RepoSkillsPanel repoId={repoId.trim()} />
+            <GitHubWebhookEventsPanel />
           </CardContent>
         </Card>
 
@@ -794,6 +802,56 @@ function RepoSkillsPanel({ repoId }: { repoId: string }) {
           </div>
         )}
       </div>
+    </div>
+  );
+}
+
+function GitHubWebhookEventsPanel() {
+  const eventsQuery = useGitHubWebhookEvents({ limit: 5 });
+  const events = sortWebhookEvents(eventsQuery.data?.events ?? []).slice(0, 5);
+
+  return (
+    <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <GitPullRequest className="h-4 w-4 text-primary" />
+          GitHub webhooks
+        </div>
+        <Badge variant="outline">{events.length} recent</Badge>
+      </div>
+      <div className="mt-3 space-y-2">
+        {eventsQuery.isLoading && (
+          <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
+            Loading webhook events.
+          </div>
+        )}
+        {eventsQuery.isError && (
+          <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
+            Webhook events will load when the SpecForge backend is available.
+          </div>
+        )}
+        {!eventsQuery.isLoading && !eventsQuery.isError && events.length === 0 && (
+          <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
+            No webhook events recorded yet.
+          </div>
+        )}
+        {events.map((event) => (
+          <GitHubWebhookEventRow key={event.id} event={event} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function GitHubWebhookEventRow({ event }: { event: GitHubWebhookEventDTO }) {
+  return (
+    <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-medium">{webhookEventLabel(event)}</div>
+        <Badge variant="outline">{event.status}</Badge>
+      </div>
+      <div className="mt-1 text-xs text-text-muted">{webhookEventRepo(event)}</div>
+      <div className="mt-1 text-xs text-text-muted">{event.delivery_id}</div>
     </div>
   );
 }
