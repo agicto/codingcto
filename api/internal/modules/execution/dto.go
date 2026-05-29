@@ -40,6 +40,11 @@ type RetryAgentTaskRequest struct {
 	ForceFreshSession bool `json:"force_fresh_session" binding:"omitempty"`
 }
 
+type ReviewPatchAgentTaskRequest struct {
+	Feedback          string `json:"feedback" binding:"required,max=200000"`
+	ForceFreshSession bool   `json:"force_fresh_session" binding:"omitempty"`
+}
+
 type ClaimAgentTaskRequest struct {
 	Executor  string `json:"executor" binding:"omitempty,max=100"`
 	SessionID string `json:"session_id" binding:"omitempty,max=255"`

@@ -212,6 +212,49 @@ func TestRetryTaskRejectsCancelledRun(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrConflict)
 }
 
+func TestCreateReviewPatchTaskCreatesQueuedReviewAttempt(t *testing.T) {
+	planningRepo := memoryPlanningRepoWithPrompt()
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+	completed := dispatched.Tasks[0]
+	completed.Status = domain.AgentTaskStatusCompleted
+	completed.SessionID = "session_123"
+	completed.Workdir = "/tmp/specforge/task"
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), completed))
+
+	updated, err := svc.CreateReviewPatchTask(context.Background(), completed.ID, &ReviewPatchAgentTaskRequest{Feedback: "Please handle nil workspace roles."})
+
+	require.NoError(t, err)
+	require.Len(t, updated.Tasks, 3)
+	reviewTask := updated.Tasks[2]
+	require.Equal(t, completed.ID, *reviewTask.ParentTaskID)
+	require.Equal(t, completed.PRNodeID, reviewTask.PRNodeID)
+	require.Equal(t, domain.AgentTaskStatusQueued, reviewTask.Status)
+	require.Equal(t, domain.PromptTypeReviewPatch, reviewTask.PromptType)
+	require.Equal(t, "session_123", reviewTask.SessionID)
+	require.Equal(t, "/tmp/specforge/task", reviewTask.Workdir)
+	reviewPrompt := latestMemoryPromptByType(planningRepo, completed.PRNodeID, domain.PromptTypeReviewPatch)
+	require.NotNil(t, reviewPrompt)
+	require.Contains(t, reviewPrompt.PromptText, "response to human PR review feedback")
+	require.Contains(t, reviewPrompt.PromptText, "Please handle nil workspace roles.")
+}
+
+func TestCreateReviewPatchTaskRejectsNonTerminalTask(t *testing.T) {
+	planningRepo := memoryPlanningRepoWithPrompt()
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+
+	_, err = svc.CreateReviewPatchTask(context.Background(), created.Tasks[0].ID, &ReviewPatchAgentTaskRequest{Feedback: "Please update this."})
+
+	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
 func TestHeartbeatRuntimeRecordsRuntimeAndReportsPendingClaim(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
 	runRepo := &memoryExecutionRepo{}
