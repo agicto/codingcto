@@ -91,6 +91,82 @@ func TestDispatchRunRejectsCancelledRun(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrConflict)
 }
 
+func TestSatisfiedDependencyNodeKeySetIncludesReadyAndMergedPRNodes(t *testing.T) {
+	bundle := &domain.SpecForgeExecutionBundle{
+		Plan: &domain.SpecForgePlanBundle{
+			PRNodes: []*domain.SpecForgePRNode{
+				{ID: 1, NodeKey: "PR-001", Status: domain.PRNodeStatusReadyForReview},
+				{ID: 2, NodeKey: "PR-002", Status: domain.PRNodeStatusMerged},
+				{ID: 3, NodeKey: "PR-003", Status: domain.PRNodeStatusClosed},
+				{ID: 4, NodeKey: "PR-004", Status: domain.PRNodeStatusBlocked},
+				{ID: 5, NodeKey: "PR-005", Status: domain.PRNodeStatusCIRunning},
+				{ID: 6, NodeKey: "PR-006", Status: domain.PRNodeStatusPlanned},
+			},
+		},
+		Tasks: []*domain.SpecForgeAgentTask{
+			{PRNodeID: 6, Status: domain.AgentTaskStatusCompleted},
+		},
+	}
+
+	completed := satisfiedDependencyNodeKeySet(bundle)
+
+	require.Contains(t, completed, "PR-001")
+	require.Contains(t, completed, "PR-002")
+	require.Contains(t, completed, "PR-006")
+	require.NotContains(t, completed, "PR-003")
+	require.NotContains(t, completed, "PR-004")
+	require.NotContains(t, completed, "PR-005")
+}
+
+func TestDependenciesCompleteUsesReadyForReviewPRStatus(t *testing.T) {
+	bundle := &domain.SpecForgeExecutionBundle{
+		Plan: &domain.SpecForgePlanBundle{
+			PRNodes: []*domain.SpecForgePRNode{
+				{ID: 1, NodeKey: "PR-001", Status: domain.PRNodeStatusReadyForReview},
+				{ID: 2, NodeKey: "PR-002", DependsOn: []string{"PR-001"}, Status: domain.PRNodeStatusPlanned},
+			},
+		},
+	}
+
+	node := bundle.Plan.PRNodes[1]
+
+	require.True(t, dependenciesComplete(node, satisfiedDependencyNodeKeySet(bundle)))
+}
+
+func TestDependenciesCompleteDoesNotUseClosedPRStatus(t *testing.T) {
+	bundle := &domain.SpecForgeExecutionBundle{
+		Plan: &domain.SpecForgePlanBundle{
+			PRNodes: []*domain.SpecForgePRNode{
+				{ID: 1, NodeKey: "PR-001", Status: domain.PRNodeStatusClosed},
+				{ID: 2, NodeKey: "PR-002", DependsOn: []string{"PR-001"}, Status: domain.PRNodeStatusPlanned},
+			},
+		},
+	}
+
+	node := bundle.Plan.PRNodes[1]
+
+	require.False(t, dependenciesComplete(node, satisfiedDependencyNodeKeySet(bundle)))
+}
+
+func TestUnlockReadyTasksUsesReadyForReviewPRStatus(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	require.Equal(t, domain.AgentTaskStatusWaiting, created.Tasks[1].Status)
+	planningRepo.bundle.PRNodes[0].Status = domain.PRNodeStatusReadyForReview
+
+	bundle, err := svc.GetRun(context.Background(), created.Run.ID)
+	require.NoError(t, err)
+	err = svc.unlockReadyTasks(context.Background(), bundle)
+
+	require.NoError(t, err)
+	updated, err := svc.GetRun(context.Background(), created.Run.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.AgentTaskStatusQueued, updated.Tasks[1].Status)
+}
+
 func TestCancelRunCancelsNonTerminalTasks(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
 	runRepo := &memoryExecutionRepo{}

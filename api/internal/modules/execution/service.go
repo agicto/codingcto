@@ -413,7 +413,7 @@ func (s *service) RetryTask(ctx context.Context, taskID uint, req *RetryAgentTas
 	if node == nil {
 		return nil, domain.ErrNotFound
 	}
-	if dependenciesComplete(node, completedNodeKeySet(bundle)) {
+	if dependenciesComplete(node, satisfiedDependencyNodeKeySet(bundle)) {
 		status = domain.AgentTaskStatusQueued
 	}
 	promptType := retryPromptType(parent)
@@ -446,7 +446,7 @@ func (s *service) CreateFixTaskForPRNode(ctx context.Context, prNodeID uint, req
 		return nil, domain.ErrNotFound
 	}
 	status := domain.AgentTaskStatusWaiting
-	if dependenciesComplete(node, completedNodeKeySet(bundle)) {
+	if dependenciesComplete(node, satisfiedDependencyNodeKeySet(bundle)) {
 		status = domain.AgentTaskStatusQueued
 	}
 	fixParent := *parent
@@ -485,7 +485,7 @@ func (s *service) CreateReviewPatchTask(ctx context.Context, taskID uint, req *R
 		return nil, domain.ErrNotFound
 	}
 	status := domain.AgentTaskStatusWaiting
-	if dependenciesComplete(node, completedNodeKeySet(bundle)) {
+	if dependenciesComplete(node, satisfiedDependencyNodeKeySet(bundle)) {
 		status = domain.AgentTaskStatusQueued
 	}
 	reviewParent := *parent
@@ -1034,7 +1034,7 @@ func retryPromptType(parent *domain.SpecForgeAgentTask) string {
 }
 
 func (s *service) unlockReadyTasks(ctx context.Context, bundle *domain.SpecForgeExecutionBundle) error {
-	completedNodeKeys := completedNodeKeySet(bundle)
+	completedNodeKeys := satisfiedDependencyNodeKeySet(bundle)
 	nodeByID := nodeByID(bundle.Plan.PRNodes)
 	for _, task := range bundle.Tasks {
 		if task.Status != domain.AgentTaskStatusWaiting {
@@ -1052,9 +1052,9 @@ func (s *service) unlockReadyTasks(ctx context.Context, bundle *domain.SpecForge
 	return nil
 }
 
-func completedNodeKeySet(bundle *domain.SpecForgeExecutionBundle) map[string]struct{} {
+func satisfiedDependencyNodeKeySet(bundle *domain.SpecForgeExecutionBundle) map[string]struct{} {
 	nodeByID := nodeByID(bundle.Plan.PRNodes)
-	out := make(map[string]struct{}, len(bundle.Tasks))
+	out := make(map[string]struct{}, len(bundle.Tasks)+len(bundle.Plan.PRNodes))
 	for _, task := range bundle.Tasks {
 		if task.Status != domain.AgentTaskStatusCompleted {
 			continue
@@ -1063,7 +1063,22 @@ func completedNodeKeySet(bundle *domain.SpecForgeExecutionBundle) map[string]str
 			out[node.NodeKey] = struct{}{}
 		}
 	}
+	for _, node := range bundle.Plan.PRNodes {
+		if node == nil || !prNodeStatusSatisfiesDependency(node.Status) {
+			continue
+		}
+		out[node.NodeKey] = struct{}{}
+	}
 	return out
+}
+
+func prNodeStatusSatisfiesDependency(status string) bool {
+	switch status {
+	case domain.PRNodeStatusReadyForReview, domain.PRNodeStatusMerged:
+		return true
+	default:
+		return false
+	}
 }
 
 func nodeByID(nodes []*domain.SpecForgePRNode) map[uint]*domain.SpecForgePRNode {
