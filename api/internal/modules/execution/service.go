@@ -1106,7 +1106,7 @@ func satisfiedDependencyNodeKeySet(bundle *domain.SpecForgeExecutionBundle) map[
 		if task.Status != domain.AgentTaskStatusCompleted {
 			continue
 		}
-		if node := nodeByID[task.PRNodeID]; node != nil {
+		if node := nodeByID[task.PRNodeID]; node != nil && !prNodeRequiresStatusGate(node) {
 			out[node.NodeKey] = struct{}{}
 		}
 	}
@@ -1117,6 +1117,21 @@ func satisfiedDependencyNodeKeySet(bundle *domain.SpecForgeExecutionBundle) map[
 		out[node.NodeKey] = struct{}{}
 	}
 	return out
+}
+
+func prNodeRequiresStatusGate(node *domain.SpecForgePRNode) bool {
+	if node == nil {
+		return false
+	}
+	if node.GitHubPRNumber != nil || strings.TrimSpace(node.GitHubPRURL) != "" || strings.TrimSpace(node.GitHubHeadSHA) != "" {
+		return true
+	}
+	switch node.Status {
+	case domain.PRNodeStatusPROpened, domain.PRNodeStatusCIRunning, domain.PRNodeStatusBlocked, domain.PRNodeStatusClosed:
+		return true
+	default:
+		return false
+	}
 }
 
 func prNodeStatusSatisfiesDependency(status string) bool {
