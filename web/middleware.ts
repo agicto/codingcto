@@ -10,11 +10,11 @@ function matchesPrefix(pathname: string, prefix: string): boolean {
 }
 
 function isProtectedPath(pathname: string): boolean {
-  return authConfig.protectedRoutes.some((route) => matchesPrefix(pathname, route));
+  return authConfig.protectedRoutes.some(route => matchesPrefix(pathname, route));
 }
 
 function isPublicOnlyPath(pathname: string): boolean {
-  return authConfig.publicOnlyRoutes.some((route) => matchesPrefix(pathname, route));
+  return authConfig.publicOnlyRoutes.some(route => matchesPrefix(pathname, route));
 }
 
 /**
@@ -35,26 +35,10 @@ async function getSessionPayload(request: NextRequest) {
   return parseSignedSessionPayload(payload);
 }
 
-function isAPIProxyPath(pathname: string): boolean {
-  return matchesPrefix(pathname, '/v1');
-}
-
 export async function middleware(request: NextRequest) {
   const { pathname, search } = request.nextUrl;
   const session = await getSessionPayload(request);
   const valid = Boolean(session);
-
-  if (isAPIProxyPath(pathname) && session?.apiAccessToken) {
-    const requestHeaders = new Headers(request.headers);
-    if (!requestHeaders.has('authorization')) {
-      requestHeaders.set('authorization', `Bearer ${session.apiAccessToken}`);
-    }
-    return NextResponse.next({
-      request: {
-        headers: requestHeaders,
-      },
-    });
-  }
 
   if (!valid && isProtectedPath(pathname)) {
     const loginUrl = new URL(authConfig.routes.login, request.url);
@@ -70,12 +54,5 @@ export async function middleware(request: NextRequest) {
 }
 
 export const config = {
-  matcher: [
-    '/console/:path*',
-    '/styleguide/:path*',
-    '/i18n-test/:path*',
-    '/v1/:path*',
-    '/login',
-    '/register',
-  ],
+  matcher: ['/console/:path*', '/styleguide/:path*', '/i18n-test/:path*', '/login', '/register'],
 };
