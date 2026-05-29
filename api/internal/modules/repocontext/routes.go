@@ -8,5 +8,6 @@ func (h *Handler) RegisterRoutes(r *router.Router) {
 
 		auth.GET("/repositories/:repo_id/profile", h.GetProfile).Name("specforge.repositories.profile.show")
 		auth.POST("/repositories/:repo_id/profile", h.UpsertProfile).Name("specforge.repositories.profile.store")
+		auth.POST("/repositories/:repo_id/profile/infer", h.InferProfile).Name("specforge.repositories.profile.infer")
 	})
 }

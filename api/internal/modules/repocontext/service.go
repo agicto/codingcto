@@ -11,6 +11,7 @@ import (
 
 type Service interface {
 	UpsertProfile(ctx context.Context, userID uint, repoID string, req *UpsertRepoProfileRequest) (*domain.SpecForgeRepoProfile, error)
+	InferProfile(ctx context.Context, userID uint, repoID string, req *InferRepoProfileRequest) (*domain.SpecForgeRepoProfile, error)
 	GetProfile(ctx context.Context, repoID string) (*domain.SpecForgeRepoProfile, error)
 }
 
@@ -55,6 +56,19 @@ func (s *service) UpsertProfile(ctx context.Context, userID uint, repoID string,
 	return profile, nil
 }
 
+func (s *service) InferProfile(ctx context.Context, userID uint, repoID string, req *InferRepoProfileRequest) (*domain.SpecForgeRepoProfile, error) {
+	if userID == 0 || strings.TrimSpace(repoID) == "" || req == nil {
+		return nil, domain.ErrInvalidInput
+	}
+
+	paths := normalizeList(req.FilePaths)
+	scripts := normalizeScripts(req.PackageScripts)
+	inferred := inferRepoProfile(paths, scripts)
+	inferred.DefaultBranch = strings.TrimSpace(req.DefaultBranch)
+
+	return s.UpsertProfile(ctx, userID, repoID, inferred)
+}
+
 func (s *service) GetProfile(ctx context.Context, repoID string) (*domain.SpecForgeRepoProfile, error) {
 	if strings.TrimSpace(repoID) == "" {
 		return nil, domain.ErrInvalidInput
@@ -77,4 +91,138 @@ func normalizeList(values []string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func normalizeScripts(scripts map[string]string) map[string]string {
+	out := make(map[string]string, len(scripts))
+	for name, command := range scripts {
+		name = strings.TrimSpace(name)
+		command = strings.TrimSpace(command)
+		if name == "" || command == "" {
+			continue
+		}
+		out[name] = command
+	}
+	return out
+}
+
+func inferRepoProfile(paths []string, scripts map[string]string) *UpsertRepoProfileRequest {
+	lowerPaths := make([]string, 0, len(paths))
+	for _, path := range paths {
+		lowerPaths = append(lowerPaths, strings.ToLower(strings.TrimSpace(path)))
+	}
+
+	stack := []string{}
+	testCommands := []string{}
+	appStructure := []string{}
+	riskAreas := []string{}
+	conventions := []string{}
+	ciProvider := "unknown"
+
+	if hasPath(lowerPaths, "go.mod") {
+		stack = append(stack, "Go")
+		testCommands = append(testCommands, "go test ./...", "go vet ./...")
+	}
+	if hasPath(lowerPaths, "package.json") {
+		stack = append(stack, "Node.js")
+	}
+	if hasAnyPath(lowerPaths, "next.config", "app/", "pages/") {
+		stack = append(stack, "Next.js")
+	}
+	if hasPath(lowerPaths, "tsconfig.json") || hasExtension(lowerPaths, ".ts", ".tsx") {
+		stack = append(stack, "TypeScript")
+	}
+	if hasAnyPath(lowerPaths, "tailwind.config", "postcss.config") {
+		stack = append(stack, "Tailwind")
+	}
+	if hasAnyPath(lowerPaths, "prisma/schema.prisma", "prisma/migrations") {
+		stack = append(stack, "Prisma")
+		riskAreas = append(riskAreas, "database migrations")
+	}
+	if hasAnyPath(lowerPaths, ".github/workflows/") {
+		ciProvider = "github_actions"
+	}
+	if hasAnyPath(lowerPaths, "api/internal/modules") {
+		appStructure = append(appStructure, "api/internal/modules")
+		conventions = append(conventions, "Keep Go modules inside api/internal module boundaries.")
+	}
+	if hasAnyPath(lowerPaths, "web/src/features") {
+		appStructure = append(appStructure, "web/src/features")
+		conventions = append(conventions, "Keep frontend work in feature-first folders.")
+	}
+	if hasAnyPath(lowerPaths, "auth", "permission", "rbac") {
+		riskAreas = append(riskAreas, "auth")
+	}
+	if hasAnyPath(lowerPaths, "billing", "stripe", "payment") {
+		riskAreas = append(riskAreas, "billing")
+	}
+
+	testCommands = append(testCommands, packageTestCommands(scripts)...)
+
+	return &UpsertRepoProfileRequest{
+		Stack:             normalizeList(stack),
+		TestCommands:      normalizeList(testCommands),
+		CIProvider:        ciProvider,
+		AppStructure:      normalizeList(appStructure),
+		CodingConventions: normalizeList(conventions),
+		RiskAreas:         normalizeList(riskAreas),
+		Summary:           inferredSummary(stack, ciProvider, appStructure),
+	}
+}
+
+func packageTestCommands(scripts map[string]string) []string {
+	commands := []string{}
+	for _, name := range []string{"lint", "type-check", "typecheck", "test"} {
+		if _, ok := scripts[name]; ok {
+			commands = append(commands, "pnpm "+name)
+		}
+	}
+	return commands
+}
+
+func hasPath(paths []string, needle string) bool {
+	needle = strings.ToLower(needle)
+	for _, path := range paths {
+		if path == needle || strings.HasSuffix(path, "/"+needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasAnyPath(paths []string, needles ...string) bool {
+	for _, needle := range needles {
+		needle = strings.ToLower(needle)
+		for _, path := range paths {
+			if strings.Contains(path, needle) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func hasExtension(paths []string, extensions ...string) bool {
+	for _, path := range paths {
+		for _, extension := range extensions {
+			if strings.HasSuffix(path, extension) {
+				return true
+			}
+		}
+	}
+	return false
+}
+
+func inferredSummary(stack []string, ciProvider string, appStructure []string) string {
+	parts := []string{"SpecForge inferred this repository profile from repository file paths"}
+	if len(stack) > 0 {
+		parts = append(parts, "stack: "+strings.Join(normalizeList(stack), ", "))
+	}
+	if ciProvider != "unknown" {
+		parts = append(parts, "CI: "+ciProvider)
+	}
+	if len(appStructure) > 0 {
+		parts = append(parts, "structure: "+strings.Join(normalizeList(appStructure), ", "))
+	}
+	return strings.Join(parts, ". ") + "."
 }

@@ -44,6 +44,40 @@ func TestGetProfileReturnsStoredProfile(t *testing.T) {
 	require.Equal(t, "github_actions", found.CIProvider)
 }
 
+func TestInferProfileDetectsStackCommandsAndRisks(t *testing.T) {
+	repo := &memoryRepo{}
+	svc := NewService(repo)
+
+	profile, err := svc.InferProfile(context.Background(), 12, "repo_123", &InferRepoProfileRequest{
+		DefaultBranch: "develop",
+		FilePaths: []string{
+			"go.mod",
+			"web/package.json",
+			"web/tsconfig.json",
+			"web/next.config.ts",
+			"web/tailwind.config.ts",
+			"prisma/schema.prisma",
+			".github/workflows/ci.yml",
+			"api/internal/modules/auth/service.go",
+			"web/src/features/billing/page.tsx",
+		},
+		PackageScripts: map[string]string{
+			"lint":       "next lint",
+			"type-check": "tsc --noEmit",
+			"test":       "vitest",
+		},
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "develop", profile.DefaultBranch)
+	require.Equal(t, "github_actions", profile.CIProvider)
+	require.Subset(t, profile.Stack, []string{"Go", "Node.js", "Next.js", "TypeScript", "Tailwind", "Prisma"})
+	require.Subset(t, profile.TestCommands, []string{"go test ./...", "go vet ./...", "pnpm lint", "pnpm type-check", "pnpm test"})
+	require.Subset(t, profile.RiskAreas, []string{"database migrations", "auth", "billing"})
+	require.Contains(t, profile.Summary, "SpecForge inferred")
+	require.Equal(t, uint(12), profile.CreatedBy)
+}
+
 type memoryRepo struct {
 	nextID  uint
 	profile *domain.SpecForgeRepoProfile
