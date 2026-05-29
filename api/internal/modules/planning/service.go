@@ -213,6 +213,7 @@ func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, no
 	b.WriteString("Prompt type: " + promptType + "\n")
 	b.WriteString("PR node: " + node.NodeKey + " - " + node.Title + "\n")
 	b.WriteString("Goal:\n" + node.Goal + "\n\n")
+	writePromptTypeInstructions(&b, promptType)
 	b.WriteString("Product context:\n")
 	for _, goal := range bundle.ProductSpec.Goals {
 		b.WriteString("- " + goal + "\n")
@@ -230,6 +231,27 @@ func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, no
 	b.WriteString("- Run the listed test commands.\n")
 	b.WriteString("- Prepare a PR description with summary, scope, non-goals, tests, risks, and dependencies.\n")
 	return b.String()
+}
+
+func writePromptTypeInstructions(b *strings.Builder, promptType string) {
+	b.WriteString("Execution mode instructions:\n")
+	switch promptType {
+	case "fix":
+		b.WriteString("- Treat this as a targeted repair for a failed PR node, not a fresh implementation.\n")
+		b.WriteString("- Inspect the latest CI, test, or runtime failure before editing; patch the smallest cause that explains the failure.\n")
+		b.WriteString("- Keep the fix inside the PR node scope and preserve its non-goals.\n")
+		b.WriteString("- If the same failure type has already repeated or the fix budget is exhausted, stop and produce an escalation summary instead of broadening the patch.\n")
+	case "review_patch":
+		b.WriteString("- Treat this as a response to human PR review feedback.\n")
+		b.WriteString("- Address only actionable review comments that belong to this PR node.\n")
+		b.WriteString("- Do not add unrelated cleanup or new feature scope while addressing review feedback.\n")
+		b.WriteString("- Explain how the patch resolves the review request and rerun the listed verification commands.\n")
+	default:
+		b.WriteString("- Implement the PR node from the approved plan snapshot.\n")
+		b.WriteString("- Prefer established repo patterns over new abstractions unless the node explicitly requires one.\n")
+		b.WriteString("- Keep scope, tests, and PR description aligned with the node acceptance criteria.\n")
+	}
+	b.WriteString("\n")
 }
 
 func writeSkills(b *strings.Builder, skills []*domain.SpecForgeSkill) {
