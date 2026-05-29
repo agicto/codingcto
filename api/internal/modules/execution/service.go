@@ -28,6 +28,7 @@ type Service interface {
 	SweepStaleTasks(ctx context.Context, req *StaleTaskSweepRequest) (*domain.SpecForgeTaskSweepResult, error)
 	ClaimTask(ctx context.Context, runtimeID string, req *ClaimAgentTaskRequest) (*ClaimAgentTaskResponse, error)
 	RetryTask(ctx context.Context, taskID uint, req *RetryAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
+	CreateReviewPatchTask(ctx context.Context, taskID uint, req *ReviewPatchAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	PinTaskSession(ctx context.Context, taskID uint, req *PinAgentTaskSessionRequest) (*domain.SpecForgeExecutionBundle, error)
 	ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	SubmitTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.SpecForgeExecutionBundle, error)
@@ -124,6 +125,14 @@ func (s *service) ensurePromptForPRNode(ctx context.Context, userID uint, bundle
 	}
 	if !errors.Is(err, domain.ErrNotFound) {
 		return fmt.Errorf("find %s prompt for PR node: %w", promptType, err)
+	}
+	return s.createPromptForPRNode(ctx, userID, bundle, node, promptType, parent)
+}
+
+func (s *service) createPromptForPRNode(ctx context.Context, userID uint, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, promptType string, parent *domain.SpecForgeAgentTask) error {
+	promptType = strings.TrimSpace(promptType)
+	if bundle == nil || bundle.Plan == nil || node == nil || node.ID == 0 || promptType == "" {
+		return domain.ErrInvalidInput
 	}
 	text := compileRunPromptText(bundle, node, promptType, parent)
 	hash := sha256.Sum256([]byte(text))
@@ -411,6 +420,45 @@ func (s *service) RetryTask(ctx context.Context, taskID uint, req *RetryAgentTas
 	}
 	if _, err := s.repo.CreateRetryAgentTask(ctx, parent, status, req.ForceFreshSession); err != nil {
 		return nil, fmt.Errorf("create retry agent task: %w", err)
+	}
+	return s.GetRun(ctx, parent.RunID)
+}
+
+func (s *service) CreateReviewPatchTask(ctx context.Context, taskID uint, req *ReviewPatchAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error) {
+	if taskID == 0 || req == nil || strings.TrimSpace(req.Feedback) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	parent, err := s.repo.FindAgentTaskByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if parent.Status != domain.AgentTaskStatusCompleted && parent.Status != domain.AgentTaskStatusFailed && parent.Status != domain.AgentTaskStatusCancelled {
+		return nil, domain.ErrConflict
+	}
+	bundle, err := s.GetRun(ctx, parent.RunID)
+	if err != nil {
+		return nil, err
+	}
+	if bundle.Run.Status == domain.ExecutionRunStatusCompleted || bundle.Run.Status == domain.ExecutionRunStatusCancelled {
+		return nil, domain.ErrConflict
+	}
+	node := nodeByID(bundle.Plan.PRNodes)[parent.PRNodeID]
+	if node == nil {
+		return nil, domain.ErrNotFound
+	}
+	status := domain.AgentTaskStatusWaiting
+	if dependenciesComplete(node, completedNodeKeySet(bundle)) {
+		status = domain.AgentTaskStatusQueued
+	}
+	reviewParent := *parent
+	reviewParent.PromptType = domain.PromptTypeReviewPatch
+	reviewParent.FailureReason = "review_feedback"
+	reviewParent.ErrorLog = strings.TrimSpace(req.Feedback)
+	if err := s.createPromptForPRNode(ctx, 0, bundle.Plan, node, domain.PromptTypeReviewPatch, &reviewParent); err != nil {
+		return nil, err
+	}
+	if _, err := s.repo.CreateRetryAgentTask(ctx, &reviewParent, status, req.ForceFreshSession); err != nil {
+		return nil, fmt.Errorf("create review patch agent task: %w", err)
 	}
 	return s.GetRun(ctx, parent.RunID)
 }
@@ -872,6 +920,9 @@ func writeExecutionPromptModeInstructions(b *strings.Builder, promptType string,
 		b.WriteString("- Treat this as a response to human PR review feedback.\n")
 		b.WriteString("- Address only actionable review comments that belong to this PR node.\n")
 		b.WriteString("- Do not add unrelated cleanup or new feature scope while addressing review feedback.\n")
+		if parent != nil && strings.TrimSpace(parent.ErrorLog) != "" {
+			b.WriteString("\nReview feedback:\n" + strings.TrimSpace(parent.ErrorLog) + "\n")
+		}
 	default:
 		b.WriteString("- Implement the PR node from the approved plan snapshot.\n")
 		b.WriteString("- Prefer established repo patterns over new abstractions unless the node explicitly requires one.\n")

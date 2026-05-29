@@ -240,6 +240,27 @@ func (h *Handler) RetryTask(c *gin.Context) {
 	response.Success(c, run)
 }
 
+func (h *Handler) CreateReviewPatchTask(c *gin.Context) {
+	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || taskID == 0 {
+		response.HandleError(c, "Invalid task id", err)
+		return
+	}
+
+	var req ReviewPatchAgentTaskRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+
+	run, err := h.service.CreateReviewPatchTask(c.Request.Context(), uint(taskID), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to create review patch task", err)
+		return
+	}
+
+	response.Success(c, run)
+}
+
 func (h *Handler) CompleteTask(c *gin.Context) {
 	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || taskID == 0 {
