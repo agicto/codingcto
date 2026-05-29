@@ -43,6 +43,20 @@ type RepositoryTreeSnapshot struct {
 	Paths        []string `json:"paths"`
 }
 
+type ReadRepositoryFileRequest struct {
+	RepositoryID string `json:"repository_id" binding:"required,max=255"`
+	Path         string `json:"path" binding:"required,max=500"`
+	Ref          string `json:"ref" binding:"omitempty,max=100"`
+}
+
+type RepositoryFileSnapshot struct {
+	RepositoryID string `json:"repository_id"`
+	Ref          string `json:"ref"`
+	Path         string `json:"path"`
+	SHA          string `json:"sha"`
+	Content      string `json:"content"`
+}
+
 type DeliverPRNodeRequest struct {
 	RepositoryID string `json:"repository_id" binding:"required,max=255"`
 	PRNodeID     uint   `json:"pr_node_id" binding:"required"`

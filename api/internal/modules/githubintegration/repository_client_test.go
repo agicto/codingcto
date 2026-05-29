@@ -2,6 +2,7 @@ package githubintegration
 
 import (
 	"context"
+	"encoding/base64"
 	"encoding/json"
 	"net/http"
 	"net/http/httptest"
@@ -86,6 +87,31 @@ func TestGitHubRepositoryClientListRepositoryTree(t *testing.T) {
 	require.Equal(t, "blob", tree.Tree[0].Type)
 	require.Equal(t, int64(72), tree.Tree[0].Size)
 	require.Equal(t, ".github/workflows/ci.yml", tree.Tree[2].Path)
+}
+
+func TestGitHubRepositoryClientGetRepositoryFile(t *testing.T) {
+	content := `{"scripts":{"lint":"eslint .","test":"vitest"}}`
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodGet, r.Method)
+		require.Equal(t, "/repos/acme/web/contents/web/package.json", r.URL.Path)
+		require.Equal(t, "main", r.URL.Query().Get("ref"))
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"name":     "package.json",
+			"path":     "web/package.json",
+			"sha":      "package123",
+			"encoding": "base64",
+			"content":  base64.StdEncoding.EncodeToString([]byte(content)),
+		})
+	}))
+	defer server.Close()
+	client := newTestRepositoryClient(t, server.URL)
+
+	file, err := client.GetRepositoryFile(context.Background(), "acme", "web", "web/package.json", "main")
+
+	require.NoError(t, err)
+	require.Equal(t, "web/package.json", file.Path)
+	require.Equal(t, "package123", file.SHA)
+	require.Equal(t, content, file.DecodedContent)
 }
 
 func TestGitHubRepositoryClientCreateBranch(t *testing.T) {
