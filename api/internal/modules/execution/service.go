@@ -443,7 +443,7 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 			return nil, fmt.Errorf("update agent task worktree: %w", err)
 		}
 	}
-	prompt, err := s.planningRepo.FindLatestCompiledPromptByPRNodeID(ctx, task.PRNodeID)
+	prompt, err := s.planningRepo.FindLatestCompiledPromptByPRNodeIDAndType(ctx, task.PRNodeID, taskPromptType(task))
 	if err != nil {
 		return nil, err
 	}
@@ -456,6 +456,7 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 	}, CompiledExecutionPrompt{
 		ID:         prompt.ID,
 		PRNodeID:   prompt.PRNodeID,
+		Type:       prompt.Type,
 		Version:    prompt.Version,
 		PromptText: prompt.PromptText,
 	})
@@ -665,7 +666,7 @@ func (s *service) buildClaimResponse(ctx context.Context, task *domain.SpecForge
 	if node == nil {
 		return nil, domain.ErrNotFound
 	}
-	prompt, err := s.planningRepo.FindLatestCompiledPromptByPRNodeID(ctx, task.PRNodeID)
+	prompt, err := s.planningRepo.FindLatestCompiledPromptByPRNodeIDAndType(ctx, task.PRNodeID, taskPromptType(task))
 	if err != nil {
 		return nil, fmt.Errorf("find compiled prompt for claimed task: %w", err)
 	}
@@ -757,10 +758,27 @@ func buildInitialTasks(nodes []*domain.SpecForgePRNode, executor string) []*doma
 			PRNodeID:      node.ID,
 			Executor:      executor,
 			Status:        status,
+			PromptType:    domain.PromptTypeImplementation,
 			AttemptNumber: 1,
 		})
 	}
 	return tasks
+}
+
+func taskPromptType(task *domain.SpecForgeAgentTask) string {
+	if task == nil || strings.TrimSpace(task.PromptType) == "" {
+		return domain.PromptTypeImplementation
+	}
+	return strings.TrimSpace(task.PromptType)
+}
+
+func retryPromptType(parent *domain.SpecForgeAgentTask) string {
+	switch taskPromptType(parent) {
+	case domain.PromptTypeReviewPatch:
+		return domain.PromptTypeReviewPatch
+	default:
+		return domain.PromptTypeFix
+	}
 }
 
 func (s *service) unlockReadyTasks(ctx context.Context, bundle *domain.SpecForgeExecutionBundle) error {
@@ -854,6 +872,7 @@ func toClaimedAgentTask(task *domain.SpecForgeAgentTask) *ClaimedAgentTask {
 		PRNodeID:      task.PRNodeID,
 		Executor:      task.Executor,
 		Status:        task.Status,
+		PromptType:    taskPromptType(task),
 		RuntimeID:     task.RuntimeID,
 		AttemptNumber: task.AttemptNumber,
 		ParentTaskID:  task.ParentTaskID,

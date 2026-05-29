@@ -33,6 +33,7 @@ type ExecutionContext struct {
 type CompiledExecutionPrompt struct {
 	ID         uint
 	PRNodeID   uint
+	Type       string
 	Version    string
 	PromptText string
 }

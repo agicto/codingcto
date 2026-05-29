@@ -368,6 +368,14 @@ func (r *memoryRepo) FindLatestCompiledPromptByPRNodeID(ctx context.Context, prN
 	return &copied, nil
 }
 
+func (r *memoryRepo) FindLatestCompiledPromptByPRNodeIDAndType(ctx context.Context, prNodeID uint, promptType string) (*domain.SpecForgeCompiledPrompt, error) {
+	if r.prompt == nil || r.prompt.PRNodeID != prNodeID || r.prompt.Type != promptType {
+		return nil, domain.ErrNotFound
+	}
+	copied := *r.prompt
+	return &copied, nil
+}
+
 func (r *memoryRepo) UpsertSkill(ctx context.Context, skill *domain.SpecForgeSkill) error {
 	r.nextID++
 	copied := *skill

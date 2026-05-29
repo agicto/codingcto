@@ -28,6 +28,7 @@ func TestStartRunCreatesTasksFromApprovedPlanDAG(t *testing.T) {
 	require.Equal(t, domain.AgentTaskStatusWaiting, bundle.Tasks[1].Status)
 	require.Equal(t, 1, bundle.Tasks[0].AttemptNumber)
 	require.Equal(t, "codex_cli", bundle.Tasks[0].Executor)
+	require.Equal(t, domain.PromptTypeImplementation, bundle.Tasks[0].PromptType)
 }
 
 func TestStartRunRejectsUnapprovedPlan(t *testing.T) {
@@ -147,6 +148,7 @@ func TestRetryTaskCreatesQueuedAttemptForFailedTask(t *testing.T) {
 	require.Equal(t, failed.PRNodeID, retry.PRNodeID)
 	require.Equal(t, 2, retry.AttemptNumber)
 	require.Equal(t, domain.AgentTaskStatusQueued, retry.Status)
+	require.Equal(t, domain.PromptTypeFix, retry.PromptType)
 	require.Equal(t, "session_123", retry.SessionID)
 	require.Equal(t, "/tmp/specforge/task", retry.Workdir)
 	require.Equal(t, domain.AgentTaskStatusFailed, retried.Tasks[0].Status)
@@ -533,6 +535,44 @@ func TestExecuteTaskRunsCompiledPromptAndUnlocksDependents(t *testing.T) {
 	require.Equal(t, 0, *updated.Tasks[0].ExitCode)
 	require.NotNil(t, updated.Tasks[0].FinishedAt)
 	require.Equal(t, domain.AgentTaskStatusQueued, updated.Tasks[1].Status)
+}
+
+func TestExecuteTaskUsesPromptMatchingTaskPromptType(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{
+		bundle: approvedPlanBundle(),
+		prompts: []*domain.SpecForgeCompiledPrompt{
+			{
+				ID:         7,
+				PRNodeID:   4,
+				PlanID:     3,
+				Type:       domain.PromptTypeImplementation,
+				Version:    "prompt_impl_v1",
+				PromptText: "Implement PR-001",
+			},
+			{
+				ID:         8,
+				PRNodeID:   4,
+				PlanID:     3,
+				Type:       domain.PromptTypeFix,
+				Version:    "prompt_fix_v1",
+				PromptText: "Fix PR-001",
+			},
+		},
+	}
+	runRepo := &memoryExecutionRepo{}
+	executor := &fakeExecutor{result: &ExecutionResult{Status: "completed", Output: "done", ExitCode: 0}}
+	svc := NewService(runRepo, planningRepo, nil, executor, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	created.Tasks[0].PromptType = domain.PromptTypeFix
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), created.Tasks[0]))
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+
+	_, err = svc.ExecuteTask(context.Background(), dispatched.Tasks[0].ID, &ExecuteAgentTaskRequest{Workdir: "/tmp/repo"})
+
+	require.NoError(t, err)
+	require.Equal(t, "Fix PR-001", executor.prompt.PromptText)
 }
 
 func TestExecuteTaskPreparesBranchBeforeRunningExecutor(t *testing.T) {
@@ -1266,6 +1306,7 @@ func (r *memoryExecutionRepo) CreateRetryAgentTask(ctx context.Context, parent *
 		PRNodeID:      parent.PRNodeID,
 		Executor:      parent.Executor,
 		Status:        status,
+		PromptType:    retryPromptType(parent),
 		AttemptNumber: parent.AttemptNumber + 1,
 		ParentTaskID:  &parent.ID,
 	}
@@ -1352,8 +1393,9 @@ func (r *memoryExecutionRepo) UpdateAgentTask(ctx context.Context, task *domain.
 }
 
 type memoryPlanningRepo struct {
-	bundle *domain.SpecForgePlanBundle
-	prompt *domain.SpecForgeCompiledPrompt
+	bundle  *domain.SpecForgePlanBundle
+	prompt  *domain.SpecForgeCompiledPrompt
+	prompts []*domain.SpecForgeCompiledPrompt
 }
 
 func (r *memoryPlanningRepo) CreatePlanBundle(ctx context.Context, bundle *domain.SpecForgePlanBundle) error {
@@ -1389,15 +1431,50 @@ func (r *memoryPlanningRepo) UpdatePRNode(ctx context.Context, node *domain.Spec
 
 func (r *memoryPlanningRepo) CreateCompiledPrompt(ctx context.Context, prompt *domain.SpecForgeCompiledPrompt) error {
 	r.prompt = prompt
+	r.prompts = append(r.prompts, prompt)
 	return nil
 }
 
 func (r *memoryPlanningRepo) FindLatestCompiledPromptByPRNodeID(ctx context.Context, prNodeID uint) (*domain.SpecForgeCompiledPrompt, error) {
+	for i := len(r.prompts) - 1; i >= 0; i-- {
+		prompt := r.prompts[i]
+		if prompt != nil && prompt.PRNodeID == prNodeID {
+			copied := *prompt
+			return &copied, nil
+		}
+	}
 	if r.prompt == nil || r.prompt.PRNodeID != prNodeID {
 		return nil, domain.ErrNotFound
 	}
 	copied := *r.prompt
 	return &copied, nil
+}
+
+func (r *memoryPlanningRepo) FindLatestCompiledPromptByPRNodeIDAndType(ctx context.Context, prNodeID uint, promptType string) (*domain.SpecForgeCompiledPrompt, error) {
+	promptType = strings.TrimSpace(promptType)
+	if promptType == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	for i := len(r.prompts) - 1; i >= 0; i-- {
+		prompt := r.prompts[i]
+		if prompt != nil && prompt.PRNodeID == prNodeID && promptTypeMatches(prompt.Type, promptType) {
+			copied := *prompt
+			return &copied, nil
+		}
+	}
+	if r.prompt == nil || r.prompt.PRNodeID != prNodeID || !promptTypeMatches(r.prompt.Type, promptType) {
+		return nil, domain.ErrNotFound
+	}
+	copied := *r.prompt
+	return &copied, nil
+}
+
+func promptTypeMatches(actual, expected string) bool {
+	actual = strings.TrimSpace(actual)
+	if actual == "" {
+		actual = domain.PromptTypeImplementation
+	}
+	return actual == expected
 }
 
 func (r *memoryPlanningRepo) UpdatePlan(ctx context.Context, plan *domain.SpecForgeImplementationPlan) error {

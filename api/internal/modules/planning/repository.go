@@ -138,6 +138,18 @@ func (r *repository) FindLatestCompiledPromptByPRNodeID(ctx context.Context, prN
 	return po.toDomain(), nil
 }
 
+func (r *repository) FindLatestCompiledPromptByPRNodeIDAndType(ctx context.Context, prNodeID uint, promptType string) (*domain.SpecForgeCompiledPrompt, error) {
+	promptType = strings.TrimSpace(promptType)
+	if prNodeID == 0 || promptType == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	var po CompiledPromptPO
+	if err := r.db.WithContext(ctx).Where("pr_node_id = ? AND type = ?", prNodeID, promptType).Order("id DESC").First(&po).Error; err != nil {
+		return nil, err
+	}
+	return po.toDomain(), nil
+}
+
 func (r *repository) UpsertSkill(ctx context.Context, skill *domain.SpecForgeSkill) error {
 	if skill == nil || strings.TrimSpace(skill.RepositoryID) == "" || strings.TrimSpace(skill.Name) == "" {
 		return domain.ErrInvalidInput
