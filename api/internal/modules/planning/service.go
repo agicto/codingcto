@@ -257,6 +257,12 @@ func writeRepoProfile(b *strings.Builder, profile *domain.SpecForgeRepoProfile) 
 	}
 	b.WriteString("- Default branch: " + profile.DefaultBranch + "\n")
 	b.WriteString("- CI provider: " + profile.CIProvider + "\n")
+	if strings.TrimSpace(profile.Source) != "" {
+		b.WriteString("- Profile source: " + strings.TrimSpace(profile.Source) + "\n")
+	}
+	if !profile.LastIndexedAt.IsZero() {
+		b.WriteString("- Last indexed at: " + profile.LastIndexedAt.Format(time.RFC3339) + "\n")
+	}
 	if strings.TrimSpace(profile.Summary) != "" {
 		b.WriteString("- Summary: " + strings.TrimSpace(profile.Summary) + "\n")
 	}
@@ -265,6 +271,7 @@ func writeRepoProfile(b *strings.Builder, profile *domain.SpecForgeRepoProfile) 
 	writeList(b, "App structure", profile.AppStructure)
 	writeList(b, "Coding conventions", profile.CodingConventions)
 	writeList(b, "Risk areas", profile.RiskAreas)
+	writeList(b, "Repo profile warnings", profile.Warnings)
 }
 
 func writeList(b *strings.Builder, title string, values []string) {
