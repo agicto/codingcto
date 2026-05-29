@@ -51,6 +51,7 @@ type PRNodeBranchPreparer interface {
 type service struct {
 	repo               domain.SpecForgeExecutionRepository
 	planningRepo       domain.SpecForgePlanningRepository
+	skillRepo          domain.SpecForgeSkillRepository
 	repositoryResolver RepositoryResolver
 	executor           CodeExecutor
 	worktrees          WorktreeManager
@@ -62,7 +63,11 @@ func NewService(repo domain.SpecForgeExecutionRepository, planningRepo domain.Sp
 	if executor == nil {
 		executor = NewCodexCLIExecutor(CodexCLIExecutorConfig{}, nil)
 	}
-	return &service{repo: repo, planningRepo: planningRepo, repositoryResolver: repositoryResolver, executor: executor, worktrees: worktrees, preparer: preparer, deliverer: deliverer}
+	var skillRepo domain.SpecForgeSkillRepository
+	if repo, ok := planningRepo.(domain.SpecForgeSkillRepository); ok {
+		skillRepo = repo
+	}
+	return &service{repo: repo, planningRepo: planningRepo, skillRepo: skillRepo, repositoryResolver: repositoryResolver, executor: executor, worktrees: worktrees, preparer: preparer, deliverer: deliverer}
 }
 
 func (s *service) StartRun(ctx context.Context, userID, planID uint, req *StartExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error) {
@@ -137,7 +142,11 @@ func (s *service) createPromptForPRNode(ctx context.Context, userID uint, bundle
 	if bundle == nil || bundle.Plan == nil || node == nil || node.ID == 0 || promptType == "" {
 		return domain.ErrInvalidInput
 	}
-	text := compileRunPromptText(bundle, node, promptType, parent)
+	skills, err := s.activeSkillsFor(ctx, bundle)
+	if err != nil {
+		return err
+	}
+	text := compileRunPromptText(bundle, node, promptType, parent, skills)
 	hash := sha256.Sum256([]byte(text))
 	prompt := &domain.SpecForgeCompiledPrompt{
 		PRNodeID:   node.ID,
@@ -152,6 +161,17 @@ func (s *service) createPromptForPRNode(ctx context.Context, userID uint, bundle
 		return fmt.Errorf("create %s prompt for PR node: %w", promptType, err)
 	}
 	return nil
+}
+
+func (s *service) activeSkillsFor(ctx context.Context, bundle *domain.SpecForgePlanBundle) ([]*domain.SpecForgeSkill, error) {
+	if s.skillRepo == nil || bundle == nil || bundle.Idea == nil || strings.TrimSpace(bundle.Idea.RepositoryID) == "" {
+		return []*domain.SpecForgeSkill{}, nil
+	}
+	skills, err := s.skillRepo.ListActiveSkillsByRepositoryID(ctx, bundle.Idea.RepositoryID)
+	if err != nil {
+		return nil, fmt.Errorf("load active repo skills: %w", err)
+	}
+	return skills, nil
 }
 
 func (s *service) GetRun(ctx context.Context, runID uint) (*domain.SpecForgeExecutionBundle, error) {
@@ -976,7 +996,7 @@ func buildInitialTasks(nodes []*domain.SpecForgePRNode, executor string) []*doma
 	return tasks
 }
 
-func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, promptType string, parent *domain.SpecForgeAgentTask) string {
+func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, promptType string, parent *domain.SpecForgeAgentTask, skills []*domain.SpecForgeSkill) string {
 	promptType = strings.TrimSpace(promptType)
 	if promptType == "" {
 		promptType = domain.PromptTypeImplementation
@@ -995,6 +1015,7 @@ func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecF
 		b.WriteString("Technical plan:\n" + strings.TrimSpace(bundle.Plan.TechnicalSummary) + "\n\n")
 	}
 	writeExecutionRepoProfile(&b, bundle)
+	writeExecutionSkills(&b, skills)
 	writeExecutionList(&b, "Expected files", node.ExpectedFiles)
 	writeExecutionList(&b, "Dependencies", node.DependsOn)
 	writeExecutionList(&b, "Non-goals", node.NonGoals)
@@ -1025,6 +1046,29 @@ func writeExecutionRepoProfile(b *strings.Builder, bundle *domain.SpecForgePlanB
 	writeExecutionList(b, "App structure", profile.AppStructure)
 	writeExecutionList(b, "Coding conventions", profile.CodingConventions)
 	writeExecutionList(b, "Risk areas", profile.RiskAreas)
+}
+
+func writeExecutionSkills(b *strings.Builder, skills []*domain.SpecForgeSkill) {
+	b.WriteString("Repository skills:\n")
+	if len(skills) == 0 {
+		b.WriteString("- None\n\n")
+		return
+	}
+	wrote := false
+	for _, skill := range skills {
+		if skill == nil || strings.TrimSpace(skill.Name) == "" || strings.TrimSpace(skill.Content) == "" {
+			continue
+		}
+		wrote = true
+		b.WriteString("## " + strings.TrimSpace(skill.Name) + "\n")
+		if strings.TrimSpace(skill.Description) != "" {
+			b.WriteString(strings.TrimSpace(skill.Description) + "\n")
+		}
+		b.WriteString(strings.TrimSpace(skill.Content) + "\n\n")
+	}
+	if !wrote {
+		b.WriteString("- None\n\n")
+	}
 }
 
 func writeExecutionPromptModeInstructions(b *strings.Builder, promptType string, parent *domain.SpecForgeAgentTask) {

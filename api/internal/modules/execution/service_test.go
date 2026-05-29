@@ -63,6 +63,47 @@ func TestStartRunIncludesRepoProfileInCompiledPrompt(t *testing.T) {
 	require.Contains(t, prompt, "database migrations")
 }
 
+func TestStartRunIncludesActiveRepoSkillsInCompiledPrompt(t *testing.T) {
+	bundle := approvedPlanBundle()
+	planningRepo := &memoryPlanningRepo{
+		bundle: bundle,
+		skills: []*domain.SpecForgeSkill{
+			{
+				RepositoryID: "repo_123",
+				Name:         "Service layer",
+				Description:  "Persistence rule",
+				Content:      "Do not access GORM directly from HTTP handlers.",
+				Active:       true,
+			},
+			{
+				RepositoryID: "repo_123",
+				Name:         "Inactive rule",
+				Content:      "This inactive skill should not be injected.",
+				Active:       false,
+			},
+			{
+				RepositoryID: "other_repo",
+				Name:         "Other repo rule",
+				Content:      "This belongs to another repository.",
+				Active:       true,
+			},
+		},
+	}
+	svc := NewService(&memoryExecutionRepo{}, planningRepo, nil, nil, nil, nil, nil)
+
+	_, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+
+	require.NoError(t, err)
+	require.NotEmpty(t, planningRepo.prompts)
+	prompt := planningRepo.prompts[0].PromptText
+	require.Contains(t, prompt, "Repository skills")
+	require.Contains(t, prompt, "## Service layer")
+	require.Contains(t, prompt, "Persistence rule")
+	require.Contains(t, prompt, "Do not access GORM directly from HTTP handlers.")
+	require.NotContains(t, prompt, "inactive skill")
+	require.NotContains(t, prompt, "another repository")
+}
+
 func TestStartRunRejectsUnapprovedPlan(t *testing.T) {
 	bundle := approvedPlanBundle()
 	bundle.Plan.Status = domain.PlanStatusDraft
@@ -1781,6 +1822,7 @@ type memoryPlanningRepo struct {
 	bundle  *domain.SpecForgePlanBundle
 	prompt  *domain.SpecForgeCompiledPrompt
 	prompts []*domain.SpecForgeCompiledPrompt
+	skills  []*domain.SpecForgeSkill
 }
 
 func (r *memoryPlanningRepo) CreatePlanBundle(ctx context.Context, bundle *domain.SpecForgePlanBundle) error {
@@ -1899,6 +1941,47 @@ func latestMemoryPromptByType(repo *memoryPlanningRepo, prNodeID uint, promptTyp
 func (r *memoryPlanningRepo) UpdatePlan(ctx context.Context, plan *domain.SpecForgeImplementationPlan) error {
 	r.bundle.Plan = plan
 	return nil
+}
+
+func (r *memoryPlanningRepo) UpsertSkill(ctx context.Context, skill *domain.SpecForgeSkill) error {
+	if skill == nil || strings.TrimSpace(skill.RepositoryID) == "" || strings.TrimSpace(skill.Name) == "" || strings.TrimSpace(skill.Content) == "" {
+		return domain.ErrInvalidInput
+	}
+	copied := *skill
+	r.skills = append(r.skills, &copied)
+	return nil
+}
+
+func (r *memoryPlanningRepo) ListActiveSkillsByRepositoryID(ctx context.Context, repositoryID string) ([]*domain.SpecForgeSkill, error) {
+	repositoryID = strings.TrimSpace(repositoryID)
+	if repositoryID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	out := make([]*domain.SpecForgeSkill, 0, len(r.skills))
+	for _, skill := range r.skills {
+		if skill == nil || skill.RepositoryID != repositoryID || !skill.Active {
+			continue
+		}
+		copied := *skill
+		out = append(out, &copied)
+	}
+	return out, nil
+}
+
+func (r *memoryPlanningRepo) ListSkillsByRepositoryID(ctx context.Context, repositoryID string) ([]*domain.SpecForgeSkill, error) {
+	repositoryID = strings.TrimSpace(repositoryID)
+	if repositoryID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	out := make([]*domain.SpecForgeSkill, 0, len(r.skills))
+	for _, skill := range r.skills {
+		if skill == nil || skill.RepositoryID != repositoryID {
+			continue
+		}
+		copied := *skill
+		out = append(out, &copied)
+	}
+	return out, nil
 }
 
 type fakeExecutor struct {
