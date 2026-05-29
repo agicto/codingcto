@@ -1,7 +1,28 @@
-import type { PlanBundle } from "@/features/specforge/types";
+import type { ExecutorRuntime, PlanBundle } from "@/features/specforge/types";
 
 export const defaultIdea =
   "Add a team invite flow. Workspace admins can invite members by email, and invited users accept through a secure link.";
+
+export const demoRuntimeNow = Date.parse("2026-05-29T12:00:00.000Z");
+
+export const demoRuntimes: ExecutorRuntime[] = [
+  {
+    runtimeId: "runtime_local_codex",
+    executor: "codex_cli",
+    status: "online",
+    hostname: "local-runner",
+    version: "0.1.0",
+    lastSeenAt: new Date(demoRuntimeNow - 60_000).toISOString(),
+  },
+  {
+    runtimeId: "runtime_cloud_codex",
+    executor: "codex_cloud",
+    status: "offline",
+    hostname: "cloud-runner",
+    version: "0.1.0",
+    lastSeenAt: new Date(demoRuntimeNow - 2 * 60_000).toISOString(),
+  },
+];
 
 export const demoPlan: PlanBundle = {
   idea: defaultIdea,

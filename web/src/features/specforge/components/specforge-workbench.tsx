@@ -10,6 +10,7 @@ import {
   Play,
   ShieldAlert,
   Sparkles,
+  Terminal,
 } from "lucide-react";
 
 import { Badge } from "@/components/ui/badge";
@@ -24,7 +25,13 @@ import {
 import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/utils";
-import { defaultIdea, demoPlan } from "@/features/specforge/mock-data";
+import {
+  defaultIdea,
+  demoPlan,
+  demoRuntimes,
+  demoRuntimeNow,
+} from "@/features/specforge/mock-data";
+import { summarizeRuntimeHealth } from "@/features/specforge/runtime-health";
 import type { ExecutionRun, PRNode } from "@/features/specforge/types";
 
 const statusLabel: Record<PRNode["status"], string> = {
@@ -69,14 +76,16 @@ export function SpecForgeWorkbench() {
 
   const readyCount = run.tasks.filter((task) => task.status === "completed").length;
   const runningCount = run.tasks.filter((task) => task.status === "running").length;
-  const waitingCount = run.tasks.filter((task) => task.status === "waiting_on_dependencies").length;
+  const runtimeSummary = useMemo(() => summarizeRuntimeHealth(demoRuntimes, demoRuntimeNow), []);
 
   const progressText = useMemo(() => {
     if (run.status === "idle") {
-      return "Awaiting approval";
+      return runtimeSummary.online > 0
+        ? "Awaiting plan approval; a healthy executor is ready"
+        : "Awaiting plan approval; no healthy executor is online";
     }
     return `${readyCount} / ${run.tasks.length} PR nodes completed`;
-  }, [readyCount, run.status, run.tasks.length]);
+  }, [readyCount, run.status, run.tasks.length, runtimeSummary.online]);
 
   function generatePlan() {
     setHasPlan(true);
@@ -142,7 +151,7 @@ export function SpecForgeWorkbench() {
         <div className="grid grid-cols-3 gap-2 text-sm">
           <Metric label="Ready" value={String(readyCount)} />
           <Metric label="Running" value={String(runningCount)} />
-          <Metric label="Waiting" value={String(waitingCount)} />
+          <Metric label="Executors" value={String(runtimeSummary.online)} />
         </div>
       </header>
 
@@ -160,7 +169,8 @@ export function SpecForgeWorkbench() {
               value={idea}
               onChange={(event) => setIdea(event.target.value)}
               className="min-h-36"
-              aria-label="Product idea"
+              aria-label="Describe the feature SpecForge should turn into reviewable PRs"
+              placeholder="Describe the product outcome, constraints, and any implementation boundaries..."
             />
             <div className="flex flex-wrap gap-2">
               <Button onClick={generatePlan} disabled={!idea.trim()}>
@@ -177,6 +187,10 @@ export function SpecForgeWorkbench() {
 
         <div className="space-y-4">
           <RunSummary progressText={progressText} approved={approved} run={run} />
+          <RuntimeReadiness
+            onlineCount={runtimeSummary.online}
+            recentlyLostCount={runtimeSummary.recently_lost}
+          />
           {hasPlan && (
             <Tabs defaultValue="plan" className="gap-4">
               <TabsList className="grid w-full grid-cols-3 md:w-fit">
@@ -198,6 +212,43 @@ export function SpecForgeWorkbench() {
           )}
         </div>
       </section>
+    </div>
+  );
+}
+
+function RuntimeReadiness({
+  onlineCount,
+  recentlyLostCount,
+}: {
+  onlineCount: number;
+  recentlyLostCount: number;
+}) {
+  return (
+    <div className="flex flex-col gap-3 rounded-lg border border-border-subtle bg-bg-surface p-4 md:flex-row md:items-center md:justify-between">
+      <div className="flex items-start gap-3">
+        <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg border border-border-subtle bg-bg-subtle">
+          <Terminal className="h-4 w-4 text-primary" />
+        </div>
+        <div>
+          <div className="text-sm font-medium">Executor readiness</div>
+          <div className="mt-1 text-sm text-text-muted">
+            {onlineCount > 0
+              ? "Approved plans can be dispatched to a healthy runtime."
+              : "Execution will wait until a runtime heartbeat is online."}
+          </div>
+        </div>
+      </div>
+      <div className="flex flex-wrap gap-2">
+        <Badge variant="outline" className={onlineCount > 0 ? statusClassName("completed") : ""}>
+          {onlineCount} online
+        </Badge>
+        <Badge
+          variant="outline"
+          className={recentlyLostCount > 0 ? statusClassName("waiting_on_dependencies") : ""}
+        >
+          {recentlyLostCount} unstable
+        </Badge>
+      </div>
     </div>
   );
 }

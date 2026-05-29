@@ -55,3 +55,14 @@ export interface ExecutionRun {
   startedAt?: string;
   tasks: PRNode[];
 }
+
+export type RuntimeHealth = "online" | "recently_lost" | "offline" | "stale";
+
+export interface ExecutorRuntime {
+  runtimeId: string;
+  executor: string;
+  status: "online" | "offline" | string;
+  hostname?: string;
+  version?: string;
+  lastSeenAt?: string;
+}
