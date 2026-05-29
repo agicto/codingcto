@@ -417,6 +417,7 @@ export interface SpecForgeExecutionBundleDTO {
     runtime_id?: string;
     attempt_number: number;
     parent_task_id?: number;
+    fix_attempt_id?: number;
     session_id?: string;
     workdir?: string;
     failure_reason?: string;

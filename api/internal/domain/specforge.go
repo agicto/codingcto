@@ -169,6 +169,7 @@ type SpecForgeAgentTask struct {
 	RuntimeID     string     `json:"runtime_id,omitempty"`
 	AttemptNumber int        `json:"attempt_number"`
 	ParentTaskID  *uint      `json:"parent_task_id,omitempty"`
+	FixAttemptID  *uint      `json:"fix_attempt_id,omitempty"`
 	SessionID     string     `json:"session_id,omitempty"`
 	Workdir       string     `json:"workdir,omitempty"`
 	FailureReason string     `json:"failure_reason,omitempty"`

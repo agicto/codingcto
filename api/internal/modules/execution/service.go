@@ -478,6 +478,9 @@ func (s *service) CreateFixTaskForPRNode(ctx context.Context, prNodeID uint, req
 	fixParent := *parent
 	fixParent.PromptType = domain.PromptTypeFix
 	fixParent.FailureReason = strings.TrimSpace(req.FailureType)
+	if req.FixAttemptID > 0 {
+		fixParent.FixAttemptID = &req.FixAttemptID
+	}
 	fixParent.ErrorLog = fixTaskFailureContext(req)
 	if err := s.createPromptForPRNode(ctx, 0, bundle.Plan, node, domain.PromptTypeFix, &fixParent); err != nil {
 		return nil, err
@@ -1282,6 +1285,7 @@ func toClaimedAgentTask(task *domain.SpecForgeAgentTask) *ClaimedAgentTask {
 		RuntimeID:     task.RuntimeID,
 		AttemptNumber: task.AttemptNumber,
 		ParentTaskID:  task.ParentTaskID,
+		FixAttemptID:  task.FixAttemptID,
 		SessionID:     task.SessionID,
 		Workdir:       task.Workdir,
 	}

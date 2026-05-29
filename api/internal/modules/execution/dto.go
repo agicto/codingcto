@@ -47,6 +47,7 @@ type ReviewPatchAgentTaskRequest struct {
 
 type FixAgentTaskRequest struct {
 	FailureType       string `json:"failure_type" binding:"required,max=100"`
+	FixAttemptID      uint   `json:"fix_attempt_id" binding:"omitempty"`
 	CILogExcerpt      string `json:"ci_log_excerpt" binding:"omitempty,max=200000"`
 	LikelyCause       string `json:"likely_cause" binding:"omitempty,max=5000"`
 	RecommendedAction string `json:"recommended_action" binding:"omitempty,max=5000"`
@@ -89,6 +90,7 @@ type ClaimedAgentTask struct {
 	RuntimeID     string `json:"runtime_id"`
 	AttemptNumber int    `json:"attempt_number"`
 	ParentTaskID  *uint  `json:"parent_task_id,omitempty"`
+	FixAttemptID  *uint  `json:"fix_attempt_id,omitempty"`
 	SessionID     string `json:"session_id,omitempty"`
 	Workdir       string `json:"workdir,omitempty"`
 }

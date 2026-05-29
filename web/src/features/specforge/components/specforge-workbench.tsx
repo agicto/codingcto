@@ -1714,7 +1714,7 @@ function ExecutionStatus({
                 </Button>
               </div>
             </div>
-            {(task.failureReason || task.errorLog || task.outputLog || task.logsUrl) && (
+            {(task.fixAttemptId || task.failureReason || task.errorLog || task.outputLog || task.logsUrl) && (
               <TaskDiagnostics task={task} />
             )}
           </div>
@@ -1735,6 +1735,7 @@ function ExecutionStatus({
 function TaskDiagnostics({ task }: { task: PRNode }) {
   return (
     <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-xs leading-5 text-text-muted">
+      {task.fixAttemptId && <div>Fix attempt: #{task.fixAttemptId}</div>}
       {task.failureReason && <div>Failure: {task.failureReason}</div>}
       {task.outputLog && <div className="mt-1 truncate">Output: {task.outputLog}</div>}
       {task.errorLog && <div className="mt-1 truncate">Error: {task.errorLog}</div>}
