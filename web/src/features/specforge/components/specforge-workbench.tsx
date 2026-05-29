@@ -62,6 +62,7 @@ import {
   useRepoProfile,
   useSpecForgeFixAttempts,
   useSpecForgeSkills,
+  useSpecForgeTaskEvents,
   useSpecForgeRuntimes,
   useStartExecutionRun,
   useUpsertRepoProfile,
@@ -71,6 +72,7 @@ import type {
   SpecForgeFixAttemptDTO,
   SpecForgeRepoProfileDTO,
   SpecForgeSkillDTO,
+  SpecForgeTaskEventDTO,
 } from "@/features/specforge/services/specforge-service";
 import type {
   ExecutionRun,
@@ -1076,6 +1078,10 @@ function ExecutionStatus({
 }) {
   const canAdvance = run.status === "running";
   const canCancel = run.status === "queued" || run.status === "running";
+  const [selectedTask, setSelectedTask] = useState<PRNode>();
+  const selectedTaskId = selectedTask?.taskId;
+  const taskEventsQuery = useSpecForgeTaskEvents(selectedTaskId);
+  const taskEvents = taskEventsQuery.data?.events ?? [];
 
   return (
     <Card>
@@ -1100,26 +1106,141 @@ function ExecutionStatus({
       <CardContent className="space-y-3">
         {run.tasks.map((task) => (
           <div
-            key={task.id}
+            key={`${task.id}-${task.taskId ?? "planned"}`}
             className={cn(
-              "flex flex-col gap-3 rounded-lg border border-border-subtle p-4 md:flex-row md:items-center md:justify-between",
+              "flex flex-col gap-3 rounded-lg border border-border-subtle p-4",
               task.status === "running" && "border-info/40 bg-info-subtle"
             )}
           >
-            <div className="min-w-0">
-              <div className="flex items-center gap-2">
-                <GitPullRequest className="h-4 w-4 shrink-0 text-primary" />
-                <span className="truncate text-sm font-medium">{task.title}</span>
+            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <GitPullRequest className="h-4 w-4 shrink-0 text-primary" />
+                  <span className="truncate text-sm font-medium">{task.title}</span>
+                </div>
+                <div className="mt-1 text-xs text-text-muted">{task.branchName}</div>
+                <div className="mt-2 flex flex-wrap gap-2">
+                  {task.executor && <Badge variant="outline">{task.executor}</Badge>}
+                  {task.attemptNumber && (
+                    <Badge variant="outline">attempt {task.attemptNumber}</Badge>
+                  )}
+                  {task.taskId && <Badge variant="outline">task #{task.taskId}</Badge>}
+                </div>
               </div>
-              <div className="mt-1 text-xs text-text-muted">{task.branchName}</div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge variant="outline" className={statusClassName(task.status)}>
+                  {statusLabel[task.status]}
+                </Badge>
+                <Button
+                  variant="outline"
+                  size="sm"
+                  onClick={() => setSelectedTask(task)}
+                >
+                  Events
+                  <Terminal className="ml-1.5 h-4 w-4" />
+                </Button>
+              </div>
             </div>
-            <Badge variant="outline" className={statusClassName(task.status)}>
-              {statusLabel[task.status]}
-            </Badge>
+            {(task.failureReason || task.errorLog || task.outputLog || task.logsUrl) && (
+              <TaskDiagnostics task={task} />
+            )}
           </div>
         ))}
+        {selectedTask && (
+          <TaskEventPanel
+            task={selectedTask}
+            events={taskEvents}
+            isLoading={taskEventsQuery.isLoading}
+            isError={taskEventsQuery.isError}
+          />
+        )}
       </CardContent>
     </Card>
+  );
+}
+
+function TaskDiagnostics({ task }: { task: PRNode }) {
+  return (
+    <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-xs leading-5 text-text-muted">
+      {task.failureReason && <div>Failure: {task.failureReason}</div>}
+      {task.outputLog && <div className="mt-1 truncate">Output: {task.outputLog}</div>}
+      {task.errorLog && <div className="mt-1 truncate">Error: {task.errorLog}</div>}
+      {task.logsUrl && (
+        <a
+          href={task.logsUrl}
+          target="_blank"
+          rel="noreferrer"
+          className="mt-1 inline-flex text-primary hover:underline"
+        >
+          Open logs
+        </a>
+      )}
+    </div>
+  );
+}
+
+function TaskEventPanel({
+  task,
+  events,
+  isLoading,
+  isError,
+}: {
+  task: PRNode;
+  events: SpecForgeTaskEventDTO[];
+  isLoading: boolean;
+  isError: boolean;
+}) {
+  return (
+    <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Terminal className="h-4 w-4 text-primary" />
+            Task events
+          </div>
+          <div className="mt-1 text-xs text-text-muted">
+            {task.title} {task.taskId ? `#${task.taskId}` : ""}
+          </div>
+        </div>
+        <Badge variant="outline">{events.length} events</Badge>
+      </div>
+      <div className="mt-3 max-h-72 space-y-2 overflow-auto rounded-lg border border-border-subtle bg-bg-subtle p-3">
+        {isLoading && <div className="text-sm text-text-muted">Loading task events.</div>}
+        {isError && (
+          <div className="text-sm text-text-muted">
+            Live task events will load when the SpecForge backend is available.
+          </div>
+        )}
+        {!task.taskId && (
+          <div className="text-sm text-text-muted">
+            Live task events require a dispatched backend task.
+          </div>
+        )}
+        {task.taskId && !isLoading && !isError && events.length === 0 && (
+          <div className="text-sm text-text-muted">No task events recorded yet.</div>
+        )}
+        {events.map((event) => (
+          <TaskEventRow key={event.id} event={event} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function TaskEventRow({ event }: { event: SpecForgeTaskEventDTO }) {
+  const eventText = event.content ?? event.output ?? event.input ?? "";
+
+  return (
+    <div className="grid gap-2 rounded-md border border-border-subtle bg-bg-surface p-3 text-xs md:grid-cols-[120px_minmax(0,1fr)]">
+      <div className="space-y-1 text-text-muted">
+        <div>#{event.seq}</div>
+        <div>{event.type}</div>
+        {event.tool && <div>{event.tool}</div>}
+      </div>
+      <pre className="whitespace-pre-wrap break-words font-mono text-text-main">
+        {eventText || "No event content."}
+      </pre>
+    </div>
   );
 }
 
