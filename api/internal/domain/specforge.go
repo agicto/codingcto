@@ -275,6 +275,7 @@ type SpecForgeSkillRepository interface {
 type SpecForgeExecutionRepository interface {
 	CreateExecutionBundle(ctx context.Context, bundle *SpecForgeExecutionBundle) error
 	FindExecutionBundleByRunID(ctx context.Context, runID uint) (*SpecForgeExecutionBundle, error)
+	FindLatestActiveExecutionBundleByPlanID(ctx context.Context, planID uint) (*SpecForgeExecutionBundle, error)
 	FindAgentTaskByID(ctx context.Context, taskID uint) (*SpecForgeAgentTask, error)
 	FindLatestTerminalAgentTaskByPRNodeID(ctx context.Context, prNodeID uint) (*SpecForgeAgentTask, error)
 	ListPendingAgentTasksByRuntime(ctx context.Context, runtimeID, executor string) ([]*SpecForgeAgentTask, error)

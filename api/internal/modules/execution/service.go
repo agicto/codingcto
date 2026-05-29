@@ -31,6 +31,7 @@ type Service interface {
 	CreateFixTaskForPRNode(ctx context.Context, prNodeID uint, req *FixAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	CreateReviewPatchTask(ctx context.Context, taskID uint, req *ReviewPatchAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	CreateReviewPatchTaskForGitHubPR(ctx context.Context, prNumber int, req *ReviewPatchAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
+	UnlockReadyTasksForPRNode(ctx context.Context, prNodeID uint) (*domain.SpecForgeExecutionBundle, error)
 	PinTaskSession(ctx context.Context, taskID uint, req *PinAgentTaskSessionRequest) (*domain.SpecForgeExecutionBundle, error)
 	ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	SubmitTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.SpecForgeExecutionBundle, error)
@@ -531,6 +532,32 @@ func (s *service) CreateReviewPatchTaskForGitHubPR(ctx context.Context, prNumber
 		return nil, err
 	}
 	return s.CreateReviewPatchTask(ctx, parent.ID, req)
+}
+
+func (s *service) UnlockReadyTasksForPRNode(ctx context.Context, prNodeID uint) (*domain.SpecForgeExecutionBundle, error) {
+	if prNodeID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	node, err := s.planningRepo.FindPRNodeByID(ctx, prNodeID)
+	if err != nil {
+		return nil, err
+	}
+	if !prNodeStatusSatisfiesDependency(node.Status) {
+		return nil, domain.ErrConflict
+	}
+	bundle, err := s.repo.FindLatestActiveExecutionBundleByPlanID(ctx, node.PlanID)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := s.planningRepo.FindPlanBundleByPlanID(ctx, node.PlanID)
+	if err != nil {
+		return nil, err
+	}
+	bundle.Plan = plan
+	if err := s.unlockReadyTasks(ctx, bundle); err != nil {
+		return nil, err
+	}
+	return s.GetRun(ctx, bundle.Run.ID)
 }
 
 func (s *service) PinTaskSession(ctx context.Context, taskID uint, req *PinAgentTaskSessionRequest) (*domain.SpecForgeExecutionBundle, error) {

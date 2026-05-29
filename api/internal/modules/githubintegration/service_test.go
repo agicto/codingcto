@@ -425,6 +425,104 @@ func TestRecordWebhookUpdatesPRNodeFromWorkflowRun(t *testing.T) {
 	require.Equal(t, "failure", published.Conclusion)
 }
 
+func TestRecordWebhookPublishesDependencySatisfiedForSuccessfulWorkflowRun(t *testing.T) {
+	repo := &memoryRepo{}
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, PlanID: 20, NodeKey: "PR-001", BranchName: "specforge/team-invite-01-model", Status: domain.PRNodeStatusCIRunning},
+		},
+	}
+	bus := infraevents.NewEventBus()
+	var published domain.SpecForgePRNodeDependencySatisfiedEvent
+	bus.Subscribe(domain.EventSpecForgePRNodeDependencySatisfied, func(ctx context.Context, event infraevents.Event) error {
+		var underlying any = event
+		if wrapped, ok := event.(infraevents.WrappedEvent); ok {
+			underlying = wrapped.Event
+		}
+		typed, ok := underlying.(domain.SpecForgePRNodeDependencySatisfiedEvent)
+		require.True(t, ok)
+		published = typed
+		return nil
+	})
+	svc := NewService(repo, planningRepo, nil, nil, bus)
+	body := []byte(`{
+		"action": "completed",
+		"installation": {"id": 123},
+		"repository": {"full_name": "agicto/codingcto"},
+		"workflow_run": {
+			"id": 987,
+			"name": "API",
+			"head_branch": "specforge/team-invite-01-model",
+			"head_sha": "def456",
+			"status": "completed",
+			"conclusion": "success",
+			"html_url": "https://github.com/agicto/codingcto/actions/runs/987"
+		}
+	}`)
+
+	_, err := svc.RecordWebhook(context.Background(), &GitHubWebhookRequest{
+		EventType:  GitHubWebhookEventWorkflowRun,
+		DeliveryID: "delivery-workflow-success",
+		Signature:  "sha256=abc",
+		Body:       body,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, domain.PRNodeStatusReadyForReview, planningRepo.nodes[0].Status)
+	require.Equal(t, uint(10), published.PRNodeID)
+	require.Equal(t, uint(20), published.PlanID)
+	require.Equal(t, "PR-001", published.NodeKey)
+	require.Equal(t, domain.PRNodeStatusReadyForReview, published.Status)
+}
+
+func TestRecordWebhookPublishesDependencySatisfiedForMergedPullRequest(t *testing.T) {
+	repo := &memoryRepo{}
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, PlanID: 20, NodeKey: "PR-001", BranchName: "specforge/team-invite-01-model", Status: domain.PRNodeStatusReadyForReview},
+		},
+	}
+	bus := infraevents.NewEventBus()
+	var published domain.SpecForgePRNodeDependencySatisfiedEvent
+	bus.Subscribe(domain.EventSpecForgePRNodeDependencySatisfied, func(ctx context.Context, event infraevents.Event) error {
+		var underlying any = event
+		if wrapped, ok := event.(infraevents.WrappedEvent); ok {
+			underlying = wrapped.Event
+		}
+		typed, ok := underlying.(domain.SpecForgePRNodeDependencySatisfiedEvent)
+		require.True(t, ok)
+		published = typed
+		return nil
+	})
+	svc := NewService(repo, planningRepo, nil, nil, bus)
+	body := []byte(`{
+		"action": "closed",
+		"installation": {"id": 123},
+		"repository": {"full_name": "agicto/codingcto"},
+		"pull_request": {
+			"number": 42,
+			"state": "closed",
+			"merged": true,
+			"html_url": "https://github.com/agicto/codingcto/pull/42",
+			"head": {"ref": "specforge/team-invite-01-model", "sha": "abc123"},
+			"base": {"ref": "main"}
+		}
+	}`)
+
+	_, err := svc.RecordWebhook(context.Background(), &GitHubWebhookRequest{
+		EventType:  GitHubWebhookEventPullRequest,
+		DeliveryID: "delivery-pr-merged",
+		Signature:  "sha256=abc",
+		Body:       body,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, domain.PRNodeStatusMerged, planningRepo.nodes[0].Status)
+	require.Equal(t, uint(10), published.PRNodeID)
+	require.Equal(t, uint(20), published.PlanID)
+	require.Equal(t, domain.PRNodeStatusMerged, published.Status)
+}
+
 func TestRecordWebhookDoesNotReapplyExistingDeliveryToPRNode(t *testing.T) {
 	repo := &memoryRepo{}
 	planningRepo := &memoryPlanningRepo{

@@ -10,6 +10,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/zgiai/luas/api/internal/domain"
+	"github.com/zgiai/luas/api/internal/infra/events"
 	"github.com/zgiai/luas/api/internal/modules/githubintegration"
 )
 
@@ -160,6 +161,39 @@ func TestUnlockReadyTasksUsesReadyForReviewPRStatus(t *testing.T) {
 	bundle, err := svc.GetRun(context.Background(), created.Run.ID)
 	require.NoError(t, err)
 	err = svc.unlockReadyTasks(context.Background(), bundle)
+
+	require.NoError(t, err)
+	updated, err := svc.GetRun(context.Background(), created.Run.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.AgentTaskStatusQueued, updated.Tasks[1].Status)
+}
+
+func TestUnlockReadyTasksForPRNodeUsesLatestActivePlanRun(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	planningRepo.bundle.PRNodes[0].Status = domain.PRNodeStatusMerged
+
+	updated, err := svc.UnlockReadyTasksForPRNode(context.Background(), planningRepo.bundle.PRNodes[0].ID)
+
+	require.NoError(t, err)
+	require.Equal(t, created.Run.ID, updated.Run.ID)
+	require.Equal(t, domain.AgentTaskStatusQueued, updated.Tasks[1].Status)
+}
+
+func TestHandlerUnlocksReadyTasksFromDependencySatisfiedEvent(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	planningRepo.bundle.PRNodes[0].Status = domain.PRNodeStatusReadyForReview
+	bus := events.NewEventBus()
+	NewHandler(svc).RegisterEvents(bus)
+
+	err = bus.Publish(context.Background(), domain.NewSpecForgePRNodeDependencySatisfiedEvent(planningRepo.bundle.PRNodes[0]))
 
 	require.NoError(t, err)
 	updated, err := svc.GetRun(context.Background(), created.Run.ID)
@@ -1233,6 +1267,21 @@ func (r *memoryExecutionRepo) FindExecutionBundleByRunID(ctx context.Context, ru
 	return cloneExecutionBundle(r.bundle), nil
 }
 
+func (r *memoryExecutionRepo) FindLatestActiveExecutionBundleByPlanID(ctx context.Context, planID uint) (*domain.SpecForgeExecutionBundle, error) {
+	if planID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	if r.bundle == nil || r.bundle.Run.PlanID != planID {
+		return nil, domain.ErrNotFound
+	}
+	switch r.bundle.Run.Status {
+	case domain.ExecutionRunStatusCompleted, domain.ExecutionRunStatusCancelled:
+		return nil, domain.ErrNotFound
+	default:
+		return cloneExecutionBundle(r.bundle), nil
+	}
+}
+
 func (r *memoryExecutionRepo) FindAgentTaskByID(ctx context.Context, taskID uint) (*domain.SpecForgeAgentTask, error) {
 	if r.bundle == nil {
 		return nil, domain.ErrNotFound
@@ -1634,6 +1683,14 @@ func (r *memoryPlanningRepo) FindPlanBundleByPlanID(ctx context.Context, planID 
 }
 
 func (r *memoryPlanningRepo) FindPRNodeByID(ctx context.Context, prNodeID uint) (*domain.SpecForgePRNode, error) {
+	if r.bundle != nil {
+		for _, node := range r.bundle.PRNodes {
+			if node != nil && node.ID == prNodeID {
+				copied := *node
+				return &copied, nil
+			}
+		}
+	}
 	return nil, domain.ErrNotFound
 }
 

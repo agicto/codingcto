@@ -166,6 +166,7 @@ func NewRoleRevokedEvent(userID, roleID uint, roleName string) RoleRevokedEvent 
 const EventSpecForgeReviewFeedbackReceived = "specforge.review_feedback.received"
 const EventSpecForgeFixAttemptQueued = "specforge.fix_attempt.queued"
 const EventSpecForgePRNodeCIFailed = "specforge.pr_node.ci_failed"
+const EventSpecForgePRNodeDependencySatisfied = "specforge.pr_node.dependency_satisfied"
 
 // SpecForgeReviewFeedbackReceivedEvent is fired when GitHub review feedback can be mapped to a SpecForge PR node.
 type SpecForgeReviewFeedbackReceivedEvent struct {
@@ -254,6 +255,31 @@ func NewSpecForgePRNodeCIFailedEvent(prNodeID uint, repositoryID, repositoryFull
 		HeadSHA:            headSHA,
 		Conclusion:         conclusion,
 	}
+}
+
+// SpecForgePRNodeDependencySatisfiedEvent is fired when a PR node can satisfy downstream DAG dependencies.
+type SpecForgePRNodeDependencySatisfiedEvent struct {
+	BaseEvent
+	PRNodeID uint
+	PlanID   uint
+	NodeKey  string
+	Status   string
+}
+
+func (e SpecForgePRNodeDependencySatisfiedEvent) EventName() string {
+	return EventSpecForgePRNodeDependencySatisfied
+}
+
+func NewSpecForgePRNodeDependencySatisfiedEvent(node *SpecForgePRNode) SpecForgePRNodeDependencySatisfiedEvent {
+	event := SpecForgePRNodeDependencySatisfiedEvent{BaseEvent: NewBaseEvent()}
+	if node == nil {
+		return event
+	}
+	event.PRNodeID = node.ID
+	event.PlanID = node.PlanID
+	event.NodeKey = node.NodeKey
+	event.Status = node.Status
+	return event
 }
 
 // EventHandler handles domain events
