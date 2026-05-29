@@ -29,6 +29,9 @@ import {
   specForgeService,
 } from "@/features/specforge/services/specforge-service";
 
+const silentQueryConfig = { skipErrorHandler: true };
+const silentQueryMeta = { silentError: true };
+
 export const specForgeKeys = {
   all: ["specforge"] as const,
   repoProfile: (repoId: string) => [...specForgeKeys.all, "repo-profile", repoId] as const,
@@ -64,8 +67,9 @@ export const specForgeKeys = {
 export function useRepoProfile(repoId: string) {
   return useQuery({
     queryKey: specForgeKeys.repoProfile(repoId),
-    queryFn: () => specForgeService.getRepoProfile(repoId),
+    queryFn: () => specForgeService.getRepoProfile(repoId, silentQueryConfig),
     enabled: Boolean(repoId),
+    meta: silentQueryMeta,
   });
 }
 
@@ -84,8 +88,9 @@ export function useInferRepoProfile(repoId: string) {
 export function useSpecForgeSkills(repoId: string) {
   return useQuery({
     queryKey: specForgeKeys.skills(repoId),
-    queryFn: () => specForgeService.listSkills(repoId),
+    queryFn: () => specForgeService.listSkills(repoId, silentQueryConfig),
     enabled: Boolean(repoId),
+    meta: silentQueryMeta,
   });
 }
 
@@ -144,14 +149,16 @@ export function useSpecForgeRuntimePendingTasks(runtimeId?: string, executor?: s
 export function useSpecForgeRuntimes(params?: ListSpecForgeRuntimesParams) {
   return useQuery({
     queryKey: specForgeKeys.runtimes(params),
-    queryFn: () => specForgeService.listRuntimes(params),
+    queryFn: () => specForgeService.listRuntimes(params, silentQueryConfig),
+    meta: silentQueryMeta,
   });
 }
 
 export function useGitHubWebhookEvents(params?: ListGitHubWebhookEventsParams) {
   return useQuery({
     queryKey: specForgeKeys.githubWebhookEvents(params),
-    queryFn: () => specForgeService.listGitHubWebhookEvents(params),
+    queryFn: () => specForgeService.listGitHubWebhookEvents(params, silentQueryConfig),
+    meta: silentQueryMeta,
   });
 }
 

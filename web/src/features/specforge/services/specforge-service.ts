@@ -1,5 +1,5 @@
 import { env } from "@/config/env";
-import { createRequest } from "@/http";
+import { createRequest, type RequestConfig } from "@/http";
 
 const request = createRequest({
   baseURL: env.NEXT_PUBLIC_SPECFORGE_API_URL,
@@ -439,8 +439,8 @@ export const specForgeService = {
       payload
     ),
 
-  getRepoProfile: (repoId: string) =>
-    request.get<SpecForgeRepoProfileDTO>(`/repositories/${repoId}/profile`),
+  getRepoProfile: (repoId: string, config?: RequestConfig) =>
+    request.get<SpecForgeRepoProfileDTO>(`/repositories/${repoId}/profile`, config),
 
   inferRepoProfile: (repoId: string, payload: InferRepoProfilePayload) =>
     request.post<SpecForgeRepoProfileDTO, InferRepoProfilePayload>(
@@ -448,13 +448,13 @@ export const specForgeService = {
       payload
     ),
 
-  listGitHubWebhookEvents: (params?: ListGitHubWebhookEventsParams) => {
+  listGitHubWebhookEvents: (params?: ListGitHubWebhookEventsParams, config?: RequestConfig) => {
     const query = new URLSearchParams();
     if (params?.status) query.set("status", params.status);
     if (params?.repository_full_name) query.set("repository_full_name", params.repository_full_name);
     if (params?.limit) query.set("limit", String(params.limit));
     const suffix = query.toString() ? `?${query.toString()}` : "";
-    return request.get<{ events: GitHubWebhookEventDTO[] }>(`/github/webhooks${suffix}`);
+    return request.get<{ events: GitHubWebhookEventDTO[] }>(`/github/webhooks${suffix}`, config);
   },
 
   createIdea: (repoId: string, payload: CreateIdeaPayload) =>
@@ -468,8 +468,8 @@ export const specForgeService = {
   approvePlan: (planId: number, payload: ApprovePlanPayload) =>
     request.post<SpecForgePlanBundleDTO, ApprovePlanPayload>(`/plans/${planId}/approve`, payload),
 
-  listSkills: (repoId: string) =>
-    request.get<{ skills: SpecForgeSkillDTO[] }>(`/repositories/${repoId}/skills`),
+  listSkills: (repoId: string, config?: RequestConfig) =>
+    request.get<{ skills: SpecForgeSkillDTO[] }>(`/repositories/${repoId}/skills`, config),
 
   upsertSkill: (repoId: string, payload: UpsertSkillPayload) =>
     request.post<{ skill: SpecForgeSkillDTO }, UpsertSkillPayload>(
@@ -541,13 +541,13 @@ export const specForgeService = {
       RuntimeHeartbeatPayload
     >(`/runtimes/heartbeat`, payload),
 
-  listRuntimes: (params?: ListSpecForgeRuntimesParams) => {
+  listRuntimes: (params?: ListSpecForgeRuntimesParams, config?: RequestConfig) => {
     const query = new URLSearchParams();
     if (params?.executor) query.set("executor", params.executor);
     if (params?.status) query.set("status", params.status);
     if (params?.limit) query.set("limit", String(params.limit));
     const suffix = query.toString() ? `?${query.toString()}` : "";
-    return request.get<{ runtimes: SpecForgeRuntimeDTO[] }>(`/runtimes${suffix}`);
+    return request.get<{ runtimes: SpecForgeRuntimeDTO[] }>(`/runtimes${suffix}`, config);
   },
 
   sweepStaleRuntimes: (payload?: RuntimeSweepPayload) =>

@@ -4,7 +4,10 @@ import { handleError } from '@/http/error-handler';
 // Create a React Query client.
 export const queryClient = new QueryClient({
   queryCache: new QueryCache({
-    onError: (error) => {
+    onError: (error, query) => {
+      if (query.meta?.silentError) {
+        return;
+      }
       // Background query errors
       handleError(error);
     },
