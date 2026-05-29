@@ -31,6 +31,7 @@ type AgentTaskPO struct {
 	RuntimeID     string `gorm:"size:100;index"`
 	AttemptNumber int    `gorm:"not null;default:1"`
 	ParentTaskID  *uint  `gorm:"index"`
+	FixAttemptID  *uint  `gorm:"index"`
 	SessionID     string `gorm:"size:255;index"`
 	Workdir       string `gorm:"type:text"`
 	FailureReason string `gorm:"size:100;index"`
@@ -118,6 +119,7 @@ func newAgentTaskPO(task *domain.SpecForgeAgentTask) *AgentTaskPO {
 		RuntimeID:     task.RuntimeID,
 		AttemptNumber: task.AttemptNumber,
 		ParentTaskID:  task.ParentTaskID,
+		FixAttemptID:  task.FixAttemptID,
 		SessionID:     task.SessionID,
 		Workdir:       task.Workdir,
 		FailureReason: task.FailureReason,
@@ -144,6 +146,7 @@ func (po *AgentTaskPO) toDomain() *domain.SpecForgeAgentTask {
 		RuntimeID:     po.RuntimeID,
 		AttemptNumber: po.AttemptNumber,
 		ParentTaskID:  po.ParentTaskID,
+		FixAttemptID:  po.FixAttemptID,
 		SessionID:     po.SessionID,
 		Workdir:       po.Workdir,
 		FailureReason: po.FailureReason,

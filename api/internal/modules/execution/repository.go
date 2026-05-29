@@ -518,6 +518,7 @@ func (r *repository) CreateRetryAgentTask(ctx context.Context, parent *domain.Sp
 		PromptType:    retryPromptType(parent),
 		AttemptNumber: parent.AttemptNumber + 1,
 		ParentTaskID:  &parent.ID,
+		FixAttemptID:  parent.FixAttemptID,
 	}
 	if retry.AttemptNumber <= 1 {
 		retry.AttemptNumber = 2

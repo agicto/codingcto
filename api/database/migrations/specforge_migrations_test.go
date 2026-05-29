@@ -82,6 +82,7 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 			"prompt_type",
 			"runtime_id",
 			"parent_task_id",
+			"fix_attempt_id",
 			"session_id",
 			"workdir",
 			"failure_reason",

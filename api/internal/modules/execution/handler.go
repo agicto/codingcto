@@ -77,6 +77,7 @@ func (h *Handler) handleFixAttemptQueued(ctx context.Context, e events.Event) er
 	}
 	_, err := h.service.CreateFixTaskForPRNode(ctx, event.PRNodeID, &FixAgentTaskRequest{
 		FailureType:       event.FailureType,
+		FixAttemptID:      event.FixAttemptID,
 		CILogExcerpt:      event.CILogExcerpt,
 		LikelyCause:       event.LikelyCause,
 		RecommendedAction: event.RecommendedAction,

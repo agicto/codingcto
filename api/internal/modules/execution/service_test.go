@@ -455,6 +455,7 @@ func TestCreateFixTaskForPRNodeCreatesQueuedFixAttempt(t *testing.T) {
 
 	updated, err := svc.CreateFixTaskForPRNode(context.Background(), completed.PRNodeID, &FixAgentTaskRequest{
 		FailureType:       "unit_test_failure",
+		FixAttemptID:      99,
 		CILogExcerpt:      "--- FAIL: TestInvite",
 		LikelyCause:       "GitHub Actions job \"API\" failed at step \"go test\".",
 		RecommendedAction: "Patch the failing assertion.",
@@ -464,6 +465,7 @@ func TestCreateFixTaskForPRNodeCreatesQueuedFixAttempt(t *testing.T) {
 	require.Len(t, updated.Tasks, 3)
 	fixTask := updated.Tasks[2]
 	require.Equal(t, completed.ID, *fixTask.ParentTaskID)
+	require.Equal(t, uint(99), *fixTask.FixAttemptID)
 	require.Equal(t, completed.PRNodeID, fixTask.PRNodeID)
 	require.Equal(t, domain.AgentTaskStatusQueued, fixTask.Status)
 	require.Equal(t, domain.PromptTypeFix, fixTask.PromptType)
@@ -1765,6 +1767,7 @@ func (r *memoryExecutionRepo) CreateRetryAgentTask(ctx context.Context, parent *
 		PromptType:    retryPromptType(parent),
 		AttemptNumber: parent.AttemptNumber + 1,
 		ParentTaskID:  &parent.ID,
+		FixAttemptID:  parent.FixAttemptID,
 	}
 	if retry.AttemptNumber <= 1 {
 		retry.AttemptNumber = 2

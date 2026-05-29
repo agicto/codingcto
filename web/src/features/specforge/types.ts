@@ -48,6 +48,7 @@ export interface PRNode {
   headSha?: string;
   executor?: string;
   attemptNumber?: number;
+  fixAttemptId?: number;
   failureReason?: string;
   logsUrl?: string;
   outputLog?: string;

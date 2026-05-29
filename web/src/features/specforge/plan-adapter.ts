@@ -185,6 +185,7 @@ export function executionRunFromDTO(
       taskId: task.id,
       executor: task.executor,
       attemptNumber: task.attempt_number,
+      fixAttemptId: task.fix_attempt_id,
       failureReason: task.failure_reason,
       logsUrl: task.logs_url,
       outputLog: task.output_log,
