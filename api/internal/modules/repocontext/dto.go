@@ -10,3 +10,9 @@ type UpsertRepoProfileRequest struct {
 	RiskAreas         []string `json:"risk_areas"`
 	Summary           string   `json:"summary" binding:"omitempty,max=10000"`
 }
+
+type InferRepoProfileRequest struct {
+	DefaultBranch  string            `json:"default_branch" binding:"omitempty,max=100"`
+	FilePaths      []string          `json:"file_paths" binding:"omitempty,max=2000,dive,max=500"`
+	PackageScripts map[string]string `json:"package_scripts" binding:"omitempty"`
+}
