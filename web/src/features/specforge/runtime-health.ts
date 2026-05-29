@@ -1,4 +1,5 @@
 import type { ExecutorRuntime, RuntimeHealth } from '@/features/specforge/types';
+import type { SpecForgeRuntimeDTO } from '@/features/specforge/services/specforge-service';
 
 const RECENTLY_LOST_MS = 5 * 60 * 1000;
 const STALE_MS = 24 * 60 * 60 * 1000;
@@ -39,4 +40,15 @@ export function summarizeRuntimeHealth(
       stale: 0,
     }
   );
+}
+
+export function runtimeFromDTO(runtime: SpecForgeRuntimeDTO): ExecutorRuntime {
+  return {
+    runtimeId: runtime.runtime_id,
+    executor: runtime.executor,
+    status: runtime.status,
+    hostname: runtime.hostname,
+    version: runtime.version,
+    lastSeenAt: runtime.last_seen_at,
+  };
 }

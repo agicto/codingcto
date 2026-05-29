@@ -31,7 +31,11 @@ import {
   demoRuntimes,
   demoRuntimeNow,
 } from "@/features/specforge/mock-data";
-import { summarizeRuntimeHealth } from "@/features/specforge/runtime-health";
+import {
+  runtimeFromDTO,
+  summarizeRuntimeHealth,
+} from "@/features/specforge/runtime-health";
+import { useSpecForgeRuntimes } from "@/features/specforge/hooks/use-specforge";
 import type { ExecutionRun, PRNode } from "@/features/specforge/types";
 
 const statusLabel: Record<PRNode["status"], string> = {
@@ -73,10 +77,23 @@ export function SpecForgeWorkbench() {
     status: "idle",
     tasks: demoPlan.prNodes,
   });
+  const [currentRuntimeNow] = useState(() => Date.now());
 
   const readyCount = run.tasks.filter((task) => task.status === "completed").length;
   const runningCount = run.tasks.filter((task) => task.status === "running").length;
-  const runtimeSummary = useMemo(() => summarizeRuntimeHealth(demoRuntimes, demoRuntimeNow), []);
+  const runtimesQuery = useSpecForgeRuntimes({ limit: 20 });
+  const runtimeDTOs = runtimesQuery.data?.runtimes;
+  const runtimes = useMemo(() => {
+    if (runtimeDTOs?.length) {
+      return runtimeDTOs.map(runtimeFromDTO);
+    }
+    return demoRuntimes;
+  }, [runtimeDTOs]);
+  const runtimeNow = runtimeDTOs?.length ? currentRuntimeNow : demoRuntimeNow;
+  const runtimeSummary = useMemo(
+    () => summarizeRuntimeHealth(runtimes, runtimeNow),
+    [runtimes, runtimeNow]
+  );
 
   const progressText = useMemo(() => {
     if (run.status === "idle") {
@@ -190,6 +207,8 @@ export function SpecForgeWorkbench() {
           <RuntimeReadiness
             onlineCount={runtimeSummary.online}
             recentlyLostCount={runtimeSummary.recently_lost}
+            isLoading={runtimesQuery.isLoading}
+            isFallback={Boolean(runtimesQuery.isError || !runtimeDTOs?.length)}
           />
           {hasPlan && (
             <Tabs defaultValue="plan" className="gap-4">
@@ -219,9 +238,13 @@ export function SpecForgeWorkbench() {
 function RuntimeReadiness({
   onlineCount,
   recentlyLostCount,
+  isLoading,
+  isFallback,
 }: {
   onlineCount: number;
   recentlyLostCount: number;
+  isLoading: boolean;
+  isFallback: boolean;
 }) {
   return (
     <div className="flex flex-col gap-3 rounded-lg border border-border-subtle bg-bg-surface p-4 md:flex-row md:items-center md:justify-between">
@@ -232,9 +255,11 @@ function RuntimeReadiness({
         <div>
           <div className="text-sm font-medium">Executor readiness</div>
           <div className="mt-1 text-sm text-text-muted">
-            {onlineCount > 0
-              ? "Approved plans can be dispatched to a healthy runtime."
-              : "Execution will wait until a runtime heartbeat is online."}
+            {isLoading
+              ? "Checking executor runtime heartbeats."
+              : onlineCount > 0
+                ? "Approved plans can be dispatched to a healthy runtime."
+                : "Execution will wait until a runtime heartbeat is online."}
           </div>
         </div>
       </div>
@@ -248,6 +273,11 @@ function RuntimeReadiness({
         >
           {recentlyLostCount} unstable
         </Badge>
+        {isFallback && (
+          <Badge variant="outline" className="border-border bg-bg-surface text-text-subtle">
+            demo fallback
+          </Badge>
+        )}
       </div>
     </div>
   );
