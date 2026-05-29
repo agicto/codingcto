@@ -5,6 +5,7 @@ import {
   ArrowRight,
   CheckCircle2,
   CircleDot,
+  CircleX,
   GitBranch,
   GitPullRequest,
   Play,
@@ -42,6 +43,7 @@ import {
 } from "@/features/specforge/runtime-health";
 import {
   useApproveSpecForgePlan,
+  useCancelExecutionRun,
   useCreateSpecForgeIdea,
   useDispatchExecutionRun,
   useExecutionRun,
@@ -120,6 +122,7 @@ export function SpecForgeWorkbench() {
   const approvePlan = useApproveSpecForgePlan();
   const startRun = useStartExecutionRun();
   const dispatchRun = useDispatchExecutionRun();
+  const cancelRun = useCancelExecutionRun();
   const isStartingRun = approvePlan.isPending || startRun.isPending || dispatchRun.isPending;
   const runQuery = useExecutionRun(run.runId, {
     enabled: Boolean(run.runId),
@@ -281,6 +284,31 @@ export function SpecForgeWorkbench() {
     });
   }
 
+  async function cancelActiveRun() {
+    if (run.runId) {
+      try {
+        const bundle = await cancelRun.mutateAsync(run.runId);
+        const next = executionRunFromDTO(bundle, activePlan);
+        if (next.plan) {
+          setActivePlan(next.plan);
+        }
+        setRun(next.run);
+        return;
+      } catch {
+        // Keep local demo controls usable when the API is unavailable.
+      }
+    }
+
+    setRun((current) => ({
+      ...current,
+      status: "cancelled",
+      tasks: current.tasks.map((task) => ({
+        ...task,
+        status: task.status === "completed" ? task.status : "cancelled",
+      })),
+    }));
+  }
+
   return (
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
       <header className="flex flex-col gap-4 border-b border-border-subtle pb-6 lg:flex-row lg:items-end lg:justify-between">
@@ -365,7 +393,12 @@ export function SpecForgeWorkbench() {
                 <PRDag nodes={activePlan.prNodes} />
               </TabsContent>
               <TabsContent value="run">
-                <ExecutionStatus run={run} onAdvance={advanceRun} />
+                <ExecutionStatus
+                  run={run}
+                  isCancelling={cancelRun.isPending}
+                  onAdvance={advanceRun}
+                  onCancel={cancelActiveRun}
+                />
               </TabsContent>
             </Tabs>
           )}
@@ -610,8 +643,19 @@ function PRDag({ nodes }: { nodes: PRNode[] }) {
   );
 }
 
-function ExecutionStatus({ run, onAdvance }: { run: ExecutionRun; onAdvance: () => void }) {
+function ExecutionStatus({
+  run,
+  isCancelling,
+  onAdvance,
+  onCancel,
+}: {
+  run: ExecutionRun;
+  isCancelling: boolean;
+  onAdvance: () => void;
+  onCancel: () => void;
+}) {
   const canAdvance = run.status === "running";
+  const canCancel = run.status === "queued" || run.status === "running";
 
   return (
     <Card>
@@ -622,10 +666,16 @@ function ExecutionStatus({ run, onAdvance }: { run: ExecutionRun; onAdvance: () 
             Delivery state is organized by PR node, not by individual agent workers.
           </CardDescription>
         </div>
-        <Button onClick={onAdvance} disabled={!canAdvance} variant="outline">
-          Advance demo run
-          <ArrowRight className="ml-1.5 h-4 w-4" />
-        </Button>
+        <div className="flex flex-wrap gap-2">
+          <Button onClick={onCancel} disabled={!canCancel || isCancelling} variant="outline">
+            {isCancelling ? "Cancelling" : "Cancel run"}
+            <CircleX className="ml-1.5 h-4 w-4" />
+          </Button>
+          <Button onClick={onAdvance} disabled={!canAdvance} variant="outline">
+            Advance demo run
+            <ArrowRight className="ml-1.5 h-4 w-4" />
+          </Button>
+        </div>
       </CardHeader>
       <CardContent className="space-y-3">
         {run.tasks.map((task) => (
