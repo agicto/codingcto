@@ -72,6 +72,8 @@ import {
   useSpecForgeSkills,
   useSpecForgeTaskEvents,
   useSpecForgeRuntimes,
+  useSweepSpecForgeRuntimes,
+  useSweepSpecForgeTasks,
   useStartExecutionRun,
   useUpsertRepoProfile,
   useUpsertSpecForgeSkill,
@@ -91,6 +93,7 @@ import {
 } from "@/features/specforge/webhook-events";
 import type {
   ExecutionRun,
+  ExecutorRuntime,
   PlanBundle,
   PRNode,
   RepoProfile,
@@ -454,6 +457,7 @@ export function SpecForgeWorkbench() {
           <RuntimeReadiness
             onlineCount={runtimeSummary.online}
             recentlyLostCount={runtimeSummary.recently_lost}
+            runtimes={runtimes}
             isLoading={runtimesQuery.isLoading}
             isFallback={Boolean(runtimesQuery.isError || !runtimeDTOs?.length)}
           />
@@ -501,47 +505,122 @@ export function SpecForgeWorkbench() {
 function RuntimeReadiness({
   onlineCount,
   recentlyLostCount,
+  runtimes,
   isLoading,
   isFallback,
 }: {
   onlineCount: number;
   recentlyLostCount: number;
+  runtimes: ExecutorRuntime[];
   isLoading: boolean;
   isFallback: boolean;
 }) {
+  const sweepRuntimes = useSweepSpecForgeRuntimes();
+  const sweepTasks = useSweepSpecForgeTasks();
+  const [maintenanceMessage, setMaintenanceMessage] = useState("");
+
+  async function sweepRuntimeHeartbeats() {
+    setMaintenanceMessage("");
+    try {
+      const result = await sweepRuntimes.mutateAsync({ stale_seconds: 300 });
+      setMaintenanceMessage(
+        `Marked ${result.offline_runtimes.length} runtimes offline and failed ${result.failed_tasks.length} tasks.`
+      );
+    } catch {
+      setMaintenanceMessage("Runtime sweep requires the SpecForge backend.");
+    }
+  }
+
+  async function sweepStaleExecutionTasks() {
+    setMaintenanceMessage("");
+    try {
+      const result = await sweepTasks.mutateAsync({
+        dispatch_timeout_seconds: 900,
+        running_timeout_seconds: 3600,
+      });
+      setMaintenanceMessage(`Failed ${result.failed_tasks.length} stale tasks.`);
+    } catch {
+      setMaintenanceMessage("Task sweep requires the SpecForge backend.");
+    }
+  }
+
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border-subtle bg-bg-surface p-4 md:flex-row md:items-center md:justify-between">
-      <div className="flex items-start gap-3">
-        <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg border border-border-subtle bg-bg-subtle">
-          <Terminal className="h-4 w-4 text-primary" />
-        </div>
-        <div>
-          <div className="text-sm font-medium">Executor readiness</div>
-          <div className="mt-1 text-sm text-text-muted">
-            {isLoading
-              ? "Checking executor runtime heartbeats."
-              : onlineCount > 0
-                ? "Approved plans can be dispatched to a healthy runtime."
-                : "Execution will wait until a runtime heartbeat is online."}
+    <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
+        <div className="flex items-start gap-3">
+          <div className="mt-0.5 flex h-8 w-8 items-center justify-center rounded-lg border border-border-subtle bg-bg-subtle">
+            <Terminal className="h-4 w-4 text-primary" />
+          </div>
+          <div>
+            <div className="text-sm font-medium">Executor readiness</div>
+            <div className="mt-1 text-sm text-text-muted">
+              {isLoading
+                ? "Checking executor runtime heartbeats."
+                : onlineCount > 0
+                  ? "Approved plans can be dispatched to a healthy runtime."
+                  : "Execution will wait until a runtime heartbeat is online."}
+            </div>
           </div>
         </div>
-      </div>
-      <div className="flex flex-wrap gap-2">
-        <Badge variant="outline" className={onlineCount > 0 ? statusClassName("completed") : ""}>
-          {onlineCount} online
-        </Badge>
-        <Badge
-          variant="outline"
-          className={recentlyLostCount > 0 ? statusClassName("waiting_on_dependencies") : ""}
-        >
-          {recentlyLostCount} unstable
-        </Badge>
-        {isFallback && (
-          <Badge variant="outline" className="border-border bg-bg-surface text-text-subtle">
-            demo fallback
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="outline" className={onlineCount > 0 ? statusClassName("completed") : ""}>
+            {onlineCount} online
           </Badge>
-        )}
+          <Badge
+            variant="outline"
+            className={recentlyLostCount > 0 ? statusClassName("waiting_on_dependencies") : ""}
+          >
+            {recentlyLostCount} unstable
+          </Badge>
+          {isFallback && (
+            <Badge variant="outline" className="border-border bg-bg-surface text-text-subtle">
+              demo fallback
+            </Badge>
+          )}
+        </div>
       </div>
+      <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
+        <div className="space-y-2">
+          {runtimes.slice(0, 3).map((runtime) => (
+            <div
+              key={runtime.runtimeId}
+              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border-subtle bg-bg-subtle px-3 py-2"
+            >
+              <div className="min-w-0">
+                <div className="truncate text-sm font-medium">{runtime.runtimeId}</div>
+                <div className="text-xs text-text-muted">
+                  {runtime.executor}
+                  {runtime.hostname ? ` · ${runtime.hostname}` : ""}
+                </div>
+              </div>
+              <Badge variant="outline">{runtime.status}</Badge>
+            </div>
+          ))}
+        </div>
+        <div className="flex flex-col gap-2">
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={sweepRuntimeHeartbeats}
+            disabled={sweepRuntimes.isPending || sweepTasks.isPending}
+          >
+            {sweepRuntimes.isPending ? "Sweeping" : "Sweep runtimes"}
+          </Button>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={sweepStaleExecutionTasks}
+            disabled={sweepRuntimes.isPending || sweepTasks.isPending}
+          >
+            {sweepTasks.isPending ? "Sweeping" : "Sweep tasks"}
+          </Button>
+        </div>
+      </div>
+      {maintenanceMessage && (
+        <div className="mt-3 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
+          {maintenanceMessage}
+        </div>
+      )}
     </div>
   );
 }
