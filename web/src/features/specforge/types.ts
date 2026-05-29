@@ -40,6 +40,9 @@ export interface PRNode {
   acceptanceCriteria: string[];
   testCommands: string[];
   branchName: string;
+  githubPrNumber?: number;
+  githubPrUrl?: string;
+  headSha?: string;
   executor?: string;
   attemptNumber?: number;
   failureReason?: string;
@@ -51,6 +54,10 @@ export interface PRNode {
     | "queued"
     | "running"
     | "waiting_on_dependencies"
+    | "pr_opened"
+    | "ci_running"
+    | "ready_for_review"
+    | "blocked"
     | "completed"
     | "failed"
     | "cancelled";

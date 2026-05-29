@@ -19,6 +19,10 @@ const nodeStatuses = new Set<PRNode['status']>([
   'queued',
   'running',
   'waiting_on_dependencies',
+  'pr_opened',
+  'ci_running',
+  'ready_for_review',
+  'blocked',
   'completed',
   'failed',
   'cancelled',
@@ -77,7 +81,7 @@ function implementationStatus(status: string): ImplementationPlan['status'] {
   return status === 'approved' ? 'approved' : 'draft';
 }
 
-function prNodeFromDTO(node: SpecForgePRNodeDTO): PRNode {
+export function prNodeFromDTO(node: SpecForgePRNodeDTO): PRNode {
   return {
     id: String(node.id),
     nodeKey: node.node_key,
@@ -92,6 +96,9 @@ function prNodeFromDTO(node: SpecForgePRNodeDTO): PRNode {
     acceptanceCriteria: node.acceptance_criteria ?? [],
     testCommands: node.test_commands ?? [],
     branchName: node.branch_name,
+    githubPrNumber: node.github_pr_number,
+    githubPrUrl: node.github_pr_url,
+    headSha: node.head_sha,
     status: coerceNodeStatus(node.status),
   };
 }

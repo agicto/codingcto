@@ -12,7 +12,10 @@ import {
   type DispatchRunPayload,
   type ListGitHubWebhookEventsParams,
   type ListSpecForgeRuntimesParams,
+  type PreparePRNodeBranchPayload,
   type RepoProfilePayload,
+  type DeliverPRNodePayload,
+  type RefreshPRNodeCIPayload,
   type RetryTaskPayload,
   type RuntimeDeregisterPayload,
   type RuntimeHeartbeatPayload,
@@ -172,6 +175,25 @@ export function useCompileSpecForgePrompt() {
   return useMutation({
     mutationFn: ({ prNodeId, payload }: { prNodeId: number; payload?: CompilePromptPayload }) =>
       specForgeService.compilePrompt(prNodeId, payload),
+  });
+}
+
+export function usePrepareSpecForgePRNodeBranch() {
+  return useMutation({
+    mutationFn: (payload: PreparePRNodeBranchPayload) =>
+      specForgeService.preparePRNodeBranch(payload),
+  });
+}
+
+export function useDeliverSpecForgePRNode() {
+  return useMutation({
+    mutationFn: (payload: DeliverPRNodePayload) => specForgeService.deliverPRNode(payload),
+  });
+}
+
+export function useRefreshSpecForgePRNodeCI() {
+  return useMutation({
+    mutationFn: (payload: RefreshPRNodeCIPayload) => specForgeService.refreshPRNodeCI(payload),
   });
 }
 

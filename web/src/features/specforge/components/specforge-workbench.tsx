@@ -34,6 +34,7 @@ import { cn } from "@/utils";
 import {
   executionRunFromDTO,
   planBundleFromDTO,
+  prNodeFromDTO,
 } from "@/features/specforge/plan-adapter";
 import { buildPromptPreview } from "@/features/specforge/prompt-preview";
 import {
@@ -57,9 +58,12 @@ import {
   useCompileSpecForgePrompt,
   useCreateSpecForgeFixAttemptFromCI,
   useCreateSpecForgeIdea,
+  useDeliverSpecForgePRNode,
   useDispatchExecutionRun,
   useExecutionRun,
+  usePrepareSpecForgePRNodeBranch,
   useRepoProfile,
+  useRefreshSpecForgePRNodeCI,
   useSpecForgeFixAttempts,
   useSpecForgeSkills,
   useSpecForgeTaskEvents,
@@ -86,22 +90,26 @@ const statusLabel: Record<PRNode["status"], string> = {
   queued: "Queued",
   running: "Running",
   waiting_on_dependencies: "Waiting",
+  pr_opened: "PR opened",
+  ci_running: "CI running",
+  ready_for_review: "Ready",
+  blocked: "Blocked",
   completed: "Completed",
   failed: "Failed",
   cancelled: "Cancelled",
 };
 
 function statusClassName(status: PRNode["status"]) {
-  if (status === "completed") {
+  if (status === "completed" || status === "ready_for_review") {
     return "border-success/30 bg-success-subtle text-success";
   }
-  if (status === "running") {
+  if (status === "running" || status === "ci_running") {
     return "border-info/30 bg-info-subtle text-info";
   }
-  if (status === "waiting_on_dependencies") {
+  if (status === "waiting_on_dependencies" || status === "pr_opened") {
     return "border-warning/30 bg-warning-subtle text-warning";
   }
-  if (status === "failed" || status === "cancelled") {
+  if (status === "failed" || status === "cancelled" || status === "blocked") {
     return "border-error/30 bg-error-subtle text-error";
   }
   return "border-border bg-bg-surface text-text-subtle";
@@ -153,8 +161,12 @@ export function SpecForgeWorkbench() {
     enabled: Boolean(run.runId),
     refetchInterval: run.status === "queued" || run.status === "running" ? 5000 : false,
   });
-  const readyCount = run.tasks.filter((task) => task.status === "completed").length;
-  const runningCount = run.tasks.filter((task) => task.status === "running").length;
+  const readyCount = run.tasks.filter(
+    (task) => task.status === "completed" || task.status === "ready_for_review"
+  ).length;
+  const runningCount = run.tasks.filter(
+    (task) => task.status === "running" || task.status === "ci_running"
+  ).length;
   const runtimesQuery = useSpecForgeRuntimes({ limit: 20 });
   const runtimeDTOs = runtimesQuery.data?.runtimes;
   const runtimes = useMemo(() => {
@@ -908,6 +920,12 @@ function PRDag({
   const [selectedFixNode, setSelectedFixNode] = useState<PRNode>();
   const [localFixAttempts, setLocalFixAttempts] = useState<SpecForgeFixAttemptDTO[]>([]);
   const [promptText, setPromptText] = useState("");
+  const [deliveryNodes, setDeliveryNodes] = useState<Record<string, PRNode>>({});
+  const [deliveryActionNodeId, setDeliveryActionNodeId] = useState<string>();
+  const [deliveryError, setDeliveryError] = useState("");
+  const prepareBranch = usePrepareSpecForgePRNodeBranch();
+  const deliverPR = useDeliverSpecForgePRNode();
+  const refreshCI = useRefreshSpecForgePRNodeCI();
   const selectedFixNodeId = selectedFixNode ? Number(selectedFixNode.id) : undefined;
   const canReadFixAttempts =
     selectedFixNodeId !== undefined && Number.isFinite(selectedFixNodeId) && selectedFixNodeId > 0;
@@ -916,6 +934,44 @@ function PRDag({
   const fixAttempts = canReadFixAttempts
     ? (fixAttemptsQuery.data ?? localFixAttempts)
     : localFixAttempts;
+  const effectiveNodes = nodes.map((node) => deliveryNodes[node.id] ?? node);
+  const isDeliveryActionPending =
+    prepareBranch.isPending || deliverPR.isPending || refreshCI.isPending;
+
+  function rememberDeliveredNode(node: PRNode) {
+    setDeliveryNodes((current) => ({
+      ...current,
+      [node.id]: node,
+    }));
+  }
+
+  async function runDeliveryAction(
+    node: PRNode,
+    action: "prepare" | "deliver" | "refresh"
+  ) {
+    const prNodeId = Number(node.id);
+    if (!repositoryId || !Number.isFinite(prNodeId) || prNodeId <= 0) {
+      setDeliveryError("Live GitHub delivery requires a persisted repository and PR node.");
+      return;
+    }
+
+    setDeliveryError("");
+    setDeliveryActionNodeId(node.id);
+    try {
+      const payload = { repository_id: repositoryId, pr_node_id: prNodeId };
+      const updated =
+        action === "prepare"
+          ? await prepareBranch.mutateAsync(payload)
+          : action === "deliver"
+            ? await deliverPR.mutateAsync({ ...payload, draft: true })
+            : await refreshCI.mutateAsync(payload);
+      rememberDeliveredNode(prNodeFromDTO(updated));
+    } catch {
+      setDeliveryError("GitHub delivery controls require the SpecForge backend and GitHub App setup.");
+    } finally {
+      setDeliveryActionNodeId(undefined);
+    }
+  }
 
   async function handleCompilePrompt(node: PRNode) {
     setSelectedNodeId(node.id);
@@ -960,7 +1016,12 @@ function PRDag({
 
   return (
     <div className="space-y-3">
-      {nodes.map((node, index) => (
+      {deliveryError && (
+        <div className="rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm text-warning">
+          {deliveryError}
+        </div>
+      )}
+      {effectiveNodes.map((node, index) => (
         <div key={node.id} className="grid gap-3 md:grid-cols-[32px_minmax(0,1fr)]">
           <div className="hidden flex-col items-center md:flex">
             <div className="flex h-8 w-8 items-center justify-center rounded-full border border-border-subtle bg-bg-surface text-xs font-semibold">
@@ -980,6 +1041,41 @@ function PRDag({
                   <Badge variant="outline" className={riskClassName(node.estimatedRisk)}>
                     {node.estimatedRisk} risk
                   </Badge>
+                  {node.githubPrUrl && (
+                    <Button variant="outline" size="sm" asChild>
+                      <a href={node.githubPrUrl} target="_blank" rel="noreferrer">
+                        PR #{node.githubPrNumber ?? "open"}
+                        <GitPullRequest className="ml-1.5 h-4 w-4" />
+                      </a>
+                    </Button>
+                  )}
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => runDeliveryAction(node, "prepare")}
+                    disabled={isDeliveryActionPending && deliveryActionNodeId === node.id}
+                  >
+                    Branch
+                    <GitBranch className="ml-1.5 h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => runDeliveryAction(node, "deliver")}
+                    disabled={isDeliveryActionPending && deliveryActionNodeId === node.id}
+                  >
+                    PR
+                    <GitPullRequest className="ml-1.5 h-4 w-4" />
+                  </Button>
+                  <Button
+                    variant="outline"
+                    size="sm"
+                    onClick={() => runDeliveryAction(node, "refresh")}
+                    disabled={isDeliveryActionPending && deliveryActionNodeId === node.id}
+                  >
+                    CI
+                    <CheckCircle2 className="ml-1.5 h-4 w-4" />
+                  </Button>
                   <Button
                     variant="outline"
                     size="sm"
