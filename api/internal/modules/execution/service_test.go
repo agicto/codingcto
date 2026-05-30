@@ -1626,6 +1626,7 @@ func TestSweepStaleRuntimesMarksRuntimeOfflineAndFailsTasks(t *testing.T) {
 	require.Len(t, result.FailedTasks, 1)
 	require.Equal(t, dispatched.Tasks[0].ID, result.FailedTasks[0].ID)
 	require.Equal(t, "runtime_offline", result.FailedTasks[0].FailureReason)
+	require.Equal(t, domain.PRNodeStatusBlocked, planningRepo.bundle.PRNodes[0].Status)
 }
 
 func TestDeregisterRuntimesMarksOfflineAndFailsTasks(t *testing.T) {
@@ -1667,6 +1668,8 @@ func TestDeregisterRuntimesMarksOfflineAndFailsTasks(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, domain.AgentTaskStatusFailed, updated.Tasks[0].Status)
 	require.Equal(t, domain.AgentTaskStatusDispatched, updated.Tasks[1].Status)
+	require.Equal(t, domain.PRNodeStatusBlocked, planningRepo.bundle.PRNodes[0].Status)
+	require.NotEqual(t, domain.PRNodeStatusBlocked, planningRepo.bundle.PRNodes[1].Status)
 }
 
 func TestListRuntimesAppliesFiltersAndLimit(t *testing.T) {
@@ -1744,6 +1747,8 @@ func TestSweepStaleTasksFailsTimedOutTasks(t *testing.T) {
 	require.Equal(t, domain.AgentTaskStatusFailed, updated.Tasks[0].Status)
 	require.Equal(t, domain.AgentTaskStatusFailed, updated.Tasks[1].Status)
 	require.Equal(t, domain.AgentTaskStatusRunning, updated.Tasks[2].Status)
+	require.Equal(t, domain.PRNodeStatusBlocked, planningRepo.bundle.PRNodes[0].Status)
+	require.Equal(t, domain.PRNodeStatusBlocked, planningRepo.bundle.PRNodes[1].Status)
 }
 
 func TestSweepStaleTasksPublishesLinkedFixTaskResult(t *testing.T) {

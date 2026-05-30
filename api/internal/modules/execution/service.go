@@ -398,6 +398,9 @@ func (s *service) DeregisterRuntimes(ctx context.Context, req *RuntimeDeregister
 	if err != nil {
 		return nil, fmt.Errorf("fail tasks for deregistered runtimes: %w", err)
 	}
+	if err := s.markPRNodesBlockedForFailedTasks(ctx, tasks); err != nil {
+		return nil, err
+	}
 	if err := s.publishFixTasksFinished(ctx, tasks); err != nil {
 		return nil, err
 	}
@@ -449,6 +452,9 @@ func (s *service) SweepStaleRuntimes(ctx context.Context, req *RuntimeSweepReque
 	if err != nil {
 		return nil, fmt.Errorf("fail tasks for offline runtimes: %w", err)
 	}
+	if err := s.markPRNodesBlockedForFailedTasks(ctx, tasks); err != nil {
+		return nil, err
+	}
 	if err := s.publishFixTasksFinished(ctx, tasks); err != nil {
 		return nil, err
 	}
@@ -477,6 +483,9 @@ func (s *service) SweepStaleTasks(ctx context.Context, req *StaleTaskSweepReques
 	)
 	if err != nil {
 		return nil, fmt.Errorf("fail stale agent tasks: %w", err)
+	}
+	if err := s.markPRNodesBlockedForFailedTasks(ctx, tasks); err != nil {
+		return nil, err
 	}
 	if err := s.publishFixTasksFinished(ctx, tasks); err != nil {
 		return nil, err
@@ -1095,6 +1104,18 @@ func (s *service) markPRNodeBlockedForFailedTask(ctx context.Context, task *doma
 	node.Status = domain.PRNodeStatusBlocked
 	if err := s.planningRepo.UpdatePRNode(ctx, node); err != nil {
 		return fmt.Errorf("mark failed task PR node blocked: %w", err)
+	}
+	return nil
+}
+
+func (s *service) markPRNodesBlockedForFailedTasks(ctx context.Context, tasks []*domain.SpecForgeAgentTask) error {
+	for _, task := range tasks {
+		if task == nil || task.Status != domain.AgentTaskStatusFailed {
+			continue
+		}
+		if err := s.markPRNodeBlockedForFailedTask(ctx, task); err != nil {
+			return err
+		}
 	}
 	return nil
 }
