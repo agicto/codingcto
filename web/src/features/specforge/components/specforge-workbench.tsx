@@ -8,6 +8,7 @@ import {
   CircleX,
   ExternalLink,
   GitBranch,
+  GitMerge,
   GitPullRequest,
   Info,
   ListChecks,
@@ -106,10 +107,17 @@ import type {
 } from '@/features/specforge/services/specforge-service';
 import {
   sortWebhookEvents,
+  webhookEventDetails,
   webhookEventLabel,
   webhookEventRepo,
+  webhookEventRisk,
 } from '@/features/specforge/webhook-events';
 import { isPRNodeActive, isPRNodeDelivered } from '@/features/specforge/status';
+import {
+  nextBlockedNode,
+  nextReviewableNode,
+  summarizeDeliveryRun,
+} from '@/features/specforge/delivery-status';
 import {
   specForgeSkillTemplates,
   type SpecForgeSkillTemplate,
@@ -1241,14 +1249,48 @@ function GitHubWebhookEventsPanel() {
 }
 
 function GitHubWebhookEventRow({ event }: { event: GitHubWebhookEventDTO }) {
+  const details = webhookEventDetails(event);
+  const risk = webhookEventRisk(event);
+  const sourceUrl = details.reviewUrl ?? details.pullRequestUrl ?? details.workflowUrl;
+
   return (
-    <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3">
+    <div
+      className={cn(
+        'rounded-lg border border-border-subtle bg-bg-subtle p-3',
+        risk === 'blocked' && 'border-warning/30 bg-warning-subtle',
+        risk === 'failed' && 'border-error/30 bg-error-subtle'
+      )}
+    >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-medium">{webhookEventLabel(event)}</div>
-        <Badge variant="outline">{event.status}</Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          {details.reviewState && <Badge variant="outline">{details.reviewState}</Badge>}
+          {details.workflowConclusion && (
+            <Badge variant="outline">{details.workflowConclusion}</Badge>
+          )}
+          <Badge
+            variant="outline"
+            className={
+              risk === 'blocked'
+                ? statusClassName('blocked')
+                : risk === 'failed'
+                  ? statusClassName('failed')
+                  : ''
+            }
+          >
+            {event.status}
+          </Badge>
+        </div>
       </div>
       <div className="mt-1 text-xs text-text-muted">{webhookEventRepo(event)}</div>
-      <div className="mt-1 text-xs text-text-muted">{event.delivery_id}</div>
+      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-text-muted">
+        <span>{event.delivery_id}</span>
+        {sourceUrl && (
+          <a href={sourceUrl} target="_blank" rel="noreferrer" className="text-primary">
+            Open source
+          </a>
+        )}
+      </div>
     </div>
   );
 }
@@ -1262,27 +1304,86 @@ function RunSummary({
   approved: boolean;
   run: ExecutionRun;
 }) {
+  const summary = summarizeDeliveryRun(run);
+  const blockedNode = nextBlockedNode(run.tasks);
+  const reviewableNode = nextReviewableNode(run.tasks);
+
   return (
-    <div className="flex flex-col gap-3 rounded-lg border border-border-subtle bg-bg-surface p-4 md:flex-row md:items-center md:justify-between">
-      <div>
-        <div className="text-sm font-medium">Delivery state</div>
-        <div className="mt-1 text-sm text-text-muted">{progressText}</div>
+    <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div className="min-w-0">
+          <div className="text-sm font-medium">PR delivery</div>
+          <div className="mt-1 text-sm text-text-muted">{summary.headline}</div>
+          <div className="mt-1 text-xs text-text-muted">{progressText}</div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Badge variant="outline" className={approved ? statusClassName('completed') : ''}>
+            {approved ? 'Plan approved' : 'Plan approval required'}
+          </Badge>
+          <Badge
+            variant="outline"
+            className={
+              run.status === 'running' || run.status === 'blocked'
+                ? statusClassName(run.status)
+                : ''
+            }
+          >
+            {run.status === 'idle' ? 'No run started' : run.status}
+          </Badge>
+          {run.status !== 'idle' && (
+            <Badge variant="outline">{run.selectedPRNodeIds.length} PR nodes selected</Badge>
+          )}
+        </div>
       </div>
-      <div className="flex flex-wrap gap-2">
-        <Badge variant="outline" className={approved ? statusClassName('completed') : ''}>
-          {approved ? 'Plan approved' : 'Plan approval required'}
+      <div className="mt-4 h-2 overflow-hidden rounded-full bg-bg-subtle">
+        <div className="h-full bg-primary" style={{ width: `${summary.progressPercent}%` }} />
+      </div>
+      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
+        <DeliveryMetric label="Ready" value={summary.ready} status="ready_for_review" />
+        <DeliveryMetric label="Active" value={summary.active} status="ci_running" />
+        <DeliveryMetric label="Waiting" value={summary.waiting} status="waiting_on_dependencies" />
+        <DeliveryMetric label="Blocked" value={summary.blocked} status="blocked" />
+        <DeliveryMetric label="Failed" value={summary.failed} status="failed" />
+        <DeliveryMetric label="Merged" value={summary.merged} status="merged" />
+      </div>
+      <div className="mt-4 flex flex-col gap-2 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm md:flex-row md:items-center md:justify-between">
+        <div>
+          <div className="font-medium text-text-main">Next action</div>
+          <div className="mt-1 text-text-muted">{summary.nextAction}</div>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {blockedNode && (
+            <Badge variant="outline" className={statusClassName('blocked')}>
+              {blockedNode.nodeKey} blocked
+            </Badge>
+          )}
+          {reviewableNode && (
+            <Badge variant="outline" className={statusClassName('ready_for_review')}>
+              {reviewableNode.nodeKey} review
+            </Badge>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DeliveryMetric({
+  label,
+  value,
+  status,
+}: {
+  label: string;
+  value: number;
+  status: PRNode['status'];
+}) {
+  return (
+    <div className="rounded-lg border border-border-subtle bg-bg-subtle px-3 py-2">
+      <div className="flex items-center justify-between gap-2">
+        <span className="text-xs text-text-muted">{label}</span>
+        <Badge variant="outline" className={value > 0 ? statusClassName(status) : ''}>
+          {value}
         </Badge>
-        <Badge
-          variant="outline"
-          className={
-            run.status === 'running' || run.status === 'blocked' ? statusClassName(run.status) : ''
-          }
-        >
-          {run.status === 'idle' ? 'No run started' : run.status}
-        </Badge>
-        {run.status !== 'idle' && (
-          <Badge variant="outline">{run.selectedPRNodeIds.length} PR nodes selected</Badge>
-        )}
       </div>
     </div>
   );
@@ -2122,6 +2223,7 @@ function ExecutionStatus({
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
+        <PRDeliveryOverview tasks={run.tasks} />
         {run.status === 'blocked' && (
           <div className="rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm leading-6 text-warning">
             This run is waiting for a decision. Retry a failed or cancelled task with a fresh
@@ -2236,6 +2338,64 @@ function ExecutionStatus({
         )}
       </CardContent>
     </Card>
+  );
+}
+
+function PRDeliveryOverview({ tasks }: { tasks: PRNode[] }) {
+  if (tasks.length === 0) {
+    return (
+      <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
+        No PR nodes have been selected for execution yet.
+      </div>
+    );
+  }
+
+  return (
+    <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3">
+      <div className="flex items-center gap-2 text-sm font-medium text-text-main">
+        <GitMerge className="h-4 w-4 text-primary" />
+        Delivery graph
+      </div>
+      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
+        {tasks
+          .slice()
+          .sort((a, b) => a.order - b.order)
+          .map(task => (
+            <div
+              key={`${task.id}-${task.taskId ?? 'overview'}`}
+              className="rounded-lg border border-border-subtle bg-bg-surface p-3"
+            >
+              <div className="flex flex-wrap items-start justify-between gap-2">
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium">{task.nodeKey}</div>
+                  <div className="mt-1 line-clamp-2 text-xs leading-5 text-text-muted">
+                    {task.title}
+                  </div>
+                </div>
+                <Badge variant="outline" className={statusClassName(task.status)}>
+                  {statusLabel[task.status]}
+                </Badge>
+              </div>
+              {task.dependsOn.length > 0 && (
+                <div className="mt-2 text-xs text-text-muted">
+                  Depends on {task.dependsOn.join(', ')}
+                </div>
+              )}
+              {task.githubPrUrl && (
+                <a
+                  href={task.githubPrUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="mt-2 inline-flex items-center text-xs text-primary"
+                >
+                  Open GitHub PR
+                  <ExternalLink className="ml-1 h-3 w-3" />
+                </a>
+              )}
+            </div>
+          ))}
+      </div>
+    </div>
   );
 }
 
