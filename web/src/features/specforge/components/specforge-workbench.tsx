@@ -91,6 +91,10 @@ import {
   defaultDecisionOverrides,
   normalizeDecisionOverrides,
 } from "@/features/specforge/plan-decisions";
+import {
+  executionRangeReview,
+  selectExecutionNode,
+} from "@/features/specforge/execution-range";
 import type {
   CompilePromptPayload,
   SpecForgeFixAttemptDTO,
@@ -1122,7 +1126,10 @@ function PlanReview({
 }) {
   const { productSpec, implementationPlan } = plan;
   const approvalReadiness = planApprovalReadiness(plan);
-  const canStartSelectedRange = selectedExecutionNodeIds.length > 0;
+  const executionRangeNotes = executionRangeReview(plan.prNodes, selectedExecutionNodeIds);
+  const canStartSelectedRange =
+    executionRangeNotes.length > 0 &&
+    executionRangeNotes.every((note) => note.includes("dependencies included"));
   const decisionFields = decisionFieldsForPlan(plan);
   const planAssumptions = productSpec.assumptions.filter(
     (item) => !item.startsWith("PR DAG review:")
@@ -1163,6 +1170,7 @@ function PlanReview({
             disabled={approved || isStarting}
             onChange={onExecutionNodeSelectionChange}
           />
+          <ListBlock title="Execution range review" items={executionRangeNotes} />
           <ListBlock title="Security risks" items={implementationPlan.securityRisks} icon="risk" />
           <ListBlock title="Migration risks" items={implementationPlan.migrationRisks} />
           {!approvalReadiness.canApprove && (
@@ -1203,11 +1211,7 @@ function ExecutionRangeSelector({
   const selected = new Set(selectedNodeIds);
 
   function toggleNode(nodeId: string, checked: boolean) {
-    if (checked) {
-      onChange([...selectedNodeIds, nodeId]);
-      return;
-    }
-    onChange(selectedNodeIds.filter((selectedNodeId) => selectedNodeId !== nodeId));
+    onChange(selectExecutionNode(nodes, selectedNodeIds, nodeId, checked));
   }
 
   return (
