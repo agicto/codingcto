@@ -129,7 +129,7 @@ func (s *service) StartRun(ctx context.Context, userID, planID uint, req *StartE
 	if err := s.repo.CreateExecutionBundle(ctx, bundle); err != nil {
 		return nil, fmt.Errorf("create execution run: %w", err)
 	}
-	return bundle, nil
+	return attachExecutionRange(bundle), nil
 }
 
 func selectedPRNodes(nodes []*domain.SpecForgePRNode, req *StartExecutionRunRequest) ([]*domain.SpecForgePRNode, error) {
@@ -262,7 +262,27 @@ func (s *service) GetRun(ctx context.Context, runID uint) (*domain.SpecForgeExec
 		}
 		bundle.Plan = plan
 	}
-	return bundle, nil
+	return attachExecutionRange(bundle), nil
+}
+
+func attachExecutionRange(bundle *domain.SpecForgeExecutionBundle) *domain.SpecForgeExecutionBundle {
+	if bundle == nil {
+		return nil
+	}
+	seen := make(map[uint]struct{}, len(bundle.Tasks))
+	selected := make([]uint, 0, len(bundle.Tasks))
+	for _, task := range bundle.Tasks {
+		if task == nil || task.PRNodeID == 0 {
+			continue
+		}
+		if _, ok := seen[task.PRNodeID]; ok {
+			continue
+		}
+		seen[task.PRNodeID] = struct{}{}
+		selected = append(selected, task.PRNodeID)
+	}
+	bundle.SelectedPRNodeIDs = selected
+	return bundle
 }
 
 func (s *service) DispatchRun(ctx context.Context, runID uint, req *DispatchExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error) {

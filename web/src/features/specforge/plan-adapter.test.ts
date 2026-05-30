@@ -237,6 +237,7 @@ describe('executionRunFromDTO', () => {
         updated_at: '2026-05-29T12:00:00Z',
       },
       plan: baseBundle,
+      selected_pr_node_ids: [1],
       tasks: [
         {
           id: 10,
@@ -263,6 +264,7 @@ describe('executionRunFromDTO', () => {
         runId: 7,
         status: 'running',
         startedAt: '2026-05-29T12:00:00Z',
+        selectedPRNodeIds: ['1'],
         tasks: [
           {
             id: '1',
@@ -292,6 +294,7 @@ describe('executionRunFromDTO', () => {
         created_at: '2026-05-29T12:00:00Z',
         updated_at: '2026-05-29T12:00:00Z',
       },
+      selected_pr_node_ids: [1],
       tasks: [
         {
           id: 11,
@@ -344,6 +347,7 @@ describe('executionRunFromDTO', () => {
         updated_at: '2026-05-29T12:00:00Z',
       },
       plan: planWithCI,
+      selected_pr_node_ids: [1],
       tasks: [
         {
           id: 12,
@@ -385,6 +389,7 @@ describe('executionRunFromDTO', () => {
         updated_at: '2026-05-29T12:00:00Z',
       },
       plan: planWithReadyNode,
+      selected_pr_node_ids: [1],
       tasks: [
         {
           id: 13,

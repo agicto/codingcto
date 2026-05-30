@@ -84,6 +84,7 @@ export interface ExecutionRun {
   runId?: number;
   status: "idle" | "queued" | "running" | "completed" | "cancelled";
   startedAt?: string;
+  selectedPRNodeIds: string[];
   tasks: PRNode[];
 }
 

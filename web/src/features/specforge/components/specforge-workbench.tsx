@@ -220,6 +220,7 @@ export function SpecForgeWorkbench() {
   const [approved, setApproved] = useState(false);
   const [run, setRun] = useState<ExecutionRun>({
     status: "idle",
+    selectedPRNodeIds: [],
     tasks: demoPlan.prNodes,
   });
   const [currentRuntimeNow] = useState(() => Date.now());
@@ -297,7 +298,7 @@ export function SpecForgeWorkbench() {
       setIdea(nextPlan.idea);
       setPlanSource("api");
       setHasPlan(true);
-      setRun({ status: "idle", tasks: nextPlan.prNodes });
+      setRun({ status: "idle", selectedPRNodeIds: [], tasks: nextPlan.prNodes });
     } catch {
       const fallbackPlan = demoPlanForInput(trimmedIdea, trimmedRepoId);
       setActivePlan(fallbackPlan);
@@ -305,7 +306,7 @@ export function SpecForgeWorkbench() {
       setSelectedExecutionNodeIds(fallbackPlan.prNodes.map((node) => node.id));
       setPlanSource("demo");
       setHasPlan(true);
-      setRun({ status: "idle", tasks: fallbackPlan.prNodes });
+      setRun({ status: "idle", selectedPRNodeIds: [], tasks: fallbackPlan.prNodes });
     }
   }
 
@@ -318,7 +319,7 @@ export function SpecForgeWorkbench() {
     setPlanSource("demo");
     setHasPlan(true);
     setApproved(false);
-    setRun({ status: "idle", tasks: demoPlan.prNodes });
+    setRun({ status: "idle", selectedPRNodeIds: [], tasks: demoPlan.prNodes });
   }
 
   async function approveAndStart() {
@@ -372,6 +373,9 @@ export function SpecForgeWorkbench() {
     setRun({
       status: "running",
       startedAt,
+      selectedPRNodeIds: activePlan.prNodes
+        .filter((node) => selectedNodeIDs.has(node.id))
+        .map((node) => node.id),
       tasks: activePlan.prNodes
         .filter((node) => selectedNodeIDs.has(node.id))
         .map((node) => ({
@@ -1100,6 +1104,9 @@ function RunSummary({
         >
           {run.status === "idle" ? "No run started" : run.status}
         </Badge>
+        {run.status !== "idle" && (
+          <Badge variant="outline">{run.selectedPRNodeIds.length} PR nodes selected</Badge>
+        )}
       </div>
     </div>
   );

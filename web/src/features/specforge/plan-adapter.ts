@@ -210,6 +210,9 @@ export function executionRunFromDTO(
       runId: bundle.run.id,
       status: coerceRunStatus(bundle.run.status),
       startedAt: bundle.run.started_at,
+      selectedPRNodeIds: (bundle.selected_pr_node_ids ?? bundle.tasks.map((task) => task.pr_node_id)).map(
+        String
+      ),
       tasks,
     },
   };

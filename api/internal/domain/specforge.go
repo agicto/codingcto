@@ -210,9 +210,10 @@ type SpecForgeTaskSweepResult struct {
 
 // SpecForgeExecutionBundle is the delivery state returned to run pages.
 type SpecForgeExecutionBundle struct {
-	Run   *SpecForgeExecutionRun `json:"run"`
-	Plan  *SpecForgePlanBundle   `json:"plan,omitempty"`
-	Tasks []*SpecForgeAgentTask  `json:"tasks"`
+	Run               *SpecForgeExecutionRun `json:"run"`
+	Plan              *SpecForgePlanBundle   `json:"plan,omitempty"`
+	Tasks             []*SpecForgeAgentTask  `json:"tasks"`
+	SelectedPRNodeIDs []uint                 `json:"selected_pr_node_ids"`
 }
 
 // SpecForgeRepoProfile is the compact repository context used by planners.

@@ -30,6 +30,7 @@ func TestStartRunCreatesTasksFromApprovedPlanDAG(t *testing.T) {
 	require.Equal(t, 1, bundle.Tasks[0].AttemptNumber)
 	require.Equal(t, "codex_cli", bundle.Tasks[0].Executor)
 	require.Equal(t, domain.PromptTypeImplementation, bundle.Tasks[0].PromptType)
+	require.Equal(t, []uint{4, 5}, bundle.SelectedPRNodeIDs)
 	require.Len(t, planningRepo.prompts, 2)
 	require.Equal(t, domain.PromptTypeImplementation, planningRepo.prompts[0].Type)
 	require.Contains(t, planningRepo.prompts[0].PromptText, "approved plan snapshot")
@@ -46,6 +47,7 @@ func TestStartRunCanLimitExecutionToSelectedPRNodes(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Len(t, bundle.Tasks, 1)
+	require.Equal(t, []uint{planningRepo.bundle.PRNodes[0].ID}, bundle.SelectedPRNodeIDs)
 	require.Equal(t, planningRepo.bundle.PRNodes[0].ID, bundle.Tasks[0].PRNodeID)
 	require.Len(t, planningRepo.prompts, 1)
 	require.Equal(t, planningRepo.bundle.PRNodes[0].ID, planningRepo.prompts[0].PRNodeID)
@@ -262,6 +264,7 @@ func TestGetRunAttachesPlanBundle(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, created.Run.ID, found.Run.ID)
+	require.Equal(t, []uint{4, 5}, found.SelectedPRNodeIDs)
 	require.Equal(t, "custom", found.Tasks[0].Executor)
 	require.NotNil(t, found.Plan)
 	require.Equal(t, planningRepo.bundle.Plan.ID, found.Plan.Plan.ID)
