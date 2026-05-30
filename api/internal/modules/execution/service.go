@@ -1043,6 +1043,11 @@ func (s *service) finalizeTaskResult(ctx context.Context, task *domain.SpecForge
 	if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
 		return nil, fmt.Errorf("update executed agent task: %w", err)
 	}
+	if task.Status == domain.AgentTaskStatusFailed {
+		if err := s.markPRNodeBlockedForFailedTask(ctx, task); err != nil {
+			return nil, err
+		}
+	}
 	if err := s.publishFixTaskFinished(ctx, task); err != nil {
 		return nil, err
 	}
@@ -1061,6 +1066,31 @@ func (s *service) finalizeTaskResult(ctx context.Context, task *domain.SpecForge
 		return nil, err
 	}
 	return s.GetRun(ctx, task.RunID)
+}
+
+func (s *service) markPRNodeBlockedForFailedTask(ctx context.Context, task *domain.SpecForgeAgentTask) error {
+	if task == nil || task.PRNodeID == 0 {
+		return nil
+	}
+	node, err := s.planningRepo.FindPRNodeByID(ctx, task.PRNodeID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil
+	}
+	if err != nil {
+		return fmt.Errorf("find failed task PR node: %w", err)
+	}
+	switch node.Status {
+	case domain.PRNodeStatusReadyForReview, domain.PRNodeStatusMerged, domain.PRNodeStatusClosed:
+		return nil
+	}
+	if node.Status == domain.PRNodeStatusBlocked {
+		return nil
+	}
+	node.Status = domain.PRNodeStatusBlocked
+	if err := s.planningRepo.UpdatePRNode(ctx, node); err != nil {
+		return fmt.Errorf("mark failed task PR node blocked: %w", err)
+	}
+	return nil
 }
 
 func (s *service) publishFixTaskFinished(ctx context.Context, task *domain.SpecForgeAgentTask) error {

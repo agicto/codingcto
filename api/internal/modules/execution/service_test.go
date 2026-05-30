@@ -1003,6 +1003,31 @@ func TestSubmitTaskResultMarksFailureWithoutUnlockingDependents(t *testing.T) {
 	require.NotNil(t, updated.Tasks[0].ExitCode)
 	require.Equal(t, 2, *updated.Tasks[0].ExitCode)
 	require.Equal(t, domain.AgentTaskStatusWaiting, updated.Tasks[1].Status)
+	require.Equal(t, domain.PRNodeStatusBlocked, planningRepo.bundle.PRNodes[0].Status)
+}
+
+func TestSubmitTaskResultDoesNotBlockReadyPRNode(t *testing.T) {
+	planningRepo := memoryPlanningRepoWithPrompt()
+	planningRepo.bundle.PRNodes[0].Status = domain.PRNodeStatusReadyForReview
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	_, err = svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+	claim, err := svc.ClaimTask(context.Background(), "runtime_123", &ClaimAgentTaskRequest{Executor: "codex_cli"})
+	require.NoError(t, err)
+
+	_, err = svc.SubmitTaskResult(context.Background(), claim.Task.ID, &SubmitTaskResultRequest{
+		RuntimeID:     "runtime_123",
+		Status:        "failed",
+		Error:         "tests failed",
+		ExitCode:      2,
+		FailureReason: "test_failure",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, domain.PRNodeStatusReadyForReview, planningRepo.bundle.PRNodes[0].Status)
 }
 
 func TestSubmitTaskResultRedactsPersistedLogs(t *testing.T) {
@@ -1404,6 +1429,7 @@ func TestExecuteTaskMarksFailureWithoutUnlockingDependents(t *testing.T) {
 	require.NotNil(t, updated.Tasks[0].ExitCode)
 	require.Equal(t, 2, *updated.Tasks[0].ExitCode)
 	require.Equal(t, domain.AgentTaskStatusWaiting, updated.Tasks[1].Status)
+	require.Equal(t, domain.PRNodeStatusBlocked, planningRepo.bundle.PRNodes[0].Status)
 }
 
 func TestCompleteTaskCompletesRunWhenAllTasksDone(t *testing.T) {
@@ -2186,7 +2212,17 @@ func (r *memoryPlanningRepo) FindPRNodeByGitHubPRNumber(ctx context.Context, prN
 }
 
 func (r *memoryPlanningRepo) UpdatePRNode(ctx context.Context, node *domain.SpecForgePRNode) error {
-	return nil
+	if r.bundle == nil || node == nil {
+		return domain.ErrNotFound
+	}
+	for i, current := range r.bundle.PRNodes {
+		if current != nil && current.ID == node.ID {
+			copied := *node
+			r.bundle.PRNodes[i] = &copied
+			return nil
+		}
+	}
+	return domain.ErrNotFound
 }
 
 func (r *memoryPlanningRepo) CreateCompiledPrompt(ctx context.Context, prompt *domain.SpecForgeCompiledPrompt) error {
