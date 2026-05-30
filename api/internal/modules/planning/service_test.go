@@ -2,6 +2,7 @@ package planning
 
 import (
 	"context"
+	"fmt"
 	"testing"
 	"time"
 
@@ -189,6 +190,11 @@ func TestCompilePromptPersistsVersionedPromptForPRNode(t *testing.T) {
 	require.Equal(t, "implementation", prompt.Type)
 	require.Equal(t, "prompt_v2", prompt.Version)
 	require.Len(t, prompt.PromptHash, 64)
+	require.Contains(t, prompt.EvidenceRefs, fmt.Sprintf("implementation_plan:%d:v1", created.Plan.ID))
+	require.Contains(t, prompt.EvidenceRefs, fmt.Sprintf("pr_node:%d", created.PRNodes[1].ID))
+	require.Contains(t, prompt.EvidenceRefs, "target_repository:repo_123")
+	require.Contains(t, created.Plan.EvidenceRefs, fmt.Sprintf("implementation_plan:%d:v1", created.Plan.ID))
+	require.Contains(t, created.PRNodes[1].EvidenceRefs, fmt.Sprintf("pr_node:%d", created.PRNodes[1].ID))
 	require.Contains(t, prompt.PromptText, created.PRNodes[1].Title)
 	require.Contains(t, prompt.PromptText, "Target repository: repo_123")
 	require.Contains(t, prompt.PromptText, "Grounded prompt contract")
@@ -336,6 +342,10 @@ func TestCreateProjectRequirementRecordsSkillRunPipeline(t *testing.T) {
 	require.Equal(t, domain.SkillRunStagePRDAG, runs[2].Stage)
 	require.Equal(t, domain.SkillRunStageSelfReview, runs[3].Stage)
 	require.Contains(t, runs[0].InputSummary, "Active skills: 1")
+	require.Contains(t, runs[0].EvidenceRefs, fmt.Sprintf("requirement:%d", bundle.Requirement.ID))
+	require.Contains(t, runs[0].EvidenceRefs, "skill_run.stage:"+domain.SkillRunStageProductPlan)
+	require.Contains(t, bundle.Plan.EvidenceRefs, fmt.Sprintf("requirement:%d", bundle.Requirement.ID))
+	require.Contains(t, bundle.PRNodes[0].EvidenceRefs, "target_repository:repo_web")
 	require.Contains(t, runs[2].OutputSummary, "PR-001")
 	planRuns, err := svc.ListSkillRunsForPlan(context.Background(), bundle.Plan.ID)
 	require.NoError(t, err)

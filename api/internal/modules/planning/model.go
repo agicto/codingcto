@@ -79,6 +79,7 @@ type ImplementationPlanPO struct {
 	ApprovedSnapshotHash string `gorm:"size:64;index"`
 	ApprovedSnapshotAt   *time.Time
 	DecisionOverrides    string `gorm:"type:text"`
+	EvidenceRefs         string `gorm:"type:text"`
 	CreatedAt            time.Time
 	UpdatedAt            time.Time
 }
@@ -107,6 +108,7 @@ type PRNodePO struct {
 	GitHubPRURL        string `gorm:"column:github_pr_url;size:511"`
 	GitHubHeadSHA      string `gorm:"column:github_head_sha;size:100;index"`
 	Status             string `gorm:"size:50;not null;index"`
+	EvidenceRefs       string `gorm:"type:text"`
 	CreatedAt          time.Time
 	UpdatedAt          time.Time
 }
@@ -116,15 +118,16 @@ func (PRNodePO) TableName() string {
 }
 
 type CompiledPromptPO struct {
-	ID         uint   `gorm:"primaryKey"`
-	PRNodeID   uint   `gorm:"not null;index"`
-	PlanID     uint   `gorm:"not null;index"`
-	Type       string `gorm:"size:50;not null;index"`
-	Version    string `gorm:"size:50;not null"`
-	PromptText string `gorm:"type:text;not null"`
-	PromptHash string `gorm:"size:64;not null;index"`
-	CreatedBy  uint   `gorm:"not null;index"`
-	CreatedAt  time.Time
+	ID           uint   `gorm:"primaryKey"`
+	PRNodeID     uint   `gorm:"not null;index"`
+	PlanID       uint   `gorm:"not null;index"`
+	Type         string `gorm:"size:50;not null;index"`
+	Version      string `gorm:"size:50;not null"`
+	PromptText   string `gorm:"type:text;not null"`
+	PromptHash   string `gorm:"size:64;not null;index"`
+	EvidenceRefs string `gorm:"type:text"`
+	CreatedBy    uint   `gorm:"not null;index"`
+	CreatedAt    time.Time
 }
 
 func (CompiledPromptPO) TableName() string {
@@ -176,6 +179,7 @@ type SkillRunPO struct {
 	InputSummary  string `gorm:"type:text"`
 	OutputSummary string `gorm:"type:text"`
 	OutputJSON    string `gorm:"type:text"`
+	EvidenceRefs  string `gorm:"type:text"`
 	ErrorMessage  string `gorm:"type:text"`
 	StartedAt     *time.Time
 	CompletedAt   *time.Time
@@ -263,7 +267,8 @@ func newImplementationPlanPO(plan *domain.SpecForgeImplementationPlan) *Implemen
 		SecurityRisks: encodeStrings(plan.SecurityRisks), MigrationRisks: encodeStrings(plan.MigrationRisks),
 		Status: plan.Status, ApprovedBy: plan.ApprovedBy, ApprovedAt: plan.ApprovedAt,
 		ApprovedSnapshotHash: plan.ApprovedSnapshotHash, ApprovedSnapshotAt: plan.ApprovedSnapshotAt,
-		DecisionOverrides: encodeStrings(plan.DecisionOverrides), CreatedAt: plan.CreatedAt, UpdatedAt: plan.UpdatedAt,
+		DecisionOverrides: encodeStrings(plan.DecisionOverrides), EvidenceRefs: encodeStrings(plan.EvidenceRefs),
+		CreatedAt: plan.CreatedAt, UpdatedAt: plan.UpdatedAt,
 	}
 }
 
@@ -277,7 +282,8 @@ func (po *ImplementationPlanPO) toDomain() *domain.SpecForgeImplementationPlan {
 		SecurityRisks: decodeStrings(po.SecurityRisks), MigrationRisks: decodeStrings(po.MigrationRisks),
 		Status: po.Status, ApprovedBy: po.ApprovedBy, ApprovedAt: po.ApprovedAt,
 		ApprovedSnapshotHash: po.ApprovedSnapshotHash, ApprovedSnapshotAt: po.ApprovedSnapshotAt,
-		DecisionOverrides: decodeStrings(po.DecisionOverrides), CreatedAt: po.CreatedAt, UpdatedAt: po.UpdatedAt,
+		DecisionOverrides: decodeStrings(po.DecisionOverrides), EvidenceRefs: decodeStrings(po.EvidenceRefs),
+		CreatedAt: po.CreatedAt, UpdatedAt: po.UpdatedAt,
 	}
 }
 
@@ -289,7 +295,7 @@ func newPRNodePO(node *domain.SpecForgePRNode) *PRNodePO {
 		NonGoals: encodeStrings(node.NonGoals), AcceptanceCriteria: encodeStrings(node.AcceptanceCriteria),
 		TestCommands: encodeStrings(node.TestCommands), BranchName: node.BranchName,
 		GitHubPRNumber: node.GitHubPRNumber, GitHubPRURL: node.GitHubPRURL, GitHubHeadSHA: node.GitHubHeadSHA,
-		Status: node.Status, CreatedAt: node.CreatedAt, UpdatedAt: node.UpdatedAt,
+		Status: node.Status, EvidenceRefs: encodeStrings(node.EvidenceRefs), CreatedAt: node.CreatedAt, UpdatedAt: node.UpdatedAt,
 	}
 }
 
@@ -301,35 +307,37 @@ func (po *PRNodePO) toDomain() *domain.SpecForgePRNode {
 		NonGoals: decodeStrings(po.NonGoals), AcceptanceCriteria: decodeStrings(po.AcceptanceCriteria),
 		TestCommands: decodeStrings(po.TestCommands), BranchName: po.BranchName,
 		GitHubPRNumber: po.GitHubPRNumber, GitHubPRURL: po.GitHubPRURL, GitHubHeadSHA: po.GitHubHeadSHA,
-		Status: po.Status, CreatedAt: po.CreatedAt, UpdatedAt: po.UpdatedAt,
+		Status: po.Status, EvidenceRefs: decodeStrings(po.EvidenceRefs), CreatedAt: po.CreatedAt, UpdatedAt: po.UpdatedAt,
 	}
 }
 
 func newCompiledPromptPO(prompt *domain.SpecForgeCompiledPrompt) *CompiledPromptPO {
 	return &CompiledPromptPO{
-		ID:         prompt.ID,
-		PRNodeID:   prompt.PRNodeID,
-		PlanID:     prompt.PlanID,
-		Type:       prompt.Type,
-		Version:    prompt.Version,
-		PromptText: prompt.PromptText,
-		PromptHash: prompt.PromptHash,
-		CreatedBy:  prompt.CreatedBy,
-		CreatedAt:  prompt.CreatedAt,
+		ID:           prompt.ID,
+		PRNodeID:     prompt.PRNodeID,
+		PlanID:       prompt.PlanID,
+		Type:         prompt.Type,
+		Version:      prompt.Version,
+		PromptText:   prompt.PromptText,
+		PromptHash:   prompt.PromptHash,
+		EvidenceRefs: encodeStrings(prompt.EvidenceRefs),
+		CreatedBy:    prompt.CreatedBy,
+		CreatedAt:    prompt.CreatedAt,
 	}
 }
 
 func (po *CompiledPromptPO) toDomain() *domain.SpecForgeCompiledPrompt {
 	return &domain.SpecForgeCompiledPrompt{
-		ID:         po.ID,
-		PRNodeID:   po.PRNodeID,
-		PlanID:     po.PlanID,
-		Type:       po.Type,
-		Version:    po.Version,
-		PromptText: po.PromptText,
-		PromptHash: po.PromptHash,
-		CreatedBy:  po.CreatedBy,
-		CreatedAt:  po.CreatedAt,
+		ID:           po.ID,
+		PRNodeID:     po.PRNodeID,
+		PlanID:       po.PlanID,
+		Type:         po.Type,
+		Version:      po.Version,
+		PromptText:   po.PromptText,
+		PromptHash:   po.PromptHash,
+		EvidenceRefs: decodeStrings(po.EvidenceRefs),
+		CreatedBy:    po.CreatedBy,
+		CreatedAt:    po.CreatedAt,
 	}
 }
 
@@ -408,6 +416,7 @@ func newSkillRunPO(run *domain.SpecForgeSkillRun) *SkillRunPO {
 		InputSummary:  run.InputSummary,
 		OutputSummary: run.OutputSummary,
 		OutputJSON:    run.OutputJSON,
+		EvidenceRefs:  encodeStrings(run.EvidenceRefs),
 		ErrorMessage:  run.ErrorMessage,
 		StartedAt:     run.StartedAt,
 		CompletedAt:   run.CompletedAt,
@@ -429,6 +438,7 @@ func (po *SkillRunPO) toDomain() *domain.SpecForgeSkillRun {
 		InputSummary:  po.InputSummary,
 		OutputSummary: po.OutputSummary,
 		OutputJSON:    po.OutputJSON,
+		EvidenceRefs:  decodeStrings(po.EvidenceRefs),
 		ErrorMessage:  po.ErrorMessage,
 		StartedAt:     po.StartedAt,
 		CompletedAt:   po.CompletedAt,
