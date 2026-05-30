@@ -1097,9 +1097,13 @@ func TestClaimTaskBindsRuntimeAndMarksTaskRunning(t *testing.T) {
 	require.NotNil(t, claim.PRNode)
 	require.Equal(t, dispatched.Tasks[0].PRNodeID, claim.PRNode.ID)
 	require.Equal(t, "specforge/pr-001", claim.PRNode.BranchName)
+	require.Contains(t, claim.PRNode.EvidenceRefs, "pr_node:4")
 	require.NotNil(t, claim.Prompt)
-	require.Equal(t, "prompt_v1", claim.Prompt.Version)
-	require.Equal(t, "Implement PR-001", claim.Prompt.PromptText)
+	require.Equal(t, "prompt_v2", claim.Prompt.Version)
+	require.Contains(t, claim.Prompt.PromptText, "Grounded prompt contract")
+	require.Contains(t, claim.Prompt.PromptText, "PR node: PR-001")
+	require.Contains(t, claim.Prompt.EvidenceRefs, "pr_node:4")
+	require.Contains(t, claim.Prompt.EvidenceRefs, "target_repository:repo_123")
 	require.NotNil(t, claim.ExecutionContext)
 	require.Equal(t, "repo_123", claim.ExecutionContext.RepositoryID)
 	require.Equal(t, "specforge/pr-001", claim.ExecutionContext.BranchName)
@@ -1162,10 +1166,10 @@ func TestClaimTaskRevertsWhenPromptContextIsMissing(t *testing.T) {
 	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
 	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
 	require.NoError(t, err)
-	planningRepo.prompt = nil
-	planningRepo.prompts = nil
 	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
 	require.NoError(t, err)
+	planningRepo.prompt = nil
+	planningRepo.prompts = nil
 
 	_, err = svc.ClaimTask(context.Background(), "runtime_123", &ClaimAgentTaskRequest{Executor: "codex_cli"})
 
@@ -1395,7 +1399,8 @@ func TestExecuteTaskRunsCompiledPromptAndUnlocksDependents(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "/tmp/repo", executor.execContext.Workdir)
 	require.Equal(t, "specforge/pr-001", executor.execContext.BranchName)
-	require.Equal(t, "Implement PR-001", executor.prompt.PromptText)
+	require.Contains(t, executor.prompt.PromptText, "Grounded prompt contract")
+	require.Contains(t, executor.prompt.PromptText, "PR node: PR-001")
 	require.Equal(t, domain.AgentTaskStatusCompleted, updated.Tasks[0].Status)
 	require.Equal(t, "runtime_123", updated.Tasks[0].RuntimeID)
 	require.Equal(t, "session_123", updated.Tasks[0].SessionID)
@@ -1405,6 +1410,32 @@ func TestExecuteTaskRunsCompiledPromptAndUnlocksDependents(t *testing.T) {
 	require.Equal(t, 0, *updated.Tasks[0].ExitCode)
 	require.NotNil(t, updated.Tasks[0].FinishedAt)
 	require.Equal(t, domain.AgentTaskStatusQueued, updated.Tasks[1].Status)
+}
+
+func TestExecuteTaskFailsBeforeExecutorWhenPromptContractIsInvalid(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	executor := &fakeExecutor{result: &ExecutionResult{Status: "completed", Output: "done", ExitCode: 0}}
+	svc := NewService(runRepo, planningRepo, nil, executor, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+	require.NotEmpty(t, planningRepo.prompts)
+	for _, prompt := range planningRepo.prompts {
+		if prompt.PRNodeID == dispatched.Tasks[0].PRNodeID {
+			prompt.EvidenceRefs = []string{"implementation_plan:3:v1"}
+		}
+	}
+
+	updated, err := svc.ExecuteTask(context.Background(), dispatched.Tasks[0].ID, &ExecuteAgentTaskRequest{Workdir: "/tmp/repo"})
+
+	require.NoError(t, err)
+	require.Empty(t, executor.prompt.PromptText)
+	require.Equal(t, domain.AgentTaskStatusFailed, updated.Tasks[0].Status)
+	require.Equal(t, "prompt_contract_failed", updated.Tasks[0].FailureReason)
+	require.Contains(t, updated.Tasks[0].ErrorLog, "missing PR node evidence ref")
+	require.Equal(t, domain.AgentTaskStatusWaiting, updated.Tasks[1].Status)
 }
 
 func TestExecuteTaskUsesPromptMatchingTaskPromptType(t *testing.T) {
@@ -1442,7 +1473,8 @@ func TestExecuteTaskUsesPromptMatchingTaskPromptType(t *testing.T) {
 	_, err = svc.ExecuteTask(context.Background(), dispatched.Tasks[0].ID, &ExecuteAgentTaskRequest{Workdir: "/tmp/repo"})
 
 	require.NoError(t, err)
-	require.Equal(t, "Fix PR-001", executor.prompt.PromptText)
+	require.Contains(t, executor.prompt.PromptText, "Prompt type: fix")
+	require.Contains(t, executor.prompt.PromptText, "targeted repair")
 }
 
 func TestExecuteTaskPreparesBranchBeforeRunningExecutor(t *testing.T) {
@@ -1469,7 +1501,8 @@ func TestExecuteTaskPreparesBranchBeforeRunningExecutor(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "repo_123", preparer.request.RepositoryID)
 	require.Equal(t, uint(4), preparer.request.PRNodeID)
-	require.Equal(t, "Implement PR-001", executor.prompt.PromptText)
+	require.Contains(t, executor.prompt.PromptText, "Grounded prompt contract")
+	require.Contains(t, executor.prompt.PromptText, "PR node: PR-001")
 	require.Equal(t, domain.AgentTaskStatusCompleted, updated.Tasks[0].Status)
 }
 

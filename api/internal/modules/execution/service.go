@@ -226,11 +226,11 @@ func (s *service) ensurePromptForPRNode(ctx context.Context, userID uint, bundle
 	if bundle == nil || bundle.Plan == nil || node == nil || node.ID == 0 || promptType == "" {
 		return domain.ErrInvalidInput
 	}
-	_, err := s.planningRepo.FindLatestCompiledPromptByPRNodeIDAndType(ctx, node.ID, promptType)
-	if err == nil {
+	prompt, err := s.planningRepo.FindLatestCompiledPromptByPRNodeIDAndType(ctx, node.ID, promptType)
+	if err == nil && validateExecutionPromptContract(bundle, node, prompt, promptType) == nil {
 		return nil
 	}
-	if !errors.Is(err, domain.ErrNotFound) {
+	if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		return fmt.Errorf("find %s prompt for PR node: %w", promptType, err)
 	}
 	return s.createPromptForPRNode(ctx, userID, bundle, node, promptType, parent)
@@ -248,13 +248,14 @@ func (s *service) createPromptForPRNode(ctx context.Context, userID uint, bundle
 	text := compileRunPromptText(bundle, node, promptType, parent, skills)
 	hash := sha256.Sum256([]byte(text))
 	prompt := &domain.SpecForgeCompiledPrompt{
-		PRNodeID:   node.ID,
-		PlanID:     bundle.Plan.ID,
-		Type:       promptType,
-		Version:    "prompt_v2",
-		PromptText: text,
-		PromptHash: hex.EncodeToString(hash[:]),
-		CreatedBy:  userID,
+		PRNodeID:     node.ID,
+		PlanID:       bundle.Plan.ID,
+		Type:         promptType,
+		Version:      "prompt_v2",
+		PromptText:   text,
+		PromptHash:   hex.EncodeToString(hash[:]),
+		EvidenceRefs: executionPromptEvidenceRefs(bundle, node, promptType, parent, skills),
+		CreatedBy:    userID,
 	}
 	if err := s.planningRepo.CreateCompiledPrompt(ctx, prompt); err != nil {
 		return fmt.Errorf("create %s prompt for PR node: %w", promptType, err)
@@ -408,9 +409,17 @@ func (s *service) DispatchRun(ctx context.Context, runID uint, req *DispatchExec
 	}
 	dispatched := 0
 	now := time.Now()
+	nodes := nodeByID(bundle.Plan.PRNodes)
 	for _, task := range bundle.Tasks {
 		if task.Status != domain.AgentTaskStatusQueued {
 			continue
+		}
+		node := nodes[task.PRNodeID]
+		if node == nil {
+			return nil, domain.ErrNotFound
+		}
+		if err := s.ensurePromptForPRNode(ctx, 0, bundle.Plan, node, taskPromptType(task), task); err != nil {
+			return nil, err
 		}
 		task.Status = domain.AgentTaskStatusDispatched
 		task.DispatchedAt = &now
@@ -975,6 +984,17 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 	if err != nil {
 		return nil, err
 	}
+	bundle, err := s.GetRun(ctx, task.RunID)
+	if err != nil {
+		return nil, err
+	}
+	node := nodeByID(bundle.Plan.PRNodes)[task.PRNodeID]
+	if node == nil {
+		return nil, domain.ErrNotFound
+	}
+	if err := validateExecutionPromptContract(bundle.Plan, node, prompt, taskPromptType(task)); err != nil {
+		return s.failTaskBeforeExecutor(ctx, task, "prompt_contract_failed", err.Error())
+	}
 	result, runErr := s.executor.Run(ctx, ExecutionContext{
 		RunID:      strconv.FormatUint(uint64(task.RunID), 10),
 		TaskID:     task.ID,
@@ -1221,15 +1241,19 @@ func (s *service) buildClaimResponse(ctx context.Context, task *domain.SpecForge
 	if err != nil {
 		return nil, fmt.Errorf("find compiled prompt for claimed task: %w", err)
 	}
+	if err := validateExecutionPromptContract(bundle.Plan, node, prompt, taskPromptType(task)); err != nil {
+		return nil, err
+	}
 	return &ClaimAgentTaskResponse{
 		Task:   toClaimedAgentTask(task),
-		PRNode: toClaimedTaskPRNode(node),
+		PRNode: toClaimedTaskPRNode(bundle.Plan, node),
 		Prompt: &ClaimedTaskPrompt{
-			ID:         prompt.ID,
-			Version:    prompt.Version,
-			Type:       prompt.Type,
-			PromptText: prompt.PromptText,
-			PromptHash: prompt.PromptHash,
+			ID:           prompt.ID,
+			Version:      prompt.Version,
+			Type:         prompt.Type,
+			PromptText:   prompt.PromptText,
+			PromptHash:   prompt.PromptHash,
+			EvidenceRefs: append([]string(nil), prompt.EvidenceRefs...),
 		},
 		ExecutionContext: &ClaimedTaskExecutionContext{
 			RepositoryID: repositoryID,
@@ -1605,6 +1629,130 @@ func writeRunSkillEvidenceRefs(b *strings.Builder, skills []*domain.SpecForgeSki
 	}
 }
 
+func executionPromptEvidenceRefs(bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, promptType string, parent *domain.SpecForgeAgentTask, skills []*domain.SpecForgeSkill) []string {
+	refs := make([]string, 0, 16)
+	if bundle != nil {
+		if bundle.Requirement != nil && bundle.Requirement.ID != 0 {
+			refs = append(refs, fmt.Sprintf("requirement:%d", bundle.Requirement.ID))
+		}
+		if bundle.Idea != nil {
+			refs = append(refs, fmt.Sprintf("idea:%d", bundle.Idea.ID))
+			if strings.TrimSpace(bundle.Idea.RepositoryID) != "" {
+				refs = append(refs, "repository:"+strings.TrimSpace(bundle.Idea.RepositoryID))
+			}
+			if bundle.Idea.ProjectID != nil && *bundle.Idea.ProjectID != 0 {
+				refs = append(refs, fmt.Sprintf("project:%d", *bundle.Idea.ProjectID))
+			}
+		}
+		if bundle.ProductSpec != nil && bundle.ProductSpec.ID != 0 {
+			refs = append(refs,
+				fmt.Sprintf("product_spec:%d:goals", bundle.ProductSpec.ID),
+				fmt.Sprintf("product_spec:%d:acceptance_criteria", bundle.ProductSpec.ID),
+			)
+		}
+		if bundle.Plan != nil && bundle.Plan.ID != 0 {
+			refs = append(refs,
+				fmt.Sprintf("implementation_plan:%d:v%d", bundle.Plan.ID, bundle.Plan.Version),
+				fmt.Sprintf("implementation_plan:%d:test_strategy", bundle.Plan.ID),
+			)
+		}
+		if bundle.RepoProfile != nil && strings.TrimSpace(bundle.RepoProfile.RepositoryID) != "" {
+			refs = append(refs, "repo_profile:"+strings.TrimSpace(bundle.RepoProfile.RepositoryID))
+			if strings.TrimSpace(bundle.RepoProfile.Source) != "" {
+				refs = append(refs, "repo_profile_source:"+strings.TrimSpace(bundle.RepoProfile.Source))
+			}
+		}
+		if bundle.ProjectContext != nil {
+			refs = append(refs, executionProjectContextRefs(bundle.ProjectContext)...)
+		}
+	}
+	if node != nil {
+		refs = append(refs, fmt.Sprintf("pr_node:%d", node.ID))
+		if strings.TrimSpace(node.NodeKey) != "" {
+			refs = append(refs, "pr_node_key:"+strings.TrimSpace(node.NodeKey))
+		}
+		if strings.TrimSpace(node.RepositoryID) != "" {
+			refs = append(refs, "target_repository:"+strings.TrimSpace(node.RepositoryID))
+		}
+	}
+	if parent != nil && parent.ID != 0 {
+		refs = append(refs, fmt.Sprintf("parent_task:%d", parent.ID))
+	}
+	if strings.TrimSpace(promptType) != "" {
+		refs = append(refs, "prompt_type:"+strings.TrimSpace(promptType))
+	}
+	for _, skill := range skills {
+		if skill != nil && skill.Active && skill.ID != 0 {
+			refs = append(refs, fmt.Sprintf("skill:%d", skill.ID))
+		}
+	}
+	return compactUniqueStrings(refs)
+}
+
+func executionProjectContextRefs(context *domain.SpecForgeProjectContext) []string {
+	if context == nil {
+		return nil
+	}
+	refs := make([]string, 0, len(context.Repositories)+2)
+	if context.Project != nil && context.Project.ID != 0 {
+		refs = append(refs, fmt.Sprintf("project:%d", context.Project.ID))
+	}
+	if strings.TrimSpace(context.ExecutionRepositoryID) != "" {
+		refs = append(refs, "project_primary_repository:"+strings.TrimSpace(context.ExecutionRepositoryID))
+	}
+	for _, repositoryID := range context.ReadOnlyRepositoryIDs {
+		if strings.TrimSpace(repositoryID) != "" {
+			refs = append(refs, "project_read_only_repository:"+strings.TrimSpace(repositoryID))
+		}
+	}
+	for _, repository := range context.Repositories {
+		if repository == nil || strings.TrimSpace(repository.RepositoryID) == "" {
+			continue
+		}
+		refs = append(refs, "project_repository:"+strings.TrimSpace(repository.RepositoryID)+":role:"+strings.TrimSpace(repository.Role))
+	}
+	return refs
+}
+
+func validateExecutionPromptContract(bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, prompt *domain.SpecForgeCompiledPrompt, promptType string) error {
+	if bundle == nil || bundle.Plan == nil || node == nil || prompt == nil {
+		return domain.ErrInvalidInput
+	}
+	promptType = strings.TrimSpace(promptType)
+	if promptType == "" {
+		promptType = domain.PromptTypeImplementation
+	}
+	if prompt.PRNodeID != node.ID || prompt.PlanID != bundle.Plan.ID || !executionPromptTypeMatches(prompt.Type, promptType) {
+		return fmt.Errorf("prompt contract invalid: prompt does not match PR node, plan, or task type")
+	}
+	if strings.TrimSpace(prompt.Version) == "" || len(strings.TrimSpace(prompt.PromptHash)) != 64 {
+		return fmt.Errorf("prompt contract invalid: missing version or sha256 hash")
+	}
+	requiredText := []string{
+		"Grounded prompt contract",
+		"Evidence refs",
+		"Scope guardrails",
+		"PR DAG guardrails",
+		"Verification contract",
+		strings.TrimSpace(node.NodeKey),
+	}
+	for _, required := range requiredText {
+		if required != "" && !strings.Contains(prompt.PromptText, required) {
+			return fmt.Errorf("prompt contract invalid: missing %q", required)
+		}
+	}
+	if !containsString(prompt.EvidenceRefs, fmt.Sprintf("pr_node:%d", node.ID)) {
+		return fmt.Errorf("prompt contract invalid: missing PR node evidence ref")
+	}
+	if !containsStringPrefix(prompt.EvidenceRefs, fmt.Sprintf("implementation_plan:%d:", bundle.Plan.ID)) {
+		return fmt.Errorf("prompt contract invalid: missing implementation plan evidence ref")
+	}
+	if strings.TrimSpace(node.RepositoryID) != "" && !containsString(prompt.EvidenceRefs, "target_repository:"+strings.TrimSpace(node.RepositoryID)) {
+		return fmt.Errorf("prompt contract invalid: missing target repository evidence ref")
+	}
+	return nil
+}
+
 func writeRunScopeGuardrails(b *strings.Builder, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode) {
 	b.WriteString("Scope guardrails:\n")
 	if node == nil {
@@ -1896,6 +2044,48 @@ func normalizeExecutionList(values []string) []string {
 		out = append(out, value)
 	}
 	return out
+}
+
+func compactUniqueStrings(values []string) []string {
+	return normalizeExecutionList(values)
+}
+
+func containsString(values []string, expected string) bool {
+	expected = strings.TrimSpace(expected)
+	if expected == "" {
+		return false
+	}
+	for _, value := range values {
+		if strings.TrimSpace(value) == expected {
+			return true
+		}
+	}
+	return false
+}
+
+func containsStringPrefix(values []string, prefix string) bool {
+	prefix = strings.TrimSpace(prefix)
+	if prefix == "" {
+		return false
+	}
+	for _, value := range values {
+		if strings.HasPrefix(strings.TrimSpace(value), prefix) {
+			return true
+		}
+	}
+	return false
+}
+
+func executionPromptTypeMatches(actual string, expected string) bool {
+	actual = strings.TrimSpace(actual)
+	expected = strings.TrimSpace(expected)
+	if expected == "" {
+		expected = domain.PromptTypeImplementation
+	}
+	if actual == "" {
+		actual = domain.PromptTypeImplementation
+	}
+	return actual == expected
 }
 
 func taskPromptType(task *domain.SpecForgeAgentTask) string {
@@ -2242,9 +2432,13 @@ func toClaimedAgentTask(task *domain.SpecForgeAgentTask) *ClaimedAgentTask {
 	}
 }
 
-func toClaimedTaskPRNode(node *domain.SpecForgePRNode) *ClaimedTaskPRNode {
+func toClaimedTaskPRNode(bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode) *ClaimedTaskPRNode {
 	if node == nil {
 		return nil
+	}
+	evidenceRefs := append([]string(nil), node.EvidenceRefs...)
+	if len(evidenceRefs) == 0 {
+		evidenceRefs = executionPromptEvidenceRefs(bundle, node, domain.PromptTypeImplementation, nil, nil)
 	}
 	return &ClaimedTaskPRNode{
 		ID:                 node.ID,
@@ -2259,5 +2453,6 @@ func toClaimedTaskPRNode(node *domain.SpecForgePRNode) *ClaimedTaskPRNode {
 		AcceptanceCriteria: node.AcceptanceCriteria,
 		TestCommands:       node.TestCommands,
 		BranchName:         node.BranchName,
+		EvidenceRefs:       evidenceRefs,
 	}
 }
