@@ -324,6 +324,7 @@ func compileInitialPlan(userID uint, repoID, input, ideaType string, profile *do
 	featureName := ideaTitle(input)
 	affectedAreas := inferredAffectedAreas(profile)
 	testStrategy := inferredTestStrategy(profile)
+	complexity := assessIdeaComplexity(input, profile)
 
 	idea := &domain.SpecForgeIdea{
 		RepositoryID: repoID,
@@ -372,6 +373,11 @@ func compileInitialPlan(userID uint, repoID, input, ideaType string, profile *do
 			"Generated PR nodes are scoped from repository profile signals and may need user adjustment before approval.",
 		},
 	}
+	if complexity.RequiresMilestoneSplit {
+		spec.Assumptions = append(spec.Assumptions, complexity.Assumption)
+		spec.EdgeCases = append(spec.EdgeCases, complexity.EdgeCase)
+		spec.NonGoals = append(spec.NonGoals, "Do not execute all high-risk surfaces in one MVP run; approve a milestone slice first.")
+	}
 	plan := &domain.SpecForgeImplementationPlan{
 		TechnicalSummary: "Implement " + featureName + " using the existing repository architecture and conventions.",
 		AffectedAreas:    affectedAreas,
@@ -386,6 +392,10 @@ func compileInitialPlan(userID uint, repoID, input, ideaType string, profile *do
 		MigrationRisks: inferredMigrationRisks(input, profile),
 		Status:         domain.PlanStatusDraft,
 	}
+	if complexity.RequiresMilestoneSplit {
+		plan.SecurityRisks = append(plan.SecurityRisks, complexity.SecurityRisk)
+		plan.MigrationRisks = append(plan.MigrationRisks, complexity.MigrationRisk)
+	}
 	nodes := featurePRNodes(slug, featureName, input, profile)
 
 	bundle := &domain.SpecForgePlanBundle{
@@ -395,8 +405,61 @@ func compileInitialPlan(userID uint, repoID, input, ideaType string, profile *do
 		Plan:        plan,
 		PRNodes:     nodes,
 	}
-	bundle.ProductSpec.Assumptions = append(bundle.ProductSpec.Assumptions, reviewPRDAG(bundle.PRNodes)...)
+	bundle.ProductSpec.Assumptions = append(bundle.ProductSpec.Assumptions, reviewPRDAG(bundle.PRNodes, complexity)...)
 	return bundle
+}
+
+type ideaComplexity struct {
+	Signals                []string
+	RequiresMilestoneSplit bool
+	Assumption             string
+	EdgeCase               string
+	SecurityRisk           string
+	MigrationRisk          string
+}
+
+func assessIdeaComplexity(input string, profile *domain.SpecForgeRepoProfile) ideaComplexity {
+	signals := normalizePlanList(ideaComplexitySignals(input, profile))
+	complexity := ideaComplexity{Signals: signals}
+	if len(signals) < 5 {
+		return complexity
+	}
+	complexity.RequiresMilestoneSplit = true
+	joined := strings.Join(signals, ", ")
+	complexity.Assumption = "Complexity guardrail: this idea spans " + joined + "; keep the first execution milestone to at most five PRs and one high-risk surface."
+	complexity.EdgeCase = "If the approved scope still requires all detected surfaces, split execution into separate milestones before starting autonomous implementation."
+	complexity.SecurityRisk = "Complexity guardrail: combined changes across " + joined + " increase review and regression risk; isolate security-sensitive changes before UI or notification work."
+	complexity.MigrationRisk = "Complexity guardrail: if persistence or migration work is required, land it in a foundation milestone before dependent API, UI, notification, or audit work."
+	return complexity
+}
+
+func ideaComplexitySignals(input string, profile *domain.SpecForgeRepoProfile) []string {
+	signals := []string{}
+	if ideaMentions(input, "database", "schema", "migration", "model", "table") || stackHas(profile, "prisma", "gorm", "postgres") {
+		signals = append(signals, "data model or migration")
+	}
+	if needsBackend(input, profile) {
+		signals = append(signals, "backend API")
+	}
+	if needsFrontend(input, profile) {
+		signals = append(signals, "frontend UI")
+	}
+	if ideaMentions(input, "email", "mail", "notification", "sendgrid", "resend") {
+		signals = append(signals, "email or notification")
+	}
+	if ideaMentions(input, "auth", "permission", "role", "rbac", "admin", "owner") || profileHasRisk(profile, "auth") {
+		signals = append(signals, "auth or permission")
+	}
+	if ideaMentions(input, "audit", "log", "history", "compliance") {
+		signals = append(signals, "audit or compliance")
+	}
+	if ideaMentions(input, "billing", "stripe", "plan", "subscription", "payment") || profileHasRisk(profile, "billing") {
+		signals = append(signals, "billing")
+	}
+	if ideaMentions(input, "webhook", "integration", "slack", "linear", "jira", "github app") {
+		signals = append(signals, "external integration")
+	}
+	return signals
 }
 
 func ideaTitle(input string) string {
@@ -541,6 +604,19 @@ func stackHas(profile *domain.SpecForgeRepoProfile, needles ...string) bool {
 	return false
 }
 
+func profileHasRisk(profile *domain.SpecForgeRepoProfile, needles ...string) bool {
+	if profile == nil {
+		return false
+	}
+	haystack := strings.ToLower(strings.Join(profile.RiskAreas, " "))
+	for _, needle := range needles {
+		if strings.Contains(haystack, strings.ToLower(strings.TrimSpace(needle))) {
+			return true
+		}
+	}
+	return false
+}
+
 func ideaMentions(input string, needles ...string) bool {
 	haystack := strings.ToLower(input)
 	for _, needle := range needles {
@@ -642,7 +718,7 @@ func prNode(slug, key string, order int, nodeType, title, goal string, dependsOn
 	}
 }
 
-func reviewPRDAG(nodes []*domain.SpecForgePRNode) []string {
+func reviewPRDAG(nodes []*domain.SpecForgePRNode, complexity ...ideaComplexity) []string {
 	const maxMVPPRNodes = 5
 
 	notes := make([]string, 0)
@@ -651,6 +727,9 @@ func reviewPRDAG(nodes []*domain.SpecForgePRNode) []string {
 	}
 	if len(nodes) > maxMVPPRNodes {
 		notes = append(notes, fmt.Sprintf("PR DAG review: generated %d PR nodes, above the MVP limit of %d; split the idea into milestones before execution.", len(nodes), maxMVPPRNodes))
+	}
+	if len(complexity) > 0 && complexity[0].RequiresMilestoneSplit {
+		notes = append(notes, "PR DAG review: complexity guardrail recommends a milestone split before execution because the idea spans "+strings.Join(complexity[0].Signals, ", ")+".")
 	}
 
 	keys := make(map[string]int, len(nodes))
