@@ -13,7 +13,7 @@ type RepoProfilePO struct {
 	DefaultBranch     string `gorm:"size:100;not null"`
 	Stack             string `gorm:"type:text"`
 	TestCommands      string `gorm:"type:text"`
-	CIProvider        string `gorm:"size:100;not null"`
+	CIProvider        string `gorm:"column:ci_provider;size:100;not null"`
 	AppStructure      string `gorm:"type:text"`
 	CodingConventions string `gorm:"type:text"`
 	RiskAreas         string `gorm:"type:text"`

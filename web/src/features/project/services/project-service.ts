@@ -29,9 +29,48 @@ export interface ProjectRepositoryDTO {
   updated_at: string;
 }
 
+export interface ProjectRepoProfileDTO {
+  id: number;
+  repository_id: string;
+  default_branch: string;
+  stack: string[];
+  test_commands: string[];
+  ci_provider: string;
+  app_structure: string[];
+  coding_conventions: string[];
+  risk_areas: string[];
+  summary: string;
+  source: string;
+  warnings: string[];
+  created_by: number;
+  last_indexed_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectSkillDTO {
+  id: number;
+  repository_id: string;
+  name: string;
+  description: string;
+  content: string;
+  active: boolean;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectRepositoryContextDTO {
+  repository: ProjectRepositoryDTO;
+  profile?: ProjectRepoProfileDTO;
+  skills: ProjectSkillDTO[];
+  warnings?: string[];
+}
+
 export interface ProjectContextDTO {
   project: ProjectDTO;
   repositories: ProjectRepositoryDTO[];
+  repository_contexts: ProjectRepositoryContextDTO[];
 }
 
 export interface CreateProjectPayload {
