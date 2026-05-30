@@ -2,6 +2,7 @@ package verification
 
 import (
 	"context"
+	"strings"
 
 	"github.com/zgiai/luas/api/internal/domain"
 	"gorm.io/gorm"
@@ -23,6 +24,24 @@ func (r *repository) CreateFixAttempt(ctx context.Context, attempt *domain.SpecF
 	attempt.ID = po.ID
 	attempt.CreatedAt = po.CreatedAt
 	attempt.UpdatedAt = po.UpdatedAt
+	return nil
+}
+
+func (r *repository) UpdateFixAttemptStatus(ctx context.Context, fixAttemptID uint, status string) error {
+	status = strings.TrimSpace(status)
+	if fixAttemptID == 0 || status == "" {
+		return domain.ErrInvalidInput
+	}
+	result := r.db.WithContext(ctx).
+		Model(&FixAttemptPO{}).
+		Where("id = ?", fixAttemptID).
+		Update("status", status)
+	if result.Error != nil {
+		return result.Error
+	}
+	if result.RowsAffected == 0 {
+		return domain.ErrNotFound
+	}
 	return nil
 }
 

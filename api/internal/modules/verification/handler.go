@@ -36,6 +36,7 @@ func (h *Handler) RegisterEvents(bus *events.EventBus) {
 		return
 	}
 	bus.Subscribe(domain.EventSpecForgePRNodeCIFailed, h.handlePRNodeCIFailed)
+	bus.Subscribe(domain.EventSpecForgeFixTaskFinished, h.handleFixTaskFinished)
 }
 
 func (h *Handler) handlePRNodeCIFailed(ctx context.Context, e events.Event) error {
@@ -51,6 +52,22 @@ func (h *Handler) handlePRNodeCIFailed(ctx context.Context, e events.Event) erro
 		RepositoryID: event.RepositoryID,
 	})
 	if errors.Is(err, domain.ErrNotFound) || errors.Is(err, domain.ErrConflict) {
+		return nil
+	}
+	return err
+}
+
+func (h *Handler) handleFixTaskFinished(ctx context.Context, e events.Event) error {
+	var underlying any = e
+	if wrapped, ok := e.(events.WrappedEvent); ok {
+		underlying = wrapped.Event
+	}
+	event, ok := underlying.(domain.SpecForgeFixTaskFinishedEvent)
+	if !ok || event.FixAttemptID == 0 || event.FixAttemptStatus == "" {
+		return nil
+	}
+	err := h.service.UpdateFixAttemptStatus(ctx, event.FixAttemptID, event.FixAttemptStatus)
+	if errors.Is(err, domain.ErrNotFound) {
 		return nil
 	}
 	return err

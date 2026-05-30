@@ -11,6 +11,7 @@ import (
 	"time"
 
 	"github.com/zgiai/luas/api/internal/domain"
+	"github.com/zgiai/luas/api/internal/infra/events"
 	"github.com/zgiai/luas/api/internal/modules/githubintegration"
 	"github.com/zgiai/luas/api/pkg/redact"
 )
@@ -57,9 +58,18 @@ type service struct {
 	worktrees          WorktreeManager
 	preparer           PRNodeBranchPreparer
 	deliverer          PRNodeDeliverer
+	eventBus           *events.EventBus
 }
 
 func NewService(repo domain.SpecForgeExecutionRepository, planningRepo domain.SpecForgePlanningRepository, repositoryResolver RepositoryResolver, executor CodeExecutor, worktrees WorktreeManager, preparer PRNodeBranchPreparer, deliverer PRNodeDeliverer) *service {
+	return newService(repo, planningRepo, repositoryResolver, executor, worktrees, preparer, deliverer, nil)
+}
+
+func NewEventedService(repo domain.SpecForgeExecutionRepository, planningRepo domain.SpecForgePlanningRepository, repositoryResolver RepositoryResolver, executor CodeExecutor, worktrees WorktreeManager, preparer PRNodeBranchPreparer, deliverer PRNodeDeliverer, eventBus *events.EventBus) *service {
+	return newService(repo, planningRepo, repositoryResolver, executor, worktrees, preparer, deliverer, eventBus)
+}
+
+func newService(repo domain.SpecForgeExecutionRepository, planningRepo domain.SpecForgePlanningRepository, repositoryResolver RepositoryResolver, executor CodeExecutor, worktrees WorktreeManager, preparer PRNodeBranchPreparer, deliverer PRNodeDeliverer, eventBus *events.EventBus) *service {
 	if executor == nil {
 		executor = NewCodexCLIExecutor(CodexCLIExecutorConfig{}, nil)
 	}
@@ -67,7 +77,7 @@ func NewService(repo domain.SpecForgeExecutionRepository, planningRepo domain.Sp
 	if repo, ok := planningRepo.(domain.SpecForgeSkillRepository); ok {
 		skillRepo = repo
 	}
-	return &service{repo: repo, planningRepo: planningRepo, skillRepo: skillRepo, repositoryResolver: repositoryResolver, executor: executor, worktrees: worktrees, preparer: preparer, deliverer: deliverer}
+	return &service{repo: repo, planningRepo: planningRepo, skillRepo: skillRepo, repositoryResolver: repositoryResolver, executor: executor, worktrees: worktrees, preparer: preparer, deliverer: deliverer, eventBus: eventBus}
 }
 
 func (s *service) StartRun(ctx context.Context, userID, planID uint, req *StartExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error) {
@@ -788,6 +798,9 @@ func (s *service) CompleteTask(ctx context.Context, taskID uint) (*domain.SpecFo
 	if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
 		return nil, fmt.Errorf("complete agent task: %w", err)
 	}
+	if err := s.publishFixTaskFinished(ctx, task); err != nil {
+		return nil, err
+	}
 
 	bundle, err := s.GetRun(ctx, task.RunID)
 	if err != nil {
@@ -939,6 +952,9 @@ func (s *service) finalizeTaskResult(ctx context.Context, task *domain.SpecForge
 	if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
 		return nil, fmt.Errorf("update executed agent task: %w", err)
 	}
+	if err := s.publishFixTaskFinished(ctx, task); err != nil {
+		return nil, err
+	}
 	if task.Status == domain.AgentTaskStatusFailed {
 		return s.GetRun(ctx, task.RunID)
 	}
@@ -954,6 +970,18 @@ func (s *service) finalizeTaskResult(ctx context.Context, task *domain.SpecForge
 		return nil, err
 	}
 	return s.GetRun(ctx, task.RunID)
+}
+
+func (s *service) publishFixTaskFinished(ctx context.Context, task *domain.SpecForgeAgentTask) error {
+	if s.eventBus == nil || task == nil || task.FixAttemptID == nil {
+		return nil
+	}
+	switch task.Status {
+	case domain.AgentTaskStatusCompleted, domain.AgentTaskStatusFailed, domain.AgentTaskStatusCancelled:
+		return s.eventBus.Publish(ctx, domain.NewSpecForgeFixTaskFinishedEvent(task))
+	default:
+		return nil
+	}
 }
 
 func (s *service) completeRunIfDeliveryReady(ctx context.Context, bundle *domain.SpecForgeExecutionBundle, completedAt time.Time) error {

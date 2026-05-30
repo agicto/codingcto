@@ -165,6 +165,7 @@ func NewRoleRevokedEvent(userID, roleID uint, roleName string) RoleRevokedEvent 
 
 const EventSpecForgeReviewFeedbackReceived = "specforge.review_feedback.received"
 const EventSpecForgeFixAttemptQueued = "specforge.fix_attempt.queued"
+const EventSpecForgeFixTaskFinished = "specforge.fix_task.finished"
 const EventSpecForgePRNodeCIFailed = "specforge.pr_node.ci_failed"
 const EventSpecForgePRNodeDependencySatisfied = "specforge.pr_node.dependency_satisfied"
 
@@ -225,6 +226,42 @@ func NewSpecForgeFixAttemptQueuedEvent(attempt *SpecForgeFixAttempt) SpecForgeFi
 	event.CILogExcerpt = attempt.CILogExcerpt
 	event.LikelyCause = attempt.LikelyCause
 	event.RecommendedAction = attempt.RecommendedAction
+	return event
+}
+
+// SpecForgeFixTaskFinishedEvent is fired when an agent task linked to a fix attempt reaches a terminal state.
+type SpecForgeFixTaskFinishedEvent struct {
+	BaseEvent
+	FixAttemptID     uint
+	PRNodeID         uint
+	TaskID           uint
+	TaskStatus       string
+	FixAttemptStatus string
+	FailureReason    string
+}
+
+func (e SpecForgeFixTaskFinishedEvent) EventName() string {
+	return EventSpecForgeFixTaskFinished
+}
+
+func NewSpecForgeFixTaskFinishedEvent(task *SpecForgeAgentTask) SpecForgeFixTaskFinishedEvent {
+	event := SpecForgeFixTaskFinishedEvent{BaseEvent: NewBaseEvent()}
+	if task == nil || task.FixAttemptID == nil {
+		return event
+	}
+	event.FixAttemptID = *task.FixAttemptID
+	event.PRNodeID = task.PRNodeID
+	event.TaskID = task.ID
+	event.TaskStatus = task.Status
+	event.FailureReason = task.FailureReason
+	switch task.Status {
+	case AgentTaskStatusCompleted:
+		event.FixAttemptStatus = FixAttemptStatusSuccess
+	case AgentTaskStatusFailed, AgentTaskStatusCancelled:
+		event.FixAttemptStatus = FixAttemptStatusFailed
+	default:
+		event.FixAttemptStatus = FixAttemptStatusQueued
+	}
 	return event
 }
 
