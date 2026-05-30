@@ -1,6 +1,8 @@
-# Luas
+# Luas / SpecForge
 
-> **Luas** — Irish for *speed*. An AI-era full-stack scaffold: opinionated Go API + Next.js web, designed to ship apps fast on stable rails.
+> **Luas** is the open-source full-stack foundation for **SpecForge**, a GitHub-native PRD-to-PR automation system.
+
+SpecForge turns a product idea into a product plan, technical plan, PR dependency graph, versioned coding prompts, execution tasks, CI feedback, and review-ready pull requests. Luas provides the Go API and Next.js console that make that workflow shippable.
 
 ```
 luas/
@@ -17,6 +19,26 @@ luas/
 | **Stable rails** | Both halves are battle-tested and conservative: no exotic dependencies, no half-finished abstractions. |
 | **Great patterns** | DDD-flavored modules on the API side, feature-first folders on the web side, AGENTS.md on both. |
 | **Architecture-first** | The two services share contracts, not code. Cleanly deployable as separate units. |
+
+## What SpecForge is building
+
+SpecForge is an AI engineering planner and executor:
+
+1. Connect one GitHub repository or a small project of repositories.
+2. Analyze repository context, test commands, CI, conventions, risk areas, and reusable skills.
+3. Convert a feature idea into a lightweight product spec and technical implementation plan.
+4. Split the plan into reviewable PR nodes with explicit dependencies.
+5. Compile each PR node into a scoped coding prompt.
+6. Dispatch execution to a Codex CLI-compatible runner.
+7. Track task state, CI failures, auto-fix attempts, and final PR delivery.
+
+The product principle is simple: users manage delivery artifacts, not AI workers.
+
+Core product docs:
+
+- [SpecForge PRD](SPECFORGE_PRD.md)
+- [SpecForge architecture plan](SPECFORGE_ARCHITECTURE_PLAN.md)
+- [SpecForge development implementation plan](SPECFORGE_DEVELOPMENT_IMPLEMENTATION_PLAN.md)
 
 ## Quick start
 
@@ -44,6 +66,37 @@ See [web/README.md](web/README.md) for the full frontend guide.
 ## Working with AI agents
 
 Both halves were designed for AI-assisted development. The top-level [AGENTS.md](AGENTS.md) plus the per-half [api/AGENTS.md](api/AGENTS.md) and [web/AGENTS.md](web/AGENTS.md) tell coding agents (Claude Code, Cursor, Windsurf, Copilot, etc.) how to navigate, where the boundaries are, and which conventions to follow.
+
+## Contributing
+
+This is a global open-source project. Keep all commits, pull request titles, pull request descriptions, code comments, and user-facing documentation in English unless a task explicitly requires localized product copy.
+
+Commit messages should be short, imperative, and English-only:
+
+```text
+feat: add project-aware SpecForge planning
+fix: preserve project skills in execution prompts
+docs: clarify SpecForge development workflow
+```
+
+Before opening a pull request, run the checks that match your change:
+
+```bash
+# API
+cd api
+make wire
+go test ./...
+go vet ./...
+make test-kest
+
+# Web
+cd web
+pnpm type-check
+pnpm lint
+pnpm test
+```
+
+For UI changes, also verify the affected route in a browser and include the result in the PR description.
 
 ## History
 

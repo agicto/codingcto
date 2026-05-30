@@ -55,6 +55,8 @@ type service struct {
 	repo               domain.SpecForgeExecutionRepository
 	planningRepo       domain.SpecForgePlanningRepository
 	skillRepo          domain.SpecForgeSkillRepository
+	profileRepo        domain.SpecForgeRepoProfileRepository
+	projectRepo        domain.SpecForgeProjectRepositoryStore
 	repositoryResolver RepositoryResolver
 	executor           CodeExecutor
 	worktrees          WorktreeManager
@@ -69,6 +71,24 @@ func NewService(repo domain.SpecForgeExecutionRepository, planningRepo domain.Sp
 
 func NewEventedService(repo domain.SpecForgeExecutionRepository, planningRepo domain.SpecForgePlanningRepository, repositoryResolver RepositoryResolver, executor CodeExecutor, worktrees WorktreeManager, preparer PRNodeBranchPreparer, deliverer PRNodeDeliverer, eventBus *events.EventBus) *service {
 	return newService(repo, planningRepo, repositoryResolver, executor, worktrees, preparer, deliverer, eventBus)
+}
+
+func NewProjectAwareEventedService(
+	repo domain.SpecForgeExecutionRepository,
+	planningRepo domain.SpecForgePlanningRepository,
+	repositoryResolver RepositoryResolver,
+	executor CodeExecutor,
+	worktrees WorktreeManager,
+	preparer PRNodeBranchPreparer,
+	deliverer PRNodeDeliverer,
+	profileRepo domain.SpecForgeRepoProfileRepository,
+	projectRepo domain.SpecForgeProjectRepositoryStore,
+	eventBus *events.EventBus,
+) *service {
+	svc := newService(repo, planningRepo, repositoryResolver, executor, worktrees, preparer, deliverer, eventBus)
+	svc.profileRepo = profileRepo
+	svc.projectRepo = projectRepo
+	return svc
 }
 
 func newService(repo domain.SpecForgeExecutionRepository, planningRepo domain.SpecForgePlanningRepository, repositoryResolver RepositoryResolver, executor CodeExecutor, worktrees WorktreeManager, preparer PRNodeBranchPreparer, deliverer PRNodeDeliverer, eventBus *events.EventBus) *service {
@@ -88,6 +108,10 @@ func (s *service) StartRun(ctx context.Context, userID, planID uint, req *StartE
 	}
 
 	plan, err := s.planningRepo.FindPlanBundleByPlanID(ctx, planID)
+	if err != nil {
+		return nil, err
+	}
+	plan, err = s.withExecutionPlanningContext(ctx, plan)
 	if err != nil {
 		return nil, err
 	}
@@ -239,6 +263,9 @@ func (s *service) createPromptForPRNode(ctx context.Context, userID uint, bundle
 }
 
 func (s *service) activeSkillsFor(ctx context.Context, bundle *domain.SpecForgePlanBundle) ([]*domain.SpecForgeSkill, error) {
+	if bundle != nil && bundle.ProjectContext != nil {
+		return activeExecutionProjectSkills(bundle.ProjectContext), nil
+	}
 	if s.skillRepo == nil || bundle == nil || bundle.Idea == nil || strings.TrimSpace(bundle.Idea.RepositoryID) == "" {
 		return []*domain.SpecForgeSkill{}, nil
 	}
@@ -247,6 +274,80 @@ func (s *service) activeSkillsFor(ctx context.Context, bundle *domain.SpecForgeP
 		return nil, fmt.Errorf("load active repo skills: %w", err)
 	}
 	return skills, nil
+}
+
+func (s *service) withExecutionPlanningContext(ctx context.Context, bundle *domain.SpecForgePlanBundle) (*domain.SpecForgePlanBundle, error) {
+	if bundle == nil || bundle.Idea == nil {
+		return bundle, nil
+	}
+	if bundle.Idea.ProjectID != nil && *bundle.Idea.ProjectID != 0 {
+		projectContext, err := s.projectContextFor(ctx, *bundle.Idea.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		bundle.ProjectContext = projectContext
+		bundle.RepoProfile = synthesizedExecutionProjectProfile(projectContext, bundle.Idea.RepositoryID)
+		return bundle, nil
+	}
+	if bundle.RepoProfile == nil && s.profileRepo != nil {
+		profile, err := s.profileRepo.FindProfileByRepositoryID(ctx, bundle.Idea.RepositoryID)
+		if err != nil {
+			if errors.Is(err, domain.ErrNotFound) {
+				return bundle, nil
+			}
+			return nil, fmt.Errorf("load execution repo profile: %w", err)
+		}
+		bundle.RepoProfile = profile
+	}
+	return bundle, nil
+}
+
+func (s *service) projectContextFor(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContext, error) {
+	if projectID == 0 || s.projectRepo == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	project, err := s.projectRepo.FindProjectByID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	repositories, err := s.projectRepo.ListProjectRepositories(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	contexts := make([]*domain.SpecForgeProjectRepositoryContext, 0, len(repositories))
+	for _, repository := range repositories {
+		if repository == nil || !repository.Active {
+			continue
+		}
+		repoContext := &domain.SpecForgeProjectRepositoryContext{
+			Repository: repository,
+			Skills:     []*domain.SpecForgeSkill{},
+		}
+		if s.profileRepo != nil {
+			profile, err := s.profileRepo.FindProfileByRepositoryID(ctx, repository.RepositoryID)
+			if err != nil {
+				if !errors.Is(err, domain.ErrNotFound) {
+					return nil, fmt.Errorf("load execution project repo profile: %w", err)
+				}
+				repoContext.Warnings = append(repoContext.Warnings, "Repo profile has not been generated yet.")
+			} else {
+				repoContext.Profile = profile
+			}
+		}
+		if s.skillRepo != nil {
+			skills, err := s.skillRepo.ListActiveSkillsByRepositoryID(ctx, repository.RepositoryID)
+			if err != nil {
+				return nil, fmt.Errorf("load execution project repo skills: %w", err)
+			}
+			repoContext.Skills = skills
+		}
+		contexts = append(contexts, repoContext)
+	}
+	return &domain.SpecForgeProjectContext{
+		Project:            project,
+		Repositories:       repositories,
+		RepositoryContexts: contexts,
+	}, nil
 }
 
 func (s *service) GetRun(ctx context.Context, runID uint) (*domain.SpecForgeExecutionBundle, error) {
@@ -1324,6 +1425,7 @@ func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecF
 	if bundle != nil && bundle.Plan != nil && strings.TrimSpace(bundle.Plan.TechnicalSummary) != "" {
 		b.WriteString("Technical plan:\n" + strings.TrimSpace(bundle.Plan.TechnicalSummary) + "\n\n")
 	}
+	writeExecutionProjectContext(&b, bundle)
 	writeExecutionRepoProfile(&b, bundle)
 	writeExecutionSkills(&b, skills)
 	writeExecutionList(&b, "Expected files", node.ExpectedFiles)
@@ -1337,6 +1439,35 @@ func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecF
 	b.WriteString("- Run the listed test commands before submitting the result.\n")
 	b.WriteString("- Prepare a PR description with summary, scope, non-goals, tests, risks, and dependencies.\n")
 	return b.String()
+}
+
+func writeExecutionProjectContext(b *strings.Builder, bundle *domain.SpecForgePlanBundle) {
+	if bundle == nil || bundle.ProjectContext == nil || bundle.ProjectContext.Project == nil {
+		return
+	}
+	context := bundle.ProjectContext
+	b.WriteString("Project context:\n")
+	b.WriteString("- Project: " + strings.TrimSpace(context.Project.Name) + "\n")
+	for _, repoContext := range context.RepositoryContexts {
+		if repoContext == nil || repoContext.Repository == nil {
+			continue
+		}
+		repositoryID := strings.TrimSpace(repoContext.Repository.RepositoryID)
+		role := strings.TrimSpace(repoContext.Repository.Role)
+		b.WriteString("- Repository " + repositoryID + " (" + role + ")\n")
+		if repoContext.Profile != nil && strings.TrimSpace(repoContext.Profile.Summary) != "" {
+			b.WriteString("  - Summary: " + strings.TrimSpace(repoContext.Profile.Summary) + "\n")
+		}
+		if repoContext.Profile != nil && len(repoContext.Profile.TestCommands) > 0 {
+			b.WriteString("  - Tests: " + strings.Join(normalizeExecutionList(repoContext.Profile.TestCommands), ", ") + "\n")
+		}
+		for _, warning := range repoContext.Warnings {
+			if strings.TrimSpace(warning) != "" {
+				b.WriteString("  - Warning: " + strings.TrimSpace(warning) + "\n")
+			}
+		}
+	}
+	b.WriteString("\n")
 }
 
 func writeExecutionRepoProfile(b *strings.Builder, bundle *domain.SpecForgePlanBundle) {
@@ -1379,6 +1510,81 @@ func writeExecutionSkills(b *strings.Builder, skills []*domain.SpecForgeSkill) {
 	if !wrote {
 		b.WriteString("- None\n\n")
 	}
+}
+
+func synthesizedExecutionProjectProfile(context *domain.SpecForgeProjectContext, primaryRepoID string) *domain.SpecForgeRepoProfile {
+	if context == nil {
+		return nil
+	}
+	profile := &domain.SpecForgeRepoProfile{
+		RepositoryID:  strings.TrimSpace(primaryRepoID),
+		DefaultBranch: "main",
+		CIProvider:    "project_context",
+		Source:        "project_context",
+		Summary:       "Project context synthesized from bound repositories.",
+	}
+	if context.Project != nil {
+		profile.Summary = "Project " + strings.TrimSpace(context.Project.Name) + " synthesized from bound repositories."
+	}
+	for _, repoContext := range context.RepositoryContexts {
+		if repoContext == nil || repoContext.Repository == nil {
+			continue
+		}
+		repositoryID := strings.TrimSpace(repoContext.Repository.RepositoryID)
+		role := strings.TrimSpace(repoContext.Repository.Role)
+		if repoContext.Profile == nil {
+			profile.Warnings = append(profile.Warnings, "Repository "+repositoryID+" has no repo profile yet.")
+			continue
+		}
+		if repositoryID == primaryRepoID {
+			profile.DefaultBranch = repoContext.Profile.DefaultBranch
+		}
+		prefix := repositoryID
+		if role != "" {
+			prefix += " (" + role + ")"
+		}
+		if strings.TrimSpace(repoContext.Profile.Summary) != "" {
+			profile.AppStructure = append(profile.AppStructure, prefix+": "+strings.TrimSpace(repoContext.Profile.Summary))
+		}
+		profile.Stack = append(profile.Stack, repoContext.Profile.Stack...)
+		profile.TestCommands = append(profile.TestCommands, repoContext.Profile.TestCommands...)
+		profile.AppStructure = append(profile.AppStructure, repoContext.Profile.AppStructure...)
+		profile.CodingConventions = append(profile.CodingConventions, repoContext.Profile.CodingConventions...)
+		profile.RiskAreas = append(profile.RiskAreas, repoContext.Profile.RiskAreas...)
+		profile.Warnings = append(profile.Warnings, repoContext.Profile.Warnings...)
+	}
+	profile.Stack = normalizeExecutionList(profile.Stack)
+	profile.TestCommands = normalizeExecutionList(profile.TestCommands)
+	profile.AppStructure = normalizeExecutionList(profile.AppStructure)
+	profile.CodingConventions = normalizeExecutionList(profile.CodingConventions)
+	profile.RiskAreas = normalizeExecutionList(profile.RiskAreas)
+	profile.Warnings = normalizeExecutionList(profile.Warnings)
+	return profile
+}
+
+func activeExecutionProjectSkills(context *domain.SpecForgeProjectContext) []*domain.SpecForgeSkill {
+	if context == nil {
+		return []*domain.SpecForgeSkill{}
+	}
+	skills := []*domain.SpecForgeSkill{}
+	seen := map[string]struct{}{}
+	for _, repoContext := range context.RepositoryContexts {
+		if repoContext == nil {
+			continue
+		}
+		for _, skill := range repoContext.Skills {
+			if skill == nil || !skill.Active {
+				continue
+			}
+			key := skill.RepositoryID + "\x00" + skill.Name
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			skills = append(skills, skill)
+		}
+	}
+	return skills
 }
 
 func writeExecutionPromptModeInstructions(b *strings.Builder, promptType string, parent *domain.SpecForgeAgentTask) {
@@ -1429,6 +1635,23 @@ func writeExecutionList(b *strings.Builder, title string, values []string) {
 		b.WriteString("- " + value + "\n")
 	}
 	b.WriteString("\n")
+}
+
+func normalizeExecutionList(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value == "" {
+			continue
+		}
+		if _, ok := seen[value]; ok {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func taskPromptType(task *domain.SpecForgeAgentTask) string {
