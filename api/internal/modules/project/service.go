@@ -23,12 +23,24 @@ type Service interface {
 }
 
 type service struct {
-	repo       domain.SpecForgeProjectRepositoryStore
-	githubRepo domain.GitHubIntegrationRepository
+	repo        domain.SpecForgeProjectRepositoryStore
+	githubRepo  domain.GitHubIntegrationRepository
+	profileRepo domain.SpecForgeRepoProfileRepository
+	skillRepo   domain.SpecForgeSkillRepository
 }
 
-func NewService(repo domain.SpecForgeProjectRepositoryStore, githubRepo domain.GitHubIntegrationRepository) *service {
-	return &service{repo: repo, githubRepo: githubRepo}
+func NewService(
+	repo domain.SpecForgeProjectRepositoryStore,
+	githubRepo domain.GitHubIntegrationRepository,
+	profileRepo domain.SpecForgeRepoProfileRepository,
+	skillRepo domain.SpecForgeSkillRepository,
+) *service {
+	return &service{
+		repo:        repo,
+		githubRepo:  githubRepo,
+		profileRepo: profileRepo,
+		skillRepo:   skillRepo,
+	}
 }
 
 func (s *service) CreateProject(ctx context.Context, userID uint, req *CreateProjectRequest) (*domain.SpecForgeProject, error) {
@@ -197,7 +209,48 @@ func (s *service) GetProjectContext(ctx context.Context, projectID uint) (*domai
 	if err != nil {
 		return nil, err
 	}
-	return &domain.SpecForgeProjectContext{Project: project, Repositories: repositories}, nil
+	repositoryContexts, err := s.repositoryContexts(ctx, repositories)
+	if err != nil {
+		return nil, err
+	}
+	return &domain.SpecForgeProjectContext{
+		Project:            project,
+		Repositories:       repositories,
+		RepositoryContexts: repositoryContexts,
+	}, nil
+}
+
+func (s *service) repositoryContexts(ctx context.Context, repositories []*domain.SpecForgeProjectRepository) ([]*domain.SpecForgeProjectRepositoryContext, error) {
+	contexts := make([]*domain.SpecForgeProjectRepositoryContext, 0, len(repositories))
+	for _, repository := range repositories {
+		if repository == nil || !repository.Active {
+			continue
+		}
+		context := &domain.SpecForgeProjectRepositoryContext{
+			Repository: repository,
+			Skills:     []*domain.SpecForgeSkill{},
+		}
+		if s.profileRepo != nil {
+			profile, err := s.profileRepo.FindProfileByRepositoryID(ctx, repository.RepositoryID)
+			if err != nil {
+				if !errors.Is(err, domain.ErrNotFound) {
+					return nil, fmt.Errorf("load project repo profile: %w", err)
+				}
+				context.Warnings = append(context.Warnings, "Repo profile has not been generated yet.")
+			} else {
+				context.Profile = profile
+			}
+		}
+		if s.skillRepo != nil {
+			skills, err := s.skillRepo.ListActiveSkillsByRepositoryID(ctx, repository.RepositoryID)
+			if err != nil {
+				return nil, fmt.Errorf("load project repo skills: %w", err)
+			}
+			context.Skills = skills
+		}
+		contexts = append(contexts, context)
+	}
+	return contexts, nil
 }
 
 func normalizeSlug(value string) string {

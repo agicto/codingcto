@@ -70,5 +70,6 @@ func NewStarterManifest(handler *Handler) contracts.StarterManifest {
 		contracts.WithStarterModule(handler),
 		contracts.WithStarterMigrationNames("2026_05_25_000002_create_specforge_repo_profiles_table"),
 		contracts.WithStarterMigrationNames("2026_05_25_000014_add_source_to_specforge_repo_profiles"),
+		contracts.WithStarterMigrationNames("2026_05_25_000019_normalize_repo_profile_ci_provider_column"),
 	)
 }

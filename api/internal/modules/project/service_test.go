@@ -3,6 +3,7 @@ package project
 import (
 	"context"
 	"errors"
+	"sort"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -16,7 +17,7 @@ func TestServiceProjectRepositoryFlow(t *testing.T) {
 			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
 		},
 	}
-	svc := NewService(store, github)
+	svc := NewService(store, github, nil, nil)
 
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
@@ -37,6 +38,81 @@ func TestServiceProjectRepositoryFlow(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, project.ID, contextBundle.Project.ID)
 	require.Len(t, contextBundle.Repositories, 1)
+	require.Len(t, contextBundle.RepositoryContexts, 1)
+}
+
+func TestServiceProjectContextIncludesRepoProfilesAndSkills(t *testing.T) {
+	store := newMemoryProjectStore()
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
+			"repo_2": {RepositoryID: "repo_2", WorkspaceID: "workspace_1"},
+		},
+	}
+	profiles := &memoryRepoProfileStore{
+		profiles: map[string]*domain.SpecForgeRepoProfile{
+			"repo_1": {
+				ID:            10,
+				RepositoryID:  "repo_1",
+				DefaultBranch: "main",
+				Stack:         []string{"Go", "Next.js"},
+				TestCommands:  []string{"go test ./...", "pnpm type-check"},
+				CIProvider:    "github_actions",
+				Summary:       "Primary app repo.",
+			},
+		},
+	}
+	skills := &memorySkillStore{
+		skills: map[string][]*domain.SpecForgeSkill{
+			"repo_1": {
+				{
+					ID:           20,
+					RepositoryID: "repo_1",
+					Name:         "module-boundaries",
+					Content:      "Keep API and web contracts explicit.",
+					Active:       true,
+				},
+				{
+					ID:           21,
+					RepositoryID: "repo_1",
+					Name:         "inactive",
+					Content:      "Do not include.",
+					Active:       false,
+				},
+			},
+		},
+	}
+	svc := NewService(store, github, profiles, skills)
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "SpecForge",
+		Slug:        "specforge",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_2",
+		Role:         domain.ProjectRepositoryRoleDependency,
+	})
+	require.NoError(t, err)
+
+	contextBundle, err := svc.GetProjectContext(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.Len(t, contextBundle.RepositoryContexts, 2)
+	repoOneContext := projectRepoContextByRepositoryID(contextBundle, "repo_1")
+	require.NotNil(t, repoOneContext)
+	require.NotNil(t, repoOneContext.Profile)
+	require.Equal(t, []string{"Go", "Next.js"}, repoOneContext.Profile.Stack)
+	require.Len(t, repoOneContext.Skills, 1)
+	require.Equal(t, "module-boundaries", repoOneContext.Skills[0].Name)
+	repoTwoContext := projectRepoContextByRepositoryID(contextBundle, "repo_2")
+	require.NotNil(t, repoTwoContext)
+	require.Nil(t, repoTwoContext.Profile)
+	require.Contains(t, repoTwoContext.Warnings, "Repo profile has not been generated yet.")
 }
 
 func TestServiceRejectsSecondPrimaryRepository(t *testing.T) {
@@ -47,7 +123,7 @@ func TestServiceRejectsSecondPrimaryRepository(t *testing.T) {
 			"repo_2": {RepositoryID: "repo_2", WorkspaceID: "workspace_1"},
 		},
 	}
-	svc := NewService(store, github)
+	svc := NewService(store, github, nil, nil)
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
 		Name:        "SpecForge",
@@ -75,7 +151,7 @@ func TestServiceRejectsCrossWorkspaceRepository(t *testing.T) {
 			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_2"},
 		},
 	}
-	svc := NewService(store, github)
+	svc := NewService(store, github, nil, nil)
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
 		Name:        "SpecForge",
@@ -178,6 +254,12 @@ func (s *memoryProjectStore) ListProjectRepositories(_ context.Context, projectI
 	for _, binding := range s.bindings[projectID] {
 		bindings = append(bindings, cloneBinding(binding))
 	}
+	sort.Slice(bindings, func(i, j int) bool {
+		if bindings[i].Role == bindings[j].Role {
+			return bindings[i].ID < bindings[j].ID
+		}
+		return bindings[i].Role < bindings[j].Role
+	})
 	return bindings, nil
 }
 
@@ -246,4 +328,71 @@ func cloneProject(project *domain.SpecForgeProject) *domain.SpecForgeProject {
 func cloneBinding(binding *domain.SpecForgeProjectRepository) *domain.SpecForgeProjectRepository {
 	copied := *binding
 	return &copied
+}
+
+func projectRepoContextByRepositoryID(bundle *domain.SpecForgeProjectContext, repositoryID string) *domain.SpecForgeProjectRepositoryContext {
+	for _, context := range bundle.RepositoryContexts {
+		if context.Repository.RepositoryID == repositoryID {
+			return context
+		}
+	}
+	return nil
+}
+
+type memoryRepoProfileStore struct {
+	profiles map[string]*domain.SpecForgeRepoProfile
+}
+
+func (s *memoryRepoProfileStore) UpsertProfile(_ context.Context, profile *domain.SpecForgeRepoProfile) error {
+	if s.profiles == nil {
+		s.profiles = map[string]*domain.SpecForgeRepoProfile{}
+	}
+	copied := *profile
+	s.profiles[profile.RepositoryID] = &copied
+	return nil
+}
+
+func (s *memoryRepoProfileStore) FindProfileByRepositoryID(_ context.Context, repositoryID string) (*domain.SpecForgeRepoProfile, error) {
+	profile, ok := s.profiles[repositoryID]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	copied := *profile
+	return &copied, nil
+}
+
+type memorySkillStore struct {
+	skills map[string][]*domain.SpecForgeSkill
+}
+
+func (s *memorySkillStore) UpsertSkill(_ context.Context, skill *domain.SpecForgeSkill) error {
+	if s.skills == nil {
+		s.skills = map[string][]*domain.SpecForgeSkill{}
+	}
+	copied := *skill
+	s.skills[skill.RepositoryID] = append(s.skills[skill.RepositoryID], &copied)
+	return nil
+}
+
+func (s *memorySkillStore) ListActiveSkillsByRepositoryID(_ context.Context, repositoryID string) ([]*domain.SpecForgeSkill, error) {
+	all, err := s.ListSkillsByRepositoryID(context.Background(), repositoryID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*domain.SpecForgeSkill, 0, len(all))
+	for _, skill := range all {
+		if skill.Active {
+			out = append(out, skill)
+		}
+	}
+	return out, nil
+}
+
+func (s *memorySkillStore) ListSkillsByRepositoryID(_ context.Context, repositoryID string) ([]*domain.SpecForgeSkill, error) {
+	out := make([]*domain.SpecForgeSkill, 0, len(s.skills[repositoryID]))
+	for _, skill := range s.skills[repositoryID] {
+		copied := *skill
+		out = append(out, &copied)
+	}
+	return out, nil
 }

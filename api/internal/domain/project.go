@@ -43,8 +43,17 @@ type SpecForgeProjectRepository struct {
 
 // SpecForgeProjectContext is the project-scoped context shown before planning.
 type SpecForgeProjectContext struct {
-	Project      *SpecForgeProject             `json:"project"`
-	Repositories []*SpecForgeProjectRepository `json:"repositories"`
+	Project            *SpecForgeProject                    `json:"project"`
+	Repositories       []*SpecForgeProjectRepository        `json:"repositories"`
+	RepositoryContexts []*SpecForgeProjectRepositoryContext `json:"repository_contexts"`
+}
+
+// SpecForgeProjectRepositoryContext enriches a project repository binding with planner-ready repo intelligence.
+type SpecForgeProjectRepositoryContext struct {
+	Repository *SpecForgeProjectRepository `json:"repository"`
+	Profile    *SpecForgeRepoProfile       `json:"profile,omitempty"`
+	Skills     []*SpecForgeSkill           `json:"skills"`
+	Warnings   []string                    `json:"warnings,omitempty"`
 }
 
 // SpecForgeProjectRepositoryStore persists SpecForge project state.
