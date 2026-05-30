@@ -863,7 +863,7 @@ func TestRetryTaskRejectsCancelledRun(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrConflict)
 }
 
-func TestRetryTaskRejectsBlockedRun(t *testing.T) {
+func TestRetryTaskResumesBlockedRun(t *testing.T) {
 	planningRepo := memoryPlanningRepoWithPrompt()
 	runRepo := &memoryExecutionRepo{}
 	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
@@ -875,7 +875,29 @@ func TestRetryTaskRejectsBlockedRun(t *testing.T) {
 	created.Run.Status = domain.ExecutionRunStatusBlocked
 	require.NoError(t, runRepo.UpdateExecutionRun(context.Background(), created.Run))
 
-	_, err = svc.RetryTask(context.Background(), failed.ID, &RetryAgentTaskRequest{})
+	retried, err := svc.RetryTask(context.Background(), failed.ID, &RetryAgentTaskRequest{})
+
+	require.NoError(t, err)
+	require.Equal(t, domain.ExecutionRunStatusRunning, retried.Run.Status)
+	require.Len(t, retried.Tasks, 3)
+	require.Equal(t, domain.AgentTaskStatusQueued, retried.Tasks[2].Status)
+	require.Equal(t, failed.ID, *retried.Tasks[2].ParentTaskID)
+}
+
+func TestRetryTaskRejectsDependencyClosedTask(t *testing.T) {
+	planningRepo := memoryPlanningRepoWithPrompt()
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	cancelled := created.Tasks[1]
+	cancelled.Status = domain.AgentTaskStatusCancelled
+	cancelled.FailureReason = "dependency_closed"
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), cancelled))
+	created.Run.Status = domain.ExecutionRunStatusBlocked
+	require.NoError(t, runRepo.UpdateExecutionRun(context.Background(), created.Run))
+
+	_, err = svc.RetryTask(context.Background(), cancelled.ID, &RetryAgentTaskRequest{})
 
 	require.ErrorIs(t, err, domain.ErrConflict)
 }
