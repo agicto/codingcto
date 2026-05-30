@@ -98,6 +98,7 @@ func actionableReviewFeedback(feedback string) bool {
 		"can you ",
 		"could you ",
 		"request changes",
+		"requested changes",
 		"needs ",
 		"fix ",
 		"change ",

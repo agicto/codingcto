@@ -27,6 +27,7 @@ type StructuredGitHubWebhook struct {
 	PullRequest        *WebhookPullRequest
 	WorkflowRun        *WebhookWorkflowRun
 	ReviewComment      *WebhookReviewComment
+	ReviewState        string
 }
 
 type WebhookPullRequest struct {
@@ -86,6 +87,7 @@ func ParseGitHubWebhookPayload(eventType string, body []byte) (*StructuredGitHub
 		event.ReviewComment = payload.Comment.toWebhookReviewComment(payload.Issue.Number)
 	case GitHubWebhookEventPullRequestReview:
 		event.PullRequest = payload.PullRequest.toWebhookPullRequest()
+		event.ReviewState = strings.TrimSpace(payload.Review.State)
 		event.ReviewComment = payload.Review.toWebhookReviewComment(payload.PullRequest.Number)
 	case GitHubWebhookEventPullRequestReviewComment:
 		event.PullRequest = payload.PullRequest.toWebhookPullRequest()
@@ -191,6 +193,7 @@ func (comment githubWebhookComment) toWebhookReviewComment(prNumber int) *Webhoo
 
 type githubWebhookReview struct {
 	Body     string `json:"body"`
+	State    string `json:"state"`
 	HTMLURL  string `json:"html_url"`
 	CommitID string `json:"commit_id"`
 	Author   struct {

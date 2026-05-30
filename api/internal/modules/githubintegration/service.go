@@ -847,7 +847,7 @@ func (s *service) applyWebhookToPRNode(ctx context.Context, eventType string, bo
 	}
 	switch {
 	case event.PullRequest != nil:
-		node, err := s.updatePRNodeFromPullRequestWebhook(ctx, event.EventType, event.PullRequest)
+		node, err := s.updatePRNodeFromPullRequestWebhook(ctx, event)
 		if err != nil {
 			return err
 		}
@@ -872,11 +872,14 @@ func (s *service) applyWebhookToPRNode(ctx context.Context, eventType string, bo
 	}
 }
 
-func (s *service) updatePRNodeFromPullRequestWebhook(ctx context.Context, eventType string, pr *WebhookPullRequest) (*domain.SpecForgePRNode, error) {
-	if eventType == GitHubWebhookEventPullRequest {
-		return s.updatePRNodeFromPullRequest(ctx, pr)
+func (s *service) updatePRNodeFromPullRequestWebhook(ctx context.Context, event *StructuredGitHubWebhook) (*domain.SpecForgePRNode, error) {
+	if event == nil {
+		return nil, nil
 	}
-	return s.touchPRNodeFromFeedbackPullRequest(ctx, pr)
+	if event.EventType == GitHubWebhookEventPullRequest {
+		return s.updatePRNodeFromPullRequest(ctx, event.PullRequest)
+	}
+	return s.touchPRNodeFromFeedbackPullRequest(ctx, event)
 }
 
 func (s *service) updatePRNodeFromPullRequest(ctx context.Context, pr *WebhookPullRequest) (*domain.SpecForgePRNode, error) {
@@ -900,7 +903,11 @@ func (s *service) updatePRNodeFromPullRequest(ctx context.Context, pr *WebhookPu
 	return node, nil
 }
 
-func (s *service) touchPRNodeFromFeedbackPullRequest(ctx context.Context, pr *WebhookPullRequest) (*domain.SpecForgePRNode, error) {
+func (s *service) touchPRNodeFromFeedbackPullRequest(ctx context.Context, event *StructuredGitHubWebhook) (*domain.SpecForgePRNode, error) {
+	if event == nil {
+		return nil, nil
+	}
+	pr := event.PullRequest
 	if strings.TrimSpace(pr.HeadBranch) == "" && pr.Number <= 0 {
 		return nil, nil
 	}
@@ -923,6 +930,16 @@ func (s *service) touchPRNodeFromFeedbackPullRequest(ctx context.Context, pr *We
 	if strings.TrimSpace(pr.HeadSHA) != "" && strings.TrimSpace(node.GitHubHeadSHA) == "" {
 		node.GitHubHeadSHA = pr.HeadSHA
 		changed = true
+	}
+	if event.EventType == GitHubWebhookEventPullRequestReview && strings.TrimSpace(event.ReviewState) == "changes_requested" {
+		switch node.Status {
+		case domain.PRNodeStatusMerged, domain.PRNodeStatusClosed:
+		default:
+			if node.Status != domain.PRNodeStatusBlocked {
+				node.Status = domain.PRNodeStatusBlocked
+				changed = true
+			}
+		}
 	}
 	if changed {
 		if err := s.planningRepo.UpdatePRNode(ctx, node); err != nil {

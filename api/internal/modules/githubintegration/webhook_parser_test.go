@@ -171,6 +171,7 @@ func TestParseGitHubWebhookPayloadPullRequestReview(t *testing.T) {
 		"pull_request": {"number": 42},
 		"review": {
 			"body": "Please add the missing API test.",
+			"state": "changes_requested",
 			"html_url": "https://github.com/agicto/codingcto/pull/42#pullrequestreview-1",
 			"commit_id": "abc123",
 			"user": {"login": "reviewer"}
@@ -181,6 +182,7 @@ func TestParseGitHubWebhookPayloadPullRequestReview(t *testing.T) {
 
 	require.NoError(t, err)
 	require.NotNil(t, event.ReviewComment)
+	require.Equal(t, "changes_requested", event.ReviewState)
 	require.Equal(t, 42, event.ReviewComment.PullRequestNumber)
 	require.Equal(t, "Please add the missing API test.", event.ReviewComment.Body)
 	require.Equal(t, "reviewer", event.ReviewComment.AuthorLogin)
