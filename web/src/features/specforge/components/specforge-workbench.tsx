@@ -205,10 +205,21 @@ function demoPlanForInput(idea: string, repositoryId: string): PlanBundle {
   };
 }
 
-export function SpecForgeWorkbench() {
+interface SpecForgeWorkbenchProps {
+  initialRepositoryId?: string;
+  projectLabel?: string;
+  repositoryLocked?: boolean;
+}
+
+export function SpecForgeWorkbench({
+  initialRepositoryId,
+  projectLabel,
+  repositoryLocked = false,
+}: SpecForgeWorkbenchProps = {}) {
+  const initialRepoId = initialRepositoryId?.trim() || demoPlan.repoProfile.repositoryId;
   const [idea, setIdea] = useState(defaultIdea);
-  const [repoId, setRepoId] = useState(demoPlan.repoProfile.repositoryId);
-  const [activePlan, setActivePlan] = useState<PlanBundle>(demoPlan);
+  const [repoId, setRepoId] = useState(initialRepoId);
+  const [activePlan, setActivePlan] = useState<PlanBundle>(() => demoPlanForInput(defaultIdea, initialRepoId));
   const activePlanRef = useRef(activePlan);
   const [decisionOverrides, setDecisionOverrides] = useState<Record<string, string>>(() =>
     defaultDecisionOverrides(demoPlan)
@@ -312,15 +323,17 @@ export function SpecForgeWorkbench() {
   }
 
   function resetIdea() {
+    const resetRepoId = initialRepositoryId?.trim() || demoPlan.repoProfile.repositoryId;
     setIdea(defaultIdea);
-    setRepoId(demoPlan.repoProfile.repositoryId);
-    setActivePlan(demoPlan);
-    setDecisionOverrides(defaultDecisionOverrides(demoPlan));
-    setSelectedExecutionNodeIds(demoPlan.prNodes.map((node) => node.id));
+    setRepoId(resetRepoId);
+    const resetPlan = demoPlanForInput(defaultIdea, resetRepoId);
+    setActivePlan(resetPlan);
+    setDecisionOverrides(defaultDecisionOverrides(resetPlan));
+    setSelectedExecutionNodeIds(resetPlan.prNodes.map((node) => node.id));
     setPlanSource("demo");
     setHasPlan(true);
     setApproved(false);
-    setRun({ status: "idle", selectedPRNodeIds: [], tasks: demoPlan.prNodes });
+    setRun({ status: "idle", selectedPRNodeIds: [], tasks: resetPlan.prNodes });
   }
 
   async function approveAndStart() {
@@ -473,8 +486,9 @@ export function SpecForgeWorkbench() {
         <div className="max-w-3xl">
           <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">SpecForge</h1>
           <p className="mt-2 text-sm leading-6 text-text-muted">
-            Describe a feature, review the product and technical plan, then start a PR-oriented
-            execution run.
+            {projectLabel
+              ? `${projectLabel}: describe a feature, review the plan, then start a PR-oriented execution run.`
+              : "Describe a feature, review the product and technical plan, then start a PR-oriented execution run."}
           </p>
         </div>
         <div className="grid grid-cols-3 gap-2 text-sm">
@@ -506,6 +520,7 @@ export function SpecForgeWorkbench() {
               onChange={(event) => setRepoId(event.target.value)}
               aria-label="Repository ID"
               placeholder="Repository ID"
+              disabled={repositoryLocked}
             />
             <div className="flex flex-wrap gap-2">
               <Button
