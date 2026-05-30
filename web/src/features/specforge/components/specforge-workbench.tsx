@@ -90,7 +90,11 @@ import {
   defaultDecisionOverrides,
   normalizeDecisionOverrides,
 } from '@/features/specforge/plan-decisions';
-import { executionRangeReview, selectExecutionNode } from '@/features/specforge/execution-range';
+import {
+  canStartExecutionRange,
+  executionRangeReview,
+  selectExecutionNode,
+} from '@/features/specforge/execution-range';
 import type {
   CompilePromptPayload,
   SpecForgeFixAttemptDTO,
@@ -1603,9 +1607,7 @@ function PlanReview({
   const { productSpec, implementationPlan } = plan;
   const approvalReadiness = planApprovalReadiness(plan);
   const executionRangeNotes = executionRangeReview(plan.prNodes, selectedExecutionNodeIds);
-  const canStartSelectedRange =
-    executionRangeNotes.length > 0 &&
-    executionRangeNotes.every(note => note.includes('dependencies included'));
+  const canStartSelectedRange = canStartExecutionRange(plan.prNodes, selectedExecutionNodeIds);
   const decisionFields = decisionFieldsForPlan(plan);
   const planAssumptions = productSpec.assumptions.filter(
     item => !item.startsWith('PR DAG review:')

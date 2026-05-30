@@ -31,6 +31,8 @@ const useAuthStoreBase = create<AuthState>()((set) => ({
     set({
       user,
       isAuthenticated: Boolean(user),
+      isLoading: false,
+      isSystemReady: true,
     }),
 
   reset: () => set(defaultState),

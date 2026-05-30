@@ -1,6 +1,8 @@
 BINARY_NAME=luas
 SERVER_BINARY=server
 OUTPUT_DIR=bin
+GOBIN ?= $(shell go env GOPATH)/bin
+WIRE ?= $(shell command -v wire 2>/dev/null || echo $(GOBIN)/wire)
 
 # Version information
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -21,7 +23,7 @@ else
 	PATH_SEP=/
 endif
 
-.PHONY: all build build-server build-all clean test test-kest cover lint lint-fix generate wire docs mock dev air server migrate seed tidy update vuln setup install build-windows build-linux build-darwin build-all-platforms build-prod help
+.PHONY: all build build-server build-all clean test test-kest cover lint lint-fix generate wire docs mock dev run air server migrate seed tidy update vuln setup install build-windows build-linux build-darwin build-all-platforms build-prod help
 
 # Default target
 all: lint test build
@@ -141,8 +143,8 @@ generate:
 # Run Wire dependency injection
 wire:
 	@echo "Running Wire..."
-	@which wire > /dev/null || (echo "Installing wire..." && go install github.com/google/wire/cmd/wire@latest)
-	cd internal/wiring && wire
+	@test -x "$(WIRE)" || (echo "Installing wire..." && go install github.com/google/wire/cmd/wire@latest)
+	cd internal/wiring && "$(WIRE)"
 
 # Generate API documentation (Swagger)
 docs:
@@ -159,6 +161,9 @@ mock:
 # Run development server
 dev:
 	go run cmd/server/main.go
+
+# Run development server (README-compatible alias)
+run: dev
 
 # Run with Air hot-reload
 air:
