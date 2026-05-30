@@ -20,6 +20,7 @@ type Service interface {
 	CreateProjectIdea(ctx context.Context, userID, projectID uint, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error)
 	CreateProjectRequirement(ctx context.Context, userID, projectID uint, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error)
 	GenerateRequirementPlan(ctx context.Context, userID, requirementID uint, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error)
+	GetLatestPlanForProject(ctx context.Context, projectID uint) (*domain.SpecForgePlanBundle, error)
 	GetPlanForIdea(ctx context.Context, ideaID uint) (*domain.SpecForgePlanBundle, error)
 	GetPlanForRequirement(ctx context.Context, requirementID uint) (*domain.SpecForgePlanBundle, error)
 	ApprovePlan(ctx context.Context, userID, planID uint, req *ApprovePlanRequest) (*domain.SpecForgePlanBundle, error)
@@ -43,6 +44,10 @@ type service struct {
 
 type repoArchitectureStore interface {
 	FindLatestArchitectureSnapshotByRepositoryID(ctx context.Context, repositoryID string) (*domain.SpecForgeRepoArchitectureSnapshot, error)
+}
+
+type projectPlanHistoryStore interface {
+	FindLatestPlanBundleByProjectID(ctx context.Context, projectID uint) (*domain.SpecForgePlanBundle, error)
 }
 
 func NewService(repo domain.SpecForgePlanningRepository, profileRepo domain.SpecForgeRepoProfileRepository, skillRepo domain.SpecForgeSkillRepository, projectRepo domain.SpecForgeProjectRepositoryStore) *service {
@@ -212,6 +217,26 @@ func (s *service) GetPlanForRequirement(ctx context.Context, requirementID uint)
 		return nil, domain.ErrInvalidInput
 	}
 	bundle, err := s.repo.FindLatestPlanBundleByRequirementID(ctx, requirementID)
+	if err != nil {
+		return nil, err
+	}
+	return s.withRepoProfile(ctx, bundle)
+}
+
+func (s *service) GetLatestPlanForProject(ctx context.Context, projectID uint) (*domain.SpecForgePlanBundle, error) {
+	if projectID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	if s.projectRepo != nil {
+		if _, err := s.projectRepo.FindProjectByID(ctx, projectID); err != nil {
+			return nil, err
+		}
+	}
+	historyRepo, ok := s.repo.(projectPlanHistoryStore)
+	if !ok {
+		return nil, domain.ErrInvalidInput
+	}
+	bundle, err := historyRepo.FindLatestPlanBundleByProjectID(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}

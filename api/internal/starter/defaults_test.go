@@ -10,24 +10,25 @@ import (
 func TestDefaultManifestsRegisterDefaultAssets(t *testing.T) {
 	registry := NewRegistry()
 
-	manifests := DefaultManifests(nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	require.Len(t, manifests, 9)
+	manifests := DefaultManifests(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	require.Len(t, manifests, 10)
 	assert.Equal(t, "audit", manifests[0].Name())
 	assert.Equal(t, "apikey", manifests[1].Name())
-	assert.Equal(t, "planning", manifests[2].Name())
-	assert.Equal(t, "repocontext", manifests[3].Name())
-	assert.Equal(t, "execution", manifests[4].Name())
-	assert.Equal(t, "githubintegration", manifests[5].Name())
-	assert.Equal(t, "project", manifests[6].Name())
-	assert.Equal(t, "verification", manifests[7].Name())
-	assert.Equal(t, "user", manifests[8].Name())
+	assert.Equal(t, "workspace", manifests[2].Name())
+	assert.Equal(t, "planning", manifests[3].Name())
+	assert.Equal(t, "repocontext", manifests[4].Name())
+	assert.Equal(t, "execution", manifests[5].Name())
+	assert.Equal(t, "githubintegration", manifests[6].Name())
+	assert.Equal(t, "project", manifests[7].Name())
+	assert.Equal(t, "verification", manifests[8].Name())
+	assert.Equal(t, "user", manifests[9].Name())
 
 	for _, manifest := range manifests {
 		require.NoError(t, registry.ApplyManifest(manifest))
 	}
 
 	migrations := registry.Migrations()
-	assert.Len(t, migrations, 34)
+	assert.Len(t, migrations, 35)
 	assert.Contains(t, migrations, "2026_04_26_000000_create_audit_logs_table")
 	assert.Contains(t, migrations, "2026_04_27_000002_add_business_fields_to_audit_logs")
 	assert.Contains(t, migrations, "2025_06_18_000000_create_users_table")
@@ -35,6 +36,7 @@ func TestDefaultManifestsRegisterDefaultAssets(t *testing.T) {
 	assert.Contains(t, migrations, "2026_04_27_000000_create_password_reset_tokens_table")
 	assert.Contains(t, migrations, "2026_04_27_000001_add_unique_index_to_users_username")
 	assert.Contains(t, migrations, "2026_04_06_000000_create_api_keys_table")
+	assert.Contains(t, migrations, "2026_05_31_000026_create_workspaces_table")
 	assert.Contains(t, migrations, "2026_05_25_000000_create_specforge_planning_tables")
 	assert.Contains(t, migrations, "2026_05_25_000001_create_specforge_compiled_prompts_table")
 	assert.Contains(t, migrations, "2026_05_25_000002_create_specforge_repo_profiles_table")

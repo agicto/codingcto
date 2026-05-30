@@ -18,6 +18,7 @@ import (
 
 type Service interface {
 	StartRun(ctx context.Context, userID, planID uint, req *StartExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error)
+	GetLatestRunForPlan(ctx context.Context, planID uint) (*domain.SpecForgeExecutionBundle, error)
 	GetRun(ctx context.Context, runID uint) (*domain.SpecForgeExecutionBundle, error)
 	DispatchRun(ctx context.Context, runID uint, req *DispatchExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error)
 	CancelRun(ctx context.Context, runID uint) (*domain.SpecForgeExecutionBundle, error)
@@ -68,6 +69,10 @@ type service struct {
 
 type repoArchitectureStore interface {
 	FindLatestArchitectureSnapshotByRepositoryID(ctx context.Context, repositoryID string) (*domain.SpecForgeRepoArchitectureSnapshot, error)
+}
+
+type planRunHistoryStore interface {
+	FindLatestExecutionBundleByPlanID(ctx context.Context, planID uint) (*domain.SpecForgeExecutionBundle, error)
 }
 
 func NewService(repo domain.SpecForgeExecutionRepository, planningRepo domain.SpecForgePlanningRepository, repositoryResolver RepositoryResolver, executor CodeExecutor, worktrees WorktreeManager, preparer PRNodeBranchPreparer, deliverer PRNodeDeliverer) *service {
@@ -162,6 +167,31 @@ func (s *service) StartRun(ctx context.Context, userID, planID uint, req *StartE
 	}
 	if err := s.repo.CreateExecutionBundle(ctx, bundle); err != nil {
 		return nil, fmt.Errorf("create execution run: %w", err)
+	}
+	return attachExecutionRange(bundle), nil
+}
+
+func (s *service) GetLatestRunForPlan(ctx context.Context, planID uint) (*domain.SpecForgeExecutionBundle, error) {
+	if planID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	historyRepo, ok := s.repo.(planRunHistoryStore)
+	if !ok {
+		return nil, domain.ErrInvalidInput
+	}
+	bundle, err := historyRepo.FindLatestExecutionBundleByPlanID(ctx, planID)
+	if err != nil {
+		return nil, err
+	}
+	if bundle.Plan == nil {
+		plan, err := s.planningRepo.FindPlanBundleByPlanID(ctx, bundle.Run.PlanID)
+		if err != nil {
+			return nil, err
+		}
+		bundle.Plan, err = s.withExecutionPlanningContext(ctx, plan)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return attachExecutionRange(bundle), nil
 }

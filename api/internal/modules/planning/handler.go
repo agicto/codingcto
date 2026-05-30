@@ -113,6 +113,21 @@ func (h *Handler) GetRequirementPlan(c *gin.Context) {
 	response.Success(c, toPlanReviewResponse(bundle))
 }
 
+func (h *Handler) GetLatestProjectPlan(c *gin.Context) {
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+
+	bundle, err := h.service.GetLatestPlanForProject(c.Request.Context(), projectID)
+	if err != nil {
+		response.HandleError(c, "Failed to get latest project plan", err)
+		return
+	}
+
+	response.Success(c, toPlanReviewResponse(bundle))
+}
+
 func (h *Handler) GetPlan(c *gin.Context) {
 	ideaID, ok := handler.ParseID(c, "id")
 	if !ok {

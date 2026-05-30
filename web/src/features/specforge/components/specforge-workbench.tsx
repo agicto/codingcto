@@ -1,6 +1,6 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight,
   CheckCircle2,
@@ -58,6 +58,8 @@ import {
   useDispatchExecutionRun,
   useExecutionRun,
   useGitHubWebhookEvents,
+  useLatestPlanRun,
+  useLatestProjectPlan,
   useInferRepoProfile,
   usePrepareSpecForgePRNodeBranch,
   useRepoProfile,
@@ -237,10 +239,11 @@ export function SpecForgeWorkbench({
   repositoryLocked = false,
 }: SpecForgeWorkbenchProps = {}) {
   const initialRepoId = initialRepositoryId?.trim() || demoPlan.repoProfile.repositoryId;
-  const [idea, setIdea] = useState(defaultIdea);
+  const initialIdea = projectId ? '' : defaultIdea;
+  const [idea, setIdea] = useState(initialIdea);
   const [repoId, setRepoId] = useState(initialRepoId);
   const [activePlan, setActivePlan] = useState<PlanBundle>(() =>
-    demoPlanForInput(defaultIdea, initialRepoId)
+    demoPlanForInput(initialIdea || defaultIdea, initialRepoId)
   );
   const activePlanRef = useRef(activePlan);
   const [decisionOverrides, setDecisionOverrides] = useState<Record<string, string>>(() =>
@@ -249,8 +252,10 @@ export function SpecForgeWorkbench({
   const [selectedExecutionNodeIds, setSelectedExecutionNodeIds] = useState<string[]>(() =>
     demoPlan.prNodes.map(node => node.id)
   );
-  const [planSource, setPlanSource] = useState<'api' | 'demo'>('demo');
-  const [hasPlan, setHasPlan] = useState(true);
+  const [planSource, setPlanSource] = useState<'api' | 'demo' | 'empty'>(
+    projectId ? 'empty' : 'demo'
+  );
+  const [hasPlan, setHasPlan] = useState(!projectId);
   const [approved, setApproved] = useState(false);
   const [run, setRun] = useState<ExecutionRun>({
     status: 'idle',
@@ -273,6 +278,11 @@ export function SpecForgeWorkbench({
   const runQuery = useExecutionRun(run.runId, {
     enabled: Boolean(run.runId),
     refetchInterval: run.status === 'queued' || run.status === 'running' ? 5000 : false,
+  });
+  const latestProjectPlanQuery = useLatestProjectPlan(projectId);
+  const latestPlanRunQuery = useLatestPlanRun(activePlan.planId, {
+    enabled: Boolean(projectId && activePlan.planId && planSource === 'api' && !run.runId),
+    refetchInterval: false,
   });
   const readyCount = run.tasks.filter(task => isPRNodeDelivered(task.status)).length;
   const runningCount = run.tasks.filter(task => isPRNodeActive(task.status)).length;
@@ -316,6 +326,40 @@ export function SpecForgeWorkbench({
     setApproved(true);
   }, [runQuery.data]);
 
+  useEffect(() => {
+    if (!projectId || !latestProjectPlanQuery.data) {
+      return;
+    }
+
+    startTransition(() => {
+      const nextPlan = planBundleFromDTO(latestProjectPlanQuery.data);
+      setActivePlan(nextPlan);
+      setDecisionOverrides(defaultDecisionOverrides(nextPlan));
+      setSelectedExecutionNodeIds(nextPlan.prNodes.map(node => node.id));
+      setIdea(nextPlan.idea);
+      setRepoId(nextPlan.repoProfile.repositoryId);
+      setPlanSource('api');
+      setHasPlan(true);
+      setApproved(nextPlan.implementationPlan.status === 'approved');
+      setRun({ status: 'idle', selectedPRNodeIds: [], tasks: nextPlan.prNodes });
+    });
+  }, [latestProjectPlanQuery.data, projectId]);
+
+  useEffect(() => {
+    if (!projectId || !latestPlanRunQuery.data) {
+      return;
+    }
+
+    startTransition(() => {
+      const next = executionRunFromDTO(latestPlanRunQuery.data, activePlanRef.current);
+      if (next.plan) {
+        setActivePlan(next.plan);
+      }
+      setRun(next.run);
+      setApproved(true);
+    });
+  }, [latestPlanRunQuery.data, projectId]);
+
   async function generatePlan() {
     const trimmedIdea = idea.trim();
     const trimmedRepoId = repoId.trim();
@@ -341,6 +385,12 @@ export function SpecForgeWorkbench({
       setHasPlan(true);
       setRun({ status: 'idle', selectedPRNodeIds: [], tasks: nextPlan.prNodes });
     } catch {
+      if (projectId) {
+        setPlanSource('empty');
+        setHasPlan(false);
+        setRun({ status: 'idle', selectedPRNodeIds: [], tasks: [] });
+        return;
+      }
       const fallbackPlan = demoPlanForInput(trimmedIdea, trimmedRepoId);
       setActivePlan(fallbackPlan);
       setDecisionOverrides(defaultDecisionOverrides(fallbackPlan));
@@ -353,16 +403,17 @@ export function SpecForgeWorkbench({
 
   function resetIdea() {
     const resetRepoId = initialRepositoryId?.trim() || demoPlan.repoProfile.repositoryId;
-    setIdea(defaultIdea);
+    const resetInput = projectId ? '' : defaultIdea;
+    setIdea(resetInput);
     setRepoId(resetRepoId);
-    const resetPlan = demoPlanForInput(defaultIdea, resetRepoId);
+    const resetPlan = demoPlanForInput(resetInput || defaultIdea, resetRepoId);
     setActivePlan(resetPlan);
     setDecisionOverrides(defaultDecisionOverrides(resetPlan));
-    setSelectedExecutionNodeIds(resetPlan.prNodes.map(node => node.id));
-    setPlanSource('demo');
-    setHasPlan(true);
+    setSelectedExecutionNodeIds(projectId ? [] : resetPlan.prNodes.map(node => node.id));
+    setPlanSource(projectId ? 'empty' : 'demo');
+    setHasPlan(!projectId);
     setApproved(false);
-    setRun({ status: 'idle', selectedPRNodeIds: [], tasks: resetPlan.prNodes });
+    setRun({ status: 'idle', selectedPRNodeIds: [], tasks: projectId ? [] : resetPlan.prNodes });
   }
 
   async function approveAndStart() {
@@ -408,6 +459,10 @@ export function SpecForgeWorkbench({
       } catch {
         // Keep the workbench usable when the API is unavailable in local web-only dev.
       }
+    }
+
+    if (projectId) {
+      return;
     }
 
     const startedAt = new Date().toISOString();
@@ -535,7 +590,12 @@ export function SpecForgeWorkbench({
           key: 'CTX',
           title: 'Analyze repos and skills',
           description: `${activePlan.repoProfile.stack.slice(0, 3).join(', ')} · ${repoId}`,
-          status: planSource === 'api' ? 'API context' : 'Demo fallback',
+          status:
+            planSource === 'api'
+              ? 'API context'
+              : planSource === 'empty'
+                ? 'Awaiting plan'
+                : 'Demo fallback',
           icon: GitBranch,
         },
       ],
@@ -550,8 +610,10 @@ export function SpecForgeWorkbench({
           id: 'plan' as const,
           key: 'PLAN',
           title: 'Approve product and tech plan',
-          description: `${activePlan.prNodes.length} PR nodes · one approval checkpoint`,
-          status: approved ? 'Approved' : 'Needs review',
+          description: hasPlan
+            ? `${activePlan.prNodes.length} PR nodes · one approval checkpoint`
+            : 'Generate a project-scoped plan to continue',
+          status: hasPlan ? (approved ? 'Approved' : 'Needs review') : 'No plan',
           icon: ScrollText,
         },
         {
@@ -559,7 +621,7 @@ export function SpecForgeWorkbench({
           key: 'PROMPT',
           title: 'Compile PR DAG and prompts',
           description: 'Check dependencies, file scope, tests, and prompt contracts.',
-          status: `${activePlan.prNodes.length} nodes`,
+          status: hasPlan ? `${activePlan.prNodes.length} nodes` : 'No plan',
           icon: GitMerge,
         },
       ],
@@ -575,7 +637,7 @@ export function SpecForgeWorkbench({
           key: 'RUN',
           title: 'Run Codex and deliver PRs',
           description: progressText,
-          status: run.status === 'idle' ? 'Not started' : run.status,
+          status: hasPlan ? (run.status === 'idle' ? 'Not started' : run.status) : 'No plan',
           icon: Play,
         },
       ],
@@ -781,6 +843,15 @@ export function SpecForgeWorkbench({
             </DetailPanel>
           )}
 
+          {selectedWorkItem === 'plan' && !hasPlan && (
+            <DetailPanel title="PLAN" heading="No project plan yet">
+              <EmptyProjectPlanPanel
+                isLoading={latestProjectPlanQuery.isLoading}
+                onCreate={() => setSelectedWorkItem('intake')}
+              />
+            </DetailPanel>
+          )}
+
           {selectedWorkItem === 'dag' && hasPlan && (
             <DetailPanel title="PROMPT" heading="PR DAG and prompt contracts">
               <PRDag
@@ -788,6 +859,15 @@ export function SpecForgeWorkbench({
                 repositoryId={activePlan.repoProfile.repositoryId}
                 isCompilingPrompt={compilePrompt.isPending}
                 onCompilePrompt={compileNodePrompt}
+              />
+            </DetailPanel>
+          )}
+
+          {selectedWorkItem === 'dag' && !hasPlan && (
+            <DetailPanel title="PROMPT" heading="No prompt contract yet">
+              <EmptyProjectPlanPanel
+                isLoading={latestProjectPlanQuery.isLoading}
+                onCreate={() => setSelectedWorkItem('intake')}
               />
             </DetailPanel>
           )}
@@ -835,6 +915,35 @@ function DetailPanel({
         <h2 className="mt-1 text-lg font-semibold leading-6">{heading}</h2>
       </div>
       {children}
+    </div>
+  );
+}
+
+function EmptyProjectPlanPanel({
+  isLoading,
+  onCreate,
+}: {
+  isLoading: boolean;
+  onCreate: () => void;
+}) {
+  return (
+    <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
+      <div className="flex items-start gap-3">
+        <Info className="mt-0.5 h-4 w-4 text-primary" />
+        <div>
+          <div className="text-sm font-medium">
+            {isLoading ? 'Checking for existing project plans' : 'Create a real project plan'}
+          </div>
+          <p className="mt-1 text-sm leading-6 text-text-muted">
+            Project-scoped SpecForge no longer falls back to demo work. Generate a requirement to
+            create the first backend-backed plan, prompt contract, and execution run for this
+            project.
+          </p>
+          <Button className="mt-3" size="sm" onClick={onCreate}>
+            Open idea intake
+          </Button>
+        </div>
+      </div>
     </div>
   );
 }
@@ -970,7 +1079,7 @@ function RepoProfileSummary({
 }: {
   repoId: string;
   repoProfile: RepoProfile;
-  planSource: 'api' | 'demo';
+  planSource: 'api' | 'demo' | 'empty';
   onProfileSaved: (profile: RepoProfile) => void;
 }) {
   const profileQuery = useRepoProfile(repoId);
@@ -1000,7 +1109,11 @@ function RepoProfileSummary({
           variant="outline"
           className={planSource === 'api' ? statusClassName('completed') : ''}
         >
-          {planSource === 'api' ? 'API plan' : 'Demo fallback'}
+          {planSource === 'api'
+            ? 'API plan'
+            : planSource === 'empty'
+              ? 'Awaiting plan'
+              : 'Demo fallback'}
         </Badge>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-text-muted">

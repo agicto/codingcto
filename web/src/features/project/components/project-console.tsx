@@ -5,6 +5,7 @@ import { FormEvent, useMemo, useState } from "react";
 import {
   ArrowRight,
   Boxes,
+  Building2,
   GitBranch,
   GitPullRequest,
   Plus,
@@ -22,6 +23,13 @@ import {
 } from "@/components/ui/card";
 import { Input } from "@/components/ui/input";
 import { Label } from "@/components/ui/label";
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from "@/components/ui/select";
 import { Textarea } from "@/components/ui/textarea";
 import { cn } from "@/utils";
 import {
@@ -29,44 +37,78 @@ import {
   repositoryRoleLabel,
   slugFromProjectName,
 } from "@/features/project/project-utils";
-import { useCreateProject, useProjects } from "@/features/project/hooks/use-projects";
+import {
+  useCreateProject,
+  useCreateWorkspace,
+  useProjects,
+  useWorkspaces,
+} from "@/features/project/hooks/use-projects";
 import type { ProjectDTO } from "@/features/project/services/project-service";
 
-const defaultWorkspaceId = "workspace_123";
-
-const demoProject: ProjectDTO = {
-  id: 1,
-  workspace_id: defaultWorkspaceId,
-  name: "CodingCTO",
-  slug: "codingcto",
-  description: "PRD-to-PR automation workspace for product and engineering runs.",
-  status: "active",
-  created_by: 1,
-  created_at: new Date(0).toISOString(),
-  updated_at: new Date(0).toISOString(),
-};
-
 export function ProjectConsole() {
+  const [userSelectedWorkspaceId, setUserSelectedWorkspaceId] = useState("");
+  const [workspaceName, setWorkspaceName] = useState("");
+  const [workspaceSlug, setWorkspaceSlug] = useState("");
+  const [workspaceDescription, setWorkspaceDescription] = useState("");
+  const [workspaceError, setWorkspaceError] = useState("");
   const [name, setName] = useState("");
   const [slug, setSlug] = useState("");
   const [description, setDescription] = useState("");
-  const [localProjects, setLocalProjects] = useState<ProjectDTO[]>([]);
   const [formError, setFormError] = useState("");
-  const projectsQuery = useProjects(defaultWorkspaceId);
-  const createProject = useCreateProject(defaultWorkspaceId);
 
-  const projects = useMemo(() => {
-    if (projectsQuery.data?.projects?.length) {
-      return projectsQuery.data.projects;
-    }
-    return localProjects.length > 0 ? localProjects : [demoProject];
-  }, [localProjects, projectsQuery.data?.projects]);
+  const workspacesQuery = useWorkspaces();
+  const workspaces = useMemo(
+    () => workspacesQuery.data?.workspaces ?? [],
+    [workspacesQuery.data?.workspaces]
+  );
+  const selectedWorkspaceId = userSelectedWorkspaceId || workspaces[0]?.workspace_id || "";
+  const projectsQuery = useProjects(selectedWorkspaceId);
+  const createWorkspace = useCreateWorkspace();
+  const createProject = useCreateProject(selectedWorkspaceId);
 
-  const isUsingFallback = projectsQuery.isError || !projectsQuery.data?.projects?.length;
+  const selectedWorkspace = useMemo(
+    () => workspaces.find(workspace => workspace.workspace_id === selectedWorkspaceId),
+    [selectedWorkspaceId, workspaces]
+  );
+
+  const projects = useMemo(
+    () => projectsQuery.data?.projects ?? [],
+    [projectsQuery.data?.projects]
+  );
+
+  function handleWorkspaceNameChange(value: string) {
+    setWorkspaceName(value);
+    setWorkspaceSlug(current => (current ? current : slugFromProjectName(value)));
+  }
 
   function handleNameChange(value: string) {
     setName(value);
-    setSlug((current) => (current ? current : slugFromProjectName(value)));
+    setSlug(current => (current ? current : slugFromProjectName(value)));
+  }
+
+  async function handleWorkspaceSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setWorkspaceError("");
+    const trimmedName = workspaceName.trim();
+    const trimmedSlug = slugFromProjectName(workspaceSlug || workspaceName);
+    if (!trimmedName || !trimmedSlug) {
+      setWorkspaceError("Workspace name and slug are required.");
+      return;
+    }
+
+    try {
+      const response = await createWorkspace.mutateAsync({
+        name: trimmedName,
+        slug: trimmedSlug,
+        description: workspaceDescription.trim(),
+      });
+      setUserSelectedWorkspaceId(response.workspace.workspace_id);
+      setWorkspaceName("");
+      setWorkspaceSlug("");
+      setWorkspaceDescription("");
+    } catch {
+      setWorkspaceError("Workspace could not be created. Check the API connection and slug uniqueness.");
+    }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -74,41 +116,27 @@ export function ProjectConsole() {
     setFormError("");
     const trimmedName = name.trim();
     const trimmedSlug = slugFromProjectName(slug || name);
+    if (!selectedWorkspaceId) {
+      setFormError("Create or select a workspace before creating a project.");
+      return;
+    }
     if (!trimmedName || !trimmedSlug) {
       setFormError("Project name and slug are required.");
       return;
     }
 
-    const payload = {
-      workspace_id: defaultWorkspaceId,
-      name: trimmedName,
-      slug: trimmedSlug,
-      description: description.trim(),
-    };
-
     try {
-      const response = await createProject.mutateAsync(payload);
-      setLocalProjects((items) => [response.project, ...items]);
+      await createProject.mutateAsync({
+        workspace_id: selectedWorkspaceId,
+        name: trimmedName,
+        slug: trimmedSlug,
+        description: description.trim(),
+      });
       setName("");
       setSlug("");
       setDescription("");
     } catch {
-      const fallbackProject: ProjectDTO = {
-        id: Date.now(),
-        workspace_id: payload.workspace_id,
-        name: payload.name,
-        slug: payload.slug,
-        description: payload.description,
-        status: "active",
-        created_by: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      };
-      setLocalProjects((items) => [fallbackProject, ...items]);
-      setName("");
-      setSlug("");
-      setDescription("");
-      setFormError("Backend is unavailable; showing this project locally for UI review.");
+      setFormError("Project could not be created. Check the API connection and slug uniqueness.");
     }
   }
 
@@ -116,91 +144,213 @@ export function ProjectConsole() {
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
       <header className="flex flex-col gap-3 md:flex-row md:items-end md:justify-between">
         <div>
-          <div className="flex items-center gap-2">
+          <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline" className="border-primary/30 text-primary">
-              Project context
+              Enterprise workspace
             </Badge>
-            {isUsingFallback && (
-              <Badge variant="outline" className="border-warning/30 text-warning">
-                Demo fallback
-              </Badge>
-            )}
+            <Badge
+              variant="outline"
+              className={cn(
+                workspacesQuery.isError
+                  ? "border-error/30 text-error"
+                  : "border-success/30 text-success"
+              )}
+            >
+              {workspacesQuery.isError ? "API unavailable" : "Live API"}
+            </Badge>
           </div>
           <h1 className="mt-3 text-2xl font-semibold tracking-normal">Projects</h1>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-text-muted">
-            Group repos and product work before CodingCTO generates plans, prompts, and PRs.
+            Create a workspace, group repositories into projects, then run CodingCTO plans,
+            prompts, and PR execution from real backend records.
           </p>
         </div>
         <Button
           type="button"
           variant="outline"
-          onClick={() => projectsQuery.refetch()}
-          disabled={projectsQuery.isFetching}
+          onClick={() => {
+            workspacesQuery.refetch();
+            if (selectedWorkspaceId) {
+              projectsQuery.refetch();
+            }
+          }}
+          disabled={workspacesQuery.isFetching || projectsQuery.isFetching}
         >
-          {projectsQuery.isFetching ? "Refreshing" : "Refresh"}
+          {workspacesQuery.isFetching || projectsQuery.isFetching ? "Refreshing" : "Refresh"}
           <RefreshCw className="ml-1.5 h-4 w-4" />
         </Button>
       </header>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
-        <section className="space-y-3">
-          {projects.map((project) => (
-            <ProjectRow key={`${project.id}-${project.slug}`} project={project} />
-          ))}
-        </section>
-
-        <Card className="self-start">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Plus className="h-4 w-4 text-primary" />
-              New project
-            </CardTitle>
-            <CardDescription>
-              Start with a product boundary, then bind repositories in the next step.
-            </CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-4" onSubmit={handleSubmit}>
-              <div className="space-y-2">
-                <Label htmlFor="project-name">Name</Label>
-                <Input
-                  id="project-name"
-                  value={name}
-                  onChange={(event) => handleNameChange(event.target.value)}
-                  placeholder="CodingCTO"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="project-slug">Slug</Label>
-                <Input
-                  id="project-slug"
-                  value={slug}
-                  onChange={(event) => setSlug(slugFromProjectName(event.target.value))}
-                  placeholder="codingcto"
-                />
-              </div>
-              <div className="space-y-2">
-                <Label htmlFor="project-description">Description</Label>
-                <Textarea
-                  id="project-description"
-                  value={description}
-                  onChange={(event) => setDescription(event.target.value)}
-                  placeholder="What product or system does this project represent?"
-                  rows={4}
-                />
-              </div>
-              {formError && (
-                <div className="rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm leading-5 text-warning">
-                  {formError}
+      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_380px]">
+        <section className="space-y-4">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Building2 className="h-4 w-4 text-primary" />
+                Workspace
+              </CardTitle>
+              <CardDescription>
+                Select the enterprise boundary that owns these projects.
+              </CardDescription>
+            </CardHeader>
+            <CardContent className="space-y-3">
+              {workspaces.length > 0 ? (
+                <Select value={selectedWorkspaceId} onValueChange={setUserSelectedWorkspaceId}>
+                  <SelectTrigger className="w-full">
+                    <SelectValue placeholder="Select workspace" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {workspaces.map(workspace => (
+                      <SelectItem key={workspace.workspace_id} value={workspace.workspace_id}>
+                        {workspace.name} ({workspace.slug})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="rounded-lg border border-border-subtle bg-muted/30 p-4 text-sm text-text-muted">
+                  No workspace yet. Create one to unlock project and SpecForge flows.
                 </div>
               )}
-              <Button type="submit" className="w-full" disabled={createProject.isPending}>
-                {createProject.isPending ? "Creating" : "Create project"}
-                <ArrowRight className="ml-1.5 h-4 w-4" />
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
+              {selectedWorkspace && (
+                <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm leading-6 text-text-muted">
+                  <div className="font-medium text-text">{selectedWorkspace.name}</div>
+                  <div>{selectedWorkspace.description || "No workspace description yet."}</div>
+                  <div className="mt-1 text-xs">ID: {selectedWorkspace.workspace_id}</div>
+                </div>
+              )}
+            </CardContent>
+          </Card>
+
+          {projectsQuery.isFetching ? (
+            <div className="rounded-lg border border-border-subtle bg-muted/30 p-4 text-sm text-text-muted">
+              Loading projects from the selected workspace...
+            </div>
+          ) : projects.length > 0 ? (
+            projects.map(project => <ProjectRow key={`${project.id}-${project.slug}`} project={project} />)
+          ) : (
+            <div className="rounded-lg border border-border-subtle bg-muted/30 p-4 text-sm text-text-muted">
+              {selectedWorkspaceId
+                ? "No projects in this workspace yet. Create one to start repository binding."
+                : "Select or create a workspace to list projects."}
+            </div>
+          )}
+        </section>
+
+        <aside className="space-y-5">
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Plus className="h-4 w-4 text-primary" />
+                New workspace
+              </CardTitle>
+              <CardDescription>
+                Create the real container before project and Git binding.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form className="space-y-4" onSubmit={handleWorkspaceSubmit}>
+                <div className="space-y-2">
+                  <Label htmlFor="workspace-name">Name</Label>
+                  <Input
+                    id="workspace-name"
+                    value={workspaceName}
+                    onChange={event => handleWorkspaceNameChange(event.target.value)}
+                    placeholder="Acme Platform"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="workspace-slug">Slug</Label>
+                  <Input
+                    id="workspace-slug"
+                    value={workspaceSlug}
+                    onChange={event => setWorkspaceSlug(slugFromProjectName(event.target.value))}
+                    placeholder="acme-platform"
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="workspace-description">Description</Label>
+                  <Textarea
+                    id="workspace-description"
+                    value={workspaceDescription}
+                    onChange={event => setWorkspaceDescription(event.target.value)}
+                    placeholder="Who owns this product portfolio?"
+                    rows={3}
+                  />
+                </div>
+                {workspaceError && (
+                  <div className="rounded-lg border border-error/30 bg-error-subtle p-3 text-sm leading-5 text-error">
+                    {workspaceError}
+                  </div>
+                )}
+                <Button type="submit" className="w-full" disabled={createWorkspace.isPending}>
+                  {createWorkspace.isPending ? "Creating" : "Create workspace"}
+                  <ArrowRight className="ml-1.5 h-4 w-4" />
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+
+          <Card>
+            <CardHeader>
+              <CardTitle className="flex items-center gap-2 text-base">
+                <Plus className="h-4 w-4 text-primary" />
+                New project
+              </CardTitle>
+              <CardDescription>
+                Start with a product boundary, then bind repositories in the next step.
+              </CardDescription>
+            </CardHeader>
+            <CardContent>
+              <form className="space-y-4" onSubmit={handleSubmit}>
+                <div className="space-y-2">
+                  <Label htmlFor="project-name">Name</Label>
+                  <Input
+                    id="project-name"
+                    value={name}
+                    onChange={event => handleNameChange(event.target.value)}
+                    placeholder="CodingCTO"
+                    disabled={!selectedWorkspaceId}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="project-slug">Slug</Label>
+                  <Input
+                    id="project-slug"
+                    value={slug}
+                    onChange={event => setSlug(slugFromProjectName(event.target.value))}
+                    placeholder="codingcto"
+                    disabled={!selectedWorkspaceId}
+                  />
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="project-description">Description</Label>
+                  <Textarea
+                    id="project-description"
+                    value={description}
+                    onChange={event => setDescription(event.target.value)}
+                    placeholder="What product or system does this project represent?"
+                    rows={4}
+                    disabled={!selectedWorkspaceId}
+                  />
+                </div>
+                {formError && (
+                  <div className="rounded-lg border border-error/30 bg-error-subtle p-3 text-sm leading-5 text-error">
+                    {formError}
+                  </div>
+                )}
+                <Button
+                  type="submit"
+                  className="w-full"
+                  disabled={!selectedWorkspaceId || createProject.isPending}
+                >
+                  {createProject.isPending ? "Creating" : "Create project"}
+                  <ArrowRight className="ml-1.5 h-4 w-4" />
+                </Button>
+              </form>
+            </CardContent>
+          </Card>
+        </aside>
       </div>
     </div>
   );

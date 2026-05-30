@@ -725,6 +725,9 @@ export const specForgeService = {
       payload
     ),
 
+  getLatestProjectPlan: (projectId: number, config?: RequestConfig) =>
+    request.get<SpecForgePlanBundleDTO>(`/projects/${projectId}/specforge/latest-plan`, config),
+
   approvePlan: (planId: number, payload: ApprovePlanPayload) =>
     request.post<SpecForgePlanBundleDTO, ApprovePlanPayload>(`/plans/${planId}/approve`, payload),
 
@@ -810,6 +813,9 @@ export const specForgeService = {
     ),
 
   getRun: (runId: number) => request.get<SpecForgeExecutionBundleDTO>(`/runs/${runId}`),
+
+  getLatestPlanRun: (planId: number, config?: RequestConfig) =>
+    request.get<SpecForgeExecutionBundleDTO>(`/plans/${planId}/run/latest`, config),
 
   dispatchRun: (runId: number, payload?: DispatchRunPayload) =>
     request.post<SpecForgeExecutionBundleDTO, DispatchRunPayload | undefined>(
