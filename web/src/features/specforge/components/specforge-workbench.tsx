@@ -86,6 +86,11 @@ import {
 } from "@/features/specforge/hooks/use-specforge";
 import { hasActiveFixAttempt } from "@/features/specforge/fix-attempts";
 import { planApprovalReadiness } from "@/features/specforge/plan-approval";
+import {
+  decisionFieldsForPlan,
+  defaultDecisionOverrides,
+  normalizeDecisionOverrides,
+} from "@/features/specforge/plan-decisions";
 import type {
   CompilePromptPayload,
   SpecForgeFixAttemptDTO,
@@ -200,6 +205,9 @@ export function SpecForgeWorkbench() {
   const [repoId, setRepoId] = useState(demoPlan.repoProfile.repositoryId);
   const [activePlan, setActivePlan] = useState<PlanBundle>(demoPlan);
   const activePlanRef = useRef(activePlan);
+  const [decisionOverrides, setDecisionOverrides] = useState<Record<string, string>>(() =>
+    defaultDecisionOverrides(demoPlan)
+  );
   const [planSource, setPlanSource] = useState<"api" | "demo">("demo");
   const [hasPlan, setHasPlan] = useState(true);
   const [approved, setApproved] = useState(false);
@@ -277,6 +285,7 @@ export function SpecForgeWorkbench() {
       });
       const nextPlan = planBundleFromDTO(bundle);
       setActivePlan(nextPlan);
+      setDecisionOverrides(defaultDecisionOverrides(nextPlan));
       setIdea(nextPlan.idea);
       setPlanSource("api");
       setHasPlan(true);
@@ -284,6 +293,7 @@ export function SpecForgeWorkbench() {
     } catch {
       const fallbackPlan = demoPlanForInput(trimmedIdea, trimmedRepoId);
       setActivePlan(fallbackPlan);
+      setDecisionOverrides(defaultDecisionOverrides(fallbackPlan));
       setPlanSource("demo");
       setHasPlan(true);
       setRun({ status: "idle", tasks: fallbackPlan.prNodes });
@@ -294,6 +304,7 @@ export function SpecForgeWorkbench() {
     setIdea(defaultIdea);
     setRepoId(demoPlan.repoProfile.repositoryId);
     setActivePlan(demoPlan);
+    setDecisionOverrides(defaultDecisionOverrides(demoPlan));
     setPlanSource("demo");
     setHasPlan(true);
     setApproved(false);
@@ -309,7 +320,10 @@ export function SpecForgeWorkbench() {
             : planBundleFromDTO(
                 await approvePlan.mutateAsync({
                   planId: activePlan.planId,
-                  payload: { approved: true },
+                  payload: {
+                    approved: true,
+                    decision_overrides: normalizeDecisionOverrides(decisionOverrides),
+                  },
                 })
               );
         setActivePlan(approvedPlan);
@@ -513,8 +527,12 @@ export function SpecForgeWorkbench() {
               <TabsContent value="plan" className="space-y-4">
                 <PlanReview
                   plan={activePlan}
+                  decisionOverrides={decisionOverrides}
                   approved={approved}
                   isStarting={isStartingRun}
+                  onDecisionOverrideChange={(key, value) =>
+                    setDecisionOverrides((current) => ({ ...current, [key]: value }))
+                  }
                   onApprove={approveAndStart}
                 />
               </TabsContent>
@@ -1064,17 +1082,22 @@ function RunSummary({
 
 function PlanReview({
   plan,
+  decisionOverrides,
   approved,
   isStarting,
+  onDecisionOverrideChange,
   onApprove,
 }: {
   plan: PlanBundle;
+  decisionOverrides: Record<string, string>;
   approved: boolean;
   isStarting: boolean;
+  onDecisionOverrideChange: (key: string, value: string) => void;
   onApprove: () => void;
 }) {
   const { productSpec, implementationPlan } = plan;
   const approvalReadiness = planApprovalReadiness(plan);
+  const decisionFields = decisionFieldsForPlan(plan);
   const planAssumptions = productSpec.assumptions.filter(
     (item) => !item.startsWith("PR DAG review:")
   );
@@ -1089,6 +1112,12 @@ function PlanReview({
         <CardContent className="space-y-5">
           <ListBlock title="Goals" items={productSpec.goals} />
           <ListBlock title="Business rules" items={productSpec.businessRules} />
+          <DecisionOverrideFields
+            fields={decisionFields}
+            values={decisionOverrides}
+            disabled={approved || isStarting}
+            onChange={onDecisionOverrideChange}
+          />
           <ListBlock title="Acceptance criteria" items={productSpec.acceptanceCriteria} />
           <ListBlock title="Plan assumptions" items={planAssumptions} />
         </CardContent>
@@ -1119,6 +1148,38 @@ function PlanReview({
           </Button>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function DecisionOverrideFields({
+  fields,
+  values,
+  disabled,
+  onChange,
+}: {
+  fields: ReturnType<typeof decisionFieldsForPlan>;
+  values: Record<string, string>;
+  disabled: boolean;
+  onChange: (key: string, value: string) => void;
+}) {
+  return (
+    <div>
+      <h3 className="text-sm font-medium">Key decisions</h3>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        {fields.map((field) => (
+          <div key={field.key} className="space-y-1.5">
+            <Label htmlFor={`decision-${field.key}`}>{field.label}</Label>
+            <Input
+              id={`decision-${field.key}`}
+              value={values[field.key] ?? ""}
+              disabled={disabled}
+              onChange={(event) => onChange(field.key, event.target.value)}
+            />
+            <p className="text-xs leading-5 text-text-muted">{field.description}</p>
+          </div>
+        ))}
+      </div>
     </div>
   );
 }
