@@ -1,6 +1,6 @@
-import { env } from "@/config/env";
-import type { ProjectContextDTO } from "@/features/project/services/project-service";
-import { createRequest, type RequestConfig } from "@/http";
+import { env } from '@/config/env';
+import type { ProjectContextDTO } from '@/features/project/services/project-service';
+import { createRequest, type RequestConfig } from '@/http';
 
 const request = createRequest({
   baseURL: env.NEXT_PUBLIC_SPECFORGE_API_URL,
@@ -25,7 +25,7 @@ export interface InferRepoProfilePayload {
 
 export interface CreateIdeaPayload {
   input: string;
-  type?: "feature" | "bugfix" | "refactor" | "docs" | "test";
+  type?: 'feature' | 'bugfix' | 'refactor' | 'docs' | 'test';
 }
 
 export interface ApprovePlanPayload {
@@ -34,7 +34,7 @@ export interface ApprovePlanPayload {
 }
 
 export interface CompilePromptPayload {
-  type?: "implementation" | "fix" | "review_patch";
+  type?: 'implementation' | 'fix' | 'review_patch';
 }
 
 export interface PreparePRNodeBranchPayload {
@@ -60,6 +60,10 @@ export interface RefreshPRNodeCIPayload {
 export interface ReadPRNodeFailureLogPayload {
   repository_id: string;
   pr_node_id: number;
+}
+
+export interface VerifyPRNodeCIPayload {
+  repository_id: string;
 }
 
 export interface CreateFixAttemptFromCIPayload {
@@ -132,7 +136,7 @@ export interface SubmitTaskResultPayload {
   runtime_id?: string;
   session_id?: string;
   workdir?: string;
-  status: "completed" | "failed" | "timeout";
+  status: 'completed' | 'failed' | 'timeout';
   output?: string;
   error?: string;
   exit_code?: number;
@@ -341,6 +345,14 @@ export interface SpecForgeEscalationSummaryDTO {
   can_continue_auto_fix: boolean;
 }
 
+export interface SpecForgeVerifyPRNodeCIResponseDTO {
+  pr_node: SpecForgePRNodeDTO;
+  fix_attempt?: SpecForgeFixAttemptDTO;
+  escalation_summary?: SpecForgeEscalationSummaryDTO;
+  verification_state: string;
+  next_action: string;
+}
+
 export interface SpecForgePRNodeFailureLogDTO {
   pr_node_id: number;
   workflow_run_id: number;
@@ -418,11 +430,11 @@ export interface SpecForgeTaskEventDTO {
 
 export interface SpecForgeRuntimeSweepResultDTO {
   offline_runtimes: SpecForgeRuntimeDTO[];
-  failed_tasks: SpecForgeExecutionBundleDTO["tasks"];
+  failed_tasks: SpecForgeExecutionBundleDTO['tasks'];
 }
 
 export interface SpecForgeTaskSweepResultDTO {
-  failed_tasks: SpecForgeExecutionBundleDTO["tasks"];
+  failed_tasks: SpecForgeExecutionBundleDTO['tasks'];
 }
 
 export interface SpecForgeExecutionBundleDTO {
@@ -481,10 +493,11 @@ export const specForgeService = {
 
   listGitHubWebhookEvents: (params?: ListGitHubWebhookEventsParams, config?: RequestConfig) => {
     const query = new URLSearchParams();
-    if (params?.status) query.set("status", params.status);
-    if (params?.repository_full_name) query.set("repository_full_name", params.repository_full_name);
-    if (params?.limit) query.set("limit", String(params.limit));
-    const suffix = query.toString() ? `?${query.toString()}` : "";
+    if (params?.status) query.set('status', params.status);
+    if (params?.repository_full_name)
+      query.set('repository_full_name', params.repository_full_name);
+    if (params?.limit) query.set('limit', String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : '';
     return request.get<{ events: GitHubWebhookEventDTO[] }>(`/github/webhooks${suffix}`, config);
   },
 
@@ -537,22 +550,22 @@ export const specForgeService = {
 
   preparePRNodeBranch: (payload: PreparePRNodeBranchPayload) =>
     request.post<SpecForgePRNodeDTO, PreparePRNodeBranchPayload>(
-      "/github/pr-nodes/prepare-branch",
+      '/github/pr-nodes/prepare-branch',
       payload
     ),
 
   deliverPRNode: (payload: DeliverPRNodePayload) =>
-    request.post<SpecForgePRNodeDTO, DeliverPRNodePayload>("/github/pr-nodes/deliver", payload),
+    request.post<SpecForgePRNodeDTO, DeliverPRNodePayload>('/github/pr-nodes/deliver', payload),
 
   refreshPRNodeCI: (payload: RefreshPRNodeCIPayload) =>
     request.post<SpecForgePRNodeDTO, RefreshPRNodeCIPayload>(
-      "/github/pr-nodes/refresh-ci",
+      '/github/pr-nodes/refresh-ci',
       payload
     ),
 
   readPRNodeFailureLog: (payload: ReadPRNodeFailureLogPayload) =>
     request.post<SpecForgePRNodeFailureLogDTO, ReadPRNodeFailureLogPayload>(
-      "/github/pr-nodes/failure-log",
+      '/github/pr-nodes/failure-log',
       payload
     ),
 
@@ -560,8 +573,12 @@ export const specForgeService = {
     request.get<SpecForgeFixAttemptDTO[]>(`/pr-nodes/${prNodeId}/fix-attempts`),
 
   getEscalationSummary: (prNodeId: number) =>
-    request.get<SpecForgeEscalationSummaryDTO>(
-      `/pr-nodes/${prNodeId}/escalation-summary`
+    request.get<SpecForgeEscalationSummaryDTO>(`/pr-nodes/${prNodeId}/escalation-summary`),
+
+  verifyPRNodeCI: (prNodeId: number, payload: VerifyPRNodeCIPayload) =>
+    request.post<SpecForgeVerifyPRNodeCIResponseDTO, VerifyPRNodeCIPayload>(
+      `/pr-nodes/${prNodeId}/verify-ci`,
+      payload
     ),
 
   createFixAttemptFromCI: (prNodeId: number, payload: CreateFixAttemptFromCIPayload) =>
@@ -588,17 +605,17 @@ export const specForgeService = {
     request.post<SpecForgeExecutionBundleDTO, undefined>(`/runs/${runId}/cancel`),
 
   heartbeatRuntime: (payload: RuntimeHeartbeatPayload) =>
-    request.post<
-      { runtime: SpecForgeRuntimeDTO; claim_pending: boolean },
-      RuntimeHeartbeatPayload
-    >(`/runtimes/heartbeat`, payload),
+    request.post<{ runtime: SpecForgeRuntimeDTO; claim_pending: boolean }, RuntimeHeartbeatPayload>(
+      `/runtimes/heartbeat`,
+      payload
+    ),
 
   listRuntimes: (params?: ListSpecForgeRuntimesParams, config?: RequestConfig) => {
     const query = new URLSearchParams();
-    if (params?.executor) query.set("executor", params.executor);
-    if (params?.status) query.set("status", params.status);
-    if (params?.limit) query.set("limit", String(params.limit));
-    const suffix = query.toString() ? `?${query.toString()}` : "";
+    if (params?.executor) query.set('executor', params.executor);
+    if (params?.status) query.set('status', params.status);
+    if (params?.limit) query.set('limit', String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : '';
     return request.get<{ runtimes: SpecForgeRuntimeDTO[] }>(`/runtimes${suffix}`, config);
   },
 
@@ -615,8 +632,8 @@ export const specForgeService = {
     ),
 
   listRuntimePendingTasks: (runtimeId: string, executor?: string) => {
-    const query = executor ? `?executor=${encodeURIComponent(executor)}` : "";
-    return request.get<{ tasks: SpecForgeExecutionBundleDTO["tasks"] }>(
+    const query = executor ? `?executor=${encodeURIComponent(executor)}` : '';
+    return request.get<{ tasks: SpecForgeExecutionBundleDTO['tasks'] }>(
       `/runtimes/${runtimeId}/tasks/pending${query}`
     );
   },
@@ -636,10 +653,7 @@ export const specForgeService = {
         execution_context?: SpecForgeClaimedExecutionContextDTO;
       },
       ClaimTaskPayload | undefined
-    >(
-      `/runtimes/${runtimeId}/claim`,
-      payload
-    ),
+    >(`/runtimes/${runtimeId}/claim`, payload),
 
   pinTaskSession: (taskId: number, payload: PinTaskSessionPayload) =>
     request.post<SpecForgeExecutionBundleDTO, PinTaskSessionPayload>(
@@ -666,7 +680,7 @@ export const specForgeService = {
     ),
 
   listTaskEvents: (taskId: number, afterSeq?: number) => {
-    const query = afterSeq && afterSeq > 0 ? `?after_seq=${afterSeq}` : "";
+    const query = afterSeq && afterSeq > 0 ? `?after_seq=${afterSeq}` : '';
     return request.get<{ events: SpecForgeTaskEventDTO[] }>(`/tasks/${taskId}/events${query}`);
   },
 

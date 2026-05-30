@@ -407,6 +407,54 @@ body.data.tasks.0.status == "failed"
 body.data.tasks.0.failure_reason == "executor_failed"
 ```
 
+```step
+@id fix_attempt
+@name Record CI Fix Attempt
+
+POST /v1/pr-nodes/{{pr_node_id}}/fix-attempts
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "failure_type": "type_error",
+  "ci_log_excerpt": "pnpm typecheck\nTS2322: Type mismatch",
+  "confidence": 0.82,
+  "likely_cause": "The generated UI passed an optional role into a required field.",
+  "recommended_action": "Patch the type guard and rerun pnpm type-check.",
+  "can_auto_fix": true,
+  "workflow_run_id": {{run_id}},
+  "workflow_run_url": "https://github.com/specforge-test/app/actions/runs/{{run_id}}",
+  "conclusion": "failure"
+}
+
+[Captures]
+fix_attempt_id = data.id
+
+[Asserts]
+status == 200
+body.data.id exists
+body.data.pr_node_id == {{pr_node_id}}
+body.data.failure_type == "type_error"
+body.data.workflow_run_id == {{run_id}}
+body.data.can_auto_fix == true
+```
+
+```step
+@id escalation_summary
+@name Read Escalation Summary
+
+GET /v1/pr-nodes/{{pr_node_id}}/escalation-summary
+Authorization: Bearer {{token}}
+
+[Asserts]
+status == 200
+body.data.pr_node_id == {{pr_node_id}}
+body.data.attempts_used == 1
+body.data.max_attempts == 3
+body.data.can_continue_auto_fix == true
+body.data.latest_failure_type == "type_error"
+```
+
 ```edge
 @from register
 @to login
@@ -506,5 +554,17 @@ body.data.tasks.0.failure_reason == "executor_failed"
 ```edge
 @from task_event
 @to task_result
+@on success
+```
+
+```edge
+@from task_result
+@to fix_attempt
+@on success
+```
+
+```edge
+@from fix_attempt
+@to escalation_summary
 @on success
 ```
