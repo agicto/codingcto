@@ -41,6 +41,7 @@ const runStatuses = new Set<ExecutionRun['status']>([
   'queued',
   'running',
   'completed',
+  'blocked',
   'cancelled',
 ]);
 

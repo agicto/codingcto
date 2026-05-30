@@ -497,6 +497,29 @@ func TestHandlerCancelsTasksBlockedByClosedPRNodeEvent(t *testing.T) {
 	require.Equal(t, "dependency_closed", updated.Tasks[2].FailureReason)
 }
 
+func TestHandlerBlocksRunWhenClosedPRLeavesNoRunnableTasks(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	created.Tasks[0].Status = domain.AgentTaskStatusCompleted
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), created.Tasks[0]))
+	planningRepo.bundle.PRNodes[0].Status = domain.PRNodeStatusClosed
+	bus := events.NewEventBus()
+	NewHandler(svc).RegisterEvents(bus)
+
+	err = bus.Publish(context.Background(), domain.NewSpecForgePRNodeClosedEvent(planningRepo.bundle.PRNodes[0]))
+
+	require.NoError(t, err)
+	updated, err := svc.GetRun(context.Background(), created.Run.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.AgentTaskStatusCancelled, updated.Tasks[1].Status)
+	require.Equal(t, "dependency_closed", updated.Tasks[1].FailureReason)
+	require.Equal(t, domain.ExecutionRunStatusBlocked, updated.Run.Status)
+	require.Nil(t, updated.Run.CompletedAt)
+}
+
 func TestHandlerCreatesReviewPatchOnlyForActionableFeedback(t *testing.T) {
 	planningRepo := memoryPlanningRepoWithPrompt()
 	prNumber := 42

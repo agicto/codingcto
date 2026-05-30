@@ -82,7 +82,7 @@ export interface PlanBundle {
 
 export interface ExecutionRun {
   runId?: number;
-  status: "idle" | "queued" | "running" | "completed" | "cancelled";
+  status: "idle" | "queued" | "running" | "completed" | "blocked" | "cancelled";
   startedAt?: string;
   selectedPRNodeIds: string[];
   tasks: PRNode[];
