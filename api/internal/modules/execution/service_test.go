@@ -1540,6 +1540,59 @@ func TestCompleteTaskCompletesRunWhenAllTasksDone(t *testing.T) {
 	require.Equal(t, domain.AgentTaskStatusCompleted, completed.Tasks[1].Status)
 }
 
+func TestCompleteTaskCompletesRunAfterSuccessfulRetry(t *testing.T) {
+	planningRepo := memoryPlanningRepoWithPrompt()
+	planningRepo.bundle.PRNodes = planningRepo.bundle.PRNodes[:1]
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+	failed := dispatched.Tasks[0]
+	failed.Status = domain.AgentTaskStatusFailed
+	failed.FailureReason = "test_failure"
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), failed))
+	retried, err := svc.RetryTask(context.Background(), failed.ID, &RetryAgentTaskRequest{})
+	require.NoError(t, err)
+	require.Equal(t, domain.ExecutionRunStatusRunning, retried.Run.Status)
+
+	dispatchedRetry, err := svc.DispatchRun(context.Background(), retried.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+	retry := dispatchedRetry.Tasks[1]
+	require.Equal(t, failed.ID, *retry.ParentTaskID)
+	require.Equal(t, domain.AgentTaskStatusDispatched, retry.Status)
+	completed, err := svc.CompleteTask(context.Background(), retry.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, domain.AgentTaskStatusFailed, completed.Tasks[0].Status)
+	require.Equal(t, domain.AgentTaskStatusCompleted, completed.Tasks[1].Status)
+	require.Equal(t, domain.ExecutionRunStatusCompleted, completed.Run.Status)
+	require.NotNil(t, completed.Run.CompletedAt)
+}
+
+func TestRunDeliveryCompleteWaitsForActiveRetry(t *testing.T) {
+	plan := approvedPlanBundle()
+	plan.PRNodes = plan.PRNodes[:1]
+	bundle := &domain.SpecForgeExecutionBundle{
+		Plan: plan,
+		Tasks: []*domain.SpecForgeAgentTask{
+			{
+				ID:       1,
+				PRNodeID: plan.PRNodes[0].ID,
+				Status:   domain.AgentTaskStatusCompleted,
+			},
+			{
+				ID:       2,
+				PRNodeID: plan.PRNodes[0].ID,
+				Status:   domain.AgentTaskStatusQueued,
+			},
+		},
+	}
+
+	require.False(t, runDeliveryComplete(bundle))
+}
+
 func TestCompleteTaskWaitsForPRReadinessBeforeCompletingRun(t *testing.T) {
 	bundle := approvedPlanBundle()
 	bundle.PRNodes = bundle.PRNodes[:1]

@@ -1492,31 +1492,27 @@ func nodeKeysBlockedByClosedDependency(nodes []*domain.SpecForgePRNode, closedNo
 	return blocked
 }
 
-func allTasksCompleted(tasks []*domain.SpecForgeAgentTask) bool {
-	if len(tasks) == 0 {
+func runDeliveryComplete(bundle *domain.SpecForgeExecutionBundle) bool {
+	if bundle == nil || len(bundle.Tasks) == 0 {
 		return false
 	}
-	for _, task := range tasks {
-		if task.Status != domain.AgentTaskStatusCompleted {
+	selectedNodeIDs := selectedPRNodeIDSet(bundle.Tasks)
+	if len(selectedNodeIDs) == 0 {
+		return false
+	}
+	latestByNodeID := latestTaskByPRNodeID(bundle.Tasks)
+	activeByNodeID := activeTaskPRNodeIDSet(bundle.Tasks)
+	for nodeID := range selectedNodeIDs {
+		latest := latestByNodeID[nodeID]
+		if latest == nil || latest.Status != domain.AgentTaskStatusCompleted {
+			return false
+		}
+		if _, active := activeByNodeID[nodeID]; active {
 			return false
 		}
 	}
-	return true
-}
-
-func runDeliveryComplete(bundle *domain.SpecForgeExecutionBundle) bool {
-	if bundle == nil || !allTasksCompleted(bundle.Tasks) {
-		return false
-	}
 	if bundle.Plan == nil {
 		return true
-	}
-	selectedNodeIDs := make(map[uint]struct{}, len(bundle.Tasks))
-	for _, task := range bundle.Tasks {
-		if task == nil || task.PRNodeID == 0 {
-			continue
-		}
-		selectedNodeIDs[task.PRNodeID] = struct{}{}
 	}
 	for _, node := range bundle.Plan.PRNodes {
 		if node == nil {
@@ -1530,6 +1526,53 @@ func runDeliveryComplete(bundle *domain.SpecForgeExecutionBundle) bool {
 		}
 	}
 	return true
+}
+
+func selectedPRNodeIDSet(tasks []*domain.SpecForgeAgentTask) map[uint]struct{} {
+	out := make(map[uint]struct{}, len(tasks))
+	for _, task := range tasks {
+		if task == nil || task.PRNodeID == 0 {
+			continue
+		}
+		out[task.PRNodeID] = struct{}{}
+	}
+	return out
+}
+
+func latestTaskByPRNodeID(tasks []*domain.SpecForgeAgentTask) map[uint]*domain.SpecForgeAgentTask {
+	out := make(map[uint]*domain.SpecForgeAgentTask, len(tasks))
+	for _, task := range tasks {
+		if task == nil || task.PRNodeID == 0 {
+			continue
+		}
+		current := out[task.PRNodeID]
+		if current == nil || task.ID >= current.ID {
+			out[task.PRNodeID] = task
+		}
+	}
+	return out
+}
+
+func activeTaskPRNodeIDSet(tasks []*domain.SpecForgeAgentTask) map[uint]struct{} {
+	out := make(map[uint]struct{}, len(tasks))
+	for _, task := range tasks {
+		if task == nil || task.PRNodeID == 0 {
+			continue
+		}
+		if agentTaskStatusActive(task.Status) {
+			out[task.PRNodeID] = struct{}{}
+		}
+	}
+	return out
+}
+
+func agentTaskStatusActive(status string) bool {
+	switch status {
+	case domain.AgentTaskStatusQueued, domain.AgentTaskStatusDispatched, domain.AgentTaskStatusWaiting, domain.AgentTaskStatusRunning:
+		return true
+	default:
+		return false
+	}
 }
 
 func markTaskFailed(task *domain.SpecForgeAgentTask, reason, detail string, exitCode int) {
