@@ -33,6 +33,7 @@ type Service interface {
 	CreateReviewPatchTask(ctx context.Context, taskID uint, req *ReviewPatchAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	CreateReviewPatchTaskForGitHubPR(ctx context.Context, prNumber int, req *ReviewPatchAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	UnlockReadyTasksForPRNode(ctx context.Context, prNodeID uint) (*domain.SpecForgeExecutionBundle, error)
+	CancelTasksBlockedByClosedPRNode(ctx context.Context, prNodeID uint) (*domain.SpecForgeExecutionBundle, error)
 	PinTaskSession(ctx context.Context, taskID uint, req *PinAgentTaskSessionRequest) (*domain.SpecForgeExecutionBundle, error)
 	ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	SubmitTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.SpecForgeExecutionBundle, error)
@@ -697,6 +698,53 @@ func (s *service) UnlockReadyTasksForPRNode(ctx context.Context, prNodeID uint) 
 	}
 	if err := s.completeRunIfDeliveryReady(ctx, bundle, time.Now()); err != nil {
 		return nil, err
+	}
+	return s.GetRun(ctx, bundle.Run.ID)
+}
+
+func (s *service) CancelTasksBlockedByClosedPRNode(ctx context.Context, prNodeID uint) (*domain.SpecForgeExecutionBundle, error) {
+	if prNodeID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	node, err := s.planningRepo.FindPRNodeByID(ctx, prNodeID)
+	if err != nil {
+		return nil, err
+	}
+	if node.Status != domain.PRNodeStatusClosed {
+		return nil, domain.ErrConflict
+	}
+	bundle, err := s.repo.FindLatestActiveExecutionBundleByPlanID(ctx, node.PlanID)
+	if err != nil {
+		return nil, err
+	}
+	plan, err := s.planningRepo.FindPlanBundleByPlanID(ctx, node.PlanID)
+	if err != nil {
+		return nil, err
+	}
+	bundle.Plan = plan
+	blockedKeys := nodeKeysBlockedByClosedDependency(plan.PRNodes, node.NodeKey)
+	nodeByID := nodeByID(plan.PRNodes)
+	now := time.Now()
+	for _, task := range bundle.Tasks {
+		if task == nil {
+			continue
+		}
+		taskNode := nodeByID[task.PRNodeID]
+		if taskNode == nil {
+			continue
+		}
+		if _, ok := blockedKeys[taskNode.NodeKey]; !ok {
+			continue
+		}
+		switch task.Status {
+		case domain.AgentTaskStatusQueued, domain.AgentTaskStatusDispatched, domain.AgentTaskStatusWaiting, domain.AgentTaskStatusRunning:
+			task.Status = domain.AgentTaskStatusCancelled
+			task.FailureReason = "dependency_closed"
+			task.FinishedAt = &now
+			if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
+				return nil, fmt.Errorf("cancel task blocked by closed PR node: %w", err)
+			}
+		}
 	}
 	return s.GetRun(ctx, bundle.Run.ID)
 }
@@ -1408,6 +1456,40 @@ func dependenciesComplete(node *domain.SpecForgePRNode, completed map[string]str
 		}
 	}
 	return true
+}
+
+func nodeKeysBlockedByClosedDependency(nodes []*domain.SpecForgePRNode, closedNodeKey string) map[string]struct{} {
+	closedNodeKey = strings.TrimSpace(closedNodeKey)
+	blocked := map[string]struct{}{}
+	if closedNodeKey == "" {
+		return blocked
+	}
+	blocked[closedNodeKey] = struct{}{}
+	changed := true
+	for changed {
+		changed = false
+		for _, node := range nodes {
+			if node == nil {
+				continue
+			}
+			nodeKey := strings.TrimSpace(node.NodeKey)
+			if nodeKey == "" {
+				continue
+			}
+			if _, exists := blocked[nodeKey]; exists {
+				continue
+			}
+			for _, dependency := range node.DependsOn {
+				if _, ok := blocked[strings.TrimSpace(dependency)]; ok {
+					blocked[nodeKey] = struct{}{}
+					changed = true
+					break
+				}
+			}
+		}
+	}
+	delete(blocked, closedNodeKey)
+	return blocked
 }
 
 func allTasksCompleted(tasks []*domain.SpecForgeAgentTask) bool {

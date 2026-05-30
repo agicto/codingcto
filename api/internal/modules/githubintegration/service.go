@@ -660,6 +660,9 @@ func (s *service) applyWebhookToPRNode(ctx context.Context, eventType string, bo
 		if err := s.publishPRNodeDependencySatisfied(ctx, node); err != nil {
 			return err
 		}
+		if err := s.publishPRNodeClosed(ctx, node); err != nil {
+			return err
+		}
 		return s.publishReviewFeedback(ctx, event, node)
 	case event.WorkflowRun != nil:
 		node, err := s.updatePRNodeFromWorkflowRun(ctx, event.WorkflowRun)
@@ -788,6 +791,13 @@ func (s *service) publishPRNodeDependencySatisfied(ctx context.Context, node *do
 	default:
 		return nil
 	}
+}
+
+func (s *service) publishPRNodeClosed(ctx context.Context, node *domain.SpecForgePRNode) error {
+	if s.eventBus == nil || node == nil || node.Status != domain.PRNodeStatusClosed {
+		return nil
+	}
+	return s.eventBus.Publish(ctx, domain.NewSpecForgePRNodeClosedEvent(node))
 }
 
 func (s *service) updatePRNodeFromWorkflowRun(ctx context.Context, run *WebhookWorkflowRun) (*domain.SpecForgePRNode, error) {

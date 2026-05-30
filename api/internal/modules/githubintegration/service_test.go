@@ -277,6 +277,54 @@ func TestRecordWebhookMarksClosedUnmergedPullRequestNode(t *testing.T) {
 	require.Equal(t, domain.PRNodeStatusClosed, planningRepo.nodes[0].Status)
 }
 
+func TestRecordWebhookPublishesClosedEventForUnmergedPullRequest(t *testing.T) {
+	repo := &memoryRepo{}
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, PlanID: 20, NodeKey: "PR-001", BranchName: "specforge/team-invite-02-api", Status: domain.PRNodeStatusReadyForReview},
+		},
+	}
+	bus := infraevents.NewEventBus()
+	var published domain.SpecForgePRNodeClosedEvent
+	bus.Subscribe(domain.EventSpecForgePRNodeClosed, func(ctx context.Context, event infraevents.Event) error {
+		var underlying any = event
+		if wrapped, ok := event.(infraevents.WrappedEvent); ok {
+			underlying = wrapped.Event
+		}
+		typed, ok := underlying.(domain.SpecForgePRNodeClosedEvent)
+		require.True(t, ok)
+		published = typed
+		return nil
+	})
+	svc := NewService(repo, planningRepo, nil, nil, bus)
+	body := []byte(`{
+		"action": "closed",
+		"installation": {"id": 123},
+		"repository": {"full_name": "agicto/codingcto"},
+		"pull_request": {
+			"number": 42,
+			"state": "closed",
+			"merged": false,
+			"html_url": "https://github.com/agicto/codingcto/pull/42",
+			"head": {"ref": "specforge/team-invite-02-api", "sha": "abc123"},
+			"base": {"ref": "main"}
+		}
+	}`)
+
+	_, err := svc.RecordWebhook(context.Background(), &GitHubWebhookRequest{
+		EventType:  GitHubWebhookEventPullRequest,
+		DeliveryID: "delivery-pr-closed-event",
+		Signature:  "sha256=abc",
+		Body:       body,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, uint(10), published.PRNodeID)
+	require.Equal(t, uint(20), published.PlanID)
+	require.Equal(t, "PR-001", published.NodeKey)
+	require.Equal(t, domain.PRNodeStatusClosed, published.Status)
+}
+
 func TestRecordWebhookLinksPullRequestByGitHubPRNumberFallback(t *testing.T) {
 	repo := &memoryRepo{}
 	prNumber := 42

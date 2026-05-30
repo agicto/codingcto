@@ -457,6 +457,46 @@ func TestHandlerUnlocksReadyTasksFromDependencySatisfiedEvent(t *testing.T) {
 	require.Equal(t, domain.AgentTaskStatusQueued, updated.Tasks[1].Status)
 }
 
+func TestHandlerCancelsTasksBlockedByClosedPRNodeEvent(t *testing.T) {
+	bundle := approvedPlanBundle()
+	bundle.PRNodes = append(bundle.PRNodes, &domain.SpecForgePRNode{
+		ID:                 6,
+		PlanID:             bundle.Plan.ID,
+		NodeKey:            "PR-003",
+		Order:              3,
+		Title:              "Add integration tests",
+		Type:               "test",
+		Goal:               "Cover the feature flow.",
+		DependsOn:          []string{"PR-002"},
+		ExpectedFiles:      []string{"api/tests/feature/specforge_test.go"},
+		NonGoals:           []string{"Do not change implementation scope."},
+		AcceptanceCriteria: []string{"Tests cover the accepted flow."},
+		TestCommands:       []string{"go test ./..."},
+		BranchName:         "specforge/team-invite-03-tests",
+		Status:             domain.PRNodeStatusPlanned,
+	})
+	planningRepo := &memoryPlanningRepo{bundle: bundle}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	require.Len(t, created.Tasks, 3)
+	planningRepo.bundle.PRNodes[0].Status = domain.PRNodeStatusClosed
+	bus := events.NewEventBus()
+	NewHandler(svc).RegisterEvents(bus)
+
+	err = bus.Publish(context.Background(), domain.NewSpecForgePRNodeClosedEvent(planningRepo.bundle.PRNodes[0]))
+
+	require.NoError(t, err)
+	updated, err := svc.GetRun(context.Background(), created.Run.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.AgentTaskStatusQueued, updated.Tasks[0].Status)
+	require.Equal(t, domain.AgentTaskStatusCancelled, updated.Tasks[1].Status)
+	require.Equal(t, "dependency_closed", updated.Tasks[1].FailureReason)
+	require.Equal(t, domain.AgentTaskStatusCancelled, updated.Tasks[2].Status)
+	require.Equal(t, "dependency_closed", updated.Tasks[2].FailureReason)
+}
+
 func TestHandlerCreatesReviewPatchOnlyForActionableFeedback(t *testing.T) {
 	planningRepo := memoryPlanningRepoWithPrompt()
 	prNumber := 42
