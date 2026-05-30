@@ -507,7 +507,7 @@ export function SpecForgeWorkbench({
     {
       id: 'intake',
       title: 'Idea intake',
-      tone: 'bg-white',
+      tone: 'bg-bg-surface',
       emptyLabel: 'Waiting for idea',
       items: [
         {
@@ -523,7 +523,7 @@ export function SpecForgeWorkbench({
     {
       id: 'context',
       title: 'Repo intelligence',
-      tone: 'bg-[#fbfbfb]',
+      tone: 'bg-bg-subtle/70',
       emptyLabel: 'No repo selected',
       items: [
         {
@@ -539,7 +539,7 @@ export function SpecForgeWorkbench({
     {
       id: 'planning',
       title: 'Planning',
-      tone: 'bg-[#fffdf6]',
+      tone: 'bg-warning-subtle',
       emptyLabel: 'Plan not generated',
       items: [
         {
@@ -563,7 +563,7 @@ export function SpecForgeWorkbench({
     {
       id: 'execution',
       title: 'Execution',
-      tone: 'bg-[#f6fbf8]',
+      tone: 'bg-success-subtle',
       emptyLabel: 'No run started',
       items: [
         {
@@ -579,27 +579,27 @@ export function SpecForgeWorkbench({
     {
       id: 'delivery',
       title: 'PR delivery',
-      tone: 'bg-[#f7faff]',
+      tone: 'bg-info-subtle',
       emptyLabel: 'PRs appear here after execution',
       items: [],
     },
     {
       id: 'blocked',
       title: 'Decision needed',
-      tone: 'bg-[#fff7f8]',
+      tone: 'bg-error-subtle',
       emptyLabel: 'No escalation',
       items: [],
     },
   ];
 
   return (
-    <div className="flex h-full min-h-0 flex-col bg-white">
-      <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[#e7e7e4] px-4 py-2">
+    <div className="flex h-full min-h-0 flex-col bg-bg-surface">
+      <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border-subtle px-4 py-2">
         <div className="flex items-center gap-3">
-          <ListChecks className="h-4 w-4 text-[#65656c]" />
+          <ListChecks className="h-4 w-4 text-primary" />
           <div>
             <h1 className="text-base font-semibold">Project command center</h1>
-            <p className="text-xs text-[#71717a]">
+            <p className="text-xs text-text-muted">
               {projectLabel ? `${projectLabel} · ` : ''}Idea to plan, prompts, Codex run, and PR delivery
             </p>
           </div>
@@ -618,7 +618,7 @@ export function SpecForgeWorkbench({
         </div>
       </header>
 
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-[#eeeeeb] px-4">
+      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle px-4">
         <Button
           variant={selectedWorkItem === 'intake' || selectedWorkItem === 'context' ? 'secondary' : 'outline'}
           size="sm"
@@ -649,15 +649,15 @@ export function SpecForgeWorkbench({
               <div key={column.id} className={cn('flex min-h-0 flex-col rounded-xl p-3', column.tone)}>
                 <div className="flex h-8 items-center justify-between text-sm">
                   <div className="flex items-center gap-2 font-medium">
-                    <CircleDot className="h-3.5 w-3.5 text-[#71717a]" />
+                    <CircleDot className="h-3.5 w-3.5 text-text-muted" />
                     {column.title}
-                    <span className="text-xs text-[#8a8a90]">{column.items.length}</span>
+                    <span className="text-xs text-text-muted">{column.items.length}</span>
                   </div>
-                  <span className="text-[#8a8a90]">+</span>
+                  <span className="text-text-muted">+</span>
                 </div>
                 <div className="mt-3 space-y-2">
                   {column.items.length === 0 ? (
-                    <div className="flex h-40 items-center justify-center text-sm text-[#77777f]">
+                    <div className="flex h-40 items-center justify-center text-sm text-text-muted">
                       {column.emptyLabel}
                     </div>
                   ) : (
@@ -668,25 +668,25 @@ export function SpecForgeWorkbench({
                           key={item.id}
                           onClick={() => setSelectedWorkItem(item.id)}
                           className={cn(
-                            'w-full rounded-lg border bg-white p-3 text-left shadow-sm transition hover:border-[#cfcfcb]',
+                            'w-full rounded-lg border bg-bg-surface p-3 text-left shadow-sm transition hover:border-primary/40',
                             selectedWorkItem === item.id
-                              ? 'border-[#18181b] ring-1 ring-[#18181b]'
-                              : 'border-[#e1e1de]'
+                              ? 'border-primary ring-1 ring-primary'
+                              : 'border-border-subtle'
                           )}
                         >
-                          <div className="flex items-center gap-2 text-xs text-[#77777f]">
-                            <Icon className="h-3.5 w-3.5 text-[#d08b00]" />
+                          <div className="flex items-center gap-2 text-xs text-text-muted">
+                            <Icon className="h-3.5 w-3.5 text-primary" />
                             {item.key}
                           </div>
                           <div className="mt-2 text-sm font-semibold leading-5">{item.title}</div>
-                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#77777f]">
+                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-text-muted">
                             {item.description}
                           </p>
                           <div className="mt-3 flex items-center justify-between text-xs">
-                            <span className="rounded-full bg-[#f1f1ef] px-2 py-1 text-[#5f5f66]">
+                            <span className="rounded-full bg-muted px-2 py-1 text-text-subtle">
                               {item.status}
                             </span>
-                            <span className="text-[#8a8a90]">Current</span>
+                            <span className="text-text-muted">Current</span>
                           </div>
                         </button>
                       );
@@ -698,14 +698,14 @@ export function SpecForgeWorkbench({
           </div>
         </div>
 
-        <aside className="min-h-0 overflow-y-auto border-t border-[#e7e7e4] bg-[#fbfbfa] p-4 xl:border-l xl:border-t-0">
+        <aside className="min-h-0 overflow-y-auto border-t border-border-subtle bg-bg-subtle/60 p-4 xl:border-l xl:border-t-0">
           {selectedWorkItem === 'intake' && (
             <DetailPanel title="IDEA" heading="Capture product intent">
               <div className="space-y-4">
                 <Textarea
                   value={idea}
                   onChange={event => setIdea(event.target.value)}
-                  className="min-h-40 bg-white"
+                  className="min-h-40 bg-bg-surface"
                   aria-label="Describe the feature CodingCTO should turn into reviewable PRs"
                   placeholder="Describe the product outcome, constraints, and implementation boundaries..."
                 />
@@ -715,7 +715,7 @@ export function SpecForgeWorkbench({
                   aria-label="Repository ID"
                   placeholder="Repository ID"
                   disabled={repositoryLocked}
-                  className="bg-white"
+                  className="bg-bg-surface"
                 />
                 <div className="flex flex-wrap gap-2">
                   <Button
@@ -827,7 +827,7 @@ function DetailPanel({
   return (
     <div className="space-y-4">
       <div>
-        <div className="text-xs font-medium text-[#8a8a90]">{title}</div>
+        <div className="text-xs font-medium text-text-muted">{title}</div>
         <h2 className="mt-1 text-lg font-semibold leading-6">{heading}</h2>
       </div>
       {children}

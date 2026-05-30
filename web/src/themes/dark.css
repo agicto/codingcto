@@ -14,8 +14,8 @@
   --popover: var(--neutral-800);
   --popover-foreground: var(--neutral-50);
   
-  --primary: var(--neutral-200);
-  --primary-foreground: var(--neutral-900);
+  --primary: var(--blue-400);
+  --primary-foreground: var(--neutral-950);
   
   --secondary: var(--neutral-800);
   --secondary-foreground: var(--neutral-50);
@@ -31,7 +31,7 @@
   
   --border: var(--neutral-700);
   --input: var(--neutral-700);
-  --ring: var(--neutral-500);
+  --ring: var(--blue-400);
 
   /* --- Semantic Design Tokens --- */
   
