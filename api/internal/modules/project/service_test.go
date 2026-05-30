@@ -315,6 +315,12 @@ func (s *memoryGitHubRepositoryStore) FindInstallationByGitHubID(context.Context
 func (s *memoryGitHubRepositoryStore) UpsertRepository(context.Context, *domain.Repository) error {
 	return errors.New("not implemented")
 }
+func (s *memoryGitHubRepositoryStore) UpsertSettings(context.Context, *domain.GitHubSettings) error {
+	return errors.New("not implemented")
+}
+func (s *memoryGitHubRepositoryStore) FindSettingsByWorkspaceID(context.Context, string) (*domain.GitHubSettings, error) {
+	return nil, errors.New("not implemented")
+}
 func (s *memoryGitHubRepositoryStore) CreateWebhookEvent(context.Context, *domain.GitHubWebhookEvent) error {
 	return errors.New("not implemented")
 }

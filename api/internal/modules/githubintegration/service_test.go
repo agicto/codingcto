@@ -35,9 +35,52 @@ func TestUpsertInstallationNormalizesPermissions(t *testing.T) {
 	require.Equal(t, uint(7), installation.CreatedBy)
 }
 
-func TestUpsertRepositoryDefaultsRepositoryIDAndBranch(t *testing.T) {
+func TestSyncInstallationStoresAccountAndListsRepositories(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil, nil, nil, nil)
+	client := &fakeRepositoryClient{
+		installationRepos: []InstallationRepository{
+			{
+				ID:            101,
+				Name:          "codingcto",
+				FullName:      "agicto/codingcto",
+				DefaultBranch: "main",
+				Private:       true,
+				HTMLURL:       "https://github.com/agicto/codingcto",
+			},
+		},
+	}
+	tokenProvider := &fakeInstallationTokenProvider{
+		token: &InstallationToken{Token: "ghs_installation_token"},
+		installation: &GitHubAppInstallation{
+			ID:      42,
+			Account: GitHubAppAccount{Login: "agicto", Type: "Organization"},
+			Permissions: map[string]string{
+				"contents":      "write",
+				"pull_requests": "write",
+			},
+		},
+	}
+	svc := NewService(repo, nil, &fakeRepositoryClientFactory{client: client}, tokenProvider, nil)
+
+	result, err := svc.SyncInstallation(context.Background(), 7, &SyncInstallationRequest{
+		WorkspaceID:    "default",
+		InstallationID: 42,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "agicto", result.Installation.AccountLogin)
+	require.Equal(t, map[string]string{"contents": "write", "pull_requests": "write"}, result.Installation.Permissions)
+	require.Len(t, result.Repositories, 1)
+	require.Equal(t, "agicto", result.Repositories[0].Owner)
+	require.Equal(t, "codingcto", result.Repositories[0].Repo)
+	require.Equal(t, "main", result.Repositories[0].DefaultBranch)
+	require.True(t, result.Repositories[0].IsPrivate)
+}
+
+func TestUpsertRepositoryDefaultsRepositoryIDAndBranch(t *testing.T) {
+	repo := &memoryRepo{installation: &domain.GitHubInstallation{ID: 3, InstallationID: 123}}
+	client := &fakeRepositoryClient{branchRef: &GitReference{Object: GitRefObject{SHA: "main123"}}}
+	svc := NewService(repo, nil, &fakeRepositoryClientFactory{client: client}, &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}, nil)
 
 	repository, err := svc.UpsertRepository(context.Background(), 9, &UpsertRepositoryRequest{
 		WorkspaceID:          "workspace_123",
@@ -50,13 +93,15 @@ func TestUpsertRepositoryDefaultsRepositoryIDAndBranch(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, "github_multica-ai__multica", repository.RepositoryID)
 	require.Equal(t, "main", repository.DefaultBranch)
+	require.Equal(t, "main", client.getBranchName)
 	require.True(t, repository.IsPrivate)
 	require.Equal(t, uint(9), repository.CreatedBy)
 }
 
 func TestGetRepositoryReturnsStoredRepository(t *testing.T) {
-	repo := &memoryRepo{}
-	svc := NewService(repo, nil, nil, nil, nil)
+	repo := &memoryRepo{installation: &domain.GitHubInstallation{ID: 3, InstallationID: 123}}
+	client := &fakeRepositoryClient{branchRef: &GitReference{Object: GitRefObject{SHA: "develop123"}}}
+	svc := NewService(repo, nil, &fakeRepositoryClientFactory{client: client}, &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}, nil)
 	created, err := svc.UpsertRepository(context.Background(), 9, &UpsertRepositoryRequest{
 		RepositoryID:         "repo_123",
 		WorkspaceID:          "workspace_123",
@@ -1365,7 +1410,7 @@ func TestDeliverPRNodeAllowsOverrides(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, "Custom title", client.input.Title)
-	require.Equal(t, "Custom body", client.input.Body)
+	require.Equal(t, "Custom body\n\nCo-authored-by: codingcto-agent <github@codingcto.local>\n", client.input.Body)
 	require.Equal(t, "develop", client.input.Base)
 	require.False(t, client.input.Draft)
 }
@@ -1454,6 +1499,12 @@ type fakeRepositoryClient struct {
 	workflowLogs       string
 	workflowLogJobID   int64
 	workflowLogErr     error
+	installationRepos  []InstallationRepository
+	listReposErr       error
+}
+
+func (c *fakeRepositoryClient) ListInstallationRepositories(ctx context.Context) ([]InstallationRepository, error) {
+	return c.installationRepos, c.listReposErr
 }
 
 func (c *fakeRepositoryClient) GetBranchRef(ctx context.Context, owner, repo, branch string) (*GitReference, error) {
@@ -1504,12 +1555,18 @@ func (c *fakeRepositoryClient) GetWorkflowJobLogs(ctx context.Context, owner, re
 type fakeInstallationTokenProvider struct {
 	installationID int64
 	token          *InstallationToken
+	installation   *GitHubAppInstallation
 	err            error
 }
 
 func (p *fakeInstallationTokenProvider) InstallationToken(ctx context.Context, installationID int64) (*InstallationToken, error) {
 	p.installationID = installationID
 	return p.token, p.err
+}
+
+func (p *fakeInstallationTokenProvider) Installation(ctx context.Context, installationID int64) (*GitHubAppInstallation, error) {
+	p.installationID = installationID
+	return p.installation, p.err
 }
 
 type memoryPlanningRepo struct {
@@ -1617,6 +1674,7 @@ type memoryRepo struct {
 	nextID        uint
 	installation  *domain.GitHubInstallation
 	repository    *domain.Repository
+	settings      *domain.GitHubSettings
 	webhookEvents []*domain.GitHubWebhookEvent
 }
 
@@ -1661,6 +1719,24 @@ func (r *memoryRepo) FindRepositoryByRepositoryID(ctx context.Context, repositor
 		return nil, domain.ErrNotFound
 	}
 	copied := *r.repository
+	return &copied, nil
+}
+
+func (r *memoryRepo) UpsertSettings(ctx context.Context, settings *domain.GitHubSettings) error {
+	if r.settings == nil {
+		r.nextID++
+		settings.ID = r.nextID
+	}
+	copied := *settings
+	r.settings = &copied
+	return nil
+}
+
+func (r *memoryRepo) FindSettingsByWorkspaceID(ctx context.Context, workspaceID string) (*domain.GitHubSettings, error) {
+	if r.settings == nil || r.settings.WorkspaceID != workspaceID {
+		return nil, domain.ErrNotFound
+	}
+	copied := *r.settings
 	return &copied, nil
 }
 

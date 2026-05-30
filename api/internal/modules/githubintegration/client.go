@@ -30,6 +30,17 @@ type InstallationToken struct {
 	ExpiresAt time.Time `json:"expires_at"`
 }
 
+type GitHubAppInstallation struct {
+	ID          int64             `json:"id"`
+	Account     GitHubAppAccount  `json:"account"`
+	Permissions map[string]string `json:"permissions"`
+}
+
+type GitHubAppAccount struct {
+	Login string `json:"login"`
+	Type  string `json:"type"`
+}
+
 func NewGitHubAppClient(appID int64, privateKeyPEM string, opts ...GitHubAppClientOption) (*GitHubAppClient, error) {
 	if appID == 0 || strings.TrimSpace(privateKeyPEM) == "" {
 		return nil, fmt.Errorf("github app client: app id and private key are required")
@@ -125,6 +136,56 @@ func (c *GitHubAppClient) InstallationToken(ctx context.Context, installationID 
 		return nil, fmt.Errorf("github app client: token response missing token")
 	}
 	return &InstallationToken{Token: body.Token, ExpiresAt: body.ExpiresAt}, nil
+}
+
+func (c *GitHubAppClient) Installation(ctx context.Context, installationID int64) (*GitHubAppInstallation, error) {
+	if installationID == 0 {
+		return nil, fmt.Errorf("github app client: installation id is required")
+	}
+	jwtToken, err := c.AppJWT()
+	if err != nil {
+		return nil, err
+	}
+	url := fmt.Sprintf("%s/app/installations/%d", strings.TrimRight(c.baseURL, "/"), installationID)
+	req, err := http.NewRequestWithContext(ctx, http.MethodGet, url, nil)
+	if err != nil {
+		return nil, err
+	}
+	req.Header.Set("Accept", "application/vnd.github+json")
+	req.Header.Set("Authorization", "Bearer "+jwtToken)
+	req.Header.Set("X-GitHub-Api-Version", "2022-11-28")
+
+	resp, err := c.httpClient.Do(req)
+	if err != nil {
+		return nil, err
+	}
+	defer resp.Body.Close()
+
+	responseBody, err := io.ReadAll(resp.Body)
+	if err != nil {
+		return nil, fmt.Errorf("github app client: read installation response: %w", err)
+	}
+	var body struct {
+		ID          int64             `json:"id"`
+		Account     GitHubAppAccount  `json:"account"`
+		Permissions map[string]string `json:"permissions"`
+		Message     string            `json:"message"`
+	}
+	if len(responseBody) > 0 {
+		if err := json.Unmarshal(responseBody, &body); err != nil && resp.StatusCode >= 200 && resp.StatusCode < 300 {
+			return nil, fmt.Errorf("github app client: decode installation response: %w", err)
+		}
+	}
+	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
+		if body.Message != "" {
+			return nil, fmt.Errorf("github app client: installation request failed: %s", body.Message)
+		}
+		return nil, fmt.Errorf("github app client: installation request failed with HTTP %d", resp.StatusCode)
+	}
+	if body.ID == 0 || strings.TrimSpace(body.Account.Login) == "" {
+		return nil, fmt.Errorf("github app client: installation response missing account")
+	}
+	return &GitHubAppInstallation{ID: body.ID, Account: body.Account, Permissions: body.Permissions}, nil
 }
 
 func (c *GitHubAppClient) AppJWT() (string, error) {

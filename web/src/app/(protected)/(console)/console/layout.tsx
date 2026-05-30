@@ -88,7 +88,7 @@ export default function ConsoleLayout({
           <Button variant="ghost" isIcon className="h-9 w-9 rounded-full relative">
             <Bell className="h-4 w-4 text-text-muted" />
             <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-primary border-2 border-bg-surface" />
-            <span className="sr-only">Notifications</span>
+            <span className="sr-only">通知</span>
           </Button>
 
           <DropdownMenu>
@@ -110,7 +110,7 @@ export default function ConsoleLayout({
                       .toUpperCase() || 'CT'}
                   </AvatarFallback>
                 </Avatar>
-                <span className="sr-only">Profile</span>
+                <span className="sr-only">个人资料</span>
               </Button>
             </DropdownMenuTrigger>
             <DropdownMenuContent align="end" className="w-56 rounded-xl p-1 shadow-premium">
@@ -197,7 +197,7 @@ export default function ConsoleLayout({
               href={ROUTES.SITE.HOME}
               className="flex h-8 items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
             >
-              <span>Return to Site</span>
+              <span>返回站点</span>
             </Link>
           </div>
         </aside>

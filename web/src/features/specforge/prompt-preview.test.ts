@@ -7,13 +7,13 @@ describe('buildPromptPreview', () => {
   it('includes the node scope, constraints, and test plan', () => {
     const prompt = buildPromptPreview(demoPlan, demoPlan.prNodes[0]);
 
-    expect(prompt).toContain('You are implementing PR-001');
-    expect(prompt).toContain('Goal:');
-    expect(prompt).toContain('Non-goals:');
+    expect(prompt).toContain('你正在实现 PR-001');
+    expect(prompt).toContain('目标：');
+    expect(prompt).toContain('非目标：');
     expect(prompt).toContain('Do not build UI.');
-    expect(prompt).toContain('Test commands:');
+    expect(prompt).toContain('测试命令：');
     expect(prompt).toContain('go test ./...');
-    expect(prompt).toContain('After implementation:');
+    expect(prompt).toContain('实现后：');
   });
 
   it('renders empty lists explicitly', () => {
@@ -24,8 +24,8 @@ describe('buildPromptPreview', () => {
       testCommands: [],
     });
 
-    expect(prompt).toContain('Dependencies:\n- None');
-    expect(prompt).toContain('Expected files:\n- None');
-    expect(prompt).toContain('Test commands:\n- None');
+    expect(prompt).toContain('依赖：\n- 无');
+    expect(prompt).toContain('预期文件：\n- 无');
+    expect(prompt).toContain('测试命令：\n- 无');
   });
 });

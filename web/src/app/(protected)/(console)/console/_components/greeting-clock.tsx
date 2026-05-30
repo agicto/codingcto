@@ -31,10 +31,10 @@ export function GreetingClock({ name }: { name: string }) {
 }
 
 function pickGreeting(now: Date | null): string {
-  if (!now) return 'Hello';
+  if (!now) return '你好';
   const h = now.getHours();
-  if (h < 5) return 'Up late';
-  if (h < 12) return 'Good morning';
-  if (h < 18) return 'Good afternoon';
-  return 'Good evening';
+  if (h < 5) return '夜深了';
+  if (h < 12) return '早上好';
+  if (h < 18) return '下午好';
+  return '晚上好';
 }

@@ -59,6 +59,22 @@ func (GitHubWebhookEventPO) TableName() string {
 	return "github_webhook_events"
 }
 
+type GitHubSettingsPO struct {
+	ID                  uint   `gorm:"primaryKey"`
+	WorkspaceID         string `gorm:"size:255;not null;uniqueIndex"`
+	Enabled             bool   `gorm:"not null"`
+	PullRequestSidebar  bool   `gorm:"not null"`
+	CoAuthoredByTrailer bool   `gorm:"not null"`
+	IssuePRAutoLink     bool   `gorm:"not null"`
+	UpdatedBy           uint   `gorm:"not null;index"`
+	CreatedAt           time.Time
+	UpdatedAt           time.Time
+}
+
+func (GitHubSettingsPO) TableName() string {
+	return "github_settings"
+}
+
 func newGitHubInstallationPO(installation *domain.GitHubInstallation) *GitHubInstallationPO {
 	return &GitHubInstallationPO{
 		ID:             installation.ID,
@@ -148,6 +164,34 @@ func (po *GitHubWebhookEventPO) toDomain() *domain.GitHubWebhookEvent {
 		ReceivedAt:         po.ReceivedAt,
 		CreatedAt:          po.CreatedAt,
 		UpdatedAt:          po.UpdatedAt,
+	}
+}
+
+func newGitHubSettingsPO(settings *domain.GitHubSettings) *GitHubSettingsPO {
+	return &GitHubSettingsPO{
+		ID:                  settings.ID,
+		WorkspaceID:         settings.WorkspaceID,
+		Enabled:             settings.Enabled,
+		PullRequestSidebar:  settings.PullRequestSidebar,
+		CoAuthoredByTrailer: settings.CoAuthoredByTrailer,
+		IssuePRAutoLink:     settings.IssuePRAutoLink,
+		UpdatedBy:           settings.UpdatedBy,
+		CreatedAt:           settings.CreatedAt,
+		UpdatedAt:           settings.UpdatedAt,
+	}
+}
+
+func (po *GitHubSettingsPO) toDomain() *domain.GitHubSettings {
+	return &domain.GitHubSettings{
+		ID:                  po.ID,
+		WorkspaceID:         po.WorkspaceID,
+		Enabled:             po.Enabled,
+		PullRequestSidebar:  po.PullRequestSidebar,
+		CoAuthoredByTrailer: po.CoAuthoredByTrailer,
+		IssuePRAutoLink:     po.IssuePRAutoLink,
+		UpdatedBy:           po.UpdatedBy,
+		CreatedAt:           po.CreatedAt,
+		UpdatedAt:           po.UpdatedAt,
 	}
 }
 

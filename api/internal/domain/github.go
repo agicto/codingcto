@@ -32,6 +32,19 @@ type Repository struct {
 	UpdatedAt            time.Time `json:"updated_at"`
 }
 
+// GitHubSettings stores workspace-level GitHub integration behavior flags.
+type GitHubSettings struct {
+	ID                  uint      `json:"id"`
+	WorkspaceID         string    `json:"workspace_id"`
+	Enabled             bool      `json:"enabled"`
+	PullRequestSidebar  bool      `json:"pull_request_sidebar"`
+	CoAuthoredByTrailer bool      `json:"co_authored_by_trailer"`
+	IssuePRAutoLink     bool      `json:"issue_pr_auto_link"`
+	UpdatedBy           uint      `json:"updated_by"`
+	CreatedAt           time.Time `json:"created_at"`
+	UpdatedAt           time.Time `json:"updated_at"`
+}
+
 // GitHubWebhookEvent stores an idempotent raw GitHub webhook delivery.
 type GitHubWebhookEvent struct {
 	ID                 uint      `json:"id"`
@@ -55,6 +68,8 @@ type GitHubIntegrationRepository interface {
 	FindInstallationByGitHubID(ctx context.Context, installationID int64) (*GitHubInstallation, error)
 	UpsertRepository(ctx context.Context, repository *Repository) error
 	FindRepositoryByRepositoryID(ctx context.Context, repositoryID string) (*Repository, error)
+	UpsertSettings(ctx context.Context, settings *GitHubSettings) error
+	FindSettingsByWorkspaceID(ctx context.Context, workspaceID string) (*GitHubSettings, error)
 	CreateWebhookEvent(ctx context.Context, event *GitHubWebhookEvent) error
 	FindWebhookEventByDeliveryID(ctx context.Context, deliveryID string) (*GitHubWebhookEvent, error)
 	ListWebhookEvents(ctx context.Context, status, repositoryFullName string, limit int) ([]*GitHubWebhookEvent, error)

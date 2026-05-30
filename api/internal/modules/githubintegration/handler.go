@@ -46,6 +46,23 @@ func (h *Handler) UpsertInstallation(c *gin.Context) {
 	response.Success(c, installation)
 }
 
+func (h *Handler) SyncInstallation(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	var req SyncInstallationRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+	result, err := h.service.SyncInstallation(c.Request.Context(), userID, &req)
+	if err != nil {
+		response.HandleError(c, "Failed to sync GitHub installation", err)
+		return
+	}
+	response.Success(c, result)
+}
+
 func (h *Handler) GetInstallation(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || id == 0 {
@@ -84,6 +101,37 @@ func (h *Handler) GetRepository(c *gin.Context) {
 		return
 	}
 	response.Success(c, repository)
+}
+
+func (h *Handler) GetSettings(c *gin.Context) {
+	var req GetSettingsRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		response.BadRequest(c, "Invalid request parameters", err)
+		return
+	}
+	settings, err := h.service.GetSettings(c.Request.Context(), req.WorkspaceID)
+	if err != nil {
+		response.HandleError(c, "Failed to get GitHub settings", err)
+		return
+	}
+	response.Success(c, settings)
+}
+
+func (h *Handler) UpsertSettings(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	var req UpsertSettingsRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+	settings, err := h.service.UpsertSettings(c.Request.Context(), userID, &req)
+	if err != nil {
+		response.HandleError(c, "Failed to save GitHub settings", err)
+		return
+	}
+	response.Success(c, settings)
 }
 
 func (h *Handler) ListWebhookEvents(c *gin.Context) {

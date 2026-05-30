@@ -9,6 +9,14 @@ const envSchema = z.object({
   // API entry point — point this at your CodingCTO Go backend (or any backend)
   NEXT_PUBLIC_API_URL: z.string().min(1).default('/api'),
   NEXT_PUBLIC_SPECFORGE_API_URL: z.string().min(1).default('/v1'),
+  NEXT_PUBLIC_GITHUB_APP_SLUG: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().optional()
+  ),
+  NEXT_PUBLIC_GITHUB_APP_INSTALL_URL: z.preprocess(
+    (value) => (value === '' ? undefined : value),
+    z.string().url().optional()
+  ),
 
   // Absolute app URL for metadata, sitemap, and robots generation
   NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:3000'),
@@ -28,6 +36,8 @@ const envSchema = z.object({
 const parsed = envSchema.safeParse({
   NEXT_PUBLIC_API_URL: process.env.NEXT_PUBLIC_API_URL,
   NEXT_PUBLIC_SPECFORGE_API_URL: process.env.NEXT_PUBLIC_SPECFORGE_API_URL,
+  NEXT_PUBLIC_GITHUB_APP_SLUG: process.env.NEXT_PUBLIC_GITHUB_APP_SLUG,
+  NEXT_PUBLIC_GITHUB_APP_INSTALL_URL: process.env.NEXT_PUBLIC_GITHUB_APP_INSTALL_URL,
   NEXT_PUBLIC_APP_URL: process.env.NEXT_PUBLIC_APP_URL,
   NEXT_PUBLIC_GA_MEASUREMENT_ID: process.env.NEXT_PUBLIC_GA_MEASUREMENT_ID,
   NODE_ENV: process.env.NODE_ENV,

@@ -88,6 +88,36 @@ func (r *repository) FindRepositoryByRepositoryID(ctx context.Context, repositor
 	return po.toDomain(), nil
 }
 
+func (r *repository) UpsertSettings(ctx context.Context, settings *domain.GitHubSettings) error {
+	po := newGitHubSettingsPO(settings)
+	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
+		Columns: []clause.Column{{Name: "workspace_id"}},
+		DoUpdates: clause.AssignmentColumns([]string{
+			"enabled", "pull_request_sidebar", "co_authored_by_trailer", "issue_pr_auto_link",
+			"updated_by", "updated_at",
+		}),
+	}).Create(po).Error; err != nil {
+		return err
+	}
+	saved, err := r.FindSettingsByWorkspaceID(ctx, settings.WorkspaceID)
+	if err != nil {
+		return err
+	}
+	*settings = *saved
+	return nil
+}
+
+func (r *repository) FindSettingsByWorkspaceID(ctx context.Context, workspaceID string) (*domain.GitHubSettings, error) {
+	var po GitHubSettingsPO
+	if err := r.db.WithContext(ctx).Where("workspace_id = ?", workspaceID).First(&po).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return po.toDomain(), nil
+}
+
 func (r *repository) CreateWebhookEvent(ctx context.Context, event *domain.GitHubWebhookEvent) error {
 	po := newGitHubWebhookEventPO(event)
 	if err := r.db.WithContext(ctx).Create(po).Error; err != nil {

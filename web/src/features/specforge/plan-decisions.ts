@@ -9,31 +9,31 @@ export interface DecisionField {
 const baseDecisionFields: DecisionField[] = [
   {
     key: 'execution_scope',
-    label: 'Execution scope',
-    description: 'Keep the MVP run bounded to one repository unless the plan is regenerated.',
+    label: '执行范围',
+    description: '除非重新生成方案，否则 MVP 执行限制在单个仓库内。',
   },
   {
     key: 'max_pr_nodes',
-    label: 'Max PR nodes',
-    description: 'Guard the first execution run against oversized PR sets.',
+    label: '最大 PR 节点数',
+    description: '控制首次执行的 PR 拆分规模，避免过大。',
   },
   {
     key: 'approval_mode',
-    label: 'Approval mode',
-    description: 'Defines the human checkpoint before autonomous execution starts.',
+    label: '审批模式',
+    description: '定义自动执行开始前的人工检查点。',
   },
 ];
 
 const inviteDecisionFields: DecisionField[] = [
   {
     key: 'invite_expiration_days',
-    label: 'Invite expiration days',
-    description: 'Default expiry for invitation links when the feature includes invites.',
+    label: '邀请过期天数',
+    description: '功能包含邀请流程时，邀请链接的默认有效期。',
   },
   {
     key: 'default_invited_role',
-    label: 'Default invited role',
-    description: 'Default workspace role assigned to invited users.',
+    label: '默认邀请角色',
+    description: '分配给受邀用户的默认工作区角色。',
   },
 ];
 

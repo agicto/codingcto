@@ -20,7 +20,7 @@ export function selectExecutionNode(
 
 export function executionRangeReview(nodes: PRNode[], selectedNodeIds: string[]): string[] {
   if (selectedNodeIds.length === 0) {
-    return ['Execution range review: select at least one PR node before starting execution.'];
+    return ['执行范围审核：开始执行前至少选择一个 PR 节点。'];
   }
 
   const selectedNodeKeys = new Set(
@@ -34,7 +34,7 @@ export function executionRangeReview(nodes: PRNode[], selectedNodeIds: string[])
     for (const dependency of node.dependsOn) {
       if (!selectedNodeKeys.has(dependency)) {
         notes.push(
-          `Execution range review: ${node.nodeKey} requires ${dependency}; include the dependency or remove this node.`
+          `执行范围审核：${node.nodeKey} 依赖 ${dependency}；请包含该依赖，或移除此节点。`
         );
       }
     }
@@ -42,7 +42,7 @@ export function executionRangeReview(nodes: PRNode[], selectedNodeIds: string[])
 
   return notes.length > 0
     ? notes
-    : [`Execution range review: ${selectedNodeIds.length} PR ${selectedNodeIds.length === 1 ? 'node is' : 'nodes are'} selected with dependencies included.`];
+    : [`执行范围审核：已选择 ${selectedNodeIds.length} 个 PR 节点，依赖已包含。`];
 }
 
 function dependencyIdsForNode(nodes: PRNode[], nodeId: string): string[] {
