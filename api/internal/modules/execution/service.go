@@ -56,6 +56,7 @@ type service struct {
 	planningRepo       domain.SpecForgePlanningRepository
 	skillRepo          domain.SpecForgeSkillRepository
 	profileRepo        domain.SpecForgeRepoProfileRepository
+	architectureRepo   repoArchitectureStore
 	projectRepo        domain.SpecForgeProjectRepositoryStore
 	repositoryResolver RepositoryResolver
 	executor           CodeExecutor
@@ -63,6 +64,10 @@ type service struct {
 	preparer           PRNodeBranchPreparer
 	deliverer          PRNodeDeliverer
 	eventBus           *events.EventBus
+}
+
+type repoArchitectureStore interface {
+	FindLatestArchitectureSnapshotByRepositoryID(ctx context.Context, repositoryID string) (*domain.SpecForgeRepoArchitectureSnapshot, error)
 }
 
 func NewService(repo domain.SpecForgeExecutionRepository, planningRepo domain.SpecForgePlanningRepository, repositoryResolver RepositoryResolver, executor CodeExecutor, worktrees WorktreeManager, preparer PRNodeBranchPreparer, deliverer PRNodeDeliverer) *service {
@@ -87,6 +92,9 @@ func NewProjectAwareEventedService(
 ) *service {
 	svc := newService(repo, planningRepo, repositoryResolver, executor, worktrees, preparer, deliverer, eventBus)
 	svc.profileRepo = profileRepo
+	if repo, ok := profileRepo.(repoArchitectureStore); ok {
+		svc.architectureRepo = repo
+	}
 	svc.projectRepo = projectRepo
 	return svc
 }
@@ -333,6 +341,21 @@ func (s *service) projectContextFor(ctx context.Context, projectID uint) (*domai
 				repoContext.Warnings = append(repoContext.Warnings, "Repo profile has not been generated yet.")
 			} else {
 				repoContext.Profile = profile
+			}
+		}
+		if s.architectureRepo != nil {
+			snapshot, err := s.architectureRepo.FindLatestArchitectureSnapshotByRepositoryID(ctx, repository.RepositoryID)
+			if err != nil {
+				if !errors.Is(err, domain.ErrNotFound) {
+					return nil, fmt.Errorf("load execution project repo architecture snapshot: %w", err)
+				}
+				repoContext.ArchitectureStale = true
+				repoContext.ArchitectureWarnings = append(repoContext.ArchitectureWarnings, "Architecture snapshot has not been generated yet.")
+			} else {
+				repoContext.ArchitectureSnapshot = snapshot
+				stale, reasons := domain.SpecForgeRepoArchitectureSnapshotStaleness(snapshot, time.Now().UTC())
+				repoContext.ArchitectureStale = stale
+				repoContext.ArchitectureWarnings = append(repoContext.ArchitectureWarnings, reasons...)
 			}
 		}
 		if s.skillRepo != nil {
@@ -1603,7 +1626,42 @@ func writeRunProjectEvidenceRefs(b *strings.Builder, context *domain.SpecForgePr
 				b.WriteString("  - profile.stack: " + strings.Join(stack, ", ") + "\n")
 			}
 		}
+		writeRunArchitectureEvidenceRefLines(b, repoContext, "  - ")
 	}
+}
+
+func writeRunArchitectureEvidenceRefLines(b *strings.Builder, repoContext *domain.SpecForgeProjectRepositoryContext, prefix string) {
+	if repoContext == nil || repoContext.Repository == nil {
+		return
+	}
+	repositoryID := strings.TrimSpace(repoContext.Repository.RepositoryID)
+	if repositoryID == "" {
+		return
+	}
+	snapshot := repoContext.ArchitectureSnapshot
+	if snapshot == nil {
+		b.WriteString(prefix + "architecture_snapshot: missing\n")
+		writeExecutionEvidenceListWithPrefix(b, prefix, "architecture_warnings", repoContext.ArchitectureWarnings)
+		return
+	}
+	b.WriteString(prefix + "architecture_snapshot.commit: " + compactExecutionLine(snapshot.CommitSHA) + "\n")
+	b.WriteString(prefix + "architecture_snapshot.summary: " + compactExecutionLine(snapshot.Summary) + "\n")
+	if repoContext.ArchitectureStale {
+		b.WriteString(prefix + "architecture_snapshot.stale: true\n")
+	}
+	writeExecutionEvidenceListWithPrefix(b, prefix, "architecture_snapshot.modules", snapshot.Modules)
+	writeExecutionEvidenceListWithPrefix(b, prefix, "architecture_snapshot.entrypoints", snapshot.Entrypoints)
+	writeExecutionEvidenceListWithPrefix(b, prefix, "architecture_snapshot.ci_workflows", snapshot.CIWorkflows)
+	writeExecutionEvidenceListWithPrefix(b, prefix, "architecture_snapshot.warnings", append(snapshot.Warnings, repoContext.ArchitectureWarnings...))
+}
+
+func writeExecutionEvidenceListWithPrefix(b *strings.Builder, prefix, name string, values []string) {
+	values = normalizeExecutionList(values)
+	if len(values) == 0 {
+		b.WriteString(prefix + name + ": none\n")
+		return
+	}
+	b.WriteString(prefix + name + ": " + strings.Join(values, ", ") + "\n")
 }
 
 func writeRunSkillEvidenceRefs(b *strings.Builder, skills []*domain.SpecForgeSkill) {
@@ -1711,6 +1769,37 @@ func executionProjectContextRefs(context *domain.SpecForgeProjectContext) []stri
 		}
 		refs = append(refs, "project_repository:"+strings.TrimSpace(repository.RepositoryID)+":role:"+strings.TrimSpace(repository.Role))
 	}
+	for _, repoContext := range context.RepositoryContexts {
+		refs = append(refs, executionArchitectureEvidenceRefsFor(repoContext)...)
+	}
+	return refs
+}
+
+func executionArchitectureEvidenceRefsFor(repoContext *domain.SpecForgeProjectRepositoryContext) []string {
+	if repoContext == nil || repoContext.Repository == nil || repoContext.ArchitectureSnapshot == nil {
+		return nil
+	}
+	repositoryID := strings.TrimSpace(repoContext.Repository.RepositoryID)
+	if repositoryID == "" {
+		return nil
+	}
+	snapshot := repoContext.ArchitectureSnapshot
+	refs := []string{}
+	if strings.TrimSpace(snapshot.CommitSHA) != "" {
+		refs = append(refs, "architecture_snapshot:"+repositoryID+":"+strings.TrimSpace(snapshot.CommitSHA))
+	}
+	if len(normalizeExecutionList(snapshot.Modules)) > 0 {
+		refs = append(refs, "architecture_snapshot:"+repositoryID+":modules")
+	}
+	if len(normalizeExecutionList(snapshot.Entrypoints)) > 0 {
+		refs = append(refs, "architecture_snapshot:"+repositoryID+":entrypoints")
+	}
+	if len(normalizeExecutionList(snapshot.CIWorkflows)) > 0 {
+		refs = append(refs, "architecture_snapshot:"+repositoryID+":ci_workflows")
+	}
+	if len(normalizeExecutionList(append(snapshot.Warnings, repoContext.ArchitectureWarnings...))) > 0 {
+		refs = append(refs, "architecture_snapshot:"+repositoryID+":warnings")
+	}
 	return refs
 }
 
@@ -1750,7 +1839,34 @@ func validateExecutionPromptContract(bundle *domain.SpecForgePlanBundle, node *d
 	if strings.TrimSpace(node.RepositoryID) != "" && !containsString(prompt.EvidenceRefs, "target_repository:"+strings.TrimSpace(node.RepositoryID)) {
 		return fmt.Errorf("prompt contract invalid: missing target repository evidence ref")
 	}
+	architectureRefs := requiredArchitectureEvidenceRefs(bundle, node)
+	for _, ref := range architectureRefs {
+		if !containsString(prompt.EvidenceRefs, ref) {
+			return fmt.Errorf("prompt contract invalid: missing architecture snapshot evidence ref %s", ref)
+		}
+	}
+	if len(architectureRefs) > 0 && !strings.Contains(prompt.PromptText, "Architecture snapshot") {
+		return fmt.Errorf("prompt contract invalid: missing architecture snapshot prompt text")
+	}
 	return nil
+}
+
+func requiredArchitectureEvidenceRefs(bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode) []string {
+	if bundle == nil || bundle.ProjectContext == nil || node == nil {
+		return nil
+	}
+	targetRepositoryID := strings.TrimSpace(node.RepositoryID)
+	refs := []string{}
+	for _, repoContext := range bundle.ProjectContext.RepositoryContexts {
+		if repoContext == nil || repoContext.Repository == nil {
+			continue
+		}
+		if targetRepositoryID != "" && strings.TrimSpace(repoContext.Repository.RepositoryID) != targetRepositoryID {
+			continue
+		}
+		refs = append(refs, executionArchitectureEvidenceRefsFor(repoContext)...)
+	}
+	return compactUniqueStrings(refs)
 }
 
 func writeRunScopeGuardrails(b *strings.Builder, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode) {
@@ -1850,8 +1966,46 @@ func writeExecutionProjectContext(b *strings.Builder, bundle *domain.SpecForgePl
 				b.WriteString("  - Warning: " + strings.TrimSpace(warning) + "\n")
 			}
 		}
+		writeExecutionArchitectureContext(b, repoContext)
 	}
 	b.WriteString("\n")
+}
+
+func writeExecutionArchitectureContext(b *strings.Builder, repoContext *domain.SpecForgeProjectRepositoryContext) {
+	if repoContext == nil || repoContext.Repository == nil {
+		return
+	}
+	if repoContext.ArchitectureSnapshot == nil {
+		if len(repoContext.ArchitectureWarnings) == 0 {
+			return
+		}
+		b.WriteString("  - Architecture snapshot: missing\n")
+		for _, warning := range repoContext.ArchitectureWarnings {
+			if strings.TrimSpace(warning) != "" {
+				b.WriteString("  - Architecture warning: " + compactExecutionLine(warning) + "\n")
+			}
+		}
+		return
+	}
+	snapshot := repoContext.ArchitectureSnapshot
+	b.WriteString("  - Architecture snapshot commit: " + compactExecutionLine(snapshot.CommitSHA) + "\n")
+	if strings.TrimSpace(snapshot.Summary) != "" {
+		b.WriteString("  - Architecture summary: " + compactExecutionLine(snapshot.Summary) + "\n")
+	}
+	writeExecutionIndentedList(b, "Architecture modules", snapshot.Modules)
+	writeExecutionIndentedList(b, "Architecture entrypoints", snapshot.Entrypoints)
+	writeExecutionIndentedList(b, "Architecture CI workflows", snapshot.CIWorkflows)
+	for _, warning := range normalizeExecutionList(append(snapshot.Warnings, repoContext.ArchitectureWarnings...)) {
+		b.WriteString("  - Architecture warning: " + compactExecutionLine(warning) + "\n")
+	}
+}
+
+func writeExecutionIndentedList(b *strings.Builder, label string, values []string) {
+	values = normalizeExecutionList(values)
+	if len(values) == 0 {
+		return
+	}
+	b.WriteString("  - " + label + ": " + strings.Join(values, ", ") + "\n")
 }
 
 func writeExecutionRepoProfile(b *strings.Builder, bundle *domain.SpecForgePlanBundle) {
