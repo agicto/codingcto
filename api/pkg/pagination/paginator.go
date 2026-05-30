@@ -1,4 +1,4 @@
-// Package pagination provides Laravel-style pagination helpers for Luas services.
+// Package pagination provides Laravel-style pagination helpers for CodingCTO services.
 //
 // This package implements full-featured pagination with:
 //   - Automatic URL generation for pagination links

@@ -1,181 +1,125 @@
-# Luas Web
+# CodingCTO Web
 
-一个面向平台控制面的 Next.js 控制台，负责 GitHub 连接、仓库导入、服务创建、环境变量管理、部署触发与实时日志展示。
+CodingCTO Web is the Next.js console for the PRD-to-PR workflow. It lets users connect repositories, group them into projects, analyze context, generate implementation plans, review PR DAGs, dispatch execution, and monitor pull request delivery.
 
-## ✨ Frontend-First AI Features
+The package name still contains `luas` for compatibility with the original scaffold history. The public project name is **CodingCTO**.
 
-- 🎨 **Component-Driven**: Extensive UI component library with Radix UI and custom designs
-- 🚀 **Performance Optimized**: Next.js 16.2.1 App Router with automatic code splitting
-- 🌙 **Theme System**: Beautiful dark/light themes with CSS variables
-- 📱 **Mobile-First**: Responsive design for all screen sizes
-- 🔍 **TypeScript**: Full type safety and excellent DX (TypeScript 5.9+)
-- ⚡ **Hot Reload**: Instant development feedback with Next.js Turbopack
-- 🤖 **AI-Ready**: Clean patterns for AI code generation and "vibe coding"
-- 🔐 **Auth Integration**: Mock auth routes with httpOnly session cookies and protected demo pages
-- 📊 **State Management**: Zustand 5.0 for predictable, granular state handling
-- 🌍 **I18n**: Full internationalization support with `next-intl`
-- 🎨 **Styleguide Explorer**: Pre-built component gallery and design system playground
-- 🛠️ **Developer Tools**: Pre-configured ESLint 9, Prettier, and Vitest
+## Stack
 
-## 🤖 AI Developer Experience
+- Next.js 16 App Router
+- React 19
+- TypeScript 5
+- Tailwind CSS 4
+- shadcn/ui and Radix primitives
+- TanStack Query for server state
+- Zustand for lightweight client state
+- next-intl for internationalization
+- Vitest and Testing Library for tests
 
-- **AI-Friendly Code Structure**: Clean, predictable patterns that AI tools (like Windsurf, Cursor, Bolt) understand
-- **Smart Component Design**: Components designed for AI generation and modification, utilizing Atomic Design principles
-- **Type Safety**: Comprehensive TypeScript types for better AI code completion and error prevention
-- **Documentation**: Rich JSDoc comments for AI context understanding
-- **Error Handling**: Standardized error handling patterns for AI debugging assistance
+## Quick Start
 
-## 🆕 Latest Updates (v2.1.0)
-
-- ✅ **Next.js 16.2.1** - Current pinned framework version
-- ✅ **React 19.2.3** - Full support for React 19 features
-- ✅ **Tailwind CSS 4.1.18** - Modern utility-first CSS
-- ✅ **Next-Intl 4.6** - Comprehensive i18n solution
-- ✅ **Zustand 5.0** - Optimized state management
-- ✅ **Architecture Guide** - Comprehensive guide for building scalable AI-ready apps
-
-👉 Check out the [Optimization Summary Report](docs/OPTIMIZATION_SUMMARY.md) for details.
-
-## 🛠️ Frontend-Optimized Tech Stack
-
-- **Framework**: Next.js 16.2.1 (App Router)
-- **Library**: React 19.2.3
-- **Language**: TypeScript 5.9.3 (Strict Mode)
-- **Styling**: Tailwind CSS 4.1.18 + PostCSS
-- **UI Components**: Radix UI + Lucide Icons
-- **State Management**: Zustand 5.0.9
-- **Data Fetching**: TanStack Query v5
-- **Validation**: Zod 4.2
-- **Theming**: Next-Themes 0.4
-- **Testing**: Vitest 4.0 + Testing Library
-
-## 🚀 Quick Start
-
-### Prerequisites
+### Requirements
 
 - Node.js 20.11+
-- pnpm 10+ (Recommended)
+- pnpm 10+
 
-### Installation
+### Install
 
-1. **Clone the repository**
+```bash
+pnpm install
+```
 
-   ```bash
-   git clone https://github.com/zgiai/luas.git
-   cd luas/web
-   ```
+### Configure
 
-2. **Install dependencies**
+```bash
+cp .env.example .env.local
+```
 
-   ```bash
-   pnpm install
-   ```
+Important local values:
 
-3. **Set up environment variables**
+```bash
+NEXT_PUBLIC_API_URL=/api
+NEXT_PUBLIC_SPECFORGE_API_URL=/v1
+LUAS_API_PROXY_TARGET=http://localhost:8025
+LUAS_AUTH_BACKEND_ENABLED=false
+NEXT_PUBLIC_APP_URL=http://localhost:3000
+```
 
-   ```bash
-   cp .env.example .env.local
-   # Edit .env.local with your configuration
-   ```
+The `LUAS_*` environment keys are compatibility names. They proxy to the CodingCTO API.
 
-   Platform console variables:
+### Run
 
-   ```bash
-   NEXT_PUBLIC_DEPLOY_API_URL=http://localhost:8025/v1
-   NEXT_PUBLIC_PLATFORM_API_URL=http://localhost:8025/v1
-   ```
+```bash
+pnpm dev
+```
 
-4. **Run the development server**
+Open `http://localhost:3000`.
 
-   ```bash
-   pnpm dev
-   ```
+## Main Routes
 
-5. **Open your browser**
+- `/console` - project and repository console
+- `/console/specforge` - repository-scoped SpecForge workflow
+- `/console/projects/:projectId/specforge` - project-scoped SpecForge workflow
+- `/login` and `/register` - local auth routes
 
-   Navigate to [http://localhost:3000](http://localhost:3000)
-
-## 📁 Project Structure
+## Project Layout
 
 ```text
-src/
-├── app/                    # Next.js App Router
-│   ├── (auth)/            # Authentication routes
-│   ├── (protected)/       # Authenticated route group
-│   │   ├── (console)/     # Console shell and business pages
-│   │   └── (devtools)/    # Internal demo and playground pages
-│   ├── (site)/            # Marketing/Public pages
-│   └── api/               # API Route handlers
-├── components/            # Shared UI and generic components
-│   ├── ui/               # Base UI library (Shadcn-like)
-│   ├── features/         # Shared feature-facing UI blocks
-│   └── common/           # Shared layout components
-├── features/             # Feature-first modules (auth, example, ...)
-│   ├── auth/             # components, hooks, services, store, server, types
-│   └── example/          # hooks, services, server, types
-├── hooks/                # Shared generic hooks only
-├── services/             # Compatibility exports for feature services
-├── store/                # Shared global stores only
-├── i18n/                 # Translation files
-├── providers/            # React context providers
-├── utils/                # Utility functions
-└── types/                # Shared cross-feature types
+web/
+├── src/
+│   ├── app/                 # Next.js App Router
+│   ├── components/          # shared UI and layout components
+│   ├── features/            # feature-first product modules
+│   ├── http/                # API client wrapper
+│   ├── i18n/                # translations and helpers
+│   ├── providers/           # app providers
+│   ├── store/               # shared client stores
+│   ├── test/                # test setup and utilities
+│   └── themes/              # design tokens
+├── public/
+└── package.json
 ```
 
-## 📊 Features in Depth
+Feature work should live under `src/features/*` unless it is truly shared UI or framework setup.
 
-### 🎨 **Styleguide**
-A built-in styleguide available at `/styleguide` lives under the protected devtools route group, keeping internal playground pages separate from business pages.
-
-### 🔐 **Authentication**
-Complete auth flow out-of-the-box:
-- Login/Register pages with validation
-- Mock `/api/auth/*` routes with a demo account (`admin@example.com` / `admin123`)
-- httpOnly session cookie bootstrap via `AuthProvider`
-- `middleware.ts` + `AuthGuard` for protected routes
-
-### 🌍 **Internationalization**
-Powered by `next-intl`, supporting:
-- Multi-language routing
-- Type-safe translation keys
-- Dynamic language switching
-
-### 🚀 **Platform Console**
-控制台首页现在是平台工作台，提供：
-- GitHub Token 连接与仓库浏览
-- 从仓库导入服务
-- 选择部署目标与部署策略
-- 环境变量编辑
-- 部署记录与实时日志流
-- 发布中心低层操作页
-
-## 🚀 Deployment
-
-### Vercel (Recommended)
-Deployment is seamless on Vercel with zero configuration.
-
-### Docker
-```bash
-docker build -t luas-web .
-docker run -p 3000:3000 luas-web
-```
-
-## 🧪 Scripts
+## Development Commands
 
 ```bash
-pnpm dev          # Start development with Turbopack
-pnpm build        # Build for production
-pnpm start        # Start production server
-pnpm lint         # Run ESLint
-pnpm type-check   # Run TypeScript checks
-pnpm test         # Run unit tests
-pnpm format       # Format with Prettier
+pnpm dev          # start the local dev server
+pnpm type-check   # TypeScript check
+pnpm lint         # ESLint
+pnpm test         # Vitest watch mode
+pnpm test run     # one-shot Vitest run
+pnpm build        # production build
 ```
 
-## 🤝 Contributing
+## UI Principles
 
-We welcome contributions! Please see our [Contributing Guide](CONTRIBUTING.md) for details.
+- Build the actual workflow screen first, not a marketing landing page.
+- Keep the console dense, quiet, and work-focused.
+- Prefer feature folders and existing shadcn primitives.
+- Use semantic theme tokens rather than raw color values.
+- Keep controls stable in size across desktop and mobile.
+- Verify meaningful UI changes in a browser before opening a PR.
 
----
+## API Integration
 
-Made with ❤️ by the Luas contributors
+The web app uses local Next.js route handlers as the browser-facing API surface. SpecForge routes proxy to the Go API through `NEXT_PUBLIC_SPECFORGE_API_URL` and `LUAS_API_PROXY_TARGET`.
+
+The API and web app share contracts over HTTP only. Do not import API code into the web app.
+
+## Testing Expectations
+
+For frontend changes, run:
+
+```bash
+pnpm type-check
+pnpm lint
+pnpm test run
+```
+
+For visible UI changes, also test the affected route in a browser and include the result in the PR description.
+
+## Compatibility Notes
+
+Some compatibility identifiers still use `luas`. Do not introduce new user-facing `Luas` copy. Public documentation, commit messages, pull request text, and product copy should use **CodingCTO**.

@@ -37,8 +37,8 @@ const defaultWorkspaceId = "workspace_123";
 const demoProject: ProjectDTO = {
   id: 1,
   workspace_id: defaultWorkspaceId,
-  name: "SpecForge",
-  slug: "specforge",
+  name: "CodingCTO",
+  slug: "codingcto",
   description: "PRD-to-PR automation workspace for product and engineering runs.",
   status: "active",
   created_by: 1,
@@ -128,7 +128,7 @@ export function ProjectConsole() {
           </div>
           <h1 className="mt-3 text-2xl font-semibold tracking-normal">Projects</h1>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-text-muted">
-            Group repos and product work before SpecForge generates plans, prompts, and PRs.
+            Group repos and product work before CodingCTO generates plans, prompts, and PRs.
           </p>
         </div>
         <Button
@@ -167,7 +167,7 @@ export function ProjectConsole() {
                   id="project-name"
                   value={name}
                   onChange={(event) => handleNameChange(event.target.value)}
-                  placeholder="SpecForge"
+                  placeholder="CodingCTO"
                 />
               </div>
               <div className="space-y-2">
@@ -176,7 +176,7 @@ export function ProjectConsole() {
                   id="project-slug"
                   value={slug}
                   onChange={(event) => setSlug(slugFromProjectName(event.target.value))}
-                  placeholder="specforge"
+                  placeholder="codingcto"
                 />
               </div>
               <div className="space-y-2">
@@ -236,7 +236,7 @@ function ProjectRow({ project }: { project: ProjectDTO }) {
           </div>
           <Button asChild variant="outline" className="shrink-0">
             <Link href={projectSpecForgeHref(project.id)}>
-              Open SpecForge
+              Open CodingCTO
               <GitPullRequest className="ml-1.5 h-4 w-4" />
             </Link>
           </Button>

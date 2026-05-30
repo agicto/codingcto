@@ -1,5 +1,5 @@
 @echo off
-REM Luas Build Script for Windows
+REM CodingCTO Build Script for Windows
 REM Usage: make.bat [command]
 
 setlocal

@@ -8,7 +8,7 @@ export interface SpecForgeSkillTemplate {
 export const specForgeSkillTemplates: SpecForgeSkillTemplate[] = [
   {
     id: "planning-sop",
-    name: "SpecForge planning SOP",
+    name: "CodingCTO planning SOP",
     description: "Evidence-first planning workflow for idea-to-PR decomposition.",
     content: [
       "Use this SOP before generating or executing PR nodes.",
@@ -27,7 +27,7 @@ export const specForgeSkillTemplates: SpecForgeSkillTemplate[] = [
   },
   {
     id: "review-gate",
-    name: "SpecForge review gate",
+    name: "CodingCTO review gate",
     description: "Quality gate for self-review before opening or updating PRs.",
     content: [
       "Apply this gate before marking a PR node ready for review.",
