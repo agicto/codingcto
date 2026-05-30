@@ -77,7 +77,7 @@
   --highlight-subtle: oklch(from var(--highlight) l c h / 0.1);
 
   /* Others */
-  --radius: 0.625rem;
+  --radius: 4px;
   --shadow-color: oklch(0 0 0);
   
   /* Legacy semantics maintained for compatibility */

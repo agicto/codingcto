@@ -2,6 +2,8 @@
 
 CodingCTO is a developer-facing engineering workflow product. The interface should feel precise, quiet, and trustworthy: closer to a command center for plans, repositories, prompts, runs, and PR delivery than a generic task board.
 
+The product UI should lean toward a Swiss-style information system: strict grids, clear hierarchy, restrained color, high legibility, and low ornamentation.
+
 ## Palette
 
 - Canvas: graphite-tinted neutrals for calm density.
@@ -16,9 +18,11 @@ CodingCTO is a developer-facing engineering workflow product. The interface shou
 - Components should use semantic theme tokens such as `bg-bg-surface`, `text-text-main`, `border-border-subtle`, `text-primary`, `bg-primary-subtle`, `text-success`, and `text-warning`.
 - Raw hex colors should be avoided in app UI. Add or adjust semantic tokens instead of introducing one-off colors.
 - Marketing gradients are not the default product UI style. Use blue accents sparingly to show state, selection, and execution affordances.
+- Buttons use a 4px radius by default. Larger rounded cards, pills, or circles should be deliberate exceptions for avatars, badges, progress marks, and controls where shape carries meaning.
 
 ## Product UI Principles
 
 - Prioritize the business workflow: project, repositories, repo intelligence, skills, plan approval, PR DAG, prompt contracts, Codex execution, and PR delivery.
 - Keep controls dense but readable. This is an operational tool for repeated review, not a landing page.
 - Avoid agent-management language unless the user is configuring executor runtimes. The main object is the delivery artifact: a plan and its PR set.
+- Favor grid-aligned layouts, concise labels, strong spacing rhythm, and quiet monochrome surfaces with state color only where it clarifies execution status.

@@ -17,7 +17,7 @@ import { Loader2 } from "lucide-react"
 import { cn } from "@/utils"
 
 const buttonVariants = cva(
-  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-md text-sm font-medium focus-ring shrink-0 disabled:cursor-not-allowed disabled:opacity-50",
+  "inline-flex items-center justify-center gap-2 whitespace-nowrap rounded-[4px] text-sm font-medium focus-ring shrink-0 disabled:cursor-not-allowed disabled:opacity-50",
   {
     variants: {
       variant: {
@@ -109,10 +109,6 @@ function Button({
         buttonVariants({ variant, size, isIcon, className }),
         // Conditionally apply interactive class based on noScale
         noScale ? "interactive-no-scale" : "interactive",
-        // Dynamic rounding based on size
-        size === "xs" || size === "sm" ? "rounded-md" : 
-        size === "lg" || size === "xl" ? "rounded-xl" : 
-        size === "2xl" ? "rounded-2xl" : "rounded-lg",
         loading && "relative pointer-events-none"
       )}
       {...props}

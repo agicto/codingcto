@@ -43,6 +43,12 @@ func TestServiceProjectRepositoryFlow(t *testing.T) {
 	require.Equal(t, "repo_1", contextBundle.ExecutionRepositoryID)
 	require.Empty(t, contextBundle.ReadOnlyRepositoryIDs)
 	require.Contains(t, contextBundle.ExecutionGuardrails, "MVP execution is primary-repository only.")
+	require.NotNil(t, contextBundle.Readiness)
+	require.True(t, contextBundle.Readiness.HasPrimaryRepository)
+	require.Equal(t, 1, contextBundle.Readiness.ActiveRepositoryCount)
+	require.Equal(t, 0, contextBundle.Readiness.ReadOnlyRepositoryCount)
+	require.Equal(t, 0, contextBundle.Readiness.SkillCount)
+	require.Equal(t, "Add project or repo skills to reduce prompt ambiguity.", contextBundle.Readiness.NextAction)
 }
 
 func TestServiceProjectContextIncludesRepoProfilesAndSkills(t *testing.T) {
@@ -121,6 +127,48 @@ func TestServiceProjectContextIncludesRepoProfilesAndSkills(t *testing.T) {
 	require.Equal(t, "repo_1", contextBundle.ExecutionRepositoryID)
 	require.Equal(t, []string{"repo_2"}, contextBundle.ReadOnlyRepositoryIDs)
 	require.Contains(t, contextBundle.ExecutionGuardrails, "Executor must modify only repo_1; other bound repositories are read-only context.")
+	require.NotNil(t, contextBundle.Readiness)
+	require.True(t, contextBundle.Readiness.HasPrimaryRepository)
+	require.Equal(t, 2, contextBundle.Readiness.ActiveRepositoryCount)
+	require.Equal(t, 1, contextBundle.Readiness.ReadOnlyRepositoryCount)
+	require.Equal(t, 1, contextBundle.Readiness.SkillCount)
+	require.Equal(t, 1, contextBundle.Readiness.WarningCount)
+	require.Equal(t, contextBundle.ExecutionGuardrails, contextBundle.Readiness.Guardrails)
+	require.Contains(t, contextBundle.Readiness.Summary, "repo_1")
+	require.Equal(t, "Review repository context warnings before approving execution.", contextBundle.Readiness.NextAction)
+}
+
+func TestServiceProjectContextReadinessRequiresPrimaryRepository(t *testing.T) {
+	store := newMemoryProjectStore()
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
+		},
+	}
+	svc := NewService(store, github, nil, nil)
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "SpecForge",
+		Slug:        "specforge",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRoleDependency,
+	})
+	require.NoError(t, err)
+
+	contextBundle, err := svc.GetProjectContext(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.Empty(t, contextBundle.PrimaryRepositoryID)
+	require.NotNil(t, contextBundle.Readiness)
+	require.False(t, contextBundle.Readiness.HasPrimaryRepository)
+	require.Equal(t, 1, contextBundle.Readiness.ActiveRepositoryCount)
+	require.Equal(t, 1, contextBundle.Readiness.ReadOnlyRepositoryCount)
+	require.Equal(t, 0, contextBundle.Readiness.SkillCount)
+	require.Equal(t, 0, contextBundle.Readiness.WarningCount)
+	require.Contains(t, contextBundle.Readiness.Guardrails, "Project must bind one active primary repository before planning or execution.")
+	require.Equal(t, "Bind one active primary repository before generating a plan.", contextBundle.Readiness.NextAction)
 }
 
 func TestServiceRejectsSecondPrimaryRepository(t *testing.T) {
