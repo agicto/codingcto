@@ -666,7 +666,8 @@ export function SpecForgeWorkbench({
           <div>
             <h1 className="text-base font-semibold">Project command center</h1>
             <p className="text-xs text-text-muted">
-              {projectLabel ? `${projectLabel} · ` : ''}Idea to plan, prompts, Codex run, and PR delivery
+              {projectLabel ? `${projectLabel} · ` : ''}Idea to plan, prompts, Codex run, and PR
+              delivery
             </p>
           </div>
         </div>
@@ -686,14 +687,20 @@ export function SpecForgeWorkbench({
 
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle px-4">
         <Button
-          variant={selectedWorkItem === 'intake' || selectedWorkItem === 'context' ? 'secondary' : 'outline'}
+          variant={
+            selectedWorkItem === 'intake' || selectedWorkItem === 'context'
+              ? 'secondary'
+              : 'outline'
+          }
           size="sm"
           onClick={() => setSelectedWorkItem('intake')}
         >
           All work
         </Button>
         <Button
-          variant={selectedWorkItem === 'plan' || selectedWorkItem === 'dag' ? 'secondary' : 'outline'}
+          variant={
+            selectedWorkItem === 'plan' || selectedWorkItem === 'dag' ? 'secondary' : 'outline'
+          }
           size="sm"
           onClick={() => setSelectedWorkItem('plan')}
         >
@@ -712,7 +719,10 @@ export function SpecForgeWorkbench({
         <div className="min-w-0 overflow-x-auto p-3">
           <div className="grid h-full min-w-[1320px] grid-cols-6 gap-3">
             {deliveryStages.map(column => (
-              <div key={column.id} className={cn('flex min-h-0 flex-col rounded-xl p-3', column.tone)}>
+              <div
+                key={column.id}
+                className={cn('flex min-h-0 flex-col rounded-xl p-3', column.tone)}
+              >
                 <div className="flex h-8 items-center justify-between text-sm">
                   <div className="flex items-center gap-2 font-medium">
                     <CircleDot className="h-3.5 w-3.5 text-text-muted" />
@@ -1030,13 +1040,27 @@ function RuntimeReadiness({
           {runtimes.slice(0, 3).map(runtime => (
             <div
               key={runtime.runtimeId}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border-subtle bg-bg-subtle px-3 py-2"
+              className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-border-subtle bg-bg-subtle px-3 py-2"
             >
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium">{runtime.runtimeId}</div>
                 <div className="text-xs text-text-muted">
                   {runtime.executor}
                   {runtime.hostname ? ` · ${runtime.hostname}` : ''}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {runtime.availableClis
+                    .filter(cli => cli.available)
+                    .slice(0, 3)
+                    .map(cli => (
+                      <Badge key={`${cli.command}-${cli.path ?? 'path'}`} variant="outline">
+                        {runtimeCLILabel(cli.name, cli.version)}
+                      </Badge>
+                    ))}
+                  {runtime.sandbox?.mode ? (
+                    <Badge variant="outline">sandbox: {runtime.sandbox.mode}</Badge>
+                  ) : null}
+                  <Badge variant="outline">{runtime.localSkillCount} skills</Badge>
                 </div>
               </div>
               <Badge variant="outline">{runtime.status}</Badge>
@@ -1069,6 +1093,15 @@ function RuntimeReadiness({
       )}
     </div>
   );
+}
+
+function runtimeCLILabel(name: string, version?: string): string {
+  const cleanName = name.trim() || 'CLI';
+  const cleanVersion = version?.trim();
+  if (!cleanVersion) {
+    return cleanName;
+  }
+  return `${cleanName}: ${cleanVersion.replace(cleanName, '').trim() || cleanVersion}`;
 }
 
 function RepoProfileSummary({

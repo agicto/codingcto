@@ -1,6 +1,7 @@
 package execution
 
 import (
+	"encoding/json"
 	"time"
 
 	"github.com/zgiai/luas/api/internal/domain"
@@ -51,15 +52,20 @@ func (AgentTaskPO) TableName() string {
 }
 
 type RuntimePO struct {
-	ID         uint   `gorm:"primaryKey"`
-	RuntimeID  string `gorm:"size:100;not null;uniqueIndex"`
-	Executor   string `gorm:"size:100;not null;index"`
-	Status     string `gorm:"size:50;not null;index"`
-	Hostname   string `gorm:"size:255"`
-	Version    string `gorm:"size:100"`
-	LastSeenAt time.Time
-	CreatedAt  time.Time
-	UpdatedAt  time.Time
+	ID                uint   `gorm:"primaryKey"`
+	RuntimeID         string `gorm:"size:100;not null;uniqueIndex"`
+	Executor          string `gorm:"size:100;not null;index"`
+	Status            string `gorm:"size:50;not null;index"`
+	Hostname          string `gorm:"size:255"`
+	Version           string `gorm:"size:100"`
+	AvailableCLIsJSON string `gorm:"column:available_clis;type:jsonb;not null;default:'[]'"`
+	SandboxJSON       string `gorm:"column:sandbox;type:jsonb;not null;default:'{}'"`
+	SkillRootsJSON    string `gorm:"column:skill_roots;type:jsonb;not null;default:'[]'"`
+	LocalSkillCount   int    `gorm:"not null;default:0"`
+	CapabilitiesHash  string `gorm:"size:64;index"`
+	LastSeenAt        time.Time
+	CreatedAt         time.Time
+	UpdatedAt         time.Time
 }
 
 func (RuntimePO) TableName() string {
@@ -164,30 +170,72 @@ func (po *AgentTaskPO) toDomain() *domain.SpecForgeAgentTask {
 
 func newRuntimePO(runtime *domain.SpecForgeRuntime) *RuntimePO {
 	return &RuntimePO{
-		ID:         runtime.ID,
-		RuntimeID:  runtime.RuntimeID,
-		Executor:   runtime.Executor,
-		Status:     runtime.Status,
-		Hostname:   runtime.Hostname,
-		Version:    runtime.Version,
-		LastSeenAt: runtime.LastSeenAt,
-		CreatedAt:  runtime.CreatedAt,
-		UpdatedAt:  runtime.UpdatedAt,
+		ID:                runtime.ID,
+		RuntimeID:         runtime.RuntimeID,
+		Executor:          runtime.Executor,
+		Status:            runtime.Status,
+		Hostname:          runtime.Hostname,
+		Version:           runtime.Version,
+		AvailableCLIsJSON: mustMarshalRuntimeJSON(runtime.AvailableCLIs, "[]"),
+		SandboxJSON:       mustMarshalRuntimeJSON(runtime.Sandbox, "{}"),
+		SkillRootsJSON:    mustMarshalRuntimeJSON(runtime.SkillRoots, "[]"),
+		LocalSkillCount:   runtime.LocalSkillCount,
+		CapabilitiesHash:  runtime.CapabilitiesHash,
+		LastSeenAt:        runtime.LastSeenAt,
+		CreatedAt:         runtime.CreatedAt,
+		UpdatedAt:         runtime.UpdatedAt,
 	}
 }
 
 func (po *RuntimePO) toDomain() *domain.SpecForgeRuntime {
-	return &domain.SpecForgeRuntime{
-		ID:         po.ID,
-		RuntimeID:  po.RuntimeID,
-		Executor:   po.Executor,
-		Status:     po.Status,
-		Hostname:   po.Hostname,
-		Version:    po.Version,
-		LastSeenAt: po.LastSeenAt,
-		CreatedAt:  po.CreatedAt,
-		UpdatedAt:  po.UpdatedAt,
+	var clis []domain.SpecForgeRuntimeCLI
+	var skillRoots []domain.SpecForgeRuntimeSkillRoot
+	var sandbox *domain.SpecForgeRuntimeSandbox
+	unmarshalRuntimeJSON(po.AvailableCLIsJSON, &clis)
+	unmarshalRuntimeJSON(po.SkillRootsJSON, &skillRoots)
+	if po.SandboxJSON != "" && po.SandboxJSON != "{}" {
+		var value domain.SpecForgeRuntimeSandbox
+		if unmarshalRuntimeJSON(po.SandboxJSON, &value) {
+			sandbox = &value
+		}
 	}
+	return &domain.SpecForgeRuntime{
+		ID:               po.ID,
+		RuntimeID:        po.RuntimeID,
+		Executor:         po.Executor,
+		Status:           po.Status,
+		Hostname:         po.Hostname,
+		Version:          po.Version,
+		AvailableCLIs:    clis,
+		Sandbox:          sandbox,
+		SkillRoots:       skillRoots,
+		LocalSkillCount:  po.LocalSkillCount,
+		CapabilitiesHash: po.CapabilitiesHash,
+		LastSeenAt:       po.LastSeenAt,
+		CreatedAt:        po.CreatedAt,
+		UpdatedAt:        po.UpdatedAt,
+	}
+}
+
+func mustMarshalRuntimeJSON(value any, fallback string) string {
+	if value == nil {
+		return fallback
+	}
+	data, err := json.Marshal(value)
+	if err != nil {
+		return fallback
+	}
+	return string(data)
+}
+
+func unmarshalRuntimeJSON(raw string, out any) bool {
+	if raw == "" {
+		return false
+	}
+	if err := json.Unmarshal([]byte(raw), out); err != nil {
+		return false
+	}
+	return true
 }
 
 func newTaskEventPO(event *domain.SpecForgeTaskEvent) *TaskEventPO {

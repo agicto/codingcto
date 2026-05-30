@@ -41,15 +41,25 @@ func main() {
 		ApprovalPolicy: *approval,
 		Timeout:        *timeout,
 	}, nil)
+	capabilities := execution.DetectRuntimeCapabilities(execution.RuntimeCapabilityProbeConfig{
+		CodexPath:      *codexPath,
+		RepoDir:        *repoDir,
+		SandboxMode:    *sandbox,
+		ApprovalPolicy: *approval,
+	})
 	worker := execution.NewRuntimeWorker(execution.RuntimeWorkerConfig{
-		RuntimeID:    *runtimeID,
-		Executor:     execution.ExecutorNameCodexCLI,
-		Version:      "specforge-runtime/0.1",
-		RepositoryID: *repositoryID,
-		RepoDir:      *repoDir,
-		SessionID:    *runtimeID,
-		PollInterval: *pollInterval,
-		Env:          runtimeEnv(),
+		RuntimeID:       *runtimeID,
+		Executor:        execution.ExecutorNameCodexCLI,
+		Version:         "specforge-runtime/0.1",
+		RepositoryID:    *repositoryID,
+		RepoDir:         *repoDir,
+		SessionID:       *runtimeID,
+		PollInterval:    *pollInterval,
+		Env:             runtimeEnv(),
+		AvailableCLIs:   capabilities.AvailableCLIs,
+		Sandbox:         capabilities.Sandbox,
+		SkillRoots:      capabilities.SkillRoots,
+		LocalSkillCount: capabilities.LocalSkillCount,
 	}, client, executor)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)

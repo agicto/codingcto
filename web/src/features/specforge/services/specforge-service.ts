@@ -105,6 +105,10 @@ export interface RuntimeHeartbeatPayload {
   executor?: string;
   hostname?: string;
   version?: string;
+  available_clis?: SpecForgeRuntimeCLIDTO[];
+  sandbox?: SpecForgeRuntimeSandboxDTO;
+  skill_roots?: SpecForgeRuntimeSkillRootDTO[];
+  local_skill_count?: number;
 }
 
 export interface RuntimeSweepPayload {
@@ -526,9 +530,37 @@ export interface SpecForgeRuntimeDTO {
   status: string;
   hostname?: string;
   version?: string;
+  available_clis?: SpecForgeRuntimeCLIDTO[];
+  sandbox?: SpecForgeRuntimeSandboxDTO;
+  skill_roots?: SpecForgeRuntimeSkillRootDTO[];
+  local_skill_count?: number;
+  capabilities_hash?: string;
   last_seen_at: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface SpecForgeRuntimeCLIDTO {
+  name: string;
+  command: string;
+  path?: string;
+  version?: string;
+  available: boolean;
+}
+
+export interface SpecForgeRuntimeSandboxDTO {
+  provider?: string;
+  mode?: string;
+  network_access: boolean;
+  writable: boolean;
+  approval_policy?: string;
+  reason?: string;
+}
+
+export interface SpecForgeRuntimeSkillRootDTO {
+  provider: string;
+  path: string;
+  writable: boolean;
 }
 
 export interface SpecForgeClaimedTaskDTO {

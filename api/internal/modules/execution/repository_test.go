@@ -27,14 +27,32 @@ func TestRepositoryUpsertsRuntimeAndClaimsDispatchedTask(t *testing.T) {
 	}
 	require.NoError(t, repo.CreateExecutionBundle(context.Background(), bundle))
 	runtime := &domain.SpecForgeRuntime{
-		RuntimeID:  "runtime_123",
-		Executor:   ExecutorNameCodexCLI,
-		Status:     domain.RuntimeStatusOnline,
-		Hostname:   "worker-1",
-		LastSeenAt: time.Now(),
+		RuntimeID: "runtime_123",
+		Executor:  ExecutorNameCodexCLI,
+		Status:    domain.RuntimeStatusOnline,
+		Hostname:  "worker-1",
+		AvailableCLIs: []domain.SpecForgeRuntimeCLI{
+			{Name: "Codex CLI", Command: "codex", Version: "codex 1.0.0", Available: true},
+		},
+		Sandbox: &domain.SpecForgeRuntimeSandbox{
+			Provider:       "codex_cli",
+			Mode:           "workspace-write",
+			NetworkAccess:  true,
+			Writable:       true,
+			ApprovalPolicy: "never",
+		},
+		SkillRoots:      []domain.SpecForgeRuntimeSkillRoot{{Provider: "codex", Path: "/tmp/.codex/skills", Writable: true}},
+		LocalSkillCount: 1,
+		LastSeenAt:      time.Now(),
 	}
 	require.NoError(t, repo.UpsertRuntime(context.Background(), runtime))
 	require.NotZero(t, runtime.ID)
+	runtimes, err := repo.ListRuntimes(context.Background(), ExecutorNameCodexCLI, domain.RuntimeStatusOnline, 10)
+	require.NoError(t, err)
+	require.Len(t, runtimes, 1)
+	require.Len(t, runtimes[0].AvailableCLIs, 1)
+	require.Equal(t, "workspace-write", runtimes[0].Sandbox.Mode)
+	require.Equal(t, 1, runtimes[0].LocalSkillCount)
 
 	pending, err := repo.HasClaimableAgentTask(context.Background(), "runtime_123", ExecutorNameCodexCLI)
 	require.NoError(t, err)

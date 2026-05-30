@@ -532,13 +532,18 @@ func (s *service) HeartbeatRuntime(ctx context.Context, req *RuntimeHeartbeatReq
 		executor = ExecutorNameCodexCLI
 	}
 	runtime := &domain.SpecForgeRuntime{
-		RuntimeID:  strings.TrimSpace(req.RuntimeID),
-		Executor:   executor,
-		Status:     domain.RuntimeStatusOnline,
-		Hostname:   strings.TrimSpace(req.Hostname),
-		Version:    strings.TrimSpace(req.Version),
-		LastSeenAt: time.Now(),
+		RuntimeID:       strings.TrimSpace(req.RuntimeID),
+		Executor:        executor,
+		Status:          domain.RuntimeStatusOnline,
+		Hostname:        strings.TrimSpace(req.Hostname),
+		Version:         strings.TrimSpace(req.Version),
+		AvailableCLIs:   normalizeRuntimeCLIs(req.AvailableCLIs),
+		Sandbox:         normalizeRuntimeSandbox(req.Sandbox),
+		SkillRoots:      normalizeRuntimeSkillRoots(req.SkillRoots),
+		LocalSkillCount: req.LocalSkillCount,
+		LastSeenAt:      time.Now(),
 	}
+	runtime.CapabilitiesHash = runtimeCapabilitiesHash(runtime.AvailableCLIs, runtime.Sandbox, runtime.SkillRoots, runtime.LocalSkillCount)
 	if err := s.repo.UpsertRuntime(ctx, runtime); err != nil {
 		return nil, fmt.Errorf("upsert runtime heartbeat: %w", err)
 	}

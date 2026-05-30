@@ -159,15 +159,43 @@ type SpecForgeCompiledPrompt struct {
 
 // SpecForgeRuntime tracks a local or hosted executor that can claim agent tasks.
 type SpecForgeRuntime struct {
-	ID         uint      `json:"id"`
-	RuntimeID  string    `json:"runtime_id"`
-	Executor   string    `json:"executor"`
-	Status     string    `json:"status"`
-	Hostname   string    `json:"hostname,omitempty"`
-	Version    string    `json:"version,omitempty"`
-	LastSeenAt time.Time `json:"last_seen_at"`
-	CreatedAt  time.Time `json:"created_at"`
-	UpdatedAt  time.Time `json:"updated_at"`
+	ID               uint                        `json:"id"`
+	RuntimeID        string                      `json:"runtime_id"`
+	Executor         string                      `json:"executor"`
+	Status           string                      `json:"status"`
+	Hostname         string                      `json:"hostname,omitempty"`
+	Version          string                      `json:"version,omitempty"`
+	AvailableCLIs    []SpecForgeRuntimeCLI       `json:"available_clis,omitempty"`
+	Sandbox          *SpecForgeRuntimeSandbox    `json:"sandbox,omitempty"`
+	SkillRoots       []SpecForgeRuntimeSkillRoot `json:"skill_roots,omitempty"`
+	LocalSkillCount  int                         `json:"local_skill_count"`
+	CapabilitiesHash string                      `json:"capabilities_hash,omitempty"`
+	LastSeenAt       time.Time                   `json:"last_seen_at"`
+	CreatedAt        time.Time                   `json:"created_at"`
+	UpdatedAt        time.Time                   `json:"updated_at"`
+}
+
+type SpecForgeRuntimeCLI struct {
+	Name      string `json:"name"`
+	Command   string `json:"command"`
+	Path      string `json:"path,omitempty"`
+	Version   string `json:"version,omitempty"`
+	Available bool   `json:"available"`
+}
+
+type SpecForgeRuntimeSandbox struct {
+	Provider       string `json:"provider,omitempty"`
+	Mode           string `json:"mode,omitempty"`
+	NetworkAccess  bool   `json:"network_access"`
+	Writable       bool   `json:"writable"`
+	ApprovalPolicy string `json:"approval_policy,omitempty"`
+	Reason         string `json:"reason,omitempty"`
+}
+
+type SpecForgeRuntimeSkillRoot struct {
+	Provider string `json:"provider"`
+	Path     string `json:"path"`
+	Writable bool   `json:"writable"`
 }
 
 // SpecForgeSkill is a reusable repository instruction injected into compiled prompts.

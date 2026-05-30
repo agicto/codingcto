@@ -49,6 +49,30 @@ export function runtimeFromDTO(runtime: SpecForgeRuntimeDTO): ExecutorRuntime {
     status: runtime.status,
     hostname: runtime.hostname,
     version: runtime.version,
+    availableClis: (runtime.available_clis ?? []).map(cli => ({
+      name: cli.name,
+      command: cli.command,
+      path: cli.path,
+      version: cli.version,
+      available: cli.available,
+    })),
+    sandbox: runtime.sandbox
+      ? {
+          provider: runtime.sandbox.provider,
+          mode: runtime.sandbox.mode,
+          networkAccess: runtime.sandbox.network_access,
+          writable: runtime.sandbox.writable,
+          approvalPolicy: runtime.sandbox.approval_policy,
+          reason: runtime.sandbox.reason,
+        }
+      : undefined,
+    skillRoots: (runtime.skill_roots ?? []).map(root => ({
+      provider: root.provider,
+      path: root.path,
+      writable: root.writable,
+    })),
+    localSkillCount: runtime.local_skill_count ?? 0,
+    capabilitiesHash: runtime.capabilities_hash,
     lastSeenAt: runtime.last_seen_at,
   };
 }

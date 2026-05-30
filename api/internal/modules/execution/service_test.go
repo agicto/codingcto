@@ -1087,12 +1087,33 @@ func TestHeartbeatRuntimeRecordsRuntimeAndReportsPendingClaim(t *testing.T) {
 		Executor:  "codex_cli",
 		Hostname:  "worker-1",
 		Version:   "0.1.0",
+		AvailableCLIs: []domain.SpecForgeRuntimeCLI{
+			{Name: "Codex CLI", Command: "codex", Path: "/usr/local/bin/codex", Version: "codex 1.0.0", Available: true},
+		},
+		Sandbox: &domain.SpecForgeRuntimeSandbox{
+			Provider:       "codex_cli",
+			Mode:           "workspace-write",
+			NetworkAccess:  true,
+			Writable:       true,
+			ApprovalPolicy: "never",
+		},
+		SkillRoots: []domain.SpecForgeRuntimeSkillRoot{
+			{Provider: "codex", Path: "/tmp/.codex/skills", Writable: true},
+		},
+		LocalSkillCount: 2,
 	})
 
 	require.NoError(t, err)
 	require.True(t, heartbeat.ClaimPending)
 	require.Equal(t, "runtime_123", heartbeat.Runtime.RuntimeID)
 	require.Equal(t, "worker-1", heartbeat.Runtime.Hostname)
+	require.Len(t, heartbeat.Runtime.AvailableCLIs, 1)
+	require.Equal(t, "codex", heartbeat.Runtime.AvailableCLIs[0].Command)
+	require.NotNil(t, heartbeat.Runtime.Sandbox)
+	require.Equal(t, "workspace-write", heartbeat.Runtime.Sandbox.Mode)
+	require.Len(t, heartbeat.Runtime.SkillRoots, 1)
+	require.Equal(t, 2, heartbeat.Runtime.LocalSkillCount)
+	require.NotEmpty(t, heartbeat.Runtime.CapabilitiesHash)
 	require.Equal(t, domain.RuntimeStatusOnline, heartbeat.Runtime.Status)
 	require.NotZero(t, heartbeat.Runtime.LastSeenAt)
 }
