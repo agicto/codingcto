@@ -10,11 +10,16 @@ import (
 var ProviderSet = wire.NewSet(
 	NewRepository,
 	wire.Bind(new(domain.SpecForgeVerificationRepository), new(*repository)),
+	NewGitHubPRNodeCIRefresher,
 	NewGitHubCIFailureReader,
 	NewService,
 	wire.Bind(new(Service), new(*service)),
 	NewHandler,
 )
+
+func NewGitHubPRNodeCIRefresher(service githubintegration.Service) PRNodeCIRefresher {
+	return service
+}
 
 func NewGitHubCIFailureReader(service githubintegration.Service) CIFailureReader {
 	return service

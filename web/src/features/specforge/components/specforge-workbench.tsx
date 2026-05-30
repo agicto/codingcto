@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight,
   CheckCircle2,
@@ -17,51 +17,41 @@ import {
   ShieldAlert,
   Sparkles,
   Terminal,
-} from "lucide-react";
+} from 'lucide-react';
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Textarea } from "@/components/ui/textarea";
-import { ToggleGroup, ToggleGroupItem } from "@/components/ui/toggle-group";
-import { cn } from "@/utils";
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { Textarea } from '@/components/ui/textarea';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { cn } from '@/utils';
 import {
   executionRunFromDTO,
   planBundleFromDTO,
   prNodeFromDTO,
-} from "@/features/specforge/plan-adapter";
-import { buildPromptPreview } from "@/features/specforge/prompt-preview";
+} from '@/features/specforge/plan-adapter';
+import { buildPromptPreview } from '@/features/specforge/prompt-preview';
 import {
   defaultIdea,
   demoPlan,
   demoRuntimes,
   demoRuntimeNow,
-} from "@/features/specforge/mock-data";
-import {
-  runtimeFromDTO,
-  summarizeRuntimeHealth,
-} from "@/features/specforge/runtime-health";
+} from '@/features/specforge/mock-data';
+import { runtimeFromDTO, summarizeRuntimeHealth } from '@/features/specforge/runtime-health';
 import {
   profileListValue,
   repoProfileFromDTO,
   repoProfilePayloadFromForm,
-} from "@/features/specforge/repo-profile-form";
-import { githubTreeProfileInferencePayload } from "@/features/specforge/repo-profile-inference";
+} from '@/features/specforge/repo-profile-form';
+import { githubTreeProfileInferencePayload } from '@/features/specforge/repo-profile-inference';
 import {
   useApproveSpecForgePlan,
   useCancelExecutionRun,
   useCompileSpecForgePrompt,
-  useCreateSpecForgeFixAttemptFromCI,
   useCreateSpecForgeIdea,
   useCreateSpecForgeProjectIdea,
   useDeliverSpecForgePRNode,
@@ -85,18 +75,16 @@ import {
   useStartExecutionRun,
   useUpsertRepoProfile,
   useUpsertSpecForgeSkill,
-} from "@/features/specforge/hooks/use-specforge";
-import { hasActiveFixAttempt } from "@/features/specforge/fix-attempts";
-import { planApprovalReadiness } from "@/features/specforge/plan-approval";
+  useVerifySpecForgePRNodeCI,
+} from '@/features/specforge/hooks/use-specforge';
+import { hasActiveFixAttempt } from '@/features/specforge/fix-attempts';
+import { planApprovalReadiness } from '@/features/specforge/plan-approval';
 import {
   decisionFieldsForPlan,
   defaultDecisionOverrides,
   normalizeDecisionOverrides,
-} from "@/features/specforge/plan-decisions";
-import {
-  executionRangeReview,
-  selectExecutionNode,
-} from "@/features/specforge/execution-range";
+} from '@/features/specforge/plan-decisions';
+import { executionRangeReview, selectExecutionNode } from '@/features/specforge/execution-range';
 import type {
   CompilePromptPayload,
   SpecForgeFixAttemptDTO,
@@ -107,77 +95,82 @@ import type {
   SpecForgeRepoProfileDTO,
   SpecForgeSkillDTO,
   SpecForgeTaskEventDTO,
-} from "@/features/specforge/services/specforge-service";
+} from '@/features/specforge/services/specforge-service';
 import {
   sortWebhookEvents,
   webhookEventLabel,
   webhookEventRepo,
-} from "@/features/specforge/webhook-events";
-import { isPRNodeActive, isPRNodeDelivered } from "@/features/specforge/status";
+} from '@/features/specforge/webhook-events';
+import { isPRNodeActive, isPRNodeDelivered } from '@/features/specforge/status';
 import {
   specForgeSkillTemplates,
   type SpecForgeSkillTemplate,
-} from "@/features/specforge/skill-templates";
+} from '@/features/specforge/skill-templates';
 import type {
   ExecutionRun,
   ExecutorRuntime,
   PlanBundle,
   PRNode,
   RepoProfile,
-} from "@/features/specforge/types";
+} from '@/features/specforge/types';
 
-const statusLabel: Record<PRNode["status"], string> = {
-  planned: "Planned",
-  queued: "Queued",
-  running: "Running",
-  waiting_on_dependencies: "Waiting",
-  pr_opened: "PR opened",
-  ci_running: "CI running",
-  ready_for_review: "Ready",
-  blocked: "Blocked",
-  merged: "Merged",
-  closed: "Closed",
-  completed: "Completed",
-  failed: "Failed",
-  cancelled: "Cancelled",
+const statusLabel: Record<PRNode['status'], string> = {
+  planned: 'Planned',
+  queued: 'Queued',
+  running: 'Running',
+  waiting_on_dependencies: 'Waiting',
+  pr_opened: 'PR opened',
+  ci_running: 'CI running',
+  ready_for_review: 'Ready',
+  blocked: 'Blocked',
+  merged: 'Merged',
+  closed: 'Closed',
+  completed: 'Completed',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
 };
 const maxFixAttemptsPerNode = 3;
-type PromptMode = NonNullable<CompilePromptPayload["type"]>;
-const promptModes: PromptMode[] = ["implementation", "fix", "review_patch"];
+type PromptMode = NonNullable<CompilePromptPayload['type']>;
+const promptModes: PromptMode[] = ['implementation', 'fix', 'review_patch'];
 const promptModeLabel: Record<PromptMode, string> = {
-  implementation: "Implement",
-  fix: "Fix",
-  review_patch: "Review",
+  implementation: 'Implement',
+  fix: 'Fix',
+  review_patch: 'Review',
 };
 
-function statusClassName(status: PRNode["status"]) {
+function statusClassName(status: PRNode['status']) {
   if (isPRNodeDelivered(status)) {
-    return "border-success/30 bg-success-subtle text-success";
+    return 'border-success/30 bg-success-subtle text-success';
   }
   if (isPRNodeActive(status)) {
-    return "border-info/30 bg-info-subtle text-info";
+    return 'border-info/30 bg-info-subtle text-info';
   }
-  if (status === "waiting_on_dependencies" || status === "pr_opened") {
-    return "border-warning/30 bg-warning-subtle text-warning";
+  if (status === 'waiting_on_dependencies' || status === 'pr_opened') {
+    return 'border-warning/30 bg-warning-subtle text-warning';
   }
-  if (status === "failed" || status === "cancelled" || status === "blocked" || status === "closed") {
-    return "border-error/30 bg-error-subtle text-error";
+  if (
+    status === 'failed' ||
+    status === 'cancelled' ||
+    status === 'blocked' ||
+    status === 'closed'
+  ) {
+    return 'border-error/30 bg-error-subtle text-error';
   }
-  return "border-border bg-bg-surface text-text-subtle";
+  return 'border-border bg-bg-surface text-text-subtle';
 }
 
 function repoProfileSourceLabel(source: string) {
   switch (source) {
-    case "github_tree":
-      return "GitHub tree";
-    case "request_hints":
-      return "Request hints";
-    case "manual":
-      return "Manual profile";
-    case "demo":
-      return "Demo profile";
+    case 'github_tree':
+      return 'GitHub tree';
+    case 'request_hints':
+      return 'Request hints';
+    case 'manual':
+      return 'Manual profile';
+    case 'demo':
+      return 'Demo profile';
     default:
-      return "Unknown source";
+      return 'Unknown source';
   }
 }
 
@@ -189,14 +182,14 @@ function formatTimestamp(value: string) {
   return time.toLocaleString();
 }
 
-function riskClassName(risk: PRNode["estimatedRisk"]) {
-  if (risk === "high") {
-    return "border-error/30 bg-error-subtle text-error";
+function riskClassName(risk: PRNode['estimatedRisk']) {
+  if (risk === 'high') {
+    return 'border-error/30 bg-error-subtle text-error';
   }
-  if (risk === "medium") {
-    return "border-warning/30 bg-warning-subtle text-warning";
+  if (risk === 'medium') {
+    return 'border-warning/30 bg-warning-subtle text-warning';
   }
-  return "border-success/30 bg-success-subtle text-success";
+  return 'border-success/30 bg-success-subtle text-success';
 }
 
 function demoPlanForInput(idea: string, repositoryId: string): PlanBundle {
@@ -226,19 +219,21 @@ export function SpecForgeWorkbench({
   const initialRepoId = initialRepositoryId?.trim() || demoPlan.repoProfile.repositoryId;
   const [idea, setIdea] = useState(defaultIdea);
   const [repoId, setRepoId] = useState(initialRepoId);
-  const [activePlan, setActivePlan] = useState<PlanBundle>(() => demoPlanForInput(defaultIdea, initialRepoId));
+  const [activePlan, setActivePlan] = useState<PlanBundle>(() =>
+    demoPlanForInput(defaultIdea, initialRepoId)
+  );
   const activePlanRef = useRef(activePlan);
   const [decisionOverrides, setDecisionOverrides] = useState<Record<string, string>>(() =>
     defaultDecisionOverrides(demoPlan)
   );
   const [selectedExecutionNodeIds, setSelectedExecutionNodeIds] = useState<string[]>(() =>
-    demoPlan.prNodes.map((node) => node.id)
+    demoPlan.prNodes.map(node => node.id)
   );
-  const [planSource, setPlanSource] = useState<"api" | "demo">("demo");
+  const [planSource, setPlanSource] = useState<'api' | 'demo'>('demo');
   const [hasPlan, setHasPlan] = useState(true);
   const [approved, setApproved] = useState(false);
   const [run, setRun] = useState<ExecutionRun>({
-    status: "idle",
+    status: 'idle',
     selectedPRNodeIds: [],
     tasks: demoPlan.prNodes,
   });
@@ -254,10 +249,10 @@ export function SpecForgeWorkbench({
   const isStartingRun = approvePlan.isPending || startRun.isPending || dispatchRun.isPending;
   const runQuery = useExecutionRun(run.runId, {
     enabled: Boolean(run.runId),
-    refetchInterval: run.status === "queued" || run.status === "running" ? 5000 : false,
+    refetchInterval: run.status === 'queued' || run.status === 'running' ? 5000 : false,
   });
-  const readyCount = run.tasks.filter((task) => isPRNodeDelivered(task.status)).length;
-  const runningCount = run.tasks.filter((task) => isPRNodeActive(task.status)).length;
+  const readyCount = run.tasks.filter(task => isPRNodeDelivered(task.status)).length;
+  const runningCount = run.tasks.filter(task => isPRNodeActive(task.status)).length;
   const runtimesQuery = useSpecForgeRuntimes({ limit: 20 });
   const runtimeDTOs = runtimesQuery.data?.runtimes;
   const runtimes = useMemo(() => {
@@ -273,10 +268,10 @@ export function SpecForgeWorkbench({
   );
 
   const progressText = useMemo(() => {
-    if (run.status === "idle") {
+    if (run.status === 'idle') {
       return runtimeSummary.online > 0
-        ? "Awaiting plan approval; a healthy executor is ready"
-        : "Awaiting plan approval; no healthy executor is online";
+        ? 'Awaiting plan approval; a healthy executor is ready'
+        : 'Awaiting plan approval; no healthy executor is online';
     }
     return `${readyCount} / ${run.tasks.length} PR nodes ready or merged`;
   }, [readyCount, run.status, run.tasks.length, runtimeSummary.online]);
@@ -309,7 +304,7 @@ export function SpecForgeWorkbench({
     try {
       const payload = {
         input: trimmedIdea,
-        type: "feature",
+        type: 'feature',
       } as const;
       const bundle = projectId
         ? await createProjectIdea.mutateAsync(payload)
@@ -317,19 +312,19 @@ export function SpecForgeWorkbench({
       const nextPlan = planBundleFromDTO(bundle);
       setActivePlan(nextPlan);
       setDecisionOverrides(defaultDecisionOverrides(nextPlan));
-      setSelectedExecutionNodeIds(nextPlan.prNodes.map((node) => node.id));
+      setSelectedExecutionNodeIds(nextPlan.prNodes.map(node => node.id));
       setIdea(nextPlan.idea);
-      setPlanSource("api");
+      setPlanSource('api');
       setHasPlan(true);
-      setRun({ status: "idle", selectedPRNodeIds: [], tasks: nextPlan.prNodes });
+      setRun({ status: 'idle', selectedPRNodeIds: [], tasks: nextPlan.prNodes });
     } catch {
       const fallbackPlan = demoPlanForInput(trimmedIdea, trimmedRepoId);
       setActivePlan(fallbackPlan);
       setDecisionOverrides(defaultDecisionOverrides(fallbackPlan));
-      setSelectedExecutionNodeIds(fallbackPlan.prNodes.map((node) => node.id));
-      setPlanSource("demo");
+      setSelectedExecutionNodeIds(fallbackPlan.prNodes.map(node => node.id));
+      setPlanSource('demo');
       setHasPlan(true);
-      setRun({ status: "idle", selectedPRNodeIds: [], tasks: fallbackPlan.prNodes });
+      setRun({ status: 'idle', selectedPRNodeIds: [], tasks: fallbackPlan.prNodes });
     }
   }
 
@@ -340,11 +335,11 @@ export function SpecForgeWorkbench({
     const resetPlan = demoPlanForInput(defaultIdea, resetRepoId);
     setActivePlan(resetPlan);
     setDecisionOverrides(defaultDecisionOverrides(resetPlan));
-    setSelectedExecutionNodeIds(resetPlan.prNodes.map((node) => node.id));
-    setPlanSource("demo");
+    setSelectedExecutionNodeIds(resetPlan.prNodes.map(node => node.id));
+    setPlanSource('demo');
     setHasPlan(true);
     setApproved(false);
-    setRun({ status: "idle", selectedPRNodeIds: [], tasks: resetPlan.prNodes });
+    setRun({ status: 'idle', selectedPRNodeIds: [], tasks: resetPlan.prNodes });
   }
 
   async function approveAndStart() {
@@ -355,10 +350,10 @@ export function SpecForgeWorkbench({
     if (activePlan.planId) {
       try {
         const selectedPRNodeIDs = selectedExecutionNodeIds
-          .map((id) => Number(id))
-          .filter((id) => Number.isFinite(id) && id > 0);
+          .map(id => Number(id))
+          .filter(id => Number.isFinite(id) && id > 0);
         const approvedPlan =
-          activePlan.implementationPlan.status === "approved"
+          activePlan.implementationPlan.status === 'approved'
             ? activePlan
             : planBundleFromDTO(
                 await approvePlan.mutateAsync({
@@ -396,47 +391,45 @@ export function SpecForgeWorkbench({
     setApproved(true);
     const selectedNodeIDs = new Set(selectedExecutionNodeIds);
     setRun({
-      status: "running",
+      status: 'running',
       startedAt,
       selectedPRNodeIds: activePlan.prNodes
-        .filter((node) => selectedNodeIDs.has(node.id))
-        .map((node) => node.id),
+        .filter(node => selectedNodeIDs.has(node.id))
+        .map(node => node.id),
       tasks: activePlan.prNodes
-        .filter((node) => selectedNodeIDs.has(node.id))
-        .map((node) => ({
+        .filter(node => selectedNodeIDs.has(node.id))
+        .map(node => ({
           ...node,
-          status: node.dependsOn.length === 0 ? "running" : "waiting_on_dependencies",
+          status: node.dependsOn.length === 0 ? 'running' : 'waiting_on_dependencies',
         })),
     });
   }
 
   function advanceRun() {
-    setRun((current) => {
-      const nextTasks = current.tasks.map((task) => ({ ...task }));
-      const runningIndex = nextTasks.findIndex((task) => task.status === "running");
+    setRun(current => {
+      const nextTasks = current.tasks.map(task => ({ ...task }));
+      const runningIndex = nextTasks.findIndex(task => task.status === 'running');
 
       if (runningIndex >= 0) {
-        nextTasks[runningIndex].status = "completed";
+        nextTasks[runningIndex].status = 'completed';
         const completedKeys = new Set(
-          nextTasks
-            .filter((task) => task.status === "completed")
-            .map((task) => task.nodeKey)
+          nextTasks.filter(task => task.status === 'completed').map(task => task.nodeKey)
         );
-        const nextWaiting = nextTasks.find((task) => {
+        const nextWaiting = nextTasks.find(task => {
           return (
-            task.status === "waiting_on_dependencies" &&
-            task.dependsOn.every((dependency) => completedKeys.has(dependency))
+            task.status === 'waiting_on_dependencies' &&
+            task.dependsOn.every(dependency => completedKeys.has(dependency))
           );
         });
         if (nextWaiting) {
-          nextWaiting.status = "running";
+          nextWaiting.status = 'running';
         }
       }
 
-      const isDone = nextTasks.every((task) => task.status === "completed");
+      const isDone = nextTasks.every(task => task.status === 'completed');
       return {
         ...current,
-        status: isDone ? "completed" : "running",
+        status: isDone ? 'completed' : 'running',
         tasks: nextTasks,
       };
     });
@@ -457,12 +450,12 @@ export function SpecForgeWorkbench({
       }
     }
 
-    setRun((current) => ({
+    setRun(current => ({
       ...current,
-      status: "cancelled",
-      tasks: current.tasks.map((task) => ({
+      status: 'cancelled',
+      tasks: current.tasks.map(task => ({
         ...task,
-        status: task.status === "completed" ? task.status : "cancelled",
+        status: task.status === 'completed' ? task.status : 'cancelled',
       })),
     }));
   }
@@ -499,7 +492,7 @@ export function SpecForgeWorkbench({
           <p className="mt-2 text-sm leading-6 text-text-muted">
             {projectLabel
               ? `${projectLabel}: describe a feature, review the plan, then start a PR-oriented execution run.`
-              : "Describe a feature, review the product and technical plan, then start a PR-oriented execution run."}
+              : 'Describe a feature, review the product and technical plan, then start a PR-oriented execution run.'}
           </p>
         </div>
         <div className="grid grid-cols-3 gap-2 text-sm">
@@ -521,14 +514,14 @@ export function SpecForgeWorkbench({
           <CardContent className="space-y-4">
             <Textarea
               value={idea}
-              onChange={(event) => setIdea(event.target.value)}
+              onChange={event => setIdea(event.target.value)}
               className="min-h-36"
               aria-label="Describe the feature CodingCTO should turn into reviewable PRs"
               placeholder="Describe the product outcome, constraints, and any implementation boundaries..."
             />
             <Input
               value={repoId}
-              onChange={(event) => setRepoId(event.target.value)}
+              onChange={event => setRepoId(event.target.value)}
               aria-label="Repository ID"
               placeholder="Repository ID"
               disabled={repositoryLocked}
@@ -536,11 +529,16 @@ export function SpecForgeWorkbench({
             <div className="flex flex-wrap gap-2">
               <Button
                 onClick={generatePlan}
-                disabled={!idea.trim() || !repoId.trim() || createIdea.isPending || createProjectIdea.isPending}
+                disabled={
+                  !idea.trim() ||
+                  !repoId.trim() ||
+                  createIdea.isPending ||
+                  createProjectIdea.isPending
+                }
               >
                 {createIdea.isPending || createProjectIdea.isPending
-                  ? "Generating plan"
-                  : "Generate implementation plan"}
+                  ? 'Generating plan'
+                  : 'Generate implementation plan'}
                 <ArrowRight className="ml-1.5 h-4 w-4" />
               </Button>
               <Button variant="outline" onClick={resetIdea}>
@@ -551,8 +549,8 @@ export function SpecForgeWorkbench({
               repoId={repoId.trim()}
               repoProfile={activePlan.repoProfile}
               planSource={planSource}
-              onProfileSaved={(profile) => {
-                setActivePlan((current) => ({
+              onProfileSaved={profile => {
+                setActivePlan(current => ({
                   ...current,
                   repoProfile: profile,
                 }));
@@ -588,7 +586,7 @@ export function SpecForgeWorkbench({
                   approved={approved}
                   isStarting={isStartingRun}
                   onDecisionOverrideChange={(key, value) =>
-                    setDecisionOverrides((current) => ({ ...current, [key]: value }))
+                    setDecisionOverrides(current => ({ ...current, [key]: value }))
                   }
                   onExecutionNodeSelectionChange={setSelectedExecutionNodeIds}
                   onApprove={approveAndStart}
@@ -634,22 +632,22 @@ function RuntimeReadiness({
 }) {
   const sweepRuntimes = useSweepSpecForgeRuntimes();
   const sweepTasks = useSweepSpecForgeTasks();
-  const [maintenanceMessage, setMaintenanceMessage] = useState("");
+  const [maintenanceMessage, setMaintenanceMessage] = useState('');
 
   async function sweepRuntimeHeartbeats() {
-    setMaintenanceMessage("");
+    setMaintenanceMessage('');
     try {
       const result = await sweepRuntimes.mutateAsync({ stale_seconds: 300 });
       setMaintenanceMessage(
         `Marked ${result.offline_runtimes.length} runtimes offline and failed ${result.failed_tasks.length} tasks.`
       );
     } catch {
-      setMaintenanceMessage("Runtime sweep requires the CodingCTO backend.");
+      setMaintenanceMessage('Runtime sweep requires the CodingCTO backend.');
     }
   }
 
   async function sweepStaleExecutionTasks() {
-    setMaintenanceMessage("");
+    setMaintenanceMessage('');
     try {
       const result = await sweepTasks.mutateAsync({
         dispatch_timeout_seconds: 900,
@@ -657,7 +655,7 @@ function RuntimeReadiness({
       });
       setMaintenanceMessage(`Failed ${result.failed_tasks.length} stale tasks.`);
     } catch {
-      setMaintenanceMessage("Task sweep requires the CodingCTO backend.");
+      setMaintenanceMessage('Task sweep requires the CodingCTO backend.');
     }
   }
 
@@ -672,20 +670,20 @@ function RuntimeReadiness({
             <div className="text-sm font-medium">Executor readiness</div>
             <div className="mt-1 text-sm text-text-muted">
               {isLoading
-                ? "Checking executor runtime heartbeats."
+                ? 'Checking executor runtime heartbeats.'
                 : onlineCount > 0
-                  ? "Approved plans can be dispatched to a healthy runtime."
-                  : "Execution will wait until a runtime heartbeat is online."}
+                  ? 'Approved plans can be dispatched to a healthy runtime.'
+                  : 'Execution will wait until a runtime heartbeat is online.'}
             </div>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
-          <Badge variant="outline" className={onlineCount > 0 ? statusClassName("completed") : ""}>
+          <Badge variant="outline" className={onlineCount > 0 ? statusClassName('completed') : ''}>
             {onlineCount} online
           </Badge>
           <Badge
             variant="outline"
-            className={recentlyLostCount > 0 ? statusClassName("waiting_on_dependencies") : ""}
+            className={recentlyLostCount > 0 ? statusClassName('waiting_on_dependencies') : ''}
           >
             {recentlyLostCount} unstable
           </Badge>
@@ -698,7 +696,7 @@ function RuntimeReadiness({
       </div>
       <div className="mt-4 grid gap-3 md:grid-cols-[minmax(0,1fr)_auto]">
         <div className="space-y-2">
-          {runtimes.slice(0, 3).map((runtime) => (
+          {runtimes.slice(0, 3).map(runtime => (
             <div
               key={runtime.runtimeId}
               className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border-subtle bg-bg-subtle px-3 py-2"
@@ -707,7 +705,7 @@ function RuntimeReadiness({
                 <div className="truncate text-sm font-medium">{runtime.runtimeId}</div>
                 <div className="text-xs text-text-muted">
                   {runtime.executor}
-                  {runtime.hostname ? ` · ${runtime.hostname}` : ""}
+                  {runtime.hostname ? ` · ${runtime.hostname}` : ''}
                 </div>
               </div>
               <Badge variant="outline">{runtime.status}</Badge>
@@ -721,7 +719,7 @@ function RuntimeReadiness({
             onClick={sweepRuntimeHeartbeats}
             disabled={sweepRuntimes.isPending || sweepTasks.isPending}
           >
-            {sweepRuntimes.isPending ? "Sweeping" : "Sweep runtimes"}
+            {sweepRuntimes.isPending ? 'Sweeping' : 'Sweep runtimes'}
           </Button>
           <Button
             variant="outline"
@@ -729,7 +727,7 @@ function RuntimeReadiness({
             onClick={sweepStaleExecutionTasks}
             disabled={sweepRuntimes.isPending || sweepTasks.isPending}
           >
-            {sweepTasks.isPending ? "Sweeping" : "Sweep tasks"}
+            {sweepTasks.isPending ? 'Sweeping' : 'Sweep tasks'}
           </Button>
         </div>
       </div>
@@ -759,7 +757,7 @@ function RepoProfileSummary({
 }: {
   repoId: string;
   repoProfile: RepoProfile;
-  planSource: "api" | "demo";
+  planSource: 'api' | 'demo';
   onProfileSaved: (profile: RepoProfile) => void;
 }) {
   const profileQuery = useRepoProfile(repoId);
@@ -772,10 +770,10 @@ function RepoProfileSummary({
   const editorKey = [
     effectiveProfile.repositoryId,
     effectiveProfile.defaultBranch,
-    effectiveProfile.stack.join("|"),
-    effectiveProfile.testCommands.join("|"),
+    effectiveProfile.stack.join('|'),
+    effectiveProfile.testCommands.join('|'),
     effectiveProfile.ciProvider,
-  ].join(":");
+  ].join(':');
 
   return (
     <div className="rounded-lg border border-border-subtle bg-muted/30 p-4">
@@ -786,9 +784,9 @@ function RepoProfileSummary({
         </div>
         <Badge
           variant="outline"
-          className={planSource === "api" ? statusClassName("completed") : ""}
+          className={planSource === 'api' ? statusClassName('completed') : ''}
         >
-          {planSource === "api" ? "API plan" : "Demo fallback"}
+          {planSource === 'api' ? 'API plan' : 'Demo fallback'}
         </Badge>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-text-muted">
@@ -801,7 +799,7 @@ function RepoProfileSummary({
       </div>
       {effectiveProfile.warnings.length > 0 ? (
         <div className="mt-3 space-y-2">
-          {effectiveProfile.warnings.map((warning) => (
+          {effectiveProfile.warnings.map(warning => (
             <div
               key={warning}
               className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900"
@@ -814,7 +812,7 @@ function RepoProfileSummary({
       ) : null}
       <p className="mt-2 text-sm leading-6 text-text-muted">{effectiveProfile.summary}</p>
       <div className="mt-3 flex flex-wrap gap-2">
-        {effectiveProfile.stack.map((item) => (
+        {effectiveProfile.stack.map(item => (
           <Badge key={item} variant="outline">
             {item}
           </Badge>
@@ -825,7 +823,7 @@ function RepoProfileSummary({
         repoId={repoId}
         initialProfile={effectiveProfile}
         isOffline={profileQuery.isError}
-        onSaved={(profile) => {
+        onSaved={profile => {
           setSavedProfile(profile);
           onProfileSaved(repoProfileFromDTO(profile));
         }}
@@ -880,7 +878,9 @@ function RepoProfileEditor({
       return;
     }
 
-    const inferred = await inferProfile.mutateAsync(githubTreeProfileInferencePayload(defaultBranch));
+    const inferred = await inferProfile.mutateAsync(
+      githubTreeProfileInferencePayload(defaultBranch)
+    );
     onSaved(inferred);
   }
 
@@ -889,44 +889,44 @@ function RepoProfileEditor({
       <div className="grid gap-3 md:grid-cols-2">
         <Input
           value={defaultBranch}
-          onChange={(event) => setDefaultBranch(event.target.value)}
+          onChange={event => setDefaultBranch(event.target.value)}
           aria-label="Default branch"
           placeholder="Default branch"
         />
         <Input
           value={ciProvider}
-          onChange={(event) => setCIProvider(event.target.value)}
+          onChange={event => setCIProvider(event.target.value)}
           aria-label="CI provider"
           placeholder="CI provider"
         />
       </div>
       <Input
         value={stack}
-        onChange={(event) => setStack(event.target.value)}
+        onChange={event => setStack(event.target.value)}
         aria-label="Repository stack"
         placeholder="Stack: Go, Next.js, TypeScript"
       />
       <Input
         value={testCommands}
-        onChange={(event) => setTestCommands(event.target.value)}
+        onChange={event => setTestCommands(event.target.value)}
         aria-label="Test commands"
         placeholder="Test commands: go test ./..., pnpm lint"
       />
       <Input
         value={codingConventions}
-        onChange={(event) => setCodingConventions(event.target.value)}
+        onChange={event => setCodingConventions(event.target.value)}
         aria-label="Coding conventions"
         placeholder="Coding conventions"
       />
       <Input
         value={riskAreas}
-        onChange={(event) => setRiskAreas(event.target.value)}
+        onChange={event => setRiskAreas(event.target.value)}
         aria-label="Risk areas"
         placeholder="Risk areas: auth, migrations"
       />
       <Textarea
         value={summary}
-        onChange={(event) => setSummary(event.target.value)}
+        onChange={event => setSummary(event.target.value)}
         className="min-h-24"
         aria-label="Repo profile summary"
         placeholder="Summarize the repository structure and implementation conventions."
@@ -934,8 +934,8 @@ function RepoProfileEditor({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs leading-5 text-text-muted">
           {isOffline
-            ? "Start the CodingCTO backend to save profile changes."
-            : "Profile context feeds planning, PR DAG, and prompt compilation."}
+            ? 'Start the CodingCTO backend to save profile changes.'
+            : 'Profile context feeds planning, PR DAG, and prompt compilation.'}
         </p>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -943,13 +943,10 @@ function RepoProfileEditor({
             onClick={inferFromRepositoryHints}
             disabled={!repoId || isOffline || inferProfile.isPending}
           >
-            {inferProfile.isPending ? "Inferring" : "Infer profile"}
+            {inferProfile.isPending ? 'Inferring' : 'Infer profile'}
           </Button>
-          <Button
-            onClick={saveProfile}
-            disabled={!repoId || isOffline || upsertProfile.isPending}
-          >
-          {upsertProfile.isPending ? "Saving" : "Save profile"}
+          <Button onClick={saveProfile} disabled={!repoId || isOffline || upsertProfile.isPending}>
+            {upsertProfile.isPending ? 'Saving' : 'Save profile'}
           </Button>
         </div>
       </div>
@@ -958,9 +955,9 @@ function RepoProfileEditor({
 }
 
 function RepoSkillsPanel({ repoId }: { repoId: string }) {
-  const [name, setName] = useState("Repo coding guidelines");
-  const [description, setDescription] = useState("Instructions injected into CodingCTO prompts.");
-  const [content, setContent] = useState("");
+  const [name, setName] = useState('Repo coding guidelines');
+  const [description, setDescription] = useState('Instructions injected into CodingCTO prompts.');
+  const [content, setContent] = useState('');
   const [active, setActive] = useState(true);
   const [savedSkill, setSavedSkill] = useState<SpecForgeSkillDTO>();
 
@@ -1006,21 +1003,21 @@ function RepoSkillsPanel({ repoId }: { repoId: string }) {
         </div>
         <Badge
           variant="outline"
-          className={skills.length > 0 || savedSkill ? statusClassName("completed") : ""}
+          className={skills.length > 0 || savedSkill ? statusClassName('completed') : ''}
         >
           {skillsQuery.isLoading
-            ? "Checking"
+            ? 'Checking'
             : skills.length > 0
               ? `${skills.length} saved`
               : savedSkill
-                ? "Saved"
-                : "No skills"}
+                ? 'Saved'
+                : 'No skills'}
         </Badge>
       </div>
 
       <div className="mt-4 space-y-3">
         <div className="flex flex-wrap gap-2">
-          {specForgeSkillTemplates.map((template) => (
+          {specForgeSkillTemplates.map(template => (
             <Button
               key={template.id}
               type="button"
@@ -1034,19 +1031,19 @@ function RepoSkillsPanel({ repoId }: { repoId: string }) {
         </div>
         <Input
           value={name}
-          onChange={(event) => setName(event.target.value)}
+          onChange={event => setName(event.target.value)}
           aria-label="Skill name"
           placeholder="Skill name"
         />
         <Input
           value={description}
-          onChange={(event) => setDescription(event.target.value)}
+          onChange={event => setDescription(event.target.value)}
           aria-label="Skill description"
           placeholder="Skill description"
         />
         <Textarea
           value={content}
-          onChange={(event) => setContent(event.target.value)}
+          onChange={event => setContent(event.target.value)}
           className="min-h-24"
           aria-label="Skill content"
           placeholder="Use service layer for data access. Keep API routes thin. Run pnpm type-check before UI PRs."
@@ -1060,7 +1057,7 @@ function RepoSkillsPanel({ repoId }: { repoId: string }) {
             onClick={saveSkill}
             disabled={!repoId || !name.trim() || !content.trim() || upsertSkill.isPending}
           >
-            {upsertSkill.isPending ? "Saving" : "Save skill"}
+            {upsertSkill.isPending ? 'Saving' : 'Save skill'}
           </Button>
         </div>
         {skillsQuery.isError && (
@@ -1107,7 +1104,7 @@ function GitHubWebhookEventsPanel() {
             No webhook events recorded yet.
           </div>
         )}
-        {events.map((event) => (
+        {events.map(event => (
           <GitHubWebhookEventRow key={event.id} event={event} />
         ))}
       </div>
@@ -1144,20 +1141,18 @@ function RunSummary({
         <div className="mt-1 text-sm text-text-muted">{progressText}</div>
       </div>
       <div className="flex flex-wrap gap-2">
-        <Badge variant="outline" className={approved ? statusClassName("completed") : ""}>
-          {approved ? "Plan approved" : "Plan approval required"}
+        <Badge variant="outline" className={approved ? statusClassName('completed') : ''}>
+          {approved ? 'Plan approved' : 'Plan approval required'}
         </Badge>
         <Badge
           variant="outline"
           className={
-            run.status === "running" || run.status === "blocked"
-              ? statusClassName(run.status)
-              : ""
+            run.status === 'running' || run.status === 'blocked' ? statusClassName(run.status) : ''
           }
         >
-          {run.status === "idle" ? "No run started" : run.status}
+          {run.status === 'idle' ? 'No run started' : run.status}
         </Badge>
-        {run.status !== "idle" && (
+        {run.status !== 'idle' && (
           <Badge variant="outline">{run.selectedPRNodeIds.length} PR nodes selected</Badge>
         )}
       </div>
@@ -1189,10 +1184,10 @@ function PlanReview({
   const executionRangeNotes = executionRangeReview(plan.prNodes, selectedExecutionNodeIds);
   const canStartSelectedRange =
     executionRangeNotes.length > 0 &&
-    executionRangeNotes.every((note) => note.includes("dependencies included"));
+    executionRangeNotes.every(note => note.includes('dependencies included'));
   const decisionFields = decisionFieldsForPlan(plan);
   const planAssumptions = productSpec.assumptions.filter(
-    (item) => !item.startsWith("PR DAG review:")
+    item => !item.startsWith('PR DAG review:')
   );
 
   return (
@@ -1245,11 +1240,17 @@ function PlanReview({
           )}
           <Button
             onClick={onApprove}
-            disabled={approved || isStarting || !approvalReadiness.canApprove || !canStartSelectedRange}
+            disabled={
+              approved || isStarting || !approvalReadiness.canApprove || !canStartSelectedRange
+            }
             className="w-full justify-center"
           >
-            {approved ? "Approved" : isStarting ? "Starting run" : "Approve & Start"}
-            {approved ? <CheckCircle2 className="ml-1.5 h-4 w-4" /> : <Play className="ml-1.5 h-4 w-4" />}
+            {approved ? 'Approved' : isStarting ? 'Starting run' : 'Approve & Start'}
+            {approved ? (
+              <CheckCircle2 className="ml-1.5 h-4 w-4" />
+            ) : (
+              <Play className="ml-1.5 h-4 w-4" />
+            )}
           </Button>
         </CardContent>
       </Card>
@@ -1278,7 +1279,7 @@ function ExecutionRangeSelector({
     <div>
       <h3 className="text-sm font-medium">Execution range</h3>
       <div className="mt-3 space-y-3">
-        {nodes.map((node) => (
+        {nodes.map(node => (
           <div
             key={node.id}
             className="flex items-start justify-between gap-3 rounded-md border border-border-subtle px-3 py-2"
@@ -1288,13 +1289,13 @@ function ExecutionRangeSelector({
                 {node.nodeKey}: {node.title}
               </div>
               <div className="mt-1 text-xs text-text-muted">
-                Depends on {node.dependsOn.length > 0 ? node.dependsOn.join(", ") : "none"}
+                Depends on {node.dependsOn.length > 0 ? node.dependsOn.join(', ') : 'none'}
               </div>
             </div>
             <Switch
               checked={selected.has(node.id)}
               disabled={disabled}
-              onCheckedChange={(checked) => toggleNode(node.id, checked)}
+              onCheckedChange={checked => toggleNode(node.id, checked)}
             />
           </div>
         ))}
@@ -1318,14 +1319,14 @@ function DecisionOverrideFields({
     <div>
       <h3 className="text-sm font-medium">Key decisions</h3>
       <div className="mt-3 grid gap-3 md:grid-cols-2">
-        {fields.map((field) => (
+        {fields.map(field => (
           <div key={field.key} className="space-y-1.5">
             <Label htmlFor={`decision-${field.key}`}>{field.label}</Label>
             <Input
               id={`decision-${field.key}`}
-              value={values[field.key] ?? ""}
+              value={values[field.key] ?? ''}
               disabled={disabled}
-              onChange={(event) => onChange(field.key, event.target.value)}
+              onChange={event => onChange(field.key, event.target.value)}
             />
             <p className="text-xs leading-5 text-text-muted">{field.description}</p>
           </div>
@@ -1335,19 +1336,11 @@ function DecisionOverrideFields({
   );
 }
 
-function ListBlock({
-  title,
-  items,
-  icon,
-}: {
-  title: string;
-  items: string[];
-  icon?: "risk";
-}) {
+function ListBlock({ title, items, icon }: { title: string; items: string[]; icon?: 'risk' }) {
   return (
     <div>
       <h3 className="flex items-center gap-2 text-sm font-medium">
-        {icon === "risk" && <ShieldAlert className="h-4 w-4 text-warning" />}
+        {icon === 'risk' && <ShieldAlert className="h-4 w-4 text-warning" />}
         {title}
       </h3>
       <ul className="mt-2 space-y-2 text-sm leading-6 text-text-muted">
@@ -1357,7 +1350,7 @@ function ListBlock({
             <span>None recorded.</span>
           </li>
         )}
-        {items.map((item) => (
+        {items.map(item => (
           <li key={item} className="flex gap-2">
             <CircleDot className="mt-1.5 h-3 w-3 shrink-0 text-primary" />
             <span>{item}</span>
@@ -1380,23 +1373,25 @@ function PRDag({
   onCompilePrompt: (node: PRNode, mode: PromptMode) => Promise<string>;
 }) {
   const [selectedNodeId, setSelectedNodeId] = useState<string>();
-  const [promptMode, setPromptMode] = useState<PromptMode>("implementation");
+  const [promptMode, setPromptMode] = useState<PromptMode>('implementation');
   const [selectedFixNode, setSelectedFixNode] = useState<PRNode>();
   const [localFixAttempts, setLocalFixAttempts] = useState<SpecForgeFixAttemptDTO[]>([]);
   const [failureLog, setFailureLog] = useState<SpecForgePRNodeFailureLogDTO>();
-  const [failureLogError, setFailureLogError] = useState("");
-  const [promptText, setPromptText] = useState("");
+  const [failureLogError, setFailureLogError] = useState('');
+  const [promptText, setPromptText] = useState('');
   const [deliveryNodes, setDeliveryNodes] = useState<Record<string, PRNode>>({});
   const [deliveryActionNodeId, setDeliveryActionNodeId] = useState<string>();
-  const [deliveryError, setDeliveryError] = useState("");
+  const [deliveryError, setDeliveryError] = useState('');
   const prepareBranch = usePrepareSpecForgePRNodeBranch();
   const deliverPR = useDeliverSpecForgePRNode();
   const refreshCI = useRefreshSpecForgePRNodeCI();
+  const verifyCI = useVerifySpecForgePRNodeCI();
   const selectedFixNodeId = selectedFixNode ? Number(selectedFixNode.id) : undefined;
   const canReadFixAttempts =
     selectedFixNodeId !== undefined && Number.isFinite(selectedFixNodeId) && selectedFixNodeId > 0;
-  const fixAttemptsQuery = useSpecForgeFixAttempts(canReadFixAttempts ? selectedFixNodeId : undefined);
-  const createFixAttempt = useCreateSpecForgeFixAttemptFromCI();
+  const fixAttemptsQuery = useSpecForgeFixAttempts(
+    canReadFixAttempts ? selectedFixNodeId : undefined
+  );
   const readFailureLog = useReadSpecForgePRNodeFailureLog();
   const fixAttempts = canReadFixAttempts
     ? (fixAttemptsQuery.data ?? localFixAttempts)
@@ -1406,43 +1401,42 @@ function PRDag({
     canReadFixAttempts ? selectedFixNodeId : undefined,
     hasLiveFixAttempt
   );
-  const highestFixAttempt = Math.max(0, ...fixAttempts.map((attempt) => attempt.attempt_number));
+  const highestFixAttempt = Math.max(0, ...fixAttempts.map(attempt => attempt.attempt_number));
   const remainingFixAttempts = Math.max(0, maxFixAttemptsPerNode - highestFixAttempt);
   const fixBudgetExhausted = highestFixAttempt >= maxFixAttemptsPerNode;
-  const effectiveNodes = nodes.map((node) => deliveryNodes[node.id] ?? node);
+  const effectiveNodes = nodes.map(node => deliveryNodes[node.id] ?? node);
   const isDeliveryActionPending =
     prepareBranch.isPending || deliverPR.isPending || refreshCI.isPending;
 
   function rememberDeliveredNode(node: PRNode) {
-    setDeliveryNodes((current) => ({
+    setDeliveryNodes(current => ({
       ...current,
       [node.id]: node,
     }));
   }
 
-  async function runDeliveryAction(
-    node: PRNode,
-    action: "prepare" | "deliver" | "refresh"
-  ) {
+  async function runDeliveryAction(node: PRNode, action: 'prepare' | 'deliver' | 'refresh') {
     const prNodeId = Number(node.id);
     if (!repositoryId || !Number.isFinite(prNodeId) || prNodeId <= 0) {
-      setDeliveryError("Live GitHub delivery requires a persisted repository and PR node.");
+      setDeliveryError('Live GitHub delivery requires a persisted repository and PR node.');
       return;
     }
 
-    setDeliveryError("");
+    setDeliveryError('');
     setDeliveryActionNodeId(node.id);
     try {
       const payload = { repository_id: repositoryId, pr_node_id: prNodeId };
       const updated =
-        action === "prepare"
+        action === 'prepare'
           ? await prepareBranch.mutateAsync(payload)
-          : action === "deliver"
+          : action === 'deliver'
             ? await deliverPR.mutateAsync({ ...payload, draft: true })
             : await refreshCI.mutateAsync(payload);
       rememberDeliveredNode(prNodeFromDTO(updated));
     } catch {
-      setDeliveryError("GitHub delivery controls require the CodingCTO backend and GitHub App setup.");
+      setDeliveryError(
+        'GitHub delivery controls require the CodingCTO backend and GitHub App setup.'
+      );
     } finally {
       setDeliveryActionNodeId(undefined);
     }
@@ -1457,15 +1451,16 @@ function PRDag({
   async function inspectFailure(node: PRNode) {
     setSelectedFixNode(node);
     setFailureLog(undefined);
-    setFailureLogError("");
+    setFailureLogError('');
     const prNodeId = Number(node.id);
     if (Number.isFinite(prNodeId) && prNodeId > 0) {
       try {
-        const attempt = await createFixAttempt.mutateAsync({
+        const result = await verifyCI.mutateAsync({
           prNodeId,
           payload: { repository_id: repositoryId },
         });
-        setLocalFixAttempts([attempt]);
+        rememberDeliveredNode(prNodeFromDTO(result.pr_node));
+        setLocalFixAttempts(result.fix_attempt ? [result.fix_attempt] : []);
         return;
       } catch {
         // Keep failure review available for demo plans and offline backend development.
@@ -1476,13 +1471,13 @@ function PRDag({
       {
         id: 0,
         pr_node_id: Number.isFinite(prNodeId) ? prNodeId : 0,
-        failure_type: "ci_failure",
-        ci_log_excerpt: "No live CI log is available in demo mode.",
+        failure_type: 'ci_failure',
+        ci_log_excerpt: 'No live CI log is available in demo mode.',
         attempt_number: 1,
-        status: "queued",
+        status: 'queued',
         confidence: 0.7,
-        likely_cause: "CI diagnostics require a GitHub workflow run for this PR node.",
-        recommended_action: "Run CI for the branch, then inspect the failed job logs.",
+        likely_cause: 'CI diagnostics require a GitHub workflow run for this PR node.',
+        recommended_action: 'Run CI for the branch, then inspect the failed job logs.',
         can_auto_fix: false,
         created_by: 0,
         created_at: new Date().toISOString(),
@@ -1493,17 +1488,17 @@ function PRDag({
 
   async function readSelectedFailureLog() {
     if (!selectedFixNode || !repositoryId) {
-      setFailureLogError("Failure logs require a selected PR node and repository.");
+      setFailureLogError('Failure logs require a selected PR node and repository.');
       return;
     }
 
     const prNodeId = Number(selectedFixNode.id);
     if (!Number.isFinite(prNodeId) || prNodeId <= 0) {
-      setFailureLogError("Failure logs require a persisted PR node.");
+      setFailureLogError('Failure logs require a persisted PR node.');
       return;
     }
 
-    setFailureLogError("");
+    setFailureLogError('');
     try {
       const log = await readFailureLog.mutateAsync({
         repository_id: repositoryId,
@@ -1511,7 +1506,9 @@ function PRDag({
       });
       setFailureLog(log);
     } catch {
-      setFailureLogError("Failure logs require a failed GitHub workflow run and GitHub App access.");
+      setFailureLogError(
+        'Failure logs require a failed GitHub workflow run and GitHub App access.'
+      );
     }
   }
 
@@ -1529,14 +1526,14 @@ function PRDag({
           variant="outline"
           size="sm"
           value={promptMode}
-          onValueChange={(value) => {
+          onValueChange={value => {
             if (promptModes.includes(value as PromptMode)) {
               setPromptMode(value as PromptMode);
             }
           }}
           className="w-full md:w-auto"
         >
-          {promptModes.map((mode) => (
+          {promptModes.map(mode => (
             <ToggleGroupItem key={mode} value={mode} aria-label={`${promptModeLabel[mode]} prompt`}>
               {promptModeLabel[mode]}
             </ToggleGroupItem>
@@ -1581,7 +1578,7 @@ function PRDag({
                   {node.githubPrUrl && (
                     <Button variant="outline" size="sm" asChild>
                       <a href={node.githubPrUrl} target="_blank" rel="noreferrer">
-                        PR #{node.githubPrNumber ?? "open"}
+                        PR #{node.githubPrNumber ?? 'open'}
                         <GitPullRequest className="ml-1.5 h-4 w-4" />
                       </a>
                     </Button>
@@ -1589,7 +1586,7 @@ function PRDag({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => runDeliveryAction(node, "prepare")}
+                    onClick={() => runDeliveryAction(node, 'prepare')}
                     disabled={isDeliveryActionPending && deliveryActionNodeId === node.id}
                   >
                     Branch
@@ -1598,7 +1595,7 @@ function PRDag({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => runDeliveryAction(node, "deliver")}
+                    onClick={() => runDeliveryAction(node, 'deliver')}
                     disabled={isDeliveryActionPending && deliveryActionNodeId === node.id}
                   >
                     PR
@@ -1607,7 +1604,7 @@ function PRDag({
                   <Button
                     variant="outline"
                     size="sm"
-                    onClick={() => runDeliveryAction(node, "refresh")}
+                    onClick={() => runDeliveryAction(node, 'refresh')}
                     disabled={isDeliveryActionPending && deliveryActionNodeId === node.id}
                   >
                     CI
@@ -1620,7 +1617,7 @@ function PRDag({
                     disabled={isCompilingPrompt && selectedNodeId === node.id}
                   >
                     {isCompilingPrompt && selectedNodeId === node.id
-                      ? "Compiling"
+                      ? 'Compiling'
                       : promptModeLabel[promptMode]}
                     <ScrollText className="ml-1.5 h-4 w-4" />
                   </Button>
@@ -1628,18 +1625,19 @@ function PRDag({
                     variant="outline"
                     size="sm"
                     onClick={() => inspectFailure(node)}
-                    disabled={createFixAttempt.isPending && selectedFixNode?.id === node.id}
+                    disabled={verifyCI.isPending && selectedFixNode?.id === node.id}
                   >
-                    {createFixAttempt.isPending && selectedFixNode?.id === node.id
-                      ? "Checking"
-                      : "Fixes"}
+                    {verifyCI.isPending && selectedFixNode?.id === node.id ? 'Checking' : 'Fixes'}
                     <ShieldAlert className="ml-1.5 h-4 w-4" />
                   </Button>
                 </div>
               </div>
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-3">
-              <CompactList title="Depends on" items={node.dependsOn.length ? node.dependsOn : ["None"]} />
+              <CompactList
+                title="Depends on"
+                items={node.dependsOn.length ? node.dependsOn : ['None']}
+              />
               <CompactList title="Expected files" items={node.expectedFiles} />
               <CompactList title="Tests" items={node.testCommands} />
             </CardContent>
@@ -1660,7 +1658,7 @@ function PRDag({
                 onClick={readSelectedFailureLog}
                 disabled={readFailureLog.isPending}
               >
-                {readFailureLog.isPending ? "Reading" : "Read failure log"}
+                {readFailureLog.isPending ? 'Reading' : 'Read failure log'}
                 <ScrollText className="ml-1.5 h-4 w-4" />
               </Button>
             </div>
@@ -1680,24 +1678,26 @@ function PRDag({
                 <div className="mt-1 text-text-muted">
                   {highestFixAttempt} / {maxFixAttemptsPerNode} attempts used
                   {fixBudgetExhausted
-                    ? "; escalate with a decision summary before retrying."
-                    : `; ${remainingFixAttempts} automatic ${remainingFixAttempts === 1 ? "retry" : "retries"} remaining.`}
+                    ? '; escalate with a decision summary before retrying.'
+                    : `; ${remainingFixAttempts} automatic ${remainingFixAttempts === 1 ? 'retry' : 'retries'} remaining.`}
                 </div>
               </div>
               <Badge
                 variant="outline"
-                className={fixBudgetExhausted ? statusClassName("blocked") : statusClassName("running")}
+                className={
+                  fixBudgetExhausted ? statusClassName('blocked') : statusClassName('running')
+                }
               >
-                {fixBudgetExhausted ? "Escalation needed" : "Auto-fix available"}
+                {fixBudgetExhausted ? 'Escalation needed' : 'Auto-fix available'}
               </Badge>
             </div>
             {failureLog && <FailureLogSummary failureLog={failureLog} />}
             {fixAttempts.length === 0 && (
               <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
-                {fixAttemptsQuery.isLoading ? "Checking CI diagnostics." : "No fix attempts yet."}
+                {fixAttemptsQuery.isLoading ? 'Checking CI diagnostics.' : 'No fix attempts yet.'}
               </div>
             )}
-            {fixAttempts.map((attempt) => (
+            {fixAttempts.map(attempt => (
               <div
                 key={`${attempt.id}-${attempt.attempt_number}`}
                 className="rounded-lg border border-border-subtle bg-bg-subtle p-4"
@@ -1710,7 +1710,7 @@ function PRDag({
                     {attempt.workflow_run_url ? (
                       <Button variant="outline" size="sm" asChild>
                         <a href={attempt.workflow_run_url} target="_blank" rel="noreferrer">
-                          Run {attempt.workflow_run_id || "CI"}
+                          Run {attempt.workflow_run_id || 'CI'}
                           <ExternalLink className="ml-1.5 h-4 w-4" />
                         </a>
                       </Button>
@@ -1758,24 +1758,24 @@ function PRDag({
 }
 
 function EscalationSummary({ summary }: { summary: SpecForgeEscalationSummaryDTO }) {
-  const needsDecision = summary.status === "needs_user_decision";
+  const needsDecision = summary.status === 'needs_user_decision';
 
   return (
     <div
       className={cn(
-        "rounded-lg border p-4 text-sm",
+        'rounded-lg border p-4 text-sm',
         needsDecision
-          ? "border-warning/30 bg-warning-subtle text-warning"
-          : "border-border-subtle bg-bg-subtle text-text-muted"
+          ? 'border-warning/30 bg-warning-subtle text-warning'
+          : 'border-border-subtle bg-bg-subtle text-text-muted'
       )}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="font-medium text-text-main">Escalation summary</div>
         <Badge
           variant="outline"
-          className={needsDecision ? statusClassName("blocked") : statusClassName("running")}
+          className={needsDecision ? statusClassName('blocked') : statusClassName('running')}
         >
-          {needsDecision ? "Needs decision" : "Auto-fix can continue"}
+          {needsDecision ? 'Needs decision' : 'Auto-fix can continue'}
         </Badge>
       </div>
       <p className="mt-2 leading-6">{summary.reason}</p>
@@ -1785,7 +1785,7 @@ function EscalationSummary({ summary }: { summary: SpecForgeEscalationSummaryDTO
       )}
       {summary.decision_options.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
-          {summary.decision_options.map((option) => (
+          {summary.decision_options.map(option => (
             <Badge key={option} variant="outline">
               {option}
             </Badge>
@@ -1809,10 +1809,10 @@ function ExecutionStatus({
   onCancel: () => void;
   onExecutionBundle: (bundle: SpecForgeExecutionBundleDTO) => void;
 }) {
-  const canAdvance = run.status === "running";
-  const canCancel = run.status === "queued" || run.status === "running" || run.status === "blocked";
+  const canAdvance = run.status === 'running';
+  const canCancel = run.status === 'queued' || run.status === 'running' || run.status === 'blocked';
   const [selectedTask, setSelectedTask] = useState<PRNode>();
-  const [taskActionError, setTaskActionError] = useState("");
+  const [taskActionError, setTaskActionError] = useState('');
   const [taskActionId, setTaskActionId] = useState<number>();
   const retryTask = useRetryExecutionTask();
   const completeTask = useCompleteExecutionTask();
@@ -1821,16 +1821,16 @@ function ExecutionStatus({
   const taskEvents = taskEventsQuery.data?.events ?? [];
   const isTaskActionPending = retryTask.isPending || completeTask.isPending;
   const blockedRecoverableTasks = run.tasks.filter(
-    (task) => task.status === "failed" || task.status === "cancelled"
+    task => task.status === 'failed' || task.status === 'cancelled'
   );
 
   async function retryExecutionTask(task: PRNode) {
     if (!task.taskId) {
-      setTaskActionError("Retry requires a persisted backend task.");
+      setTaskActionError('Retry requires a persisted backend task.');
       return;
     }
 
-    setTaskActionError("");
+    setTaskActionError('');
     setTaskActionId(task.taskId);
     try {
       const bundle = await retryTask.mutateAsync({
@@ -1840,7 +1840,7 @@ function ExecutionStatus({
       onExecutionBundle(bundle);
     } catch {
       setTaskActionError(
-        "Retry requires a failed or cancelled task. Dependency-closed tasks need a revised plan."
+        'Retry requires a failed or cancelled task. Dependency-closed tasks need a revised plan.'
       );
     } finally {
       setTaskActionId(undefined);
@@ -1849,17 +1849,19 @@ function ExecutionStatus({
 
   async function completeExecutionTask(task: PRNode) {
     if (!task.taskId) {
-      setTaskActionError("Complete requires a persisted backend task.");
+      setTaskActionError('Complete requires a persisted backend task.');
       return;
     }
 
-    setTaskActionError("");
+    setTaskActionError('');
     setTaskActionId(task.taskId);
     try {
       const bundle = await completeTask.mutateAsync(task.taskId);
       onExecutionBundle(bundle);
     } catch {
-      setTaskActionError("Complete requires a dispatched or running task and the CodingCTO backend.");
+      setTaskActionError(
+        'Complete requires a dispatched or running task and the CodingCTO backend.'
+      );
     } finally {
       setTaskActionId(undefined);
     }
@@ -1876,7 +1878,7 @@ function ExecutionStatus({
         </div>
         <div className="flex flex-wrap gap-2">
           <Button onClick={onCancel} disabled={!canCancel || isCancelling} variant="outline">
-            {isCancelling ? "Cancelling" : "Cancel run"}
+            {isCancelling ? 'Cancelling' : 'Cancel run'}
             <CircleX className="ml-1.5 h-4 w-4" />
           </Button>
           <Button onClick={onAdvance} disabled={!canAdvance} variant="outline">
@@ -1886,14 +1888,14 @@ function ExecutionStatus({
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
-        {run.status === "blocked" && (
+        {run.status === 'blocked' && (
           <div className="rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm leading-6 text-warning">
-            This run is waiting for a decision. Retry a failed or cancelled task with a
-            fresh session, or cancel the run if the PR DAG needs to be replanned.
+            This run is waiting for a decision. Retry a failed or cancelled task with a fresh
+            session, or cancel the run if the PR DAG needs to be replanned.
             {blockedRecoverableTasks.length > 0 && (
               <span className="ml-1 font-medium text-text-main">
                 {blockedRecoverableTasks.length} task
-                {blockedRecoverableTasks.length === 1 ? "" : "s"} can be retried.
+                {blockedRecoverableTasks.length === 1 ? '' : 's'} can be retried.
               </span>
             )}
           </div>
@@ -1903,12 +1905,12 @@ function ExecutionStatus({
             {taskActionError}
           </div>
         )}
-        {run.tasks.map((task) => (
+        {run.tasks.map(task => (
           <div
-            key={`${task.id}-${task.taskId ?? "planned"}`}
+            key={`${task.id}-${task.taskId ?? 'planned'}`}
             className={cn(
-              "flex flex-col gap-3 rounded-lg border border-border-subtle p-4",
-              task.status === "running" && "border-info/40 bg-info-subtle"
+              'flex flex-col gap-3 rounded-lg border border-border-subtle p-4',
+              task.status === 'running' && 'border-info/40 bg-info-subtle'
             )}
           >
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
@@ -1930,11 +1932,7 @@ function ExecutionStatus({
                 <Badge variant="outline" className={statusClassName(task.status)}>
                   {statusLabel[task.status]}
                 </Badge>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => setSelectedTask(task)}
-                >
+                <Button variant="outline" size="sm" onClick={() => setSelectedTask(task)}>
                   Events
                   <Terminal className="ml-1.5 h-4 w-4" />
                 </Button>
@@ -1944,28 +1942,30 @@ function ExecutionStatus({
                   onClick={() => retryExecutionTask(task)}
                   disabled={
                     isTaskActionPending ||
-                    !(task.status === "failed" || task.status === "cancelled")
+                    !(task.status === 'failed' || task.status === 'cancelled')
                   }
                 >
-                  {retryTask.isPending && taskActionId === task.taskId ? "Retrying" : "Retry"}
+                  {retryTask.isPending && taskActionId === task.taskId ? 'Retrying' : 'Retry'}
                   <RotateCcw className="ml-1.5 h-4 w-4" />
                 </Button>
                 <Button
                   variant="outline"
                   size="sm"
                   onClick={() => completeExecutionTask(task)}
-                  disabled={isTaskActionPending || task.status !== "running"}
+                  disabled={isTaskActionPending || task.status !== 'running'}
                 >
                   {completeTask.isPending && taskActionId === task.taskId
-                    ? "Completing"
-                    : "Complete"}
+                    ? 'Completing'
+                    : 'Complete'}
                   <CheckCircle2 className="ml-1.5 h-4 w-4" />
                 </Button>
               </div>
             </div>
-            {(task.fixAttemptId || task.failureReason || task.errorLog || task.outputLog || task.logsUrl) && (
-              <TaskDiagnostics task={task} />
-            )}
+            {(task.fixAttemptId ||
+              task.failureReason ||
+              task.errorLog ||
+              task.outputLog ||
+              task.logsUrl) && <TaskDiagnostics task={task} />}
           </div>
         ))}
         {selectedTask && (
@@ -2011,15 +2011,15 @@ function FailureLogSummary({ failureLog }: { failureLog: SpecForgePRNodeFailureL
       </div>
       {failureLog.failed_steps.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">
-          {failureLog.failed_steps.map((step) => (
-            <Badge key={step} variant="outline" className={statusClassName("failed")}>
+          {failureLog.failed_steps.map(step => (
+            <Badge key={step} variant="outline" className={statusClassName('failed')}>
               {step}
             </Badge>
           ))}
         </div>
       )}
       <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-border-subtle bg-bg-surface p-3 font-mono text-xs leading-5 text-text-main">
-        {failureLog.log_excerpt || "No log excerpt returned."}
+        {failureLog.log_excerpt || 'No log excerpt returned.'}
       </pre>
     </div>
   );
@@ -2045,7 +2045,7 @@ function TaskEventPanel({
             Task events
           </div>
           <div className="mt-1 text-xs text-text-muted">
-            {task.title} {task.taskId ? `#${task.taskId}` : ""}
+            {task.title} {task.taskId ? `#${task.taskId}` : ''}
           </div>
         </div>
         <Badge variant="outline">{events.length} events</Badge>
@@ -2065,7 +2065,7 @@ function TaskEventPanel({
         {task.taskId && !isLoading && !isError && events.length === 0 && (
           <div className="text-sm text-text-muted">No task events recorded yet.</div>
         )}
-        {events.map((event) => (
+        {events.map(event => (
           <TaskEventRow key={event.id} event={event} />
         ))}
       </div>
@@ -2074,7 +2074,7 @@ function TaskEventPanel({
 }
 
 function TaskEventRow({ event }: { event: SpecForgeTaskEventDTO }) {
-  const eventText = event.content ?? event.output ?? event.input ?? "";
+  const eventText = event.content ?? event.output ?? event.input ?? '';
 
   return (
     <div className="grid gap-2 rounded-md border border-border-subtle bg-bg-surface p-3 text-xs md:grid-cols-[120px_minmax(0,1fr)]">
@@ -2084,7 +2084,7 @@ function TaskEventRow({ event }: { event: SpecForgeTaskEventDTO }) {
         {event.tool && <div>{event.tool}</div>}
       </div>
       <pre className="whitespace-pre-wrap break-words font-mono text-text-main">
-        {eventText || "No event content."}
+        {eventText || 'No event content.'}
       </pre>
     </div>
   );
@@ -2095,7 +2095,7 @@ function CompactList({ title, items }: { title: string; items: string[] }) {
     <div>
       <div className="text-xs font-medium uppercase tracking-wide text-text-muted">{title}</div>
       <ul className="mt-2 space-y-1 text-sm text-text-main">
-        {items.map((item) => (
+        {items.map(item => (
           <li key={item} className="truncate">
             {item}
           </li>
