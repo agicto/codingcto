@@ -368,7 +368,7 @@ func (s *service) CompilePrompt(ctx context.Context, userID, prNodeID uint, req 
 		PRNodeID:   node.ID,
 		PlanID:     node.PlanID,
 		Type:       promptType,
-		Version:    "prompt_v1",
+		Version:    "prompt_v2",
 		PromptText: text,
 		PromptHash: hex.EncodeToString(hash[:]),
 		CreatedBy:  userID,
@@ -522,6 +522,7 @@ func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, no
 		b.WriteString("Target repository: " + strings.TrimSpace(node.RepositoryID) + "\n")
 	}
 	b.WriteString("Goal:\n" + node.Goal + "\n\n")
+	writePromptContract(&b, promptType, bundle, node, skills)
 	writePromptTypeInstructions(&b, promptType)
 	b.WriteString("Product context:\n")
 	for _, goal := range bundle.ProductSpec.Goals {
@@ -544,6 +545,191 @@ func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, no
 	return b.String()
 }
 
+func writePromptContract(b *strings.Builder, promptType string, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, skills []*domain.SpecForgeSkill) {
+	b.WriteString("Grounded prompt contract:\n")
+	b.WriteString("- Treat the evidence refs below as the only approved product and engineering source of truth for this task.\n")
+	b.WriteString("- Do not invent requirements, APIs, data models, routes, commands, or dependencies that are not supported by the evidence refs.\n")
+	b.WriteString("- If evidence is missing or contradictory, stop and produce a concise escalation summary instead of broadening scope.\n")
+	if promptType == domain.PromptTypeFix || promptType == domain.PromptTypeReviewPatch {
+		b.WriteString("- Preserve the original PR node scope; patches may narrow scope but must not expand it.\n")
+	}
+	b.WriteString("\n")
+	writeEvidenceRefs(b, bundle, node, skills)
+	writeScopeGuardrails(b, bundle, node)
+	writeDAGGuardrails(b, bundle, node)
+	writeVerificationContract(b, bundle, node)
+}
+
+func writeEvidenceRefs(b *strings.Builder, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, skills []*domain.SpecForgeSkill) {
+	b.WriteString("Evidence refs:\n")
+	if bundle != nil && bundle.Idea != nil {
+		b.WriteString("- idea.raw_input: " + compactPromptLine(bundle.Idea.RawInput) + "\n")
+		b.WriteString("- idea.repository_id: " + strings.TrimSpace(bundle.Idea.RepositoryID) + "\n")
+		if bundle.Requirement != nil {
+			b.WriteString("- requirement.id: " + fmt.Sprint(bundle.Requirement.ID) + "\n")
+		}
+	}
+	if bundle != nil && bundle.ProductSpec != nil {
+		writeEvidenceListRef(b, "product_spec.goals", bundle.ProductSpec.Goals)
+		writeEvidenceListRef(b, "product_spec.business_rules", bundle.ProductSpec.BusinessRules)
+		writeEvidenceListRef(b, "product_spec.permission_rules", bundle.ProductSpec.PermissionRules)
+		writeEvidenceListRef(b, "product_spec.acceptance_criteria", bundle.ProductSpec.AcceptanceCriteria)
+		writeEvidenceListRef(b, "product_spec.non_goals", bundle.ProductSpec.NonGoals)
+	}
+	if bundle != nil && bundle.Plan != nil {
+		b.WriteString("- technical_plan.summary: " + compactPromptLine(bundle.Plan.TechnicalSummary) + "\n")
+		writeEvidenceListRef(b, "technical_plan.affected_areas", bundle.Plan.AffectedAreas)
+		writeEvidenceListRef(b, "technical_plan.test_strategy", bundle.Plan.TestStrategy)
+		writeEvidenceListRef(b, "technical_plan.security_risks", bundle.Plan.SecurityRisks)
+		writeEvidenceListRef(b, "technical_plan.migration_risks", bundle.Plan.MigrationRisks)
+	}
+	if node != nil {
+		b.WriteString("- pr_node.id: " + fmt.Sprint(node.ID) + "\n")
+		b.WriteString("- pr_node.key: " + strings.TrimSpace(node.NodeKey) + "\n")
+		b.WriteString("- pr_node.repository_id: " + strings.TrimSpace(node.RepositoryID) + "\n")
+		writeEvidenceListRef(b, "pr_node.expected_files", node.ExpectedFiles)
+		writeEvidenceListRef(b, "pr_node.non_goals", node.NonGoals)
+		writeEvidenceListRef(b, "pr_node.acceptance_criteria", node.AcceptanceCriteria)
+		writeEvidenceListRef(b, "pr_node.test_commands", node.TestCommands)
+	}
+	if bundle != nil && bundle.RepoProfile != nil {
+		profile := bundle.RepoProfile
+		b.WriteString("- repo_profile.source: " + strings.TrimSpace(profile.Source) + "\n")
+		b.WriteString("- repo_profile.summary: " + compactPromptLine(profile.Summary) + "\n")
+		if !profile.LastIndexedAt.IsZero() {
+			b.WriteString("- repo_profile.last_indexed_at: " + profile.LastIndexedAt.Format(time.RFC3339) + "\n")
+		}
+		writeEvidenceListRef(b, "repo_profile.stack", profile.Stack)
+		writeEvidenceListRef(b, "repo_profile.test_commands", profile.TestCommands)
+		writeEvidenceListRef(b, "repo_profile.risk_areas", profile.RiskAreas)
+		writeEvidenceListRef(b, "repo_profile.warnings", profile.Warnings)
+	}
+	if bundle != nil && bundle.ProjectContext != nil {
+		writeProjectEvidenceRefs(b, bundle.ProjectContext)
+	}
+	writeSkillEvidenceRefs(b, skills)
+	b.WriteString("\n")
+}
+
+func writeEvidenceListRef(b *strings.Builder, name string, values []string) {
+	values = normalizePlanList(values)
+	if len(values) == 0 {
+		b.WriteString("- " + name + ": none\n")
+		return
+	}
+	b.WriteString("- " + name + ":\n")
+	for _, value := range values {
+		b.WriteString("  - " + compactPromptLine(value) + "\n")
+	}
+}
+
+func writeProjectEvidenceRefs(b *strings.Builder, context *domain.SpecForgeProjectContext) {
+	if context == nil || context.Project == nil {
+		return
+	}
+	b.WriteString("- project.id: " + fmt.Sprint(context.Project.ID) + "\n")
+	b.WriteString("- project.name: " + strings.TrimSpace(context.Project.Name) + "\n")
+	if strings.TrimSpace(context.PrimaryRepositoryID) != "" {
+		b.WriteString("- project.primary_repository_id: " + strings.TrimSpace(context.PrimaryRepositoryID) + "\n")
+	}
+	writeEvidenceListRef(b, "project.read_only_repository_ids", context.ReadOnlyRepositoryIDs)
+	writeEvidenceListRef(b, "project.execution_guardrails", context.ExecutionGuardrails)
+	for _, repoContext := range context.RepositoryContexts {
+		if repoContext == nil || repoContext.Repository == nil {
+			continue
+		}
+		b.WriteString("- project.repository: " + strings.TrimSpace(repoContext.Repository.RepositoryID) + " role=" + strings.TrimSpace(repoContext.Repository.Role) + "\n")
+		if repoContext.Profile != nil {
+			b.WriteString("  - profile.summary: " + compactPromptLine(repoContext.Profile.Summary) + "\n")
+			stack := normalizePlanList(repoContext.Profile.Stack)
+			if len(stack) == 0 {
+				b.WriteString("  - profile.stack: none\n")
+			} else {
+				b.WriteString("  - profile.stack: " + strings.Join(stack, ", ") + "\n")
+			}
+		}
+	}
+}
+
+func writeSkillEvidenceRefs(b *strings.Builder, skills []*domain.SpecForgeSkill) {
+	if len(skills) == 0 {
+		b.WriteString("- repository_skills: none\n")
+		return
+	}
+	b.WriteString("- repository_skills:\n")
+	for _, skill := range skills {
+		if skill == nil || strings.TrimSpace(skill.Name) == "" {
+			continue
+		}
+		b.WriteString("  - " + strings.TrimSpace(skill.Name))
+		if strings.TrimSpace(skill.Description) != "" {
+			b.WriteString(": " + compactPromptLine(skill.Description))
+		}
+		b.WriteString("\n")
+	}
+}
+
+func writeScopeGuardrails(b *strings.Builder, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode) {
+	b.WriteString("Scope guardrails:\n")
+	if node == nil {
+		b.WriteString("- No PR node was provided; stop and escalate.\n\n")
+		return
+	}
+	if strings.TrimSpace(node.RepositoryID) != "" {
+		b.WriteString("- Write scope is limited to target repository " + strings.TrimSpace(node.RepositoryID) + ".\n")
+	}
+	writeGuardrailList(b, "Allowed file scope", node.ExpectedFiles, "No expected file scope was provided; stop before editing and request a narrower plan.")
+	writeGuardrailList(b, "Forbidden scope", node.NonGoals, "No explicit non-goals were provided; infer the narrowest safe scope from the PR node goal and acceptance criteria.")
+	if bundle != nil && bundle.ProjectContext != nil && len(bundle.ProjectContext.ReadOnlyRepositoryIDs) > 0 {
+		b.WriteString("- Read-only repositories may be inspected for context but must not be modified: " + strings.Join(normalizePlanList(bundle.ProjectContext.ReadOnlyRepositoryIDs), ", ") + ".\n")
+	}
+	b.WriteString("- Do not edit secrets, generated dependency locks, unrelated docs, formatting-only files, or broad shared infrastructure unless listed in expected files.\n")
+	b.WriteString("- Keep the implementation smaller than the planned PR boundary; create an escalation if the diff needs database + API + UI + integration changes in one node.\n\n")
+}
+
+func writeGuardrailList(b *strings.Builder, label string, values []string, fallback string) {
+	values = normalizePlanList(values)
+	if len(values) == 0 {
+		b.WriteString("- " + label + ": " + fallback + "\n")
+		return
+	}
+	b.WriteString("- " + label + ":\n")
+	for _, value := range values {
+		b.WriteString("  - " + compactPromptLine(value) + "\n")
+	}
+}
+
+func writeDAGGuardrails(b *strings.Builder, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode) {
+	b.WriteString("PR DAG guardrails:\n")
+	notes := reviewPRDAG(nil)
+	if bundle != nil {
+		notes = reviewPRDAG(bundle.PRNodes)
+	}
+	for _, note := range notes {
+		b.WriteString("- " + compactPromptLine(note) + "\n")
+	}
+	if node != nil && len(normalizePlanList(node.DependsOn)) > 0 {
+		b.WriteString("- Dependency evidence required before implementation: " + strings.Join(normalizePlanList(node.DependsOn), ", ") + ".\n")
+	} else {
+		b.WriteString("- This node has no declared PR dependencies.\n")
+	}
+	b.WriteString("- Do not implement downstream node work just because this node unblocks it.\n\n")
+}
+
+func writeVerificationContract(b *strings.Builder, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode) {
+	b.WriteString("Verification contract:\n")
+	if node == nil {
+		b.WriteString("- No PR node was provided; stop and escalate.\n\n")
+		return
+	}
+	writeGuardrailList(b, "Required local commands", node.TestCommands, "No explicit test commands were provided; inspect repo profile and run the smallest relevant validation.")
+	if bundle != nil && bundle.RepoProfile != nil && len(bundle.RepoProfile.TestCommands) > 0 {
+		b.WriteString("- Repo profile test commands are available as supporting evidence: " + strings.Join(normalizePlanList(bundle.RepoProfile.TestCommands), ", ") + ".\n")
+	}
+	b.WriteString("- PR description must include summary, scope, non-goals, evidence refs used, tests run, and remaining risk.\n")
+	b.WriteString("- If a required command cannot run, record the exact blocker and do not mark the PR ready for review.\n\n")
+}
+
 func writePromptTypeInstructions(b *strings.Builder, promptType string) {
 	b.WriteString("Execution mode instructions:\n")
 	switch promptType {
@@ -563,6 +749,14 @@ func writePromptTypeInstructions(b *strings.Builder, promptType string) {
 		b.WriteString("- Keep scope, tests, and PR description aligned with the node acceptance criteria.\n")
 	}
 	b.WriteString("\n")
+}
+
+func compactPromptLine(value string) string {
+	value = strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
+	if len(value) <= 240 {
+		return value
+	}
+	return strings.TrimSpace(value[:237]) + "..."
 }
 
 func writeProjectContext(b *strings.Builder, context *domain.SpecForgeProjectContext) {
