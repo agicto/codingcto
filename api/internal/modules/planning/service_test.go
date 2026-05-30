@@ -304,14 +304,37 @@ func TestCreateProjectIdeaUsesProjectContextProfilesAndSkills(t *testing.T) {
 	require.Equal(t, uint(9), *bundle.Idea.ProjectID)
 	require.Equal(t, "repo_api", bundle.Idea.RepositoryID)
 	require.NotNil(t, bundle.ProjectContext)
+	require.Equal(t, "repo_api", bundle.ProjectContext.PrimaryRepositoryID)
+	require.Equal(t, "repo_api", bundle.ProjectContext.ExecutionRepositoryID)
+	require.Equal(t, []string{"repo_web"}, bundle.ProjectContext.ReadOnlyRepositoryIDs)
+	require.Contains(t, bundle.ProjectContext.ExecutionGuardrails, "Executor must modify only repo_api; other bound repositories are read-only context.")
 	require.Contains(t, bundle.RepoProfile.Stack, "Go")
 	require.Contains(t, bundle.RepoProfile.Stack, "Next.js")
 	require.Contains(t, bundle.Plan.AffectedAreas, "api/internal/modules")
 	require.Contains(t, bundle.Plan.AffectedAreas, "web/src/features")
-	require.Contains(t, bundle.ProductSpec.Assumptions, "Plan generation used project context for SpecForge across 2 active repositories.")
+	require.Contains(t, bundle.ProductSpec.Assumptions, "Plan generation used project context for SpecForge across 2 active repositories; execution is limited to primary repository repo_api.")
 	for _, node := range bundle.PRNodes {
 		require.Equal(t, "repo_api", node.RepositoryID)
 	}
+}
+
+func TestCreateProjectRequirementRequiresActivePrimaryRepository(t *testing.T) {
+	repo := &memoryRepo{}
+	profileRepo := &memoryProfileRepo{}
+	projectRepo := &memoryProjectRepo{
+		project: &domain.SpecForgeProject{ID: 9, WorkspaceID: "ws_1", Name: "CodingCTO", Slug: "codingcto", Status: domain.ProjectStatusActive},
+		repositories: []*domain.SpecForgeProjectRepository{
+			{ID: 1, ProjectID: 9, RepositoryID: "repo_docs", Role: domain.ProjectRepositoryRoleDocs, Active: true},
+			{ID: 2, ProjectID: 9, RepositoryID: "repo_web", Role: domain.ProjectRepositoryRoleDependency, Active: true},
+		},
+	}
+	svc := NewService(repo, profileRepo, repo, projectRepo)
+
+	_, err := svc.CreateProjectRequirement(context.Background(), 42, 9, &CreateIdeaRequest{
+		Input: "Add team invite UI and API for workspace admins",
+	})
+
+	require.ErrorIs(t, err, domain.ErrInvalidInput)
 }
 
 func TestGenerateRequirementPlanCreatesNextVersionAndApprovalRejectsStalePlan(t *testing.T) {
@@ -398,6 +421,9 @@ func TestCompilePromptInjectsProjectContextSkills(t *testing.T) {
 	require.Contains(t, prompt.PromptText, "Project: SpecForge")
 	require.Contains(t, prompt.PromptText, "Repository repo_api (primary)")
 	require.Contains(t, prompt.PromptText, "Repository repo_web (dependency)")
+	require.Contains(t, prompt.PromptText, "Primary repository: repo_api")
+	require.Contains(t, prompt.PromptText, "Read-only repositories: repo_web")
+	require.Contains(t, prompt.PromptText, "Executor must modify only repo_api")
 	require.Contains(t, prompt.PromptText, "Web console")
 	require.Contains(t, prompt.PromptText, "module-boundaries")
 	require.Contains(t, prompt.PromptText, "Web code talks to API over HTTP only.")

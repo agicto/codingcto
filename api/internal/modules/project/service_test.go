@@ -39,6 +39,10 @@ func TestServiceProjectRepositoryFlow(t *testing.T) {
 	require.Equal(t, project.ID, contextBundle.Project.ID)
 	require.Len(t, contextBundle.Repositories, 1)
 	require.Len(t, contextBundle.RepositoryContexts, 1)
+	require.Equal(t, "repo_1", contextBundle.PrimaryRepositoryID)
+	require.Equal(t, "repo_1", contextBundle.ExecutionRepositoryID)
+	require.Empty(t, contextBundle.ReadOnlyRepositoryIDs)
+	require.Contains(t, contextBundle.ExecutionGuardrails, "MVP execution is primary-repository only.")
 }
 
 func TestServiceProjectContextIncludesRepoProfilesAndSkills(t *testing.T) {
@@ -113,6 +117,10 @@ func TestServiceProjectContextIncludesRepoProfilesAndSkills(t *testing.T) {
 	require.NotNil(t, repoTwoContext)
 	require.Nil(t, repoTwoContext.Profile)
 	require.Contains(t, repoTwoContext.Warnings, "Repo profile has not been generated yet.")
+	require.Equal(t, "repo_1", contextBundle.PrimaryRepositoryID)
+	require.Equal(t, "repo_1", contextBundle.ExecutionRepositoryID)
+	require.Equal(t, []string{"repo_2"}, contextBundle.ReadOnlyRepositoryIDs)
+	require.Contains(t, contextBundle.ExecutionGuardrails, "Executor must modify only repo_1; other bound repositories are read-only context.")
 }
 
 func TestServiceRejectsSecondPrimaryRepository(t *testing.T) {
