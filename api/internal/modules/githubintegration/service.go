@@ -206,7 +206,10 @@ func (s *service) PreparePRNodeBranch(ctx context.Context, req *PreparePRNodeBra
 	if strings.TrimSpace(node.BranchName) == "" {
 		return nil, domain.ErrInvalidInput
 	}
-	baseBranch := resolveBaseBranch(repository, req.BaseBranch)
+	baseBranch, err := s.resolvePRNodeBaseBranch(ctx, repository, node, req.BaseBranch)
+	if err != nil {
+		return nil, err
+	}
 	client, err := s.repositoryClientForRepository(ctx, repository)
 	if err != nil {
 		return nil, err
@@ -244,7 +247,10 @@ func (s *service) DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) 
 	if strings.TrimSpace(node.BranchName) == "" {
 		return nil, domain.ErrInvalidInput
 	}
-	baseBranch := resolveBaseBranch(repository, req.BaseBranch)
+	baseBranch, err := s.resolvePRNodeBaseBranch(ctx, repository, node, req.BaseBranch)
+	if err != nil {
+		return nil, err
+	}
 	title := strings.TrimSpace(req.Title)
 	if title == "" {
 		title = node.Title
@@ -489,6 +495,45 @@ func resolveBaseBranch(repository *domain.Repository, override string) string {
 		baseBranch = "main"
 	}
 	return baseBranch
+}
+
+func (s *service) resolvePRNodeBaseBranch(ctx context.Context, repository *domain.Repository, node *domain.SpecForgePRNode, override string) (string, error) {
+	if strings.TrimSpace(override) != "" || node == nil || len(node.DependsOn) == 0 {
+		return resolveBaseBranch(repository, override), nil
+	}
+	if node.PlanID == 0 {
+		return resolveBaseBranch(repository, ""), nil
+	}
+	bundle, err := s.planningRepo.FindPlanBundleByPlanID(ctx, node.PlanID)
+	if err != nil {
+		return "", err
+	}
+	dependencyKeys := make(map[string]struct{}, len(node.DependsOn))
+	for _, dependency := range node.DependsOn {
+		dependency = strings.TrimSpace(dependency)
+		if dependency != "" {
+			dependencyKeys[dependency] = struct{}{}
+		}
+	}
+	var baseNode *domain.SpecForgePRNode
+	for _, candidate := range bundle.PRNodes {
+		if candidate == nil {
+			continue
+		}
+		if _, ok := dependencyKeys[strings.TrimSpace(candidate.NodeKey)]; !ok {
+			continue
+		}
+		if strings.TrimSpace(candidate.BranchName) == "" {
+			return "", domain.ErrInvalidInput
+		}
+		if baseNode == nil || candidate.Order > baseNode.Order {
+			baseNode = candidate
+		}
+	}
+	if baseNode == nil {
+		return "", domain.ErrInvalidInput
+	}
+	return strings.TrimSpace(baseNode.BranchName), nil
 }
 
 func isBranchAlreadyExistsError(err error) bool {
