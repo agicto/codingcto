@@ -301,6 +301,20 @@ func TestDispatchRunRejectsCancelledRun(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrConflict)
 }
 
+func TestDispatchRunRejectsBlockedRun(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	created.Run.Status = domain.ExecutionRunStatusBlocked
+	require.NoError(t, runRepo.UpdateExecutionRun(context.Background(), created.Run))
+
+	_, err = svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{})
+
+	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
 func TestSatisfiedDependencyNodeKeySetIncludesReadyAndMergedPRNodes(t *testing.T) {
 	bundle := &domain.SpecForgeExecutionBundle{
 		Plan: &domain.SpecForgePlanBundle{
@@ -651,6 +665,22 @@ func TestCancelRunRejectsCompletedRun(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrConflict)
 }
 
+func TestCancelRunAllowsBlockedRun(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	created.Run.Status = domain.ExecutionRunStatusBlocked
+	require.NoError(t, runRepo.UpdateExecutionRun(context.Background(), created.Run))
+
+	cancelled, err := svc.CancelRun(context.Background(), created.Run.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, domain.ExecutionRunStatusCancelled, cancelled.Run.Status)
+	require.NotNil(t, cancelled.Run.CompletedAt)
+}
+
 func TestRetryTaskCreatesQueuedAttemptForFailedTask(t *testing.T) {
 	planningRepo := memoryPlanningRepoWithPrompt()
 	runRepo := &memoryExecutionRepo{}
@@ -802,6 +832,23 @@ func TestRetryTaskRejectsCancelledRun(t *testing.T) {
 	failed.Status = domain.AgentTaskStatusFailed
 	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), failed))
 	created.Run.Status = domain.ExecutionRunStatusCancelled
+	require.NoError(t, runRepo.UpdateExecutionRun(context.Background(), created.Run))
+
+	_, err = svc.RetryTask(context.Background(), failed.ID, &RetryAgentTaskRequest{})
+
+	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
+func TestRetryTaskRejectsBlockedRun(t *testing.T) {
+	planningRepo := memoryPlanningRepoWithPrompt()
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	failed := created.Tasks[0]
+	failed.Status = domain.AgentTaskStatusFailed
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), failed))
+	created.Run.Status = domain.ExecutionRunStatusBlocked
 	require.NoError(t, runRepo.UpdateExecutionRun(context.Background(), created.Run))
 
 	_, err = svc.RetryTask(context.Background(), failed.ID, &RetryAgentTaskRequest{})
