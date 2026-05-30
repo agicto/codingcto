@@ -1317,6 +1317,77 @@ PR 1: Project Domain Foundation
 
 完成 PR 1 后，再做 Project Console UI，让用户能在浏览器里创建 Project 并绑定 repo。
 
+### 14.1 长任务执行协议
+
+本计划按长任务推进。每个大 PR 都必须完成“实现、验证、自审、合并、继续”的闭环。
+
+每个 PR 的固定流程：
+
+```text
+1. 从 main 拉最新代码
+2. 创建 coco/* 工作分支
+3. 实现当前切片
+4. 写或更新 flow tests
+5. 运行本地 API/Web 检查
+6. 对 UI 改动做浏览器验证
+7. 做自我 code review
+8. 生成测试报告
+9. push 分支并创建 PR
+10. 等 GitHub CI
+11. CI 通过后 squash merge 到 main
+12. 回到 main 并继续下一个 PR
+```
+
+每个 PR 的测试报告必须包含：
+
+```text
+Scope
+Local commands
+Flow tests
+Browser/UI verification
+Self-review findings
+Known residual risk
+CI result
+```
+
+如果某个 PR 无 UI 变更，测试报告必须明确说明：
+
+```text
+UI test not applicable for this backend-only slice.
+```
+
+如果某个 PR 使用外部项目作为参考，只允许学习结构和实现思路：
+
+```text
+Reference implementation ideas only.
+Do not copy branding, product names, UI identity, or proprietary identifiers.
+```
+
+### 14.2 大 PR 迭代路线
+
+长任务按以下大 PR 推进，每个大 PR 可以视实际风险再拆成子 PR：
+
+| PR | 目标 | 验收 |
+|----|------|------|
+| PR-A | Project / Repository domain foundation | Project、Repository、ProjectRepository 后端模型/API/测试完成 |
+| PR-B | Project Console UI | 用户可创建 Project、绑定 repo、查看 Project context |
+| PR-C | Repo architecture analysis | Project 可对绑定 repo 生成 architecture snapshot |
+| PR-D | Skill pipeline foundation | Skill registry、ProjectSkill、SkillRun、pipeline history 完成 |
+| PR-E | Requirement and plan versioning | Requirement、plan snapshot、PRNode target repo 完成 |
+| PR-F | Prompt compiler and guardrails | CompiledPrompt contract、PR DAG validation、evidence refs 完成 |
+| PR-G | Codex CLI executor | 隔离工作区、Codex CLI 调用、日志、commit/push/PR 创建完成 |
+| PR-H | Verification and CI auto-fix | workflow logs、failure classification、fix prompt、bounded retry 完成 |
+| PR-I | Human review loop | PR comment/review feedback 生成 patch task |
+| PR-J | Multi-repo context | 多 repo context 可读，MVP 仍只修改 primary repo |
+
+交互和 UI 原则：
+
+```text
+极简、低管理成本、围绕交付物。
+用户管理 Project、Plan、PR DAG、Run、PR，不管理 agent。
+默认展示摘要和下一步动作，复杂日志和证据放在可展开区域。
+```
+
 ---
 
 ## 十五、Domain 层实体设计
