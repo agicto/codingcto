@@ -180,7 +180,7 @@ func Load() (*Config, error) {
 
 	cfg := &Config{
 		App: AppConfig{
-			Name:      env.Get("APP_NAME", "Luas"),
+			Name:      env.Get("APP_NAME", "CodingCTO"),
 			Env:       env.Get("APP_ENV", "development"),
 			Debug:     env.GetBool("APP_DEBUG", true),
 			URL:       env.Get("APP_URL", "http://localhost:8025"),
@@ -313,7 +313,7 @@ func MustLoad() *Config {
 // placeholderJWTSecrets are values shipped with .env.example or previously
 // used by the scaffold; treating them as "real" would silently weaken auth.
 var placeholderJWTSecrets = map[string]struct{}{
-	"":         {},
+	"": {},
 	"replace_me_with_a_long_random_secret_at_least_32_chars": {},
 	"your_jwt_secret_key_here":                               {},
 	"replace-me":                                             {},
