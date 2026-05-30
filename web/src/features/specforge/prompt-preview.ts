@@ -2,41 +2,67 @@ import type { PlanBundle, PRNode } from '@/features/specforge/types';
 
 function listSection(title: string, items: string[]) {
   if (!items.length) {
-    return `${title}：\n- 无`;
+    return `${title}:\n- None`;
   }
-  return `${title}：\n${items.map((item) => `- ${item}`).join('\n')}`;
+  return `${title}:\n${items.map(item => `- ${item}`).join('\n')}`;
 }
 
 export function buildPromptPreview(plan: PlanBundle, node: PRNode) {
   return [
-    `你正在实现 ${node.nodeKey}：${node.title}。`,
+    `You are implementing ${node.nodeKey}: ${node.title}.`,
     '',
-    '目标：',
+    'Goal:',
     node.goal,
     '',
-    '产品上下文：',
+    'Grounded prompt contract:',
+    '- Treat the evidence refs below as the approved product and engineering source of truth.',
+    '- Do not invent requirements, APIs, data models, routes, commands, or dependencies that are not supported by the evidence refs.',
+    '- If evidence is missing or contradictory, stop and produce an escalation summary.',
+    '',
+    'Evidence refs:',
+    `- idea.raw_input: ${plan.idea}`,
+    listSection('product_spec.goals', plan.productSpec.goals),
+    listSection('technical_plan.affected_areas', plan.implementationPlan.affectedAreas),
+    listSection('pr_node.expected_files', node.expectedFiles),
+    listSection('pr_node.acceptance_criteria', node.acceptanceCriteria),
+    listSection('repo_profile.test_commands', plan.repoProfile.testCommands),
+    '',
+    'Product context:',
     plan.idea,
     '',
-    listSection('产品目标', plan.productSpec.goals),
+    listSection('Product goals', plan.productSpec.goals),
     '',
-    listSection('验收标准', node.acceptanceCriteria),
+    listSection('Acceptance criteria', node.acceptanceCriteria),
     '',
-    listSection('非目标', node.nonGoals),
+    listSection('Non-goals', node.nonGoals),
     '',
-    listSection('依赖', node.dependsOn),
+    listSection('Dependencies', node.dependsOn),
     '',
-    listSection('预期文件', node.expectedFiles),
+    listSection('Expected files', node.expectedFiles),
     '',
-    listSection('测试命令', node.testCommands),
+    listSection('Test commands', node.testCommands),
     '',
-    '约束：',
-    '- 保持这个 PR 聚焦在节点目标内。',
-    '- 不实现非目标内容。',
-    '- 遵循检测到的仓库画像和现有约定。',
+    'Scope guardrails:',
+    `- Write scope is limited to target repository ${plan.repoProfile.repositoryId}.`,
+    '- Keep this PR focused on the PR node goal.',
+    '- Do not implement non-goals or downstream PR node work.',
+    '- Follow the detected repo profile and existing conventions.',
     '',
-    '实现后：',
-    '- 运行列出的测试。',
-    '- 提交变更。',
-    '- 准备 PR 摘要，包含范围、非目标、风险和测试计划。',
+    'PR DAG guardrails:',
+    ...(plan.prDagReview.length
+      ? plan.prDagReview.map(item => `- ${item}`)
+      : ['- No PR DAG review notes are available; do not execute until the plan is reviewed.']),
+    '',
+    'Verification contract:',
+    ...(node.testCommands.length
+      ? node.testCommands.map(command => `- ${command}`)
+      : [
+          '- No explicit test commands were provided; inspect the repo profile before marking ready.',
+        ]),
+    '',
+    'After implementation:',
+    '- Run the listed tests.',
+    '- Commit the change.',
+    '- Prepare a PR summary with scope, non-goals, risks, tests, and evidence refs used.',
   ].join('\n');
 }
