@@ -85,6 +85,7 @@ import {
   useUpsertSpecForgeSkill,
 } from "@/features/specforge/hooks/use-specforge";
 import { hasActiveFixAttempt } from "@/features/specforge/fix-attempts";
+import { planApprovalReadiness } from "@/features/specforge/plan-approval";
 import type {
   CompilePromptPayload,
   SpecForgeFixAttemptDTO,
@@ -1073,6 +1074,7 @@ function PlanReview({
   onApprove: () => void;
 }) {
   const { productSpec, implementationPlan } = plan;
+  const approvalReadiness = planApprovalReadiness(plan);
   const planAssumptions = productSpec.assumptions.filter(
     (item) => !item.startsWith("PR DAG review:")
   );
@@ -1102,9 +1104,14 @@ function PlanReview({
           <ListBlock title="PR DAG review" items={plan.prDagReview} />
           <ListBlock title="Security risks" items={implementationPlan.securityRisks} icon="risk" />
           <ListBlock title="Migration risks" items={implementationPlan.migrationRisks} />
+          {!approvalReadiness.canApprove && (
+            <p className="rounded-md border border-warning/30 bg-warning-subtle px-3 py-2 text-sm text-warning">
+              {approvalReadiness.reason}
+            </p>
+          )}
           <Button
             onClick={onApprove}
-            disabled={approved || isStarting}
+            disabled={approved || isStarting || !approvalReadiness.canApprove}
             className="w-full justify-center"
           >
             {approved ? "Approved" : isStarting ? "Starting run" : "Approve & Start"}
