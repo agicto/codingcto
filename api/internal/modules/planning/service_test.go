@@ -104,6 +104,21 @@ func TestApprovePlanRecordsApproverAndRejectsSecondApproval(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrConflict)
 }
 
+func TestApprovePlanRejectsInvalidPRDAG(t *testing.T) {
+	repo := &memoryRepo{}
+	svc := NewService(repo, &memoryProfileRepo{}, repo)
+	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
+		Input: "Add team invite feature for workspace admins",
+	})
+	require.NoError(t, err)
+	repo.bundle.PRNodes[0].ExpectedFiles = nil
+
+	_, err = svc.ApprovePlan(context.Background(), 7, created.Plan.ID, &ApprovePlanRequest{Approved: true})
+
+	require.ErrorIs(t, err, domain.ErrConflict)
+	require.Equal(t, domain.PlanStatusDraft, repo.bundle.Plan.Status)
+}
+
 func TestCompilePromptPersistsVersionedPromptForPRNode(t *testing.T) {
 	repo := &memoryRepo{}
 	profileRepo := &memoryProfileRepo{profile: &domain.SpecForgeRepoProfile{

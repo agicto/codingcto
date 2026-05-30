@@ -78,6 +78,9 @@ func (s *service) ApprovePlan(ctx context.Context, userID, planID uint, req *App
 	if bundle.Plan.Status == domain.PlanStatusApproved {
 		return nil, domain.ErrConflict
 	}
+	if !domain.ExecutableSpecForgePRDAG(bundle.PRNodes) {
+		return nil, domain.ErrConflict
+	}
 
 	now := time.Now()
 	bundle.Plan.Status = domain.PlanStatusApproved
