@@ -887,6 +887,49 @@ func TestDeliverPRNodeCreatesDraftPRAndUpdatesNode(t *testing.T) {
 	require.Equal(t, node.GitHubPRURL, planningRepo.nodes[0].GitHubPRURL)
 }
 
+func TestDeliverPRNodeUsesDependencyBranchByDefault(t *testing.T) {
+	repo := &memoryRepo{
+		installation: &domain.GitHubInstallation{
+			ID:             3,
+			InstallationID: 98765,
+		},
+		repository: &domain.Repository{
+			ID:                   1,
+			RepositoryID:         "github_agicto__codingcto",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto",
+			DefaultBranch:        "main",
+		},
+	}
+	planningRepo := &memoryPlanningRepo{
+		bundle: &domain.SpecForgePlanBundle{
+			PRNodes: []*domain.SpecForgePRNode{
+				{ID: 10, PlanID: 20, NodeKey: "PR-001", Order: 1, BranchName: "specforge/team-invite-01-model", Status: domain.PRNodeStatusReadyForReview},
+				{ID: 11, PlanID: 20, NodeKey: "PR-002", Order: 2, Title: "Add invite API", BranchName: "specforge/team-invite-02-api", DependsOn: []string{"PR-001"}, Status: domain.PRNodeStatusReadyForReview},
+			},
+		},
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, PlanID: 20, NodeKey: "PR-001", Order: 1, BranchName: "specforge/team-invite-01-model", Status: domain.PRNodeStatusReadyForReview},
+			{ID: 11, PlanID: 20, NodeKey: "PR-002", Order: 2, Title: "Add invite API", BranchName: "specforge/team-invite-02-api", DependsOn: []string{"PR-001"}, Status: domain.PRNodeStatusReadyForReview},
+		},
+	}
+	client := &fakeRepositoryClient{
+		pr: &PullRequest{Number: 43, HTMLURL: "https://github.com/agicto/codingcto/pull/43", Draft: true, Head: PRHead{SHA: "api123"}},
+	}
+	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider, nil)
+
+	_, err := svc.DeliverPRNode(context.Background(), &DeliverPRNodeRequest{
+		RepositoryID: "github_agicto__codingcto",
+		PRNodeID:     11,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "specforge/team-invite-02-api", client.input.Head)
+	require.Equal(t, "specforge/team-invite-01-model", client.input.Base)
+}
+
 func TestPreparePRNodeBranchCreatesBranchFromDefaultBranch(t *testing.T) {
 	repo := &memoryRepo{
 		installation: &domain.GitHubInstallation{
@@ -923,6 +966,48 @@ func TestPreparePRNodeBranchCreatesBranchFromDefaultBranch(t *testing.T) {
 	require.Equal(t, "main", client.getBranchName)
 	require.Equal(t, "specforge/team-invite-01-api", client.createBranchName)
 	require.Equal(t, "abc123", client.createBranchSHA)
+}
+
+func TestPreparePRNodeBranchUsesDependencyBranchByDefault(t *testing.T) {
+	repo := &memoryRepo{
+		installation: &domain.GitHubInstallation{
+			ID:             3,
+			InstallationID: 98765,
+		},
+		repository: &domain.Repository{
+			ID:                   1,
+			RepositoryID:         "github_agicto__codingcto",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto",
+			DefaultBranch:        "main",
+		},
+	}
+	planningRepo := &memoryPlanningRepo{
+		bundle: &domain.SpecForgePlanBundle{
+			PRNodes: []*domain.SpecForgePRNode{
+				{ID: 10, PlanID: 20, NodeKey: "PR-001", Order: 1, BranchName: "specforge/team-invite-01-model", Status: domain.PRNodeStatusReadyForReview},
+				{ID: 11, PlanID: 20, NodeKey: "PR-002", Order: 2, BranchName: "specforge/team-invite-02-api", DependsOn: []string{"PR-001"}, Status: domain.PRNodeStatusPlanned},
+			},
+		},
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, PlanID: 20, NodeKey: "PR-001", Order: 1, BranchName: "specforge/team-invite-01-model", Status: domain.PRNodeStatusReadyForReview},
+			{ID: 11, PlanID: 20, NodeKey: "PR-002", Order: 2, BranchName: "specforge/team-invite-02-api", DependsOn: []string{"PR-001"}, Status: domain.PRNodeStatusPlanned},
+		},
+	}
+	client := &fakeRepositoryClient{branchRef: &GitReference{Object: GitRefObject{SHA: "dep123"}}}
+	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider, nil)
+
+	_, err := svc.PreparePRNodeBranch(context.Background(), &PreparePRNodeBranchRequest{
+		RepositoryID: "github_agicto__codingcto",
+		PRNodeID:     11,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "specforge/team-invite-01-model", client.getBranchName)
+	require.Equal(t, "specforge/team-invite-02-api", client.createBranchName)
+	require.Equal(t, "dep123", client.createBranchSHA)
 }
 
 func TestPreparePRNodeBranchIgnoresExistingBranch(t *testing.T) {
