@@ -80,6 +80,29 @@ go run ./cmd/luas ai:chat "Summarize this project in one sentence"
 
 The CLI binary path remains `cmd/luas` until a dedicated compatibility migration is planned.
 
+### Run a Local Codex Runtime
+
+The SpecForge execution module can be driven by a local runtime process. The runtime talks to the API over `/v1`, claims dispatched `codex_cli` tasks, runs Codex CLI in a local repository directory, records task events, and submits the final result.
+
+```bash
+go run ./cmd/specforge-runtime \
+  --api-base-url http://localhost:8025/v1 \
+  --token "$CODINGCTO_RUNTIME_TOKEN" \
+  --runtime-id local-codex-1 \
+  --repo-dir /path/to/local/repo \
+  --repository-id github_owner__repo
+```
+
+Useful flags:
+
+- `--once`: perform one heartbeat/claim/execute cycle and exit.
+- `--poll-interval 10s`: set daemon polling cadence.
+- `--codex-path codex`: select the Codex CLI binary.
+- `--sandbox workspace-write`: pass the Codex sandbox mode.
+- `--approval-policy never`: keep execution non-interactive for automation.
+
+Environment equivalents are available with `SPECFORGE_API_BASE_URL`, `SPECFORGE_RUNTIME_TOKEN`, `SPECFORGE_RUNTIME_ID`, `SPECFORGE_RUNTIME_REPO_DIR`, `SPECFORGE_RUNTIME_REPOSITORY_ID`, `CODEX_CLI_PATH`, `SPECFORGE_CODEX_SANDBOX`, `SPECFORGE_CODEX_APPROVAL_POLICY`, and `SPECFORGE_CODEX_TIMEOUT`.
+
 ## Repository Layout
 
 ```text

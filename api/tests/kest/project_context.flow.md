@@ -257,6 +257,156 @@ body.data.prompt.prompt_hash exists
 body.data.prompt.version exists
 ```
 
+```step
+@id approve
+@name Approve Project Plan
+
+POST /v1/plans/{{plan_id}}/approve
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "approved": true
+}
+
+[Asserts]
+status == 200
+body.data.implementation_plan.status == "approved"
+body.data.implementation_plan.approved_snapshot_hash exists
+```
+
+```step
+@id run
+@name Start Execution Run
+
+POST /v1/plans/{{plan_id}}/run
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "executor": "codex_cli",
+  "pr_node_ids": [{{pr_node_id}}]
+}
+
+[Captures]
+run_id = data.run.id
+task_id = data.tasks.0.id
+
+[Asserts]
+status == 200
+body.data.run.status == "queued"
+body.data.tasks.0.status == "queued"
+body.data.tasks.0.executor == "codex_cli"
+```
+
+```step
+@id dispatch
+@name Dispatch Execution Run
+
+POST /v1/runs/{{run_id}}/dispatch
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "max_tasks": 1
+}
+
+[Asserts]
+status == 200
+body.data.run.status == "running"
+body.data.tasks.0.status == "dispatched"
+```
+
+```step
+@id heartbeat
+@name Runtime Heartbeat
+
+POST /v1/runtimes/heartbeat
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "runtime_id": "runtime_kest",
+  "executor": "codex_cli",
+  "hostname": "kest",
+  "version": "flow"
+}
+
+[Asserts]
+status == 200
+body.data.runtime.runtime_id == "runtime_kest"
+body.data.claim_pending == true
+```
+
+```step
+@id claim
+@name Runtime Claim Task
+
+POST /v1/runtimes/runtime_kest/claim
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "executor": "codex_cli",
+  "session_id": "session_kest",
+  "workdir": "/tmp/codingcto-kest"
+}
+
+[Asserts]
+status == 200
+body.data.task.id == {{task_id}}
+body.data.task.status == "running"
+body.data.prompt.prompt_text exists
+body.data.execution_context.repository_id == "{{repo_id}}"
+body.data.execution_context.branch_name exists
+```
+
+```step
+@id task_event
+@name Runtime Writes Task Event
+
+POST /v1/tasks/{{task_id}}/events
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "type": "executor_result",
+  "tool": "codex_cli",
+  "content": "Kest runtime event",
+  "output": "simulated executor output"
+}
+
+[Asserts]
+status == 200
+body.data.task_id == {{task_id}}
+body.data.seq == 1
+```
+
+```step
+@id task_result
+@name Runtime Submits Task Result
+
+POST /v1/tasks/{{task_id}}/result
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "runtime_id": "runtime_kest",
+  "session_id": "session_kest",
+  "workdir": "/tmp/codingcto-kest",
+  "status": "failed",
+  "output": "simulated executor output",
+  "error": "simulated failure",
+  "exit_code": 2,
+  "failure_reason": "executor_failed"
+}
+
+[Asserts]
+status == 200
+body.data.tasks.0.status == "failed"
+body.data.tasks.0.failure_reason == "executor_failed"
+```
+
 ```edge
 @from register
 @to login
@@ -307,12 +457,54 @@ body.data.prompt.version exists
 
 ```edge
 @from context
-@to project_idea
+@to project_requirement
 @on success
 ```
 
 ```edge
-@from project_idea
+@from project_requirement
 @to prompt
+@on success
+```
+
+```edge
+@from prompt
+@to approve
+@on success
+```
+
+```edge
+@from approve
+@to run
+@on success
+```
+
+```edge
+@from run
+@to dispatch
+@on success
+```
+
+```edge
+@from dispatch
+@to heartbeat
+@on success
+```
+
+```edge
+@from heartbeat
+@to claim
+@on success
+```
+
+```edge
+@from claim
+@to task_event
+@on success
+```
+
+```edge
+@from task_event
+@to task_result
 @on success
 ```
