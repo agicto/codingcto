@@ -21,10 +21,15 @@ type Service interface {
 }
 
 type service struct {
-	repo        domain.SpecForgeProjectRepositoryStore
-	githubRepo  domain.GitHubIntegrationRepository
-	profileRepo domain.SpecForgeRepoProfileRepository
-	skillRepo   domain.SpecForgeSkillRepository
+	repo             domain.SpecForgeProjectRepositoryStore
+	githubRepo       domain.GitHubIntegrationRepository
+	profileRepo      domain.SpecForgeRepoProfileRepository
+	architectureRepo repoArchitectureStore
+	skillRepo        domain.SpecForgeSkillRepository
+}
+
+type repoArchitectureStore interface {
+	FindLatestArchitectureSnapshotByRepositoryID(ctx context.Context, repositoryID string) (*domain.SpecForgeRepoArchitectureSnapshot, error)
 }
 
 func NewService(
@@ -33,11 +38,16 @@ func NewService(
 	profileRepo domain.SpecForgeRepoProfileRepository,
 	skillRepo domain.SpecForgeSkillRepository,
 ) *service {
+	var architectureRepo repoArchitectureStore
+	if repo, ok := profileRepo.(repoArchitectureStore); ok {
+		architectureRepo = repo
+	}
 	return &service{
-		repo:        repo,
-		githubRepo:  githubRepo,
-		profileRepo: profileRepo,
-		skillRepo:   skillRepo,
+		repo:             repo,
+		githubRepo:       githubRepo,
+		profileRepo:      profileRepo,
+		architectureRepo: architectureRepo,
+		skillRepo:        skillRepo,
 	}
 }
 
@@ -239,6 +249,21 @@ func (s *service) repositoryContexts(ctx context.Context, repositories []*domain
 				context.Warnings = append(context.Warnings, "Repo profile has not been generated yet.")
 			} else {
 				context.Profile = profile
+			}
+		}
+		if s.architectureRepo != nil {
+			snapshot, err := s.architectureRepo.FindLatestArchitectureSnapshotByRepositoryID(ctx, repository.RepositoryID)
+			if err != nil {
+				if !errors.Is(err, domain.ErrNotFound) {
+					return nil, fmt.Errorf("load project repo architecture snapshot: %w", err)
+				}
+				context.ArchitectureStale = true
+				context.ArchitectureWarnings = append(context.ArchitectureWarnings, "Architecture snapshot has not been generated yet.")
+			} else {
+				context.ArchitectureSnapshot = snapshot
+				stale, reasons := domain.SpecForgeRepoArchitectureSnapshotStaleness(snapshot, nowUTC())
+				context.ArchitectureStale = stale
+				context.ArchitectureWarnings = append(context.ArchitectureWarnings, reasons...)
 			}
 		}
 		if s.skillRepo != nil {

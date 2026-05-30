@@ -37,6 +37,7 @@ function projectContext(
         created_at: '',
         updated_at: '',
       },
+      architecture_stale: false,
       skills: [],
     })),
   };
@@ -109,5 +110,18 @@ describe('project context', () => {
 
     expect(readiness.hasPrimaryRepository).toBe(false);
     expect(readiness.nextAction).toBe('Bind one active primary repository before generating a plan.');
+  });
+
+  it('counts architecture warnings in fallback readiness', () => {
+    const context = projectContext([['primary', true, 'repo_app']]);
+    context.repository_contexts[0].architecture_stale = true;
+    context.repository_contexts[0].architecture_warnings = [
+      'Architecture snapshot is older than 24 hours.',
+    ];
+
+    const readiness = projectContextReadiness(context);
+
+    expect(readiness.warningCount).toBe(1);
+    expect(readiness.nextAction).toBe('Review repository context warnings before approving execution.');
   });
 });

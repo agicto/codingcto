@@ -48,6 +48,24 @@ export interface ProjectRepoProfileDTO {
   updated_at: string;
 }
 
+export interface ProjectRepoArchitectureSnapshotDTO {
+  id: number;
+  repository_id: string;
+  commit_sha: string;
+  stack: string[];
+  modules: string[];
+  entrypoints: string[];
+  test_commands: string[];
+  ci_workflows: string[];
+  risk_areas: string[];
+  summary: string;
+  generated_by: string;
+  warnings: string[];
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ProjectSkillDTO {
   id: number;
   repository_id: string;
@@ -63,6 +81,9 @@ export interface ProjectSkillDTO {
 export interface ProjectRepositoryContextDTO {
   repository: ProjectRepositoryDTO;
   profile?: ProjectRepoProfileDTO;
+  architecture_snapshot?: ProjectRepoArchitectureSnapshotDTO;
+  architecture_stale: boolean;
+  architecture_warnings?: string[];
   skills: ProjectSkillDTO[];
   warnings?: string[];
 }

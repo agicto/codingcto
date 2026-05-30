@@ -130,8 +130,13 @@ function ProjectRepositoryCard({
 }: {
   repositoryContext: ProjectRepositoryContextDTO;
 }) {
-  const { repository, profile, skills, warnings } = repositoryContext;
-  const repoWarnings = [...(warnings ?? []), ...(profile?.warnings ?? [])];
+  const { repository, profile, architecture_snapshot: architectureSnapshot, skills, warnings } =
+    repositoryContext;
+  const repoWarnings = [
+    ...(warnings ?? []),
+    ...(repositoryContext.architecture_warnings ?? []),
+    ...(profile?.warnings ?? []),
+  ];
 
   return (
     <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3">
@@ -157,6 +162,30 @@ function ProjectRepositoryCard({
       <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-text-muted">
         <div>{profile?.test_commands?.length ?? 0} test commands</div>
         <div>{skills?.length ?? 0} skills</div>
+        <div>{architectureSnapshot?.modules.length ?? 0} modules</div>
+        <div>{architectureSnapshot?.ci_workflows.length ?? 0} CI workflows</div>
+      </div>
+      <div className="mt-3 rounded-md border border-border-subtle bg-bg-surface px-3 py-2 text-xs leading-5 text-text-muted">
+        <div className="flex flex-wrap items-center justify-between gap-2">
+          <span className="font-medium text-text-main">Architecture snapshot</span>
+          <Badge
+            variant="outline"
+            className={
+              architectureSnapshot && !repositoryContext.architecture_stale
+                ? 'border-success/30 text-success'
+                : 'border-warning/30 text-warning'
+            }
+          >
+            {architectureSnapshot
+              ? repositoryContext.architecture_stale
+                ? 'stale'
+                : 'fresh'
+              : 'missing'}
+          </Badge>
+        </div>
+        <div className="mt-1 truncate">
+          {architectureSnapshot?.commit_sha || 'Generate a snapshot before approving execution.'}
+        </div>
       </div>
       {repoWarnings.length > 0 && (
         <div className="mt-3 rounded-md border border-warning/30 bg-warning-subtle px-3 py-2 text-xs leading-5 text-warning">

@@ -210,11 +210,12 @@ func (s *service) GetArchitectureStatus(ctx context.Context, repoID string) (*Re
 	snapshot, err := s.repo.FindLatestArchitectureSnapshotByRepositoryID(ctx, repoID)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
-			return architectureStatusResponse(nil, true, []string{"No architecture snapshot has been generated yet."}), nil
+			stale, reasons := domain.SpecForgeRepoArchitectureSnapshotStaleness(nil, time.Now())
+			return architectureStatusResponse(nil, stale, reasons), nil
 		}
 		return nil, err
 	}
-	stale, reasons := architectureSnapshotStale(snapshot, time.Now())
+	stale, reasons := domain.SpecForgeRepoArchitectureSnapshotStaleness(snapshot, time.Now())
 	return architectureStatusResponse(snapshot, stale, reasons), nil
 }
 
@@ -329,22 +330,6 @@ func architectureCIWorkflows(paths []string) []string {
 		}
 	}
 	return normalizeList(workflows)
-}
-
-func architectureSnapshotStale(snapshot *domain.SpecForgeRepoArchitectureSnapshot, now time.Time) (bool, []string) {
-	if snapshot == nil {
-		return true, []string{"No architecture snapshot has been generated yet."}
-	}
-	reasons := []string{}
-	if strings.TrimSpace(snapshot.CommitSHA) == "" {
-		reasons = append(reasons, "Architecture snapshot has no commit or ref recorded.")
-	}
-	if snapshot.CreatedAt.IsZero() {
-		reasons = append(reasons, "Architecture snapshot has no creation timestamp.")
-	} else if now.Sub(snapshot.CreatedAt) > 24*time.Hour {
-		reasons = append(reasons, "Architecture snapshot is older than 24 hours.")
-	}
-	return len(reasons) > 0, reasons
 }
 
 func architectureStatusResponse(snapshot *domain.SpecForgeRepoArchitectureSnapshot, stale bool, reasons []string) *RepoArchitectureStatusResponse {

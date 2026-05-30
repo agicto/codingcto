@@ -48,7 +48,11 @@ export function projectContextReadiness(context?: ProjectContextDTO): ProjectCon
     activeRepositories.filter(item => item.repository.role !== 'primary').length;
   const skillCount = repositories.reduce((count, item) => count + (item.skills?.length ?? 0), 0);
   const warningCount = repositories.reduce(
-    (count, item) => count + (item.warnings?.length ?? 0) + (item.profile?.warnings?.length ?? 0),
+    (count, item) =>
+      count +
+      (item.warnings?.length ?? 0) +
+      (item.architecture_warnings?.length ?? 0) +
+      (item.profile?.warnings?.length ?? 0),
     0
   );
   const guardrails = context?.execution_guardrails ?? [];

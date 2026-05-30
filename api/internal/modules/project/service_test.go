@@ -71,6 +71,16 @@ func TestServiceProjectContextIncludesRepoProfilesAndSkills(t *testing.T) {
 				Summary:       "Primary app repo.",
 			},
 		},
+		snapshots: map[string]*domain.SpecForgeRepoArchitectureSnapshot{
+			"repo_1": {
+				ID:           30,
+				RepositoryID: "repo_1",
+				CommitSHA:    "abc123",
+				Modules:      []string{"api/internal/modules/project", "web/src/features/project"},
+				CIWorkflows:  []string{".github/workflows/ci.yml"},
+				CreatedAt:    nowUTC(),
+			},
+		},
 	}
 	skills := &memorySkillStore{
 		skills: map[string][]*domain.SpecForgeSkill{
@@ -119,10 +129,15 @@ func TestServiceProjectContextIncludesRepoProfilesAndSkills(t *testing.T) {
 	require.Equal(t, []string{"Go", "Next.js"}, repoOneContext.Profile.Stack)
 	require.Len(t, repoOneContext.Skills, 1)
 	require.Equal(t, "module-boundaries", repoOneContext.Skills[0].Name)
+	require.NotNil(t, repoOneContext.ArchitectureSnapshot)
+	require.False(t, repoOneContext.ArchitectureStale)
+	require.Contains(t, repoOneContext.ArchitectureSnapshot.Modules, "api/internal/modules/project")
 	repoTwoContext := projectRepoContextByRepositoryID(contextBundle, "repo_2")
 	require.NotNil(t, repoTwoContext)
 	require.Nil(t, repoTwoContext.Profile)
 	require.Contains(t, repoTwoContext.Warnings, "Repo profile has not been generated yet.")
+	require.True(t, repoTwoContext.ArchitectureStale)
+	require.Contains(t, repoTwoContext.ArchitectureWarnings, "Architecture snapshot has not been generated yet.")
 	require.Equal(t, "repo_1", contextBundle.PrimaryRepositoryID)
 	require.Equal(t, "repo_1", contextBundle.ExecutionRepositoryID)
 	require.Equal(t, []string{"repo_2"}, contextBundle.ReadOnlyRepositoryIDs)
@@ -132,7 +147,7 @@ func TestServiceProjectContextIncludesRepoProfilesAndSkills(t *testing.T) {
 	require.Equal(t, 2, contextBundle.Readiness.ActiveRepositoryCount)
 	require.Equal(t, 1, contextBundle.Readiness.ReadOnlyRepositoryCount)
 	require.Equal(t, 1, contextBundle.Readiness.SkillCount)
-	require.Equal(t, 1, contextBundle.Readiness.WarningCount)
+	require.Equal(t, 2, contextBundle.Readiness.WarningCount)
 	require.Equal(t, contextBundle.ExecutionGuardrails, contextBundle.Readiness.Guardrails)
 	require.Contains(t, contextBundle.Readiness.Summary, "repo_1")
 	require.Equal(t, "Review repository context warnings before approving execution.", contextBundle.Readiness.NextAction)
@@ -402,7 +417,8 @@ func projectRepoContextByRepositoryID(bundle *domain.SpecForgeProjectContext, re
 }
 
 type memoryRepoProfileStore struct {
-	profiles map[string]*domain.SpecForgeRepoProfile
+	profiles  map[string]*domain.SpecForgeRepoProfile
+	snapshots map[string]*domain.SpecForgeRepoArchitectureSnapshot
 }
 
 func (s *memoryRepoProfileStore) UpsertProfile(_ context.Context, profile *domain.SpecForgeRepoProfile) error {
@@ -420,6 +436,15 @@ func (s *memoryRepoProfileStore) FindProfileByRepositoryID(_ context.Context, re
 		return nil, domain.ErrNotFound
 	}
 	copied := *profile
+	return &copied, nil
+}
+
+func (s *memoryRepoProfileStore) FindLatestArchitectureSnapshotByRepositoryID(_ context.Context, repositoryID string) (*domain.SpecForgeRepoArchitectureSnapshot, error) {
+	snapshot, ok := s.snapshots[repositoryID]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	copied := *snapshot
 	return &copied, nil
 }
 
