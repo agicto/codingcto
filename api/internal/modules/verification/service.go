@@ -480,12 +480,29 @@ func buildEscalationSummary(prNodeID uint, attempts []*domain.SpecForgeFixAttemp
 }
 
 func classifyFailureType(failure *githubintegration.PRNodeFailureLog) string {
-	logs := strings.ToLower(failure.LogExcerpt)
+	if failure == nil {
+		return "ci_failure"
+	}
+	logs := strings.ToLower(strings.Join([]string{
+		failure.JobName,
+		strings.Join(failure.FailedSteps, "\n"),
+		failure.LogExcerpt,
+	}, "\n"))
 	switch {
 	case strings.Contains(logs, "eslint") || strings.Contains(logs, "lint"):
 		return "lint_failure"
 	case strings.Contains(logs, "tsc") || strings.Contains(logs, "ts23") || strings.Contains(logs, "type error") || strings.Contains(logs, "typecheck"):
 		return "type_error"
+	case strings.Contains(logs, "flaky") || strings.Contains(logs, "timed out") || strings.Contains(logs, "timeout") || strings.Contains(logs, "context deadline exceeded"):
+		return "flaky_test"
+	case strings.Contains(logs, "migration") || strings.Contains(logs, "migrate") || strings.Contains(logs, "schema drift") || strings.Contains(logs, "prisma migrate"):
+		return "migration_failure"
+	case strings.Contains(logs, "cannot find module") || strings.Contains(logs, "module not found") || strings.Contains(logs, "no required module provides") || strings.Contains(logs, "missing dependency") || strings.Contains(logs, "package not found"):
+		return "missing_dependency"
+	case strings.Contains(logs, "permission denied") || strings.Contains(logs, "unauthorized") || strings.Contains(logs, "forbidden") || strings.Contains(logs, "401") || strings.Contains(logs, "403"):
+		return "auth_permission_failure"
+	case strings.Contains(logs, "acceptance criteria") || strings.Contains(logs, "spec mismatch") || strings.Contains(logs, "product mismatch"):
+		return "product_mismatch"
 	case strings.Contains(logs, "test") || strings.Contains(logs, "fail:") || strings.Contains(logs, "--- fail"):
 		return "unit_test_failure"
 	default:
@@ -494,20 +511,74 @@ func classifyFailureType(failure *githubintegration.PRNodeFailureLog) string {
 }
 
 func likelyCause(failure *githubintegration.PRNodeFailureLog) string {
-	step := firstString(failure.FailedSteps)
-	if step != "" {
-		return fmt.Sprintf("GitHub Actions job %q failed at step %q.", failure.JobName, step)
+	failureType := classifyFailureType(failure)
+	if failure == nil {
+		return failureTypeLikelyCausePrefix(failureType) + " No GitHub Actions failure log was available."
 	}
-	return fmt.Sprintf("GitHub Actions job %q failed.", failure.JobName)
+	step := firstString(failure.FailedSteps)
+	prefix := failureTypeLikelyCausePrefix(failureType)
+	if step != "" {
+		return fmt.Sprintf("%s GitHub Actions job %q failed at step %q.", prefix, failure.JobName, step)
+	}
+	return fmt.Sprintf("%s GitHub Actions job %q failed.", prefix, failure.JobName)
 }
 
 func recommendedAction(failure *githubintegration.PRNodeFailureLog) string {
-	return "Inspect the CI log excerpt, patch the failing code or test, then rerun the affected local command before pushing a fix."
+	switch classifyFailureType(failure) {
+	case "lint_failure":
+		return "Patch the lint violation only, then rerun the lint command before pushing a fix."
+	case "type_error":
+		return "Patch the type mismatch or missing type guard, then rerun the affected typecheck command before pushing a fix."
+	case "unit_test_failure":
+		return "Patch the failing code or test expectation within the PR node scope, then rerun the affected test command before pushing a fix."
+	case "flaky_test":
+		return "Rerun the workflow once; only patch code if the same deterministic failure repeats."
+	case "missing_dependency":
+		return "Inspect whether the dependency is already declared elsewhere; only add or update package metadata if it is required by this PR node."
+	case "migration_failure":
+		return "Pause auto-fix and review the migration/schema conflict before changing database state."
+	case "auth_permission_failure":
+		return "Review the auth and permission assumptions; patch only if the required role or token behavior is already specified by the approved plan."
+	case "product_mismatch":
+		return "Pause auto-fix and re-check the approved plan, acceptance criteria, and PR node boundary before patching."
+	default:
+		return "Inspect the CI log excerpt, patch the smallest reproducible failure within scope, then rerun the affected local command before pushing a fix."
+	}
 }
 
 func canAutoFix(failure *githubintegration.PRNodeFailureLog) bool {
 	failureType := classifyFailureType(failure)
-	return failureType == "lint_failure" || failureType == "type_error" || failureType == "unit_test_failure"
+	switch failureType {
+	case "lint_failure", "type_error", "unit_test_failure":
+		return true
+	case "missing_dependency":
+		return true
+	default:
+		return false
+	}
+}
+
+func failureTypeLikelyCausePrefix(failureType string) string {
+	switch failureType {
+	case "lint_failure":
+		return "The failure appears to be a lint or formatting issue."
+	case "type_error":
+		return "The failure appears to be a type-checking issue."
+	case "unit_test_failure":
+		return "The failure appears to be a deterministic test failure."
+	case "flaky_test":
+		return "The failure may be a timeout or flaky test."
+	case "missing_dependency":
+		return "The failure appears to involve a missing dependency."
+	case "migration_failure":
+		return "The failure appears to involve a database migration or schema conflict."
+	case "auth_permission_failure":
+		return "The failure appears to involve authentication or authorization behavior."
+	case "product_mismatch":
+		return "The failure appears to involve a mismatch with the approved product/spec boundary."
+	default:
+		return "The failure requires CI log inspection."
+	}
 }
 
 func firstString(items []string) string {
