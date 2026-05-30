@@ -39,7 +39,7 @@ export const demoPlan: PlanBundle = {
     ],
     riskAreas: ["auth", "database migrations", "runner isolation"],
     summary:
-      "CodingCTO is split into a Go API and a Next.js web app. SpecForge work should keep contracts explicit and avoid shared runtime code between halves.",
+      "CodingCTO is split into a Go API and a Next.js web app. Planning work should keep contracts explicit and avoid shared runtime code between halves.",
     source: "demo",
     warnings: [],
     lastIndexedAt: new Date(demoRuntimeNow - 5 * 60_000).toISOString(),
@@ -71,7 +71,7 @@ export const demoPlan: PlanBundle = {
   },
   implementationPlan: {
     technicalSummary:
-      "Add the first SpecForge workbench surface around idea intake, plan review, PR DAG inspection, and execution delivery state.",
+      "Add the first CodingCTO workbench surface around idea intake, plan review, PR DAG inspection, and execution delivery state.",
     affectedAreas: ["web/src/features/specforge", "web/src/app/(protected)/(console)/console/specforge"],
     securityRisks: [
       "Do not display raw secrets from future repo context.",

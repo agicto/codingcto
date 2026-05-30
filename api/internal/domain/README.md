@@ -1,6 +1,6 @@
 # Domain Layer
 
-The **Domain Layer** is the heart of Luas framework, containing the core business logic that is independent of any infrastructure concerns.
+The **Domain Layer** is the heart of CodingCTO, containing the core business logic that is independent of any infrastructure concerns.
 
 ## 📋 Responsibilities
 
@@ -156,7 +156,7 @@ type RoleAssigner interface {
 
 ## Notes
 
-- In Luas, most request-driven business logic belongs in `internal/modules/*/service.go`.
+- In CodingCTO, most request-driven business logic belongs in `internal/modules/*/service.go`.
 - Add a dedicated domain service only when logic is shared across modules or does not fit an entity/aggregate cleanly.
 
 ## 🔄 Data Flow

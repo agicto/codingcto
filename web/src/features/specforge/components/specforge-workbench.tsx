@@ -495,7 +495,7 @@ export function SpecForgeWorkbench({
     <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
       <header className="flex flex-col gap-4 border-b border-border-subtle pb-6 lg:flex-row lg:items-end lg:justify-between">
         <div className="max-w-3xl">
-          <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">SpecForge</h1>
+          <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">CodingCTO</h1>
           <p className="mt-2 text-sm leading-6 text-text-muted">
             {projectLabel
               ? `${projectLabel}: describe a feature, review the plan, then start a PR-oriented execution run.`
@@ -523,7 +523,7 @@ export function SpecForgeWorkbench({
               value={idea}
               onChange={(event) => setIdea(event.target.value)}
               className="min-h-36"
-              aria-label="Describe the feature SpecForge should turn into reviewable PRs"
+              aria-label="Describe the feature CodingCTO should turn into reviewable PRs"
               placeholder="Describe the product outcome, constraints, and any implementation boundaries..."
             />
             <Input
@@ -644,7 +644,7 @@ function RuntimeReadiness({
         `Marked ${result.offline_runtimes.length} runtimes offline and failed ${result.failed_tasks.length} tasks.`
       );
     } catch {
-      setMaintenanceMessage("Runtime sweep requires the SpecForge backend.");
+      setMaintenanceMessage("Runtime sweep requires the CodingCTO backend.");
     }
   }
 
@@ -657,7 +657,7 @@ function RuntimeReadiness({
       });
       setMaintenanceMessage(`Failed ${result.failed_tasks.length} stale tasks.`);
     } catch {
-      setMaintenanceMessage("Task sweep requires the SpecForge backend.");
+      setMaintenanceMessage("Task sweep requires the CodingCTO backend.");
     }
   }
 
@@ -934,7 +934,7 @@ function RepoProfileEditor({
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs leading-5 text-text-muted">
           {isOffline
-            ? "Start the SpecForge backend to save profile changes."
+            ? "Start the CodingCTO backend to save profile changes."
             : "Profile context feeds planning, PR DAG, and prompt compilation."}
         </p>
         <div className="flex flex-wrap gap-2">
@@ -959,7 +959,7 @@ function RepoProfileEditor({
 
 function RepoSkillsPanel({ repoId }: { repoId: string }) {
   const [name, setName] = useState("Repo coding guidelines");
-  const [description, setDescription] = useState("Instructions injected into SpecForge prompts.");
+  const [description, setDescription] = useState("Instructions injected into CodingCTO prompts.");
   const [content, setContent] = useState("");
   const [active, setActive] = useState(true);
   const [savedSkill, setSavedSkill] = useState<SpecForgeSkillDTO>();
@@ -1065,7 +1065,7 @@ function RepoSkillsPanel({ repoId }: { repoId: string }) {
         </div>
         {skillsQuery.isError && (
           <p className="text-xs leading-5 text-text-muted">
-            Skills will save when the SpecForge backend is available.
+            Skills will save when the CodingCTO backend is available.
           </p>
         )}
         {latestSkill && (
@@ -1099,7 +1099,7 @@ function GitHubWebhookEventsPanel() {
         )}
         {eventsQuery.isError && (
           <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
-            Webhook events will load when the SpecForge backend is available.
+            Webhook events will load when the CodingCTO backend is available.
           </div>
         )}
         {!eventsQuery.isLoading && !eventsQuery.isError && events.length === 0 && (
@@ -1442,7 +1442,7 @@ function PRDag({
             : await refreshCI.mutateAsync(payload);
       rememberDeliveredNode(prNodeFromDTO(updated));
     } catch {
-      setDeliveryError("GitHub delivery controls require the SpecForge backend and GitHub App setup.");
+      setDeliveryError("GitHub delivery controls require the CodingCTO backend and GitHub App setup.");
     } finally {
       setDeliveryActionNodeId(undefined);
     }
@@ -1548,7 +1548,7 @@ function PRDag({
           <div className="font-medium text-text-main">Auto-fix guardrail</div>
           <div className="mt-1 text-text-muted">
             Each PR node can use up to {maxFixAttemptsPerNode} automatic fix attempts before
-            SpecForge escalates with a decision summary.
+            CodingCTO escalates with a decision summary.
           </div>
         </div>
         <Badge variant="outline">3 attempts max</Badge>
@@ -1729,12 +1729,12 @@ function PRDag({
             ))}
             {fixAttemptsQuery.isError && (
               <p className="text-xs leading-5 text-text-muted">
-                Live fix attempts will load when the SpecForge backend is available.
+                Live fix attempts will load when the CodingCTO backend is available.
               </p>
             )}
             {escalationSummaryQuery.isError && (
               <p className="text-xs leading-5 text-text-muted">
-                Escalation summaries require the SpecForge backend.
+                Escalation summaries require the CodingCTO backend.
               </p>
             )}
           </CardContent>
@@ -1859,7 +1859,7 @@ function ExecutionStatus({
       const bundle = await completeTask.mutateAsync(task.taskId);
       onExecutionBundle(bundle);
     } catch {
-      setTaskActionError("Complete requires a dispatched or running task and the SpecForge backend.");
+      setTaskActionError("Complete requires a dispatched or running task and the CodingCTO backend.");
     } finally {
       setTaskActionId(undefined);
     }
@@ -2054,7 +2054,7 @@ function TaskEventPanel({
         {isLoading && <div className="text-sm text-text-muted">Loading task events.</div>}
         {isError && (
           <div className="text-sm text-text-muted">
-            Live task events will load when the SpecForge backend is available.
+            Live task events will load when the CodingCTO backend is available.
           </div>
         )}
         {!task.taskId && (

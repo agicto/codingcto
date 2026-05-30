@@ -5,7 +5,7 @@ const messages: NavMessages = {
   home: 'Home',
   dashboard: 'Platform',
   projects: 'Projects',
-  specforge: 'SpecForge',
+  specforge: 'CodingCTO',
   settings: 'Settings',
   profile: 'Profile',
   analytics: 'Analytics',

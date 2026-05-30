@@ -6,7 +6,7 @@ Accepted
 
 ## Context
 
-Luas has three horizontal homes that can plausibly host shared code:
+CodingCTO has three horizontal homes that can plausibly host shared code:
 
 - `pkg/` — currently houses `encryption`, `env`, `errors`, `events`, `handler`,
   `hash`, `logger`, `pagination`, `request`, `resource`, `response`, `support`,
@@ -34,12 +34,12 @@ A package belongs in `pkg/` when **all** of the following hold:
 1. It has **no dependency** on `internal/...`, on `gin`, on `gorm`, or on
    any other framework-level choice this scaffold makes.
 2. It is a stable building block that other Go projects could vendor in
-   without inheriting Luas's architecture.
+   without inheriting CodingCTO's architecture.
 3. It owns no global state, no init-time side effects, no DI wiring.
 
 Examples that fit: `pkg/env`, `pkg/pagination`, `pkg/errors`.
 
-Smell test: would a Go developer outside Luas reasonably copy this file
+Smell test: would a Go developer outside CodingCTO reasonably copy this file
 into their own project unchanged? If yes, `pkg/`.
 
 ### `internal/capabilities/` — opinionated, domain-shaped capabilities
@@ -48,22 +48,22 @@ A package belongs in `internal/capabilities/` when:
 
 1. It exposes a **provider-neutral surface** the rest of the app calls
    through (e.g. `ai.Provider`, `idgen.Generator`).
-2. The surface is **Luas-shaped**: it makes sense in *this* application's
-   world but may not generalize. (`capabilities/ai` is what Luas's
+2. The surface is **CodingCTO-shaped**: it makes sense in *this* application's
+   world but may not generalize. (`capabilities/ai` is what CodingCTO's
    modules and CLI need, not the OpenAI SDK reshape.)
 3. It can be **Wire-injected** into modules without leaking framework
    details (no `*gin.Context`, no `*gorm.DB` in its public API).
 
 Examples that fit: `capabilities/ai`, `capabilities/idgen`.
 
-Smell test: would another Luas-based app reuse this verbatim, but a
+Smell test: would another CodingCTO-based app reuse this verbatim, but a
 plain Go service probably wouldn't bother? If yes, `internal/capabilities/`.
 
 ### `internal/infra/` — framework wiring + runtime glue
 
 A package belongs in `internal/infra/` when:
 
-1. It is **bound to specific framework / runtime decisions** Luas has
+1. It is **bound to specific framework / runtime decisions** CodingCTO has
    made (Gin, GORM, OTel, our env-loader, our console framework).
 2. It exists to make the runtime work, not to be reused. Replacing the
    framework would replace this code.

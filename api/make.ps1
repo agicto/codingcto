@@ -1,4 +1,4 @@
-# Luas Build Script for Windows PowerShell
+# CodingCTO Build Script for Windows PowerShell
 # Usage: .\make.ps1 [command]
 
 param(

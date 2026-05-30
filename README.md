@@ -108,7 +108,7 @@ This repo merges two previous projects, with full commit history preserved:
 Historical module / package identifiers were renamed during the earlier scaffold consolidation:
 
 - Go module: `github.com/zgiai/zgo` → `github.com/zgiai/luas/api`
-- Web package: `llamafront-ai-scaffold` → `luas-web`
+- Web package: `llamafront-ai-scaffold` → `codingcto-web`
 
 The current public project name is **CodingCTO**. The `luas` identifiers above are retained as compatibility details until a dedicated package/module rename is planned.
 
