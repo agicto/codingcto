@@ -1,4 +1,5 @@
 import { env } from "@/config/env";
+import type { ProjectContextDTO } from "@/features/project/services/project-service";
 import { createRequest, type RequestConfig } from "@/http";
 
 const request = createRequest({
@@ -194,6 +195,7 @@ export interface SpecForgeRepoProfileDTO {
 export interface SpecForgePlanBundleDTO {
   idea: {
     id: number;
+    project_id?: number;
     repository_id: string;
     created_by: number;
     raw_input: string;
@@ -203,6 +205,7 @@ export interface SpecForgePlanBundleDTO {
     updated_at: string;
   };
   repo_profile?: SpecForgeRepoProfileDTO;
+  project_context?: ProjectContextDTO;
   product_spec: {
     id: number;
     idea_id: number;
@@ -470,6 +473,12 @@ export const specForgeService = {
   createIdea: (repoId: string, payload: CreateIdeaPayload) =>
     request.post<SpecForgePlanBundleDTO, CreateIdeaPayload>(
       `/repositories/${repoId}/ideas`,
+      payload
+    ),
+
+  createProjectIdea: (projectId: number, payload: CreateIdeaPayload) =>
+    request.post<SpecForgePlanBundleDTO, CreateIdeaPayload>(
+      `/projects/${projectId}/ideas`,
       payload
     ),
 

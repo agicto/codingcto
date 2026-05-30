@@ -44,6 +44,31 @@ func (h *Handler) CreateIdea(c *gin.Context) {
 	response.Created(c, toPlanReviewResponse(bundle))
 }
 
+func (h *Handler) CreateProjectIdea(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+
+	var req CreateIdeaRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+
+	bundle, err := h.service.CreateProjectIdea(c.Request.Context(), userID, projectID, &req)
+	if err != nil {
+		response.HandleError(c, "Failed to create project idea", err)
+		return
+	}
+
+	response.Created(c, toPlanReviewResponse(bundle))
+}
+
 func (h *Handler) GetPlan(c *gin.Context) {
 	ideaID, ok := handler.ParseID(c, "id")
 	if !ok {

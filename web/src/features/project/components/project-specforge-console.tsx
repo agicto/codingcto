@@ -31,6 +31,7 @@ export function ProjectSpecForgeConsole() {
       </div>
       <SpecForgeWorkbench
         key={repositoryId ?? "demo"}
+        projectId={Number.isFinite(projectId) ? projectId : undefined}
         initialRepositoryId={repositoryId}
         projectLabel={context?.project.name}
         repositoryLocked={Boolean(repositoryId)}

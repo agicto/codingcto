@@ -63,6 +63,7 @@ import {
   useCompileSpecForgePrompt,
   useCreateSpecForgeFixAttemptFromCI,
   useCreateSpecForgeIdea,
+  useCreateSpecForgeProjectIdea,
   useDeliverSpecForgePRNode,
   useDispatchExecutionRun,
   useExecutionRun,
@@ -206,12 +207,14 @@ function demoPlanForInput(idea: string, repositoryId: string): PlanBundle {
 }
 
 interface SpecForgeWorkbenchProps {
+  projectId?: number;
   initialRepositoryId?: string;
   projectLabel?: string;
   repositoryLocked?: boolean;
 }
 
 export function SpecForgeWorkbench({
+  projectId,
   initialRepositoryId,
   projectLabel,
   repositoryLocked = false,
@@ -238,6 +241,7 @@ export function SpecForgeWorkbench({
   const [currentRuntimeNow] = useState(() => Date.now());
 
   const createIdea = useCreateSpecForgeIdea(repoId.trim());
+  const createProjectIdea = useCreateSpecForgeProjectIdea(projectId);
   const approvePlan = useApproveSpecForgePlan();
   const startRun = useStartExecutionRun();
   const dispatchRun = useDispatchExecutionRun();
@@ -299,10 +303,13 @@ export function SpecForgeWorkbench({
 
     setApproved(false);
     try {
-      const bundle = await createIdea.mutateAsync({
+      const payload = {
         input: trimmedIdea,
         type: "feature",
-      });
+      } as const;
+      const bundle = projectId
+        ? await createProjectIdea.mutateAsync(payload)
+        : await createIdea.mutateAsync(payload);
       const nextPlan = planBundleFromDTO(bundle);
       setActivePlan(nextPlan);
       setDecisionOverrides(defaultDecisionOverrides(nextPlan));
@@ -525,9 +532,11 @@ export function SpecForgeWorkbench({
             <div className="flex flex-wrap gap-2">
               <Button
                 onClick={generatePlan}
-                disabled={!idea.trim() || !repoId.trim() || createIdea.isPending}
+                disabled={!idea.trim() || !repoId.trim() || createIdea.isPending || createProjectIdea.isPending}
               >
-                {createIdea.isPending ? "Generating plan" : "Generate implementation plan"}
+                {createIdea.isPending || createProjectIdea.isPending
+                  ? "Generating plan"
+                  : "Generate implementation plan"}
                 <ArrowRight className="ml-1.5 h-4 w-4" />
               </Button>
               <Button variant="outline" onClick={resetIdea}>

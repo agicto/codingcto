@@ -19,7 +19,7 @@ func TestCreateIdeaBuildsReviewablePlanBundle(t *testing.T) {
 		CIProvider:    "github_actions",
 		RiskAreas:     []string{"database"},
 	}}
-	svc := NewService(repo, profileRepo, repo)
+	svc := NewService(repo, profileRepo, repo, nil)
 
 	bundle, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
@@ -56,7 +56,7 @@ func TestCreateIdeaBuildsFrontendAndBackendPRDAGFromRepoProfile(t *testing.T) {
 		CIProvider:    "github_actions",
 		AppStructure:  []string{"api/internal/modules", "web/src/features"},
 	}}
-	svc := NewService(repo, profileRepo, repo)
+	svc := NewService(repo, profileRepo, repo, nil)
 
 	bundle, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite UI and API for workspace admins",
@@ -89,7 +89,7 @@ func TestCreateIdeaAddsMilestoneGuardrailForOverlargeIdeas(t *testing.T) {
 		AppStructure:  []string{"api/internal/modules", "web/src/features"},
 		RiskAreas:     []string{"auth", "billing"},
 	}}
-	svc := NewService(repo, profileRepo, repo)
+	svc := NewService(repo, profileRepo, repo, nil)
 
 	bundle, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add workspace invite with database schema, admin UI, email notifications, role permissions, audit log, Stripe billing limits, and Slack integration",
@@ -107,7 +107,7 @@ func TestCreateIdeaAddsMilestoneGuardrailForOverlargeIdeas(t *testing.T) {
 
 func TestApprovePlanRecordsApproverAndRejectsSecondApproval(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, &memoryProfileRepo{}, repo)
+	svc := NewService(repo, &memoryProfileRepo{}, repo, nil)
 
 	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
@@ -133,7 +133,7 @@ func TestApprovePlanRecordsApproverAndRejectsSecondApproval(t *testing.T) {
 
 func TestApprovePlanRejectsInvalidPRDAG(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, &memoryProfileRepo{}, repo)
+	svc := NewService(repo, &memoryProfileRepo{}, repo, nil)
 	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
 	})
@@ -148,7 +148,7 @@ func TestApprovePlanRejectsInvalidPRDAG(t *testing.T) {
 
 func TestPlanReviewResponseExposesPRDAGReview(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, &memoryProfileRepo{}, repo)
+	svc := NewService(repo, &memoryProfileRepo{}, repo, nil)
 	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
 	})
@@ -175,7 +175,7 @@ func TestCompilePromptPersistsVersionedPromptForPRNode(t *testing.T) {
 		Warnings:          []string{"No frontend routes were detected from the repository tree."},
 		LastIndexedAt:     time.Date(2026, 5, 29, 9, 30, 0, 0, time.UTC),
 	}}
-	svc := NewService(repo, profileRepo, repo)
+	svc := NewService(repo, profileRepo, repo, nil)
 
 	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
@@ -202,7 +202,7 @@ func TestCompilePromptPersistsVersionedPromptForPRNode(t *testing.T) {
 
 func TestUpsertSkillPersistsRepoInstruction(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, &memoryProfileRepo{}, repo)
+	svc := NewService(repo, &memoryProfileRepo{}, repo, nil)
 	active := true
 
 	skill, err := svc.UpsertSkill(context.Background(), 42, "repo_123", &UpsertSkillRequest{
@@ -226,7 +226,7 @@ func TestUpsertSkillPersistsRepoInstruction(t *testing.T) {
 
 func TestCompilePromptInjectsActiveRepoSkills(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, &memoryProfileRepo{}, repo)
+	svc := NewService(repo, &memoryProfileRepo{}, repo, nil)
 	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
 	})
@@ -253,9 +253,109 @@ func TestCompilePromptInjectsActiveRepoSkills(t *testing.T) {
 	require.NotContains(t, prompt.PromptText, "This should not appear.")
 }
 
+func TestCreateProjectIdeaUsesProjectContextProfilesAndSkills(t *testing.T) {
+	repo := &memoryRepo{}
+	profileRepo := &memoryProfileRepo{}
+	require.NoError(t, profileRepo.UpsertProfile(context.Background(), &domain.SpecForgeRepoProfile{
+		RepositoryID:      "repo_api",
+		DefaultBranch:     "main",
+		Stack:             []string{"Go", "Gin"},
+		TestCommands:      []string{"go test ./..."},
+		CIProvider:        "github_actions",
+		AppStructure:      []string{"api/internal/modules"},
+		CodingConventions: []string{"Use service layer for business logic"},
+		Summary:           "API service",
+	}))
+	require.NoError(t, profileRepo.UpsertProfile(context.Background(), &domain.SpecForgeRepoProfile{
+		RepositoryID:      "repo_web",
+		DefaultBranch:     "main",
+		Stack:             []string{"Next.js", "React", "TypeScript"},
+		TestCommands:      []string{"pnpm test"},
+		CIProvider:        "github_actions",
+		AppStructure:      []string{"web/src/features"},
+		CodingConventions: []string{"Keep feature folders self-contained"},
+		Summary:           "Web console",
+	}))
+	projectRepo := &memoryProjectRepo{
+		project: &domain.SpecForgeProject{ID: 9, WorkspaceID: "ws_1", Name: "SpecForge", Slug: "specforge", Status: domain.ProjectStatusActive},
+		repositories: []*domain.SpecForgeProjectRepository{
+			{ID: 1, ProjectID: 9, RepositoryID: "repo_api", Role: domain.ProjectRepositoryRolePrimary, Active: true},
+			{ID: 2, ProjectID: 9, RepositoryID: "repo_web", Role: domain.ProjectRepositoryRoleDependency, Active: true},
+		},
+	}
+	svc := NewService(repo, profileRepo, repo, projectRepo)
+	_, err := svc.UpsertSkill(context.Background(), 42, "repo_web", &UpsertSkillRequest{
+		Name:    "ui-boundaries",
+		Content: "Keep project console UI minimal and task-focused.",
+	})
+	require.NoError(t, err)
+
+	bundle, err := svc.CreateProjectIdea(context.Background(), 42, 9, &CreateIdeaRequest{
+		Input: "Add team invite UI and API for workspace admins",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, bundle.Idea.ProjectID)
+	require.Equal(t, uint(9), *bundle.Idea.ProjectID)
+	require.Equal(t, "repo_api", bundle.Idea.RepositoryID)
+	require.NotNil(t, bundle.ProjectContext)
+	require.Contains(t, bundle.RepoProfile.Stack, "Go")
+	require.Contains(t, bundle.RepoProfile.Stack, "Next.js")
+	require.Contains(t, bundle.Plan.AffectedAreas, "api/internal/modules")
+	require.Contains(t, bundle.Plan.AffectedAreas, "web/src/features")
+	require.Contains(t, bundle.ProductSpec.Assumptions, "Plan generation used project context for SpecForge across 2 active repositories.")
+}
+
+func TestCompilePromptInjectsProjectContextSkills(t *testing.T) {
+	repo := &memoryRepo{}
+	profileRepo := &memoryProfileRepo{}
+	require.NoError(t, profileRepo.UpsertProfile(context.Background(), &domain.SpecForgeRepoProfile{
+		RepositoryID:  "repo_api",
+		DefaultBranch: "main",
+		Stack:         []string{"Go", "Gin"},
+		TestCommands:  []string{"go test ./..."},
+		Summary:       "API service",
+	}))
+	require.NoError(t, profileRepo.UpsertProfile(context.Background(), &domain.SpecForgeRepoProfile{
+		RepositoryID:  "repo_web",
+		DefaultBranch: "main",
+		Stack:         []string{"Next.js", "React"},
+		TestCommands:  []string{"pnpm test"},
+		Summary:       "Web console",
+	}))
+	projectRepo := &memoryProjectRepo{
+		project: &domain.SpecForgeProject{ID: 9, WorkspaceID: "ws_1", Name: "SpecForge", Slug: "specforge", Status: domain.ProjectStatusActive},
+		repositories: []*domain.SpecForgeProjectRepository{
+			{ID: 1, ProjectID: 9, RepositoryID: "repo_api", Role: domain.ProjectRepositoryRolePrimary, Active: true},
+			{ID: 2, ProjectID: 9, RepositoryID: "repo_web", Role: domain.ProjectRepositoryRoleDependency, Active: true},
+		},
+	}
+	svc := NewService(repo, profileRepo, repo, projectRepo)
+	_, err := svc.UpsertSkill(context.Background(), 42, "repo_web", &UpsertSkillRequest{
+		Name:    "module-boundaries",
+		Content: "Web code talks to API over HTTP only.",
+	})
+	require.NoError(t, err)
+	created, err := svc.CreateProjectIdea(context.Background(), 42, 9, &CreateIdeaRequest{
+		Input: "Add team invite UI and API for workspace admins",
+	})
+	require.NoError(t, err)
+
+	prompt, err := svc.CompilePrompt(context.Background(), 42, created.PRNodes[0].ID, &CompilePromptRequest{})
+
+	require.NoError(t, err)
+	require.Contains(t, prompt.PromptText, "Project context")
+	require.Contains(t, prompt.PromptText, "Project: SpecForge")
+	require.Contains(t, prompt.PromptText, "Repository repo_api (primary)")
+	require.Contains(t, prompt.PromptText, "Repository repo_web (dependency)")
+	require.Contains(t, prompt.PromptText, "Web console")
+	require.Contains(t, prompt.PromptText, "module-boundaries")
+	require.Contains(t, prompt.PromptText, "Web code talks to API over HTTP only.")
+}
+
 func TestCompilePromptInjectsFixModeInstructions(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, &memoryProfileRepo{}, repo)
+	svc := NewService(repo, &memoryProfileRepo{}, repo, nil)
 	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
 	})
@@ -275,7 +375,7 @@ func TestCompilePromptInjectsFixModeInstructions(t *testing.T) {
 
 func TestCompilePromptInjectsReviewPatchModeInstructions(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, &memoryProfileRepo{}, repo)
+	svc := NewService(repo, &memoryProfileRepo{}, repo, nil)
 	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
 	})
@@ -359,16 +459,29 @@ type memoryRepo struct {
 }
 
 type memoryProfileRepo struct {
-	profile *domain.SpecForgeRepoProfile
+	profile  *domain.SpecForgeRepoProfile
+	profiles map[string]*domain.SpecForgeRepoProfile
 }
 
 func (r *memoryProfileRepo) UpsertProfile(ctx context.Context, profile *domain.SpecForgeRepoProfile) error {
 	copied := *profile
-	r.profile = &copied
+	if r.profiles == nil {
+		r.profiles = map[string]*domain.SpecForgeRepoProfile{}
+	}
+	r.profiles[profile.RepositoryID] = &copied
+	if r.profile == nil {
+		r.profile = &copied
+	}
 	return nil
 }
 
 func (r *memoryProfileRepo) FindProfileByRepositoryID(ctx context.Context, repositoryID string) (*domain.SpecForgeRepoProfile, error) {
+	if r.profiles != nil {
+		if profile, ok := r.profiles[repositoryID]; ok {
+			copied := *profile
+			return &copied, nil
+		}
+	}
 	if r.profile == nil || r.profile.RepositoryID != repositoryID {
 		return nil, domain.ErrNotFound
 	}
@@ -521,6 +634,108 @@ func (r *memoryRepo) ListSkillsByRepositoryID(ctx context.Context, repositoryID 
 	return out, nil
 }
 
+type memoryProjectRepo struct {
+	project      *domain.SpecForgeProject
+	repositories []*domain.SpecForgeProjectRepository
+}
+
+func (r *memoryProjectRepo) CreateProject(ctx context.Context, project *domain.SpecForgeProject) error {
+	copied := *project
+	r.project = &copied
+	return nil
+}
+
+func (r *memoryProjectRepo) UpdateProject(ctx context.Context, project *domain.SpecForgeProject) error {
+	if r.project == nil || r.project.ID != project.ID {
+		return domain.ErrNotFound
+	}
+	copied := *project
+	r.project = &copied
+	return nil
+}
+
+func (r *memoryProjectRepo) FindProjectByID(ctx context.Context, id uint) (*domain.SpecForgeProject, error) {
+	if r.project == nil || r.project.ID != id {
+		return nil, domain.ErrNotFound
+	}
+	copied := *r.project
+	return &copied, nil
+}
+
+func (r *memoryProjectRepo) FindProjectByWorkspaceAndSlug(ctx context.Context, workspaceID, slug string) (*domain.SpecForgeProject, error) {
+	if r.project == nil || r.project.WorkspaceID != workspaceID || r.project.Slug != slug {
+		return nil, domain.ErrNotFound
+	}
+	copied := *r.project
+	return &copied, nil
+}
+
+func (r *memoryProjectRepo) ListProjectsByWorkspace(ctx context.Context, workspaceID string) ([]*domain.SpecForgeProject, error) {
+	if r.project == nil || r.project.WorkspaceID != workspaceID {
+		return []*domain.SpecForgeProject{}, nil
+	}
+	copied := *r.project
+	return []*domain.SpecForgeProject{&copied}, nil
+}
+
+func (r *memoryProjectRepo) CreateProjectRepository(ctx context.Context, binding *domain.SpecForgeProjectRepository) error {
+	copied := *binding
+	r.repositories = append(r.repositories, &copied)
+	return nil
+}
+
+func (r *memoryProjectRepo) DeleteProjectRepository(ctx context.Context, projectID uint, repositoryID string) error {
+	for i, binding := range r.repositories {
+		if binding.ProjectID == projectID && binding.RepositoryID == repositoryID {
+			r.repositories = append(r.repositories[:i], r.repositories[i+1:]...)
+			return nil
+		}
+	}
+	return domain.ErrNotFound
+}
+
+func (r *memoryProjectRepo) FindProjectRepository(ctx context.Context, projectID uint, repositoryID string) (*domain.SpecForgeProjectRepository, error) {
+	for _, binding := range r.repositories {
+		if binding.ProjectID == projectID && binding.RepositoryID == repositoryID {
+			copied := *binding
+			return &copied, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryProjectRepo) ListProjectRepositories(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectRepository, error) {
+	out := []*domain.SpecForgeProjectRepository{}
+	for _, binding := range r.repositories {
+		if binding.ProjectID != projectID {
+			continue
+		}
+		copied := *binding
+		out = append(out, &copied)
+	}
+	return out, nil
+}
+
+func (r *memoryProjectRepo) CountActiveProjectRepositories(ctx context.Context, projectID uint) (int64, error) {
+	var count int64
+	for _, binding := range r.repositories {
+		if binding.ProjectID == projectID && binding.Active {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (r *memoryProjectRepo) FindActivePrimaryProjectRepository(ctx context.Context, projectID uint) (*domain.SpecForgeProjectRepository, error) {
+	for _, binding := range r.repositories {
+		if binding.ProjectID == projectID && binding.Active && binding.Role == domain.ProjectRepositoryRolePrimary {
+			copied := *binding
+			return &copied, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
 func cloneBundle(bundle *domain.SpecForgePlanBundle) *domain.SpecForgePlanBundle {
 	out := *bundle
 	idea := *bundle.Idea
@@ -529,6 +744,10 @@ func cloneBundle(bundle *domain.SpecForgePlanBundle) *domain.SpecForgePlanBundle
 	out.Idea = &idea
 	out.ProductSpec = &spec
 	out.Plan = &plan
+	if bundle.RepoProfile != nil {
+		profile := *bundle.RepoProfile
+		out.RepoProfile = &profile
+	}
 	out.PRNodes = make([]*domain.SpecForgePRNode, len(bundle.PRNodes))
 	for i, node := range bundle.PRNodes {
 		copied := *node

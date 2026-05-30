@@ -205,6 +205,52 @@ body.data.context.repository_contexts.0.profile.summary exists
 body.data.context.repository_contexts.0.skills.0.name exists
 ```
 
+```step
+@id project_idea
+@name Create Project Idea
+
+POST /v1/projects/{{project_id}}/ideas
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "input": "Add team invite UI and API for workspace admins",
+  "type": "feature"
+}
+
+[Captures]
+idea_id = data.idea.id
+plan_id = data.implementation_plan.id
+pr_node_id = data.pr_nodes.0.id
+
+[Asserts]
+status == 201
+body.data.idea.project_id exists
+body.data.project_context.project.name exists
+body.data.repo_profile.stack.0 exists
+body.data.product_spec.assumptions.0 exists
+body.data.pr_nodes.0.id exists
+```
+
+```step
+@id prompt
+@name Compile Project Prompt
+
+POST /v1/pr-nodes/{{pr_node_id}}/prompts
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "type": "implementation"
+}
+
+[Asserts]
+status == 201
+body.data.prompt.prompt_text exists
+body.data.prompt.prompt_hash exists
+body.data.prompt.version exists
+```
+
 ```edge
 @from register
 @to login
@@ -250,5 +296,17 @@ body.data.context.repository_contexts.0.skills.0.name exists
 ```edge
 @from bind
 @to context
+@on success
+```
+
+```edge
+@from context
+@to project_idea
+@on success
+```
+
+```edge
+@from project_idea
+@to prompt
 @on success
 ```

@@ -6,6 +6,7 @@ func (h *Handler) RegisterRoutes(r *router.Router) {
 	r.Group("", func(auth *router.Router) {
 		auth.WithMiddleware("auth")
 
+		auth.POST("/projects/:id/ideas", h.CreateProjectIdea).Name("specforge.projects.ideas.store").WhereNumber("id")
 		auth.POST("/repositories/:repo_id/ideas", h.CreateIdea).Name("specforge.ideas.store")
 		auth.GET("/repositories/:repo_id/skills", h.ListSkills).Name("specforge.skills.index")
 		auth.POST("/repositories/:repo_id/skills", h.UpsertSkill).Name("specforge.skills.store")

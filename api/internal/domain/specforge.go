@@ -38,6 +38,7 @@ const (
 // SpecForgeIdea captures the original product intent submitted for a repository.
 type SpecForgeIdea struct {
 	ID           uint      `json:"id"`
+	ProjectID    *uint     `json:"project_id,omitempty"`
 	RepositoryID string    `json:"repository_id"`
 	CreatedBy    uint      `json:"created_by"`
 	RawInput     string    `json:"raw_input"`
@@ -239,11 +240,12 @@ type SpecForgeRepoProfile struct {
 
 // SpecForgePlanBundle is the aggregate returned to plan review screens.
 type SpecForgePlanBundle struct {
-	Idea        *SpecForgeIdea               `json:"idea"`
-	RepoProfile *SpecForgeRepoProfile        `json:"repo_profile,omitempty"`
-	ProductSpec *SpecForgeProductSpec        `json:"product_spec"`
-	Plan        *SpecForgeImplementationPlan `json:"implementation_plan"`
-	PRNodes     []*SpecForgePRNode           `json:"pr_nodes"`
+	Idea           *SpecForgeIdea               `json:"idea"`
+	RepoProfile    *SpecForgeRepoProfile        `json:"repo_profile,omitempty"`
+	ProjectContext *SpecForgeProjectContext     `json:"project_context,omitempty"`
+	ProductSpec    *SpecForgeProductSpec        `json:"product_spec"`
+	Plan           *SpecForgeImplementationPlan `json:"implementation_plan"`
+	PRNodes        []*SpecForgePRNode           `json:"pr_nodes"`
 }
 
 // SpecForgePlanningRepository persists the idea-to-plan aggregate.

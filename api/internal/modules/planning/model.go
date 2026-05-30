@@ -9,6 +9,7 @@ import (
 
 type IdeaPO struct {
 	ID           uint   `gorm:"primaryKey"`
+	ProjectID    *uint  `gorm:"index"`
 	RepositoryID string `gorm:"size:255;not null;index"`
 	CreatedBy    uint   `gorm:"not null;index"`
 	RawInput     string `gorm:"type:text;not null"`
@@ -126,7 +127,7 @@ func (SkillPO) TableName() string {
 
 func newIdeaPO(idea *domain.SpecForgeIdea) *IdeaPO {
 	return &IdeaPO{
-		ID: idea.ID, RepositoryID: idea.RepositoryID, CreatedBy: idea.CreatedBy,
+		ID: idea.ID, ProjectID: idea.ProjectID, RepositoryID: idea.RepositoryID, CreatedBy: idea.CreatedBy,
 		RawInput: idea.RawInput, Type: idea.Type, Status: idea.Status,
 		CreatedAt: idea.CreatedAt, UpdatedAt: idea.UpdatedAt,
 	}
@@ -134,7 +135,7 @@ func newIdeaPO(idea *domain.SpecForgeIdea) *IdeaPO {
 
 func (po *IdeaPO) toDomain() *domain.SpecForgeIdea {
 	return &domain.SpecForgeIdea{
-		ID: po.ID, RepositoryID: po.RepositoryID, CreatedBy: po.CreatedBy,
+		ID: po.ID, ProjectID: po.ProjectID, RepositoryID: po.RepositoryID, CreatedBy: po.CreatedBy,
 		RawInput: po.RawInput, Type: po.Type, Status: po.Status,
 		CreatedAt: po.CreatedAt, UpdatedAt: po.UpdatedAt,
 	}
