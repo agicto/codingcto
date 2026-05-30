@@ -457,6 +457,67 @@ func TestHandlerUnlocksReadyTasksFromDependencySatisfiedEvent(t *testing.T) {
 	require.Equal(t, domain.AgentTaskStatusQueued, updated.Tasks[1].Status)
 }
 
+func TestHandlerCreatesReviewPatchOnlyForActionableFeedback(t *testing.T) {
+	planningRepo := memoryPlanningRepoWithPrompt()
+	prNumber := 42
+	planningRepo.bundle.PRNodes[0].GitHubPRNumber = &prNumber
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+	completed := dispatched.Tasks[0]
+	completed.Status = domain.AgentTaskStatusCompleted
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), completed))
+	bus := events.NewEventBus()
+	NewHandler(svc).RegisterEvents(bus)
+
+	err = bus.Publish(context.Background(), domain.NewSpecForgeReviewFeedbackReceivedEvent(
+		planningRepo.bundle.PRNodes[0].ID,
+		prNumber,
+		"agicto/codingcto",
+		"LGTM",
+		"reviewer",
+		"https://github.com/agicto/codingcto/pull/42#issuecomment-1",
+		"",
+		"",
+	))
+	require.NoError(t, err)
+	unchanged, err := svc.GetRun(context.Background(), created.Run.ID)
+	require.NoError(t, err)
+	require.Len(t, unchanged.Tasks, 2)
+
+	err = bus.Publish(context.Background(), domain.NewSpecForgeReviewFeedbackReceivedEvent(
+		planningRepo.bundle.PRNodes[0].ID,
+		prNumber,
+		"agicto/codingcto",
+		"Please preserve the existing API response shape.",
+		"reviewer",
+		"https://github.com/agicto/codingcto/pull/42#issuecomment-2",
+		"",
+		"",
+	))
+
+	require.NoError(t, err)
+	updated, err := svc.GetRun(context.Background(), created.Run.ID)
+	require.NoError(t, err)
+	require.Len(t, updated.Tasks, 3)
+	require.Equal(t, domain.PromptTypeReviewPatch, updated.Tasks[2].PromptType)
+	reviewPrompt := latestMemoryPromptByType(planningRepo, completed.PRNodeID, domain.PromptTypeReviewPatch)
+	require.NotNil(t, reviewPrompt)
+	require.Contains(t, reviewPrompt.PromptText, "Please preserve the existing API response shape.")
+	require.Contains(t, reviewPrompt.PromptText, "Source: https://github.com/agicto/codingcto/pull/42#issuecomment-2")
+}
+
+func TestActionableReviewFeedbackClassifier(t *testing.T) {
+	require.False(t, actionableReviewFeedback(""))
+	require.False(t, actionableReviewFeedback("LGTM"))
+	require.False(t, actionableReviewFeedback("Thanks for the quick fix."))
+	require.True(t, actionableReviewFeedback("Please add a nil workspace role guard."))
+	require.True(t, actionableReviewFeedback("This branch regresses the existing API response shape."))
+}
+
 func TestCancelRunCancelsNonTerminalTasks(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
 	runRepo := &memoryExecutionRepo{}
