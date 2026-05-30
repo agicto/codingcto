@@ -299,7 +299,7 @@ func (s *service) DispatchRun(ctx context.Context, runID uint, req *DispatchExec
 	if err != nil {
 		return nil, err
 	}
-	if executionRunStatusFinished(bundle.Run.Status) {
+	if executionRunStatusBlocksTaskExecution(bundle.Run.Status) {
 		return nil, domain.ErrConflict
 	}
 	dispatched := 0
@@ -542,7 +542,7 @@ func (s *service) RetryTask(ctx context.Context, taskID uint, req *RetryAgentTas
 	if err != nil {
 		return nil, err
 	}
-	if bundle.Run.Status == domain.ExecutionRunStatusCompleted || bundle.Run.Status == domain.ExecutionRunStatusCancelled {
+	if executionRunStatusBlocksTaskExecution(bundle.Run.Status) {
 		return nil, domain.ErrConflict
 	}
 	status := domain.AgentTaskStatusWaiting
@@ -575,7 +575,7 @@ func (s *service) CreateFixTaskForPRNode(ctx context.Context, prNodeID uint, req
 	if err != nil {
 		return nil, err
 	}
-	if bundle.Run.Status == domain.ExecutionRunStatusCompleted || bundle.Run.Status == domain.ExecutionRunStatusCancelled {
+	if executionRunStatusBlocksTaskExecution(bundle.Run.Status) {
 		return nil, domain.ErrConflict
 	}
 	node := nodeByID(bundle.Plan.PRNodes)[parent.PRNodeID]
@@ -617,7 +617,7 @@ func (s *service) CreateReviewPatchTask(ctx context.Context, taskID uint, req *R
 	if err != nil {
 		return nil, err
 	}
-	if bundle.Run.Status == domain.ExecutionRunStatusCompleted || bundle.Run.Status == domain.ExecutionRunStatusCancelled {
+	if executionRunStatusBlocksTaskExecution(bundle.Run.Status) {
 		return nil, domain.ErrConflict
 	}
 	node := nodeByID(bundle.Plan.PRNodes)[parent.PRNodeID]
@@ -1561,6 +1561,10 @@ func executionRunStatusFinished(status string) bool {
 	default:
 		return false
 	}
+}
+
+func executionRunStatusBlocksTaskExecution(status string) bool {
+	return executionRunStatusFinished(status) || status == domain.ExecutionRunStatusBlocked
 }
 
 func runHasClosedSelectedPath(bundle *domain.SpecForgeExecutionBundle) bool {
