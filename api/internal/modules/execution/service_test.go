@@ -33,7 +33,15 @@ func TestStartRunCreatesTasksFromApprovedPlanDAG(t *testing.T) {
 	require.Equal(t, []uint{4, 5}, bundle.SelectedPRNodeIDs)
 	require.Len(t, planningRepo.prompts, 2)
 	require.Equal(t, domain.PromptTypeImplementation, planningRepo.prompts[0].Type)
+	require.Equal(t, "prompt_v2", planningRepo.prompts[0].Version)
 	require.Contains(t, planningRepo.prompts[0].PromptText, "approved plan snapshot")
+	require.Contains(t, planningRepo.prompts[0].PromptText, "Grounded prompt contract")
+	require.Contains(t, planningRepo.prompts[0].PromptText, "Evidence refs")
+	require.Contains(t, planningRepo.prompts[0].PromptText, "Scope guardrails")
+	require.Contains(t, planningRepo.prompts[0].PromptText, "PR DAG guardrails")
+	require.Contains(t, planningRepo.prompts[0].PromptText, "Verification contract")
+	require.Contains(t, planningRepo.prompts[0].PromptText, "pr_node.expected_files")
+	require.Contains(t, planningRepo.prompts[0].PromptText, "Submit result output with summary, scope, non-goals, evidence refs used, tests run, and remaining risk.")
 }
 
 func TestStartRunCanLimitExecutionToSelectedPRNodes(t *testing.T) {
@@ -194,6 +202,9 @@ func TestStartRunHydratesProjectContextInCompiledPrompt(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, planningRepo.prompts)
 	prompt := planningRepo.prompts[0].PromptText
+	require.Equal(t, "prompt_v2", planningRepo.prompts[0].Version)
+	require.Contains(t, prompt, "project.read_only_repository_ids")
+	require.Contains(t, prompt, "Read-only repositories may be inspected for context but must not be modified")
 	require.Contains(t, prompt, "Project context")
 	require.Contains(t, prompt, "Project: SpecForge")
 	require.Contains(t, prompt, "Repository repo_api (primary)")
