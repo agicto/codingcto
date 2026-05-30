@@ -95,12 +95,19 @@ func (s *service) StartRun(ctx context.Context, userID, planID uint, req *StartE
 	if !domain.ExecutableSpecForgePRDAG(plan.PRNodes) {
 		return nil, domain.ErrConflict
 	}
+	selectedNodes, err := selectedPRNodes(plan.PRNodes, req)
+	if err != nil {
+		return nil, err
+	}
+	if !domain.ExecutableSpecForgePRDAG(selectedNodes) {
+		return nil, domain.ErrConflict
+	}
 	if _, err := s.repo.FindLatestActiveExecutionBundleByPlanID(ctx, planID); err == nil {
 		return nil, domain.ErrConflict
 	} else if !errors.Is(err, domain.ErrNotFound) {
 		return nil, fmt.Errorf("find active execution run: %w", err)
 	}
-	if err := s.ensureImplementationPrompts(ctx, userID, plan); err != nil {
+	if err := s.ensureImplementationPrompts(ctx, userID, plan, selectedNodes); err != nil {
 		return nil, err
 	}
 
@@ -117,7 +124,7 @@ func (s *service) StartRun(ctx context.Context, userID, planID uint, req *StartE
 			StartedAt: time.Now(),
 		},
 		Plan:  plan,
-		Tasks: buildInitialTasks(plan.PRNodes, executor),
+		Tasks: buildInitialTasks(selectedNodes, executor),
 	}
 	if err := s.repo.CreateExecutionBundle(ctx, bundle); err != nil {
 		return nil, fmt.Errorf("create execution run: %w", err)
@@ -125,11 +132,59 @@ func (s *service) StartRun(ctx context.Context, userID, planID uint, req *StartE
 	return bundle, nil
 }
 
-func (s *service) ensureImplementationPrompts(ctx context.Context, userID uint, bundle *domain.SpecForgePlanBundle) error {
+func selectedPRNodes(nodes []*domain.SpecForgePRNode, req *StartExecutionRunRequest) ([]*domain.SpecForgePRNode, error) {
+	if req == nil || len(req.PRNodeIDs) == 0 {
+		return nodes, nil
+	}
+
+	selectedIDs := make(map[uint]struct{}, len(req.PRNodeIDs))
+	for _, id := range req.PRNodeIDs {
+		if id == 0 {
+			return nil, domain.ErrInvalidInput
+		}
+		selectedIDs[id] = struct{}{}
+	}
+
+	nodesByKey := make(map[string]*domain.SpecForgePRNode, len(nodes))
+	selected := make([]*domain.SpecForgePRNode, 0, len(selectedIDs))
+	for _, node := range nodes {
+		if node == nil {
+			continue
+		}
+		nodesByKey[node.NodeKey] = node
+		if _, ok := selectedIDs[node.ID]; ok {
+			selected = append(selected, node)
+			delete(selectedIDs, node.ID)
+		}
+	}
+	if len(selectedIDs) > 0 || len(selected) == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+
+	selectedKeys := make(map[string]struct{}, len(selected))
+	for _, node := range selected {
+		selectedKeys[node.NodeKey] = struct{}{}
+	}
+	for _, node := range selected {
+		for _, dependency := range node.DependsOn {
+			dependencyNode := nodesByKey[strings.TrimSpace(dependency)]
+			if dependencyNode == nil {
+				return nil, domain.ErrConflict
+			}
+			if _, ok := selectedKeys[dependencyNode.NodeKey]; !ok {
+				return nil, domain.ErrConflict
+			}
+		}
+	}
+
+	return selected, nil
+}
+
+func (s *service) ensureImplementationPrompts(ctx context.Context, userID uint, bundle *domain.SpecForgePlanBundle, nodes []*domain.SpecForgePRNode) error {
 	if bundle == nil || bundle.Plan == nil {
 		return domain.ErrInvalidInput
 	}
-	for _, node := range bundle.PRNodes {
+	for _, node := range nodes {
 		if node == nil || node.ID == 0 {
 			continue
 		}

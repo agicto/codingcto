@@ -3,7 +3,8 @@ package execution
 import "github.com/zgiai/luas/api/internal/domain"
 
 type StartExecutionRunRequest struct {
-	Executor string `json:"executor" binding:"omitempty,max=100"`
+	Executor  string `json:"executor" binding:"omitempty,max=100"`
+	PRNodeIDs []uint `json:"pr_node_ids" binding:"omitempty,max=5,dive,min=1"`
 }
 
 type DispatchExecutionRunRequest struct {
