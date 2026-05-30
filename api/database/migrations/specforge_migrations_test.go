@@ -49,6 +49,9 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 	}
 
 	requiredColumns := map[string][]string{
+		"specforge_ideas": {
+			"project_id",
+		},
 		"specforge_implementation_plans": {
 			"technical_summary",
 			"decision_overrides",
@@ -128,6 +131,7 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 		table string
 		name  string
 	}{
+		{table: "specforge_ideas", name: "idx_specforge_ideas_project_id"},
 		{table: "specforge_skills", name: "idx_specforge_skill_repo_name"},
 		{table: "specforge_task_events", name: "idx_specforge_task_events_task_seq"},
 	}

@@ -22,5 +22,6 @@ func NewStarterManifest(handler *Handler) contracts.StarterManifest {
 		contracts.WithStarterMigrationNames("2026_05_25_000000_create_specforge_planning_tables"),
 		contracts.WithStarterMigrationNames("2026_05_25_000001_create_specforge_compiled_prompts_table"),
 		contracts.WithStarterMigrationNames("2026_05_25_000010_create_specforge_skills_table"),
+		contracts.WithStarterMigrationNames("2026_05_25_000020_add_project_id_to_specforge_ideas"),
 	)
 }

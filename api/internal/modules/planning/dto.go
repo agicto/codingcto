@@ -29,6 +29,8 @@ type UpsertSkillRequest struct {
 
 type PlanReviewResponse struct {
 	Idea               *domain.SpecForgeIdea               `json:"idea"`
+	RepoProfile        *domain.SpecForgeRepoProfile        `json:"repo_profile,omitempty"`
+	ProjectContext     *domain.SpecForgeProjectContext     `json:"project_context,omitempty"`
 	ProductSpec        *domain.SpecForgeProductSpec        `json:"product_spec"`
 	ImplementationPlan *domain.SpecForgeImplementationPlan `json:"implementation_plan"`
 	PRNodes            []*domain.SpecForgePRNode           `json:"pr_nodes"`
@@ -53,6 +55,8 @@ func toPlanReviewResponse(bundle *domain.SpecForgePlanBundle) *PlanReviewRespons
 	}
 	return &PlanReviewResponse{
 		Idea:               bundle.Idea,
+		RepoProfile:        bundle.RepoProfile,
+		ProjectContext:     bundle.ProjectContext,
 		ProductSpec:        bundle.ProductSpec,
 		ImplementationPlan: bundle.Plan,
 		PRNodes:            bundle.PRNodes,

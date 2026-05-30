@@ -197,6 +197,17 @@ export function useCreateSpecForgeIdea(repoId: string) {
   });
 }
 
+export function useCreateSpecForgeProjectIdea(projectId?: number) {
+  return useMutation({
+    mutationFn: (payload: CreateIdeaPayload) => {
+      if (!projectId) {
+        throw new Error("Project ID is required to create a project-scoped SpecForge idea.");
+      }
+      return specForgeService.createProjectIdea(projectId, payload);
+    },
+  });
+}
+
 export function useApproveSpecForgePlan() {
   const queryClient = useQueryClient();
 
