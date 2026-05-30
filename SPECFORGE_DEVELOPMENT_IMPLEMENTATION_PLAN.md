@@ -1290,6 +1290,15 @@ MVP 完成标准：
 - target repo guardrails
 - primary-only execution rule
 
+### PR 11: Hallucination Reduction Guardrails
+
+- skill output validation
+- evidence refs
+- prompt contracts
+- pre-PR diff risk review
+- grounded planning scores
+- escalation thresholds
+
 ---
 
 ## 十四、当前下一步
@@ -1768,3 +1777,362 @@ SpecForge 页面必须覆盖：
 | 多 repo 过早复杂化 | DAG 调度失控 | MVP 只修改 primary repo |
 | GitHub webhook 重复 | 状态重复推进 | delivery id 幂等 |
 | 权限过大 | 用户不敢安装 | GitHub App 最小权限 |
+
+---
+
+## 二十二、减少幻觉控制机制
+
+SpecForge 的核心质量目标不是让模型“更会写”，而是让模型不能在缺少证据、边界和验证的情况下自由发挥。
+
+控制思路：
+
+```text
+Grounded context
+  -> Structured skill output
+  -> Evidence refs
+  -> Prompt contract
+  -> Diff risk review
+  -> Verification
+  -> Escalation
+```
+
+### 22.1 Grounded Planning
+
+所有规划类 skill 必须基于可追踪证据生成结论。
+
+可用证据来源：
+
+```text
+repo_profile
+repo_architecture_snapshot
+AGENTS.md
+README.md
+package/go module files
+CI workflow files
+existing routes/models/services/tests
+recent merged PR summaries
+approved plan history
+rejected feedback history
+```
+
+Planner 输出中的关键判断必须能关联 evidence ref。
+
+示例：
+
+```json
+{
+  "claim": "Use existing service layer instead of calling the ORM directly in handlers.",
+  "evidence_refs": [
+    {
+      "source_type": "file",
+      "source_path": "api/AGENTS.md",
+      "excerpt": "Handlers call services; repositories own persistence."
+    },
+    {
+      "source_type": "code_pattern",
+      "source_path": "api/internal/modules/user/handler.go"
+    }
+  ]
+}
+```
+
+### 22.2 EvidenceRefs 数据结构
+
+建议新增通用结构，供 SkillRun、ProductSpec、ImplementationPlan、PRNode、CompiledPrompt 引用。
+
+```go
+type EvidenceRef struct {
+    SourceType string `json:"source_type"` // file, code_pattern, ci_workflow, prior_plan, pr_summary, user_input
+    SourcePath string `json:"source_path,omitempty"`
+    LineStart  *int   `json:"line_start,omitempty"`
+    LineEnd    *int   `json:"line_end,omitempty"`
+    CommitSHA  string `json:"commit_sha,omitempty"`
+    Excerpt    string `json:"excerpt,omitempty"`
+    Claim      string `json:"claim,omitempty"`
+}
+```
+
+存储方式：
+
+```text
+MVP: EvidenceRefsJSON 字段挂在 SkillRun / Plan / PRNode / CompiledPrompt
+V2: 独立 evidence_refs 表，支持跨对象查询
+```
+
+### 22.3 Skill Output Validation
+
+每个 skill 不能只保存 output，还必须保存 validation result。
+
+建议给 `skill_runs` 增加：
+
+```text
+validation_status: passed | warning | failed
+validation_errors_json
+coverage_score
+grounding_score
+risk_score
+confidence_score
+```
+
+评分含义：
+
+| Score | 含义 | 低分处理 |
+|-------|------|----------|
+| `coverage_score` | 是否覆盖用户需求和验收标准 | 重新生成或要求用户确认 |
+| `grounding_score` | 是否有 repo evidence 支撑 | 补 context 或阻塞 |
+| `risk_score` | 是否触及高风险模块 | 降低自动执行权限 |
+| `confidence_score` | 综合可信度 | 低于阈值进入 needs decision |
+
+MVP 阈值建议：
+
+```text
+coverage_score < 0.75 -> plan failed
+grounding_score < 0.65 -> needs more repo context
+risk_score > 0.80 -> require explicit approval
+confidence_score < 0.70 -> needs user decision
+```
+
+### 22.4 PR DAG Validation
+
+PR DAG 生成后必须做结构化校验。
+
+校验项：
+
+```text
+所有 acceptance criteria 至少映射到一个 PRNode
+每个 PRNode 至少有一个 acceptance criterion
+每个 PRNode 有 targetRepositoryId
+targetRepositoryId 属于当前 Project
+MVP targetRepositoryId 必须是 primary repo
+dependsOn 不存在循环
+dependsOn 引用真实 PRNode
+expectedFiles 不为空
+testCommands 来自 repo profile 或 CI workflow
+高风险模块必须出现在 risk notes
+PRNode 不同时包含 database + API + UI + email
+PRNode 的 expectedFiles 不跨越过多模块
+```
+
+输出结构：
+
+```json
+{
+  "status": "passed",
+  "errors": [],
+  "warnings": [
+    "PR-003 touches auth and database; require explicit risk note."
+  ],
+  "coverage_score": 0.91,
+  "dependency_score": 0.88,
+  "reviewability_score": 0.82
+}
+```
+
+### 22.5 Prompt Contract
+
+CompiledPrompt 需要拆成自然语言正文和机器可校验 contract。
+
+建议给 `compiled_prompts` 增加：
+
+```text
+contract_json
+```
+
+Contract 示例：
+
+```json
+{
+  "target_repository_id": 123,
+  "branch_name": "specforge/team-invite-02-api",
+  "allowed_files": [
+    "api/internal/modules/invitation/**",
+    "api/database/migrations/**"
+  ],
+  "forbidden_files": [
+    ".env",
+    "api/config/secrets/**",
+    "web/**"
+  ],
+  "required_commands": [
+    "go test ./internal/modules/invitation/..."
+  ],
+  "non_goals": [
+    "Do not build UI in this PR",
+    "Do not change billing logic"
+  ],
+  "acceptance_criteria": [],
+  "max_core_diff_lines": 800
+}
+```
+
+Executor 只能执行带 contract 的 prompt。
+
+### 22.6 Pre-PR Diff Risk Review
+
+Codex CLI 执行完成后，创建 PR 前必须做 diff risk review。
+
+检查项：
+
+```text
+是否修改 forbidden_files
+是否修改 target repo 之外的文件
+是否大幅超出 expectedFiles
+是否删除测试
+是否引入 secret/token
+是否修改 lockfile 但没有说明
+是否改动超过 max_core_diff_lines
+是否没有运行 required_commands
+是否 PR description 缺少 test plan
+是否触及 high-risk area 但没有 risk note
+```
+
+Diff review 输出：
+
+```json
+{
+  "status": "warning",
+  "risk_level": "medium",
+  "violations": [],
+  "warnings": [
+    "Changed package lockfile; require implementation note."
+  ],
+  "required_actions": [
+    "Add lockfile note to PR description."
+  ]
+}
+```
+
+阻塞规则：
+
+```text
+forbidden_files 被修改 -> block
+secret/token 被检测到 -> block
+target repo 之外改动 -> block
+未运行 required_commands -> warning，MVP 可允许人工确认
+diff 过大 -> needs decision
+```
+
+### 22.7 Hallucination Guardrail Service
+
+建议新增 `guardrail` module。
+
+职责：
+
+```text
+Validate SkillRun output
+Validate PR DAG
+Validate CompiledPrompt contract
+Run pre-PR diff review
+Compute grounded planning scores
+Emit needs_decision events
+```
+
+目录建议：
+
+```text
+api/internal/modules/guardrail/
+  domain.go
+  service.go
+  validators.go
+  handler.go
+  repository.go
+```
+
+服务接口方向：
+
+```go
+type GuardrailService interface {
+    ValidateSkillRun(ctx context.Context, runID uint) (SkillValidationResult, error)
+    ValidatePRDAG(ctx context.Context, planID uint) (PRDAGValidationResult, error)
+    ValidatePromptContract(ctx context.Context, promptID uint) (PromptContractValidationResult, error)
+    ReviewDiff(ctx context.Context, taskID uint) (DiffRiskReviewResult, error)
+}
+```
+
+### 22.8 Escalation Thresholds
+
+以下情况必须进入 `needs_user_decision`：
+
+```text
+ProductSpec coverage_score < 0.75
+TechnicalPlan grounding_score < 0.65
+PR DAG validation failed
+Prompt contract validation failed
+Diff risk review blocked
+Executor touched forbidden files
+CI failure classified as product_mismatch
+Same failure type exceeded retry limit
+Migration failure confidence < 0.80
+Auth/permission failure confidence < 0.80
+```
+
+EscalationSummary 必须包含：
+
+```text
+reason
+evidence_refs
+risk_level
+recommended_option
+decision_options
+blocked_object_type
+blocked_object_id
+```
+
+### 22.9 前端展示要求
+
+Plan Review 页面增加：
+
+```text
+Grounding score
+Coverage score
+Risk score
+Evidence refs
+PR DAG validation result
+```
+
+Execution 页面增加：
+
+```text
+Prompt contract preview
+Diff risk review result
+Guardrail violations
+Escalation evidence
+```
+
+展示原则：
+
+```text
+不要把所有原始日志暴露给用户。
+默认展示决策摘要。
+允许用户展开查看证据和验证错误。
+```
+
+### 22.10 推荐新增 PR
+
+为了把减少幻觉机制落地，建议在 `Prompt Compiler Persistence` 后增加一个独立 PR：
+
+```text
+PR 6.5: Guardrail Validation Foundation
+```
+
+范围：
+
+- 新增 guardrail module。
+- 新增 SkillRun validation result 字段。
+- 新增 CompiledPrompt contract_json。
+- 实现 PR DAG validator。
+- 实现 prompt contract validator。
+- 前端展示 validation summary。
+
+不做：
+
+- 不接真实 Codex CLI。
+- 不做复杂 security scanner。
+- 不做跨 repo diff review。
+
+验收：
+
+```text
+一个 plan 只有通过 PR DAG validation 才能 approve。
+一个 ExecutionTask 只有 prompt contract validation 通过才可 dispatch。
+```
