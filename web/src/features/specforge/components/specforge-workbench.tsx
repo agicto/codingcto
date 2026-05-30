@@ -1100,7 +1100,11 @@ function RunSummary({
         </Badge>
         <Badge
           variant="outline"
-          className={run.status === "running" ? statusClassName("running") : ""}
+          className={
+            run.status === "running" || run.status === "blocked"
+              ? statusClassName(run.status)
+              : ""
+          }
         >
           {run.status === "idle" ? "No run started" : run.status}
         </Badge>
@@ -1744,7 +1748,7 @@ function ExecutionStatus({
   onExecutionBundle: (bundle: SpecForgeExecutionBundleDTO) => void;
 }) {
   const canAdvance = run.status === "running";
-  const canCancel = run.status === "queued" || run.status === "running";
+  const canCancel = run.status === "queued" || run.status === "running" || run.status === "blocked";
   const [selectedTask, setSelectedTask] = useState<PRNode>();
   const [taskActionError, setTaskActionError] = useState("");
   const [taskActionId, setTaskActionId] = useState<number>();

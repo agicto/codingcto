@@ -282,6 +282,25 @@ describe('executionRunFromDTO', () => {
     });
   });
 
+  it('keeps blocked execution run status from the API', () => {
+    const bundle: SpecForgeExecutionBundleDTO = {
+      run: {
+        id: 7,
+        plan_id: 1,
+        status: 'blocked',
+        started_by: 1,
+        started_at: '2026-05-29T12:00:00Z',
+        created_at: '2026-05-29T12:00:00Z',
+        updated_at: '2026-05-29T12:00:00Z',
+      },
+      plan: baseBundle,
+      selected_pr_node_ids: [1],
+      tasks: [],
+    };
+
+    expect(executionRunFromDTO(bundle).run.status).toBe('blocked');
+  });
+
   it('can map execution state with fallback plan context', () => {
     const fallbackPlan = planBundleFromDTO(baseBundle);
     const bundle: SpecForgeExecutionBundleDTO = {

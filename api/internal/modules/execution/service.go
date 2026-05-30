@@ -299,7 +299,7 @@ func (s *service) DispatchRun(ctx context.Context, runID uint, req *DispatchExec
 	if err != nil {
 		return nil, err
 	}
-	if bundle.Run.Status == domain.ExecutionRunStatusCompleted || bundle.Run.Status == domain.ExecutionRunStatusCancelled {
+	if executionRunStatusFinished(bundle.Run.Status) {
 		return nil, domain.ErrConflict
 	}
 	dispatched := 0
@@ -338,7 +338,7 @@ func (s *service) CancelRun(ctx context.Context, runID uint) (*domain.SpecForgeE
 	if err != nil {
 		return nil, err
 	}
-	if bundle.Run.Status == domain.ExecutionRunStatusCompleted || bundle.Run.Status == domain.ExecutionRunStatusCancelled {
+	if executionRunStatusFinished(bundle.Run.Status) {
 		return nil, domain.ErrConflict
 	}
 	tasks, err := s.repo.CancelActiveTasksByRunID(ctx, runID)
@@ -745,6 +745,9 @@ func (s *service) CancelTasksBlockedByClosedPRNode(ctx context.Context, prNodeID
 				return nil, fmt.Errorf("cancel task blocked by closed PR node: %w", err)
 			}
 		}
+	}
+	if err := s.blockRunIfClosedPathReady(ctx, bundle); err != nil {
+		return nil, err
 	}
 	return s.GetRun(ctx, bundle.Run.ID)
 }
@@ -1193,7 +1196,13 @@ func (s *service) completeRunIfDeliveryReady(ctx context.Context, bundle *domain
 	if bundle == nil || bundle.Run == nil {
 		return nil
 	}
-	if bundle.Run.Status == domain.ExecutionRunStatusCompleted || bundle.Run.Status == domain.ExecutionRunStatusCancelled {
+	if executionRunStatusFinished(bundle.Run.Status) {
+		return nil
+	}
+	if err := s.blockRunIfClosedPathReady(ctx, bundle); err != nil {
+		return err
+	}
+	if bundle.Run.Status == domain.ExecutionRunStatusBlocked {
 		return nil
 	}
 	if !runDeliveryComplete(bundle) {
@@ -1203,6 +1212,23 @@ func (s *service) completeRunIfDeliveryReady(ctx context.Context, bundle *domain
 	bundle.Run.CompletedAt = &completedAt
 	if err := s.repo.UpdateExecutionRun(ctx, bundle.Run); err != nil {
 		return fmt.Errorf("complete execution run: %w", err)
+	}
+	return nil
+}
+
+func (s *service) blockRunIfClosedPathReady(ctx context.Context, bundle *domain.SpecForgeExecutionBundle) error {
+	if bundle == nil || bundle.Run == nil {
+		return nil
+	}
+	if executionRunStatusFinished(bundle.Run.Status) || bundle.Run.Status == domain.ExecutionRunStatusBlocked {
+		return nil
+	}
+	if !runHasClosedSelectedPath(bundle) || runHasActiveTasks(bundle.Tasks) {
+		return nil
+	}
+	bundle.Run.Status = domain.ExecutionRunStatusBlocked
+	if err := s.repo.UpdateExecutionRun(ctx, bundle.Run); err != nil {
+		return fmt.Errorf("block execution run: %w", err)
 	}
 	return nil
 }
@@ -1526,6 +1552,54 @@ func runDeliveryComplete(bundle *domain.SpecForgeExecutionBundle) bool {
 		}
 	}
 	return true
+}
+
+func executionRunStatusFinished(status string) bool {
+	switch status {
+	case domain.ExecutionRunStatusCompleted, domain.ExecutionRunStatusCancelled:
+		return true
+	default:
+		return false
+	}
+}
+
+func runHasClosedSelectedPath(bundle *domain.SpecForgeExecutionBundle) bool {
+	if bundle == nil {
+		return false
+	}
+	for _, task := range bundle.Tasks {
+		if task == nil {
+			continue
+		}
+		if task.Status == domain.AgentTaskStatusCancelled && strings.TrimSpace(task.FailureReason) == "dependency_closed" {
+			return true
+		}
+	}
+	if bundle.Plan == nil {
+		return false
+	}
+	selectedNodeIDs := selectedPRNodeIDSet(bundle.Tasks)
+	for _, node := range bundle.Plan.PRNodes {
+		if node == nil || node.Status != domain.PRNodeStatusClosed {
+			continue
+		}
+		if _, selected := selectedNodeIDs[node.ID]; selected {
+			return true
+		}
+	}
+	return false
+}
+
+func runHasActiveTasks(tasks []*domain.SpecForgeAgentTask) bool {
+	for _, task := range tasks {
+		if task == nil {
+			continue
+		}
+		if agentTaskStatusActive(task.Status) {
+			return true
+		}
+	}
+	return false
 }
 
 func selectedPRNodeIDSet(tasks []*domain.SpecForgeAgentTask) map[uint]struct{} {

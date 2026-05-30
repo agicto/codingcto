@@ -19,6 +19,7 @@ const (
 	ExecutionRunStatusQueued    = "queued"
 	ExecutionRunStatusRunning   = "running"
 	ExecutionRunStatusCompleted = "completed"
+	ExecutionRunStatusBlocked   = "blocked"
 	ExecutionRunStatusCancelled = "cancelled"
 	RuntimeStatusOnline         = "online"
 	RuntimeStatusOffline        = "offline"
