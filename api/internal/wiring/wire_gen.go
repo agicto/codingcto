@@ -19,6 +19,7 @@ import (
 	"github.com/zgiai/luas/api/internal/modules/execution"
 	"github.com/zgiai/luas/api/internal/modules/githubintegration"
 	"github.com/zgiai/luas/api/internal/modules/planning"
+	"github.com/zgiai/luas/api/internal/modules/project"
 	"github.com/zgiai/luas/api/internal/modules/repocontext"
 	"github.com/zgiai/luas/api/internal/modules/user"
 	"github.com/zgiai/luas/api/internal/modules/verification"
@@ -68,6 +69,9 @@ func InitApplication() (*app.Application, error) {
 	executionService := execution.NewEventedService(executionRepository, planningRepository, repositoryResolver, codeExecutor, worktreeManager, prNodeBranchPreparer, prNodeDeliverer, eventBus)
 	executionHandler := execution.NewHandler(executionService)
 	githubintegrationHandler := githubintegration.NewHandler(githubintegrationService)
+	projectRepository := project.NewRepository(db)
+	projectService := project.NewService(projectRepository, githubintegrationRepository)
+	projectHandler := project.NewHandler(projectService)
 	verificationRepository := verification.NewRepository(db)
 	ciFailureReader := verification.NewGitHubCIFailureReader(githubintegrationService)
 	verificationService := verification.NewService(verificationRepository, ciFailureReader, eventBus)
@@ -77,7 +81,7 @@ func InitApplication() (*app.Application, error) {
 	userMailer := user.NewUserMailer(service)
 	userService := user.NewService(userRepository, userRepository, jwtService, eventBus, userMailer)
 	userHandler := user.NewHandler(userService, userService, userService, jwtService, userMailer)
-	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, verificationHandler, userHandler)
+	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, projectHandler, verificationHandler, userHandler)
 	if err != nil {
 		return nil, err
 	}
@@ -129,6 +133,9 @@ func InitApplicationWithConfig(cfg *config.Config) (*app.Application, error) {
 	executionService := execution.NewEventedService(executionRepository, planningRepository, repositoryResolver, codeExecutor, worktreeManager, prNodeBranchPreparer, prNodeDeliverer, eventBus)
 	executionHandler := execution.NewHandler(executionService)
 	githubintegrationHandler := githubintegration.NewHandler(githubintegrationService)
+	projectRepository := project.NewRepository(db)
+	projectService := project.NewService(projectRepository, githubintegrationRepository)
+	projectHandler := project.NewHandler(projectService)
 	verificationRepository := verification.NewRepository(db)
 	ciFailureReader := verification.NewGitHubCIFailureReader(githubintegrationService)
 	verificationService := verification.NewService(verificationRepository, ciFailureReader, eventBus)
@@ -138,7 +145,7 @@ func InitApplicationWithConfig(cfg *config.Config) (*app.Application, error) {
 	userMailer := user.NewUserMailer(service)
 	userService := user.NewService(userRepository, userRepository, jwtService, eventBus, userMailer)
 	userHandler := user.NewHandler(userService, userService, userService, jwtService, userMailer)
-	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, verificationHandler, userHandler)
+	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, projectHandler, verificationHandler, userHandler)
 	if err != nil {
 		return nil, err
 	}
