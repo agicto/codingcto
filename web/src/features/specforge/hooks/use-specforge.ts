@@ -8,6 +8,7 @@ import {
   type CompilePromptPayload,
   type ClaimTaskPayload,
   type CreateFixAttemptFromCIPayload,
+  type CreateReviewPatchTaskPayload,
   type CreateTaskEventPayload,
   type CreateIdeaPayload,
   type DispatchRunPayload,
@@ -385,6 +386,18 @@ export function useRetryExecutionTask() {
   return useMutation({
     mutationFn: ({ taskId, payload }: { taskId: number; payload?: RetryTaskPayload }) =>
       specForgeService.retryTask(taskId, payload),
+    onSuccess: bundle => {
+      queryClient.setQueryData(specForgeKeys.run(bundle.run.id), bundle);
+    },
+  });
+}
+
+export function useCreateReviewPatchTask() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ taskId, payload }: { taskId: number; payload: CreateReviewPatchTaskPayload }) =>
+      specForgeService.createReviewPatchTask(taskId, payload),
     onSuccess: bundle => {
       queryClient.setQueryData(specForgeKeys.run(bundle.run.id), bundle);
     },

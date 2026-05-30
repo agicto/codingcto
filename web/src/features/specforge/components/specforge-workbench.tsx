@@ -63,6 +63,7 @@ import {
   useRepoProfile,
   useRefreshSpecForgePRNodeCI,
   useCompleteExecutionTask,
+  useCreateReviewPatchTask,
   useReadSpecForgePRNodeFailureLog,
   useRetryExecutionTask,
   useSpecForgeEscalationSummary,
@@ -1816,10 +1817,12 @@ function ExecutionStatus({
   const [taskActionId, setTaskActionId] = useState<number>();
   const retryTask = useRetryExecutionTask();
   const completeTask = useCompleteExecutionTask();
+  const createReviewPatchTask = useCreateReviewPatchTask();
   const selectedTaskId = selectedTask?.taskId;
   const taskEventsQuery = useSpecForgeTaskEvents(selectedTaskId);
   const taskEvents = taskEventsQuery.data?.events ?? [];
-  const isTaskActionPending = retryTask.isPending || completeTask.isPending;
+  const isTaskActionPending =
+    retryTask.isPending || completeTask.isPending || createReviewPatchTask.isPending;
   const blockedRecoverableTasks = run.tasks.filter(
     task => task.status === 'failed' || task.status === 'cancelled'
   );
@@ -1974,6 +1977,30 @@ function ExecutionStatus({
             events={taskEvents}
             isLoading={taskEventsQuery.isLoading}
             isError={taskEventsQuery.isError}
+            isSubmittingReviewPatch={
+              createReviewPatchTask.isPending && taskActionId === selectedTask.taskId
+            }
+            onCreateReviewPatch={async feedback => {
+              if (!selectedTask.taskId) {
+                setTaskActionError('Review patches require a persisted backend task.');
+                return;
+              }
+              setTaskActionError('');
+              setTaskActionId(selectedTask.taskId);
+              try {
+                const bundle = await createReviewPatchTask.mutateAsync({
+                  taskId: selectedTask.taskId,
+                  payload: { feedback, force_fresh_session: true },
+                });
+                onExecutionBundle(bundle);
+              } catch {
+                setTaskActionError(
+                  'Review patches require a completed, failed, or cancelled task and the CodingCTO backend.'
+                );
+              } finally {
+                setTaskActionId(undefined);
+              }
+            }}
           />
         )}
       </CardContent>
@@ -2030,12 +2057,31 @@ function TaskEventPanel({
   events,
   isLoading,
   isError,
+  isSubmittingReviewPatch,
+  onCreateReviewPatch,
 }: {
   task: PRNode;
   events: SpecForgeTaskEventDTO[];
   isLoading: boolean;
   isError: boolean;
+  isSubmittingReviewPatch: boolean;
+  onCreateReviewPatch: (feedback: string) => Promise<void>;
 }) {
+  const [reviewFeedback, setReviewFeedback] = useState('');
+  const canSubmitReviewPatch =
+    Boolean(task.taskId) &&
+    reviewFeedback.trim().length > 0 &&
+    ['completed', 'failed', 'cancelled'].includes(task.status);
+
+  async function submitReviewPatch() {
+    const feedback = reviewFeedback.trim();
+    if (!feedback) {
+      return;
+    }
+    await onCreateReviewPatch(feedback);
+    setReviewFeedback('');
+  }
+
   return (
     <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
@@ -2068,6 +2114,36 @@ function TaskEventPanel({
         {events.map(event => (
           <TaskEventRow key={event.id} event={event} />
         ))}
+      </div>
+      <div className="mt-3 rounded-lg border border-border-subtle bg-bg-subtle p-3">
+        <div className="text-sm font-medium text-text-main">Review feedback patch</div>
+        <div className="mt-1 text-xs leading-5 text-text-muted">
+          Queue a scoped patch task from human PR review feedback after this task reaches a terminal
+          state.
+        </div>
+        <Textarea
+          value={reviewFeedback}
+          onChange={event => setReviewFeedback(event.target.value)}
+          className="mt-3 min-h-24 bg-bg-surface"
+          aria-label="Human review feedback"
+          placeholder="Paste actionable PR review feedback for this task..."
+        />
+        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
+          <Badge variant="outline">
+            {task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'
+              ? 'Patchable'
+              : 'Wait for terminal task'}
+          </Badge>
+          <Button
+            variant="outline"
+            size="sm"
+            onClick={submitReviewPatch}
+            disabled={!canSubmitReviewPatch || isSubmittingReviewPatch}
+          >
+            {isSubmittingReviewPatch ? 'Queuing' : 'Queue review patch'}
+            <ScrollText className="ml-1.5 h-4 w-4" />
+          </Button>
+        </div>
       </div>
     </div>
   );
