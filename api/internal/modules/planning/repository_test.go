@@ -3,6 +3,7 @@ package planning
 import (
 	"context"
 	"testing"
+	"time"
 
 	"github.com/glebarez/sqlite"
 	"github.com/stretchr/testify/require"
@@ -149,6 +150,66 @@ func TestRepositoryUpsertsAndListsSkills(t *testing.T) {
 	require.Len(t, active, 1)
 }
 
+func TestRepositoryUpsertsProjectSkillsAndRecordsSkillRuns(t *testing.T) {
+	repo := newTestPlanningRepository(t)
+	skill := &domain.SpecForgeSkill{
+		RepositoryID: "github_agicto__codingcto",
+		Name:         "planning-sop",
+		Content:      "Ground every plan in repo evidence.",
+		Active:       true,
+		CreatedBy:    7,
+	}
+	require.NoError(t, repo.UpsertSkill(context.Background(), skill))
+
+	projectSkill := &domain.SpecForgeProjectSkill{
+		WorkspaceID:  "workspace_1",
+		ProjectID:    42,
+		RepositoryID: skill.RepositoryID,
+		SkillID:      skill.ID,
+		Active:       true,
+		SortOrder:    10,
+		CreatedBy:    7,
+	}
+	require.NoError(t, repo.UpsertProjectSkill(context.Background(), projectSkill))
+	require.NotZero(t, projectSkill.ID)
+	require.NotNil(t, projectSkill.Skill)
+	require.Equal(t, "planning-sop", projectSkill.Skill.Name)
+
+	all, err := repo.ListProjectSkillsByProjectID(context.Background(), 42)
+	require.NoError(t, err)
+	require.Len(t, all, 1)
+	active, err := repo.ListActiveProjectSkillsByProjectID(context.Background(), 42)
+	require.NoError(t, err)
+	require.Len(t, active, 1)
+
+	requirementID := uint(11)
+	planID := uint(22)
+	projectID := uint(42)
+	now := time.Now()
+	run := &domain.SpecForgeSkillRun{
+		RequirementID: &requirementID,
+		PlanID:        &planID,
+		ProjectID:     &projectID,
+		Stage:         domain.SkillRunStagePRDAG,
+		Status:        domain.SkillRunStatusCompleted,
+		InputSummary:  "Idea: Add team invite",
+		OutputSummary: "PR-001: Add invite model",
+		StartedAt:     &now,
+		CompletedAt:   &now,
+		CreatedBy:     7,
+	}
+	require.NoError(t, repo.CreateSkillRun(context.Background(), run))
+	require.NotZero(t, run.ID)
+
+	requirementRuns, err := repo.ListSkillRunsByRequirementID(context.Background(), requirementID)
+	require.NoError(t, err)
+	require.Len(t, requirementRuns, 1)
+	require.Equal(t, domain.SkillRunStagePRDAG, requirementRuns[0].Stage)
+	planRuns, err := repo.ListSkillRunsByPlanID(context.Background(), planID)
+	require.NoError(t, err)
+	require.Len(t, planRuns, 1)
+}
+
 func newTestPlanningRepository(t *testing.T) *repository {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
@@ -160,6 +221,8 @@ func newTestPlanningRepository(t *testing.T) *repository {
 		&PRNodePO{},
 		&CompiledPromptPO{},
 		&SkillPO{},
+		&ProjectSkillPO{},
+		&SkillRunPO{},
 	))
 	return NewRepository(db)
 }

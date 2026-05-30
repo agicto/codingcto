@@ -297,6 +297,97 @@ func (r *repository) ListSkillsByRepositoryID(ctx context.Context, repositoryID 
 	return skillsToDomain(pos), nil
 }
 
+func (r *repository) UpsertProjectSkill(ctx context.Context, projectSkill *domain.SpecForgeProjectSkill) error {
+	if projectSkill == nil || projectSkill.ProjectID == 0 || projectSkill.SkillID == 0 || strings.TrimSpace(projectSkill.WorkspaceID) == "" || strings.TrimSpace(projectSkill.RepositoryID) == "" {
+		return domain.ErrInvalidInput
+	}
+	var existing ProjectSkillPO
+	query := r.db.WithContext(ctx).Where("project_id = ? AND skill_id = ?", projectSkill.ProjectID, projectSkill.SkillID).First(&existing)
+	if query.Error != nil && !errors.Is(query.Error, gorm.ErrRecordNotFound) {
+		return query.Error
+	}
+	po := newProjectSkillPO(projectSkill)
+	if query.Error == nil {
+		po.ID = existing.ID
+		po.CreatedAt = existing.CreatedAt
+	}
+	if err := r.db.WithContext(ctx).Save(po).Error; err != nil {
+		return err
+	}
+	loaded, err := r.findProjectSkillByID(ctx, po.ID)
+	if err != nil {
+		return err
+	}
+	*projectSkill = *loaded
+	return nil
+}
+
+func (r *repository) ListProjectSkillsByProjectID(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectSkill, error) {
+	if projectID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	var pos []*ProjectSkillPO
+	if err := r.db.WithContext(ctx).Preload("Skill").Where("project_id = ?", projectID).Order("sort_order ASC, id ASC").Find(&pos).Error; err != nil {
+		return nil, err
+	}
+	return projectSkillsToDomain(pos), nil
+}
+
+func (r *repository) ListActiveProjectSkillsByProjectID(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectSkill, error) {
+	if projectID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	var pos []*ProjectSkillPO
+	if err := r.db.WithContext(ctx).Preload("Skill").Where("project_id = ? AND active = ?", projectID, true).Order("sort_order ASC, id ASC").Find(&pos).Error; err != nil {
+		return nil, err
+	}
+	return projectSkillsToDomain(pos), nil
+}
+
+func (r *repository) CreateSkillRun(ctx context.Context, run *domain.SpecForgeSkillRun) error {
+	if run == nil || strings.TrimSpace(run.Stage) == "" || strings.TrimSpace(run.Status) == "" {
+		return domain.ErrInvalidInput
+	}
+	po := newSkillRunPO(run)
+	if err := r.db.WithContext(ctx).Create(po).Error; err != nil {
+		return err
+	}
+	run.ID = po.ID
+	run.CreatedAt = po.CreatedAt
+	run.UpdatedAt = po.UpdatedAt
+	return nil
+}
+
+func (r *repository) ListSkillRunsByRequirementID(ctx context.Context, requirementID uint) ([]*domain.SpecForgeSkillRun, error) {
+	if requirementID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	var pos []*SkillRunPO
+	if err := r.db.WithContext(ctx).Where("requirement_id = ?", requirementID).Order("id ASC").Find(&pos).Error; err != nil {
+		return nil, err
+	}
+	return skillRunsToDomain(pos), nil
+}
+
+func (r *repository) ListSkillRunsByPlanID(ctx context.Context, planID uint) ([]*domain.SpecForgeSkillRun, error) {
+	if planID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	var pos []*SkillRunPO
+	if err := r.db.WithContext(ctx).Where("plan_id = ?", planID).Order("id ASC").Find(&pos).Error; err != nil {
+		return nil, err
+	}
+	return skillRunsToDomain(pos), nil
+}
+
+func (r *repository) findProjectSkillByID(ctx context.Context, id uint) (*domain.SpecForgeProjectSkill, error) {
+	var po ProjectSkillPO
+	if err := r.db.WithContext(ctx).Preload("Skill").First(&po, id).Error; err != nil {
+		return nil, err
+	}
+	return po.toDomain(), nil
+}
+
 func (r *repository) findBundle(ctx context.Context, query string, args ...any) (*domain.SpecForgePlanBundle, error) {
 	var plan ImplementationPlanPO
 	if err := r.db.WithContext(ctx).Where(query, args...).First(&plan).Error; err != nil {
@@ -343,6 +434,22 @@ func (r *repository) findBundle(ctx context.Context, query string, args ...any) 
 
 func skillsToDomain(pos []*SkillPO) []*domain.SpecForgeSkill {
 	out := make([]*domain.SpecForgeSkill, len(pos))
+	for i, po := range pos {
+		out[i] = po.toDomain()
+	}
+	return out
+}
+
+func projectSkillsToDomain(pos []*ProjectSkillPO) []*domain.SpecForgeProjectSkill {
+	out := make([]*domain.SpecForgeProjectSkill, len(pos))
+	for i, po := range pos {
+		out[i] = po.toDomain()
+	}
+	return out
+}
+
+func skillRunsToDomain(pos []*SkillRunPO) []*domain.SpecForgeSkillRun {
+	out := make([]*domain.SpecForgeSkillRun, len(pos))
 	for i, po := range pos {
 		out[i] = po.toDomain()
 	}

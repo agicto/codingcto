@@ -183,6 +183,76 @@ func (h *Handler) ListSkills(c *gin.Context) {
 	response.Success(c, &SkillListResponse{Skills: skills})
 }
 
+func (h *Handler) UpsertProjectSkill(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+
+	var req UpsertProjectSkillRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+
+	projectSkill, err := h.service.UpsertProjectSkill(c.Request.Context(), userID, projectID, &req)
+	if err != nil {
+		response.HandleError(c, "Failed to upsert project skill", err)
+		return
+	}
+
+	response.Created(c, &ProjectSkillResponse{ProjectSkill: projectSkill})
+}
+
+func (h *Handler) ListProjectSkills(c *gin.Context) {
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+
+	projectSkills, err := h.service.ListProjectSkills(c.Request.Context(), projectID)
+	if err != nil {
+		response.HandleError(c, "Failed to list project skills", err)
+		return
+	}
+
+	response.Success(c, &ProjectSkillListResponse{ProjectSkills: projectSkills})
+}
+
+func (h *Handler) ListRequirementSkillRuns(c *gin.Context) {
+	requirementID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+
+	skillRuns, err := h.service.ListSkillRunsForRequirement(c.Request.Context(), requirementID)
+	if err != nil {
+		response.HandleError(c, "Failed to list requirement skill runs", err)
+		return
+	}
+
+	response.Success(c, &SkillRunListResponse{SkillRuns: skillRuns})
+}
+
+func (h *Handler) ListPlanSkillRuns(c *gin.Context) {
+	planID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+
+	skillRuns, err := h.service.ListSkillRunsForPlan(c.Request.Context(), planID)
+	if err != nil {
+		response.HandleError(c, "Failed to list plan skill runs", err)
+		return
+	}
+
+	response.Success(c, &SkillRunListResponse{SkillRuns: skillRuns})
+}
+
 func (h *Handler) CompilePrompt(c *gin.Context) {
 	userID, ok := handler.GetUserID(c)
 	if !ok {

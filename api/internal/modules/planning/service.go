@@ -25,18 +25,27 @@ type Service interface {
 	ApprovePlan(ctx context.Context, userID, planID uint, req *ApprovePlanRequest) (*domain.SpecForgePlanBundle, error)
 	UpsertSkill(ctx context.Context, userID uint, repoID string, req *UpsertSkillRequest) (*domain.SpecForgeSkill, error)
 	ListSkills(ctx context.Context, repoID string) ([]*domain.SpecForgeSkill, error)
+	UpsertProjectSkill(ctx context.Context, userID, projectID uint, req *UpsertProjectSkillRequest) (*domain.SpecForgeProjectSkill, error)
+	ListProjectSkills(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectSkill, error)
+	ListSkillRunsForRequirement(ctx context.Context, requirementID uint) ([]*domain.SpecForgeSkillRun, error)
+	ListSkillRunsForPlan(ctx context.Context, planID uint) ([]*domain.SpecForgeSkillRun, error)
 	CompilePrompt(ctx context.Context, userID, prNodeID uint, req *CompilePromptRequest) (*domain.SpecForgeCompiledPrompt, error)
 }
 
 type service struct {
-	repo        domain.SpecForgePlanningRepository
-	profileRepo domain.SpecForgeRepoProfileRepository
-	skillRepo   domain.SpecForgeSkillRepository
-	projectRepo domain.SpecForgeProjectRepositoryStore
+	repo         domain.SpecForgePlanningRepository
+	profileRepo  domain.SpecForgeRepoProfileRepository
+	skillRepo    domain.SpecForgeSkillRepository
+	pipelineRepo domain.SpecForgeSkillPipelineRepository
+	projectRepo  domain.SpecForgeProjectRepositoryStore
 }
 
 func NewService(repo domain.SpecForgePlanningRepository, profileRepo domain.SpecForgeRepoProfileRepository, skillRepo domain.SpecForgeSkillRepository, projectRepo domain.SpecForgeProjectRepositoryStore) *service {
-	return &service{repo: repo, profileRepo: profileRepo, skillRepo: skillRepo, projectRepo: projectRepo}
+	var pipelineRepo domain.SpecForgeSkillPipelineRepository
+	if repo, ok := skillRepo.(domain.SpecForgeSkillPipelineRepository); ok {
+		pipelineRepo = repo
+	}
+	return &service{repo: repo, profileRepo: profileRepo, skillRepo: skillRepo, pipelineRepo: pipelineRepo, projectRepo: projectRepo}
 }
 
 func (s *service) CreateIdea(ctx context.Context, userID uint, repoID string, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error) {
@@ -58,6 +67,9 @@ func (s *service) CreateIdea(ctx context.Context, userID uint, repoID string, re
 	bundle.Plan.Version = 1
 	if err := s.repo.CreatePlanBundle(ctx, bundle); err != nil {
 		return nil, fmt.Errorf("create plan bundle: %w", err)
+	}
+	if err := s.recordPlanSkillRuns(ctx, userID, bundle); err != nil {
+		return nil, err
 	}
 	return bundle, nil
 }
@@ -102,6 +114,9 @@ func (s *service) CreateProjectRequirement(ctx context.Context, userID, projectI
 	bundle.ProductSpec.Assumptions = append(bundle.ProductSpec.Assumptions, projectContextAssumption(projectContext))
 	if err := s.repo.CreatePlanBundle(ctx, bundle); err != nil {
 		return nil, fmt.Errorf("create project requirement plan bundle: %w", err)
+	}
+	if err := s.recordPlanSkillRuns(ctx, userID, bundle); err != nil {
+		return nil, err
 	}
 	return bundle, nil
 }
@@ -156,6 +171,9 @@ func (s *service) GenerateRequirementPlan(ctx context.Context, userID, requireme
 	bundle.ProductSpec.Assumptions = append(bundle.ProductSpec.Assumptions, projectContextAssumption(projectContext))
 	if err := s.repo.CreatePlanBundle(ctx, bundle); err != nil {
 		return nil, fmt.Errorf("generate requirement plan: %w", err)
+	}
+	if err := s.recordPlanSkillRuns(ctx, userID, bundle); err != nil {
+		return nil, err
 	}
 	return bundle, nil
 }
@@ -256,6 +274,67 @@ func (s *service) ListSkills(ctx context.Context, repoID string) ([]*domain.Spec
 	return s.skillRepo.ListSkillsByRepositoryID(ctx, strings.TrimSpace(repoID))
 }
 
+func (s *service) UpsertProjectSkill(ctx context.Context, userID, projectID uint, req *UpsertProjectSkillRequest) (*domain.SpecForgeProjectSkill, error) {
+	if userID == 0 || projectID == 0 || req == nil || s.skillRepo == nil || s.pipelineRepo == nil || s.projectRepo == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	project, err := s.projectRepo.FindProjectByID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	repositoryID := strings.TrimSpace(req.RepositoryID)
+	if _, err := s.projectRepo.FindProjectRepository(ctx, projectID, repositoryID); err != nil {
+		return nil, err
+	}
+	skill, err := s.UpsertSkill(ctx, userID, req.RepositoryID, &UpsertSkillRequest{
+		Name:        req.Name,
+		Description: req.Description,
+		Content:     req.Content,
+		Active:      req.Active,
+	})
+	if err != nil {
+		return nil, err
+	}
+	active := true
+	if req.Active != nil {
+		active = *req.Active
+	}
+	projectSkill := &domain.SpecForgeProjectSkill{
+		WorkspaceID:  project.WorkspaceID,
+		ProjectID:    projectID,
+		RepositoryID: skill.RepositoryID,
+		SkillID:      skill.ID,
+		Active:       active,
+		SortOrder:    req.SortOrder,
+		CreatedBy:    userID,
+	}
+	if err := s.pipelineRepo.UpsertProjectSkill(ctx, projectSkill); err != nil {
+		return nil, fmt.Errorf("upsert project skill: %w", err)
+	}
+	return projectSkill, nil
+}
+
+func (s *service) ListProjectSkills(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectSkill, error) {
+	if projectID == 0 || s.pipelineRepo == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.pipelineRepo.ListProjectSkillsByProjectID(ctx, projectID)
+}
+
+func (s *service) ListSkillRunsForRequirement(ctx context.Context, requirementID uint) ([]*domain.SpecForgeSkillRun, error) {
+	if requirementID == 0 || s.pipelineRepo == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.pipelineRepo.ListSkillRunsByRequirementID(ctx, requirementID)
+}
+
+func (s *service) ListSkillRunsForPlan(ctx context.Context, planID uint) ([]*domain.SpecForgeSkillRun, error) {
+	if planID == 0 || s.pipelineRepo == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.pipelineRepo.ListSkillRunsByPlanID(ctx, planID)
+}
+
 func (s *service) CompilePrompt(ctx context.Context, userID, prNodeID uint, req *CompilePromptRequest) (*domain.SpecForgeCompiledPrompt, error) {
 	if userID == 0 || prNodeID == 0 {
 		return nil, domain.ErrInvalidInput
@@ -302,6 +381,15 @@ func (s *service) CompilePrompt(ctx context.Context, userID, prNodeID uint, req 
 
 func (s *service) activeSkillsFor(ctx context.Context, bundle *domain.SpecForgePlanBundle) ([]*domain.SpecForgeSkill, error) {
 	if bundle != nil && bundle.ProjectContext != nil {
+		if s.pipelineRepo != nil && bundle.ProjectContext.Project != nil {
+			projectSkills, err := s.pipelineRepo.ListActiveProjectSkillsByProjectID(ctx, bundle.ProjectContext.Project.ID)
+			if err != nil {
+				return nil, fmt.Errorf("load active project skills: %w", err)
+			}
+			if len(projectSkills) > 0 {
+				return skillsFromProjectSkills(projectSkills), nil
+			}
+		}
 		return activeProjectSkills(bundle.ProjectContext), nil
 	}
 	if s.skillRepo == nil || bundle == nil || bundle.Idea == nil || strings.TrimSpace(bundle.Idea.RepositoryID) == "" {
@@ -312,6 +400,32 @@ func (s *service) activeSkillsFor(ctx context.Context, bundle *domain.SpecForgeP
 		return nil, fmt.Errorf("load active repo skills: %w", err)
 	}
 	return skills, nil
+}
+
+func (s *service) recordPlanSkillRuns(ctx context.Context, userID uint, bundle *domain.SpecForgePlanBundle) error {
+	if s.pipelineRepo == nil || bundle == nil || bundle.Plan == nil {
+		return nil
+	}
+	skills, err := s.activeSkillsFor(ctx, bundle)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	requirementID := bundle.Plan.RequirementID
+	planID := &bundle.Plan.ID
+	var projectID *uint
+	if bundle.Requirement != nil && bundle.Requirement.ProjectID != 0 {
+		id := bundle.Requirement.ProjectID
+		projectID = &id
+	} else if bundle.Idea != nil && bundle.Idea.ProjectID != nil {
+		projectID = bundle.Idea.ProjectID
+	}
+	for _, run := range plannedSkillRuns(userID, requirementID, planID, projectID, bundle, skills, now) {
+		if err := s.pipelineRepo.CreateSkillRun(ctx, run); err != nil {
+			return fmt.Errorf("create skill run: %w", err)
+		}
+	}
+	return nil
 }
 
 func (s *service) withRepoProfile(ctx context.Context, bundle *domain.SpecForgePlanBundle) (*domain.SpecForgePlanBundle, error) {
@@ -617,6 +731,129 @@ func activeProjectSkills(context *domain.SpecForgeProjectContext) []*domain.Spec
 		}
 	}
 	return skills
+}
+
+func skillsFromProjectSkills(projectSkills []*domain.SpecForgeProjectSkill) []*domain.SpecForgeSkill {
+	skills := make([]*domain.SpecForgeSkill, 0, len(projectSkills))
+	seen := map[uint]struct{}{}
+	for _, projectSkill := range projectSkills {
+		if projectSkill == nil || !projectSkill.Active || projectSkill.Skill == nil || !projectSkill.Skill.Active {
+			continue
+		}
+		if _, ok := seen[projectSkill.Skill.ID]; ok {
+			continue
+		}
+		seen[projectSkill.Skill.ID] = struct{}{}
+		skills = append(skills, projectSkill.Skill)
+	}
+	return skills
+}
+
+func plannedSkillRuns(userID uint, requirementID, planID, projectID *uint, bundle *domain.SpecForgePlanBundle, skills []*domain.SpecForgeSkill, now time.Time) []*domain.SpecForgeSkillRun {
+	stages := []struct {
+		stage  string
+		output string
+	}{
+		{stage: domain.SkillRunStageProductPlan, output: skillRunProductOutput(bundle)},
+		{stage: domain.SkillRunStageTechnicalPlan, output: skillRunTechnicalOutput(bundle)},
+		{stage: domain.SkillRunStagePRDAG, output: skillRunPRDAGOutput(bundle)},
+		{stage: domain.SkillRunStageSelfReview, output: strings.Join(reviewPRDAG(bundle.PRNodes), "\n")},
+	}
+	inputSummary := skillRunInputSummary(bundle, skills)
+	outputJSON := skillRunOutputJSON(bundle, skills)
+	runs := make([]*domain.SpecForgeSkillRun, 0, len(stages))
+	for _, stage := range stages {
+		started := now
+		completed := now
+		runs = append(runs, &domain.SpecForgeSkillRun{
+			RequirementID: requirementID,
+			PlanID:        planID,
+			ProjectID:     projectID,
+			Stage:         stage.stage,
+			Status:        domain.SkillRunStatusCompleted,
+			InputSummary:  inputSummary,
+			OutputSummary: strings.TrimSpace(stage.output),
+			OutputJSON:    outputJSON,
+			StartedAt:     &started,
+			CompletedAt:   &completed,
+			CreatedBy:     userID,
+		})
+	}
+	return runs
+}
+
+func skillRunInputSummary(bundle *domain.SpecForgePlanBundle, skills []*domain.SpecForgeSkill) string {
+	parts := []string{}
+	if bundle != nil && bundle.Idea != nil {
+		parts = append(parts, "Idea: "+strings.TrimSpace(bundle.Idea.RawInput))
+		parts = append(parts, "Repository: "+strings.TrimSpace(bundle.Idea.RepositoryID))
+	}
+	if bundle != nil && bundle.Requirement != nil {
+		parts = append(parts, fmt.Sprintf("Requirement: %d", bundle.Requirement.ID))
+	}
+	if bundle != nil && bundle.ProjectContext != nil && bundle.ProjectContext.Project != nil {
+		parts = append(parts, "Project: "+bundle.ProjectContext.Project.Name)
+	}
+	parts = append(parts, fmt.Sprintf("Active skills: %d", len(skills)))
+	return strings.Join(normalizePlanList(parts), "\n")
+}
+
+func skillRunProductOutput(bundle *domain.SpecForgePlanBundle) string {
+	if bundle == nil || bundle.ProductSpec == nil {
+		return ""
+	}
+	return strings.Join(normalizePlanList(append([]string{}, bundle.ProductSpec.Goals...)), "\n")
+}
+
+func skillRunTechnicalOutput(bundle *domain.SpecForgePlanBundle) string {
+	if bundle == nil || bundle.Plan == nil {
+		return ""
+	}
+	values := []string{bundle.Plan.TechnicalSummary}
+	values = append(values, bundle.Plan.AffectedAreas...)
+	values = append(values, bundle.Plan.TestStrategy...)
+	return strings.Join(normalizePlanList(values), "\n")
+}
+
+func skillRunPRDAGOutput(bundle *domain.SpecForgePlanBundle) string {
+	if bundle == nil {
+		return ""
+	}
+	values := []string{}
+	for _, node := range bundle.PRNodes {
+		if node == nil {
+			continue
+		}
+		values = append(values, fmt.Sprintf("%s: %s", node.NodeKey, node.Title))
+	}
+	return strings.Join(normalizePlanList(values), "\n")
+}
+
+func skillRunOutputJSON(bundle *domain.SpecForgePlanBundle, skills []*domain.SpecForgeSkill) string {
+	payload := struct {
+		SkillNames []string `json:"skill_names"`
+		PRNodes    []string `json:"pr_nodes"`
+	}{
+		SkillNames: []string{},
+		PRNodes:    []string{},
+	}
+	for _, skill := range skills {
+		if skill != nil && strings.TrimSpace(skill.Name) != "" {
+			payload.SkillNames = append(payload.SkillNames, strings.TrimSpace(skill.Name))
+		}
+	}
+	if bundle != nil {
+		for _, node := range bundle.PRNodes {
+			if node != nil {
+				payload.PRNodes = append(payload.PRNodes, node.NodeKey)
+			}
+		}
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return "{}"
+	}
+	return string(encoded)
 }
 
 func writeRepoProfile(b *strings.Builder, profile *domain.SpecForgeRepoProfile) {

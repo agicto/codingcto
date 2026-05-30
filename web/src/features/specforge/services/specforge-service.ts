@@ -86,6 +86,11 @@ export interface UpsertSkillPayload {
   active?: boolean;
 }
 
+export interface UpsertProjectSkillPayload extends UpsertSkillPayload {
+  repository_id: string;
+  sort_order?: number;
+}
+
 export interface StartRunPayload {
   executor?: string;
   pr_node_ids?: number[];
@@ -346,6 +351,39 @@ export interface SpecForgeSkillDTO {
   updated_at: string;
 }
 
+export interface SpecForgeProjectSkillDTO {
+  id: number;
+  workspace_id: string;
+  project_id: number;
+  repository_id: string;
+  skill_id: number;
+  active: boolean;
+  sort_order: number;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+  skill?: SpecForgeSkillDTO;
+}
+
+export interface SpecForgeSkillRunDTO {
+  id: number;
+  requirement_id?: number;
+  plan_id?: number;
+  project_id?: number;
+  skill_id?: number;
+  stage: string;
+  status: string;
+  input_summary: string;
+  output_summary: string;
+  output_json?: string;
+  error_message?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface SpecForgeFixAttemptDTO {
   id: number;
   pr_node_id: number;
@@ -584,6 +622,30 @@ export const specForgeService = {
     request.post<{ skill: SpecForgeSkillDTO }, UpsertSkillPayload>(
       `/repositories/${repoId}/skills`,
       payload
+    ),
+
+  listProjectSkills: (projectId: number, config?: RequestConfig) =>
+    request.get<{ project_skills: SpecForgeProjectSkillDTO[] }>(
+      `/projects/${projectId}/skills`,
+      config
+    ),
+
+  upsertProjectSkill: (projectId: number, payload: UpsertProjectSkillPayload) =>
+    request.post<{ project_skill: SpecForgeProjectSkillDTO }, UpsertProjectSkillPayload>(
+      `/projects/${projectId}/skills`,
+      payload
+    ),
+
+  listPlanSkillRuns: (planId: number, config?: RequestConfig) =>
+    request.get<{ skill_runs: SpecForgeSkillRunDTO[] }>(
+      `/plans/${planId}/skill-runs`,
+      config
+    ),
+
+  listRequirementSkillRuns: (requirementId: number, config?: RequestConfig) =>
+    request.get<{ skill_runs: SpecForgeSkillRunDTO[] }>(
+      `/requirements/${requirementId}/skill-runs`,
+      config
     ),
 
   compilePrompt: (prNodeId: number, payload?: CompilePromptPayload) =>
