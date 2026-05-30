@@ -746,10 +746,10 @@ func (s *service) publishPRNodeDependencySatisfied(ctx context.Context, node *do
 }
 
 func (s *service) updatePRNodeFromWorkflowRun(ctx context.Context, run *WebhookWorkflowRun) (*domain.SpecForgePRNode, error) {
-	if strings.TrimSpace(run.HeadBranch) == "" {
+	if strings.TrimSpace(run.HeadBranch) == "" && len(run.PullRequestNumbers) == 0 {
 		return nil, nil
 	}
-	node, err := s.planningRepo.FindPRNodeByBranchName(ctx, run.HeadBranch)
+	node, err := s.findPRNodeForWorkflowRun(ctx, run)
 	if errors.Is(err, domain.ErrNotFound) {
 		return nil, nil
 	}
@@ -761,6 +761,25 @@ func (s *service) updatePRNodeFromWorkflowRun(ctx context.Context, run *WebhookW
 		return nil, err
 	}
 	return node, nil
+}
+
+func (s *service) findPRNodeForWorkflowRun(ctx context.Context, run *WebhookWorkflowRun) (*domain.SpecForgePRNode, error) {
+	if strings.TrimSpace(run.HeadBranch) != "" {
+		node, err := s.planningRepo.FindPRNodeByBranchName(ctx, run.HeadBranch)
+		if err == nil || !errors.Is(err, domain.ErrNotFound) {
+			return node, err
+		}
+	}
+	for _, prNumber := range run.PullRequestNumbers {
+		if prNumber <= 0 {
+			continue
+		}
+		node, err := s.planningRepo.FindPRNodeByGitHubPRNumber(ctx, prNumber)
+		if err == nil || !errors.Is(err, domain.ErrNotFound) {
+			return node, err
+		}
+	}
+	return nil, domain.ErrNotFound
 }
 
 func (s *service) publishPRNodeCIFailed(ctx context.Context, event *StructuredGitHubWebhook, node *domain.SpecForgePRNode) error {

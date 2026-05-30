@@ -605,6 +605,60 @@ func TestRecordWebhookPublishesDependencySatisfiedForSuccessfulWorkflowRun(t *te
 	require.Equal(t, domain.PRNodeStatusReadyForReview, published.Status)
 }
 
+func TestRecordWebhookUpdatesWorkflowRunNodeByPullRequestNumberFallback(t *testing.T) {
+	repo := &memoryRepo{}
+	prNumber := 42
+	planningRepo := &memoryPlanningRepo{
+		bundle: &domain.SpecForgePlanBundle{
+			Idea: &domain.SpecForgeIdea{RepositoryID: "github_agicto__codingcto"},
+		},
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, PlanID: 20, NodeKey: "PR-001", BranchName: "specforge/team-invite-01-model", GitHubPRNumber: &prNumber, Status: domain.PRNodeStatusCIRunning},
+		},
+	}
+	bus := infraevents.NewEventBus()
+	var published domain.SpecForgePRNodeCIFailedEvent
+	bus.Subscribe(domain.EventSpecForgePRNodeCIFailed, func(ctx context.Context, event infraevents.Event) error {
+		var underlying any = event
+		if wrapped, ok := event.(infraevents.WrappedEvent); ok {
+			underlying = wrapped.Event
+		}
+		typed, ok := underlying.(domain.SpecForgePRNodeCIFailedEvent)
+		require.True(t, ok)
+		published = typed
+		return nil
+	})
+	svc := NewService(repo, planningRepo, nil, nil, bus)
+	body := []byte(`{
+		"action": "completed",
+		"installation": {"id": 123},
+		"repository": {"full_name": "agicto/codingcto"},
+		"workflow_run": {
+			"id": 989,
+			"name": "API",
+			"head_branch": "unknown-branch",
+			"head_sha": "fallback-sha",
+			"status": "completed",
+			"conclusion": "failure",
+			"html_url": "https://github.com/agicto/codingcto/actions/runs/989",
+			"pull_requests": [{"number": 42}]
+		}
+	}`)
+
+	_, err := svc.RecordWebhook(context.Background(), &GitHubWebhookRequest{
+		EventType:  GitHubWebhookEventWorkflowRun,
+		DeliveryID: "delivery-workflow-pr-fallback",
+		Signature:  "sha256=abc",
+		Body:       body,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, domain.PRNodeStatusBlocked, planningRepo.nodes[0].Status)
+	require.Equal(t, "fallback-sha", planningRepo.nodes[0].GitHubHeadSHA)
+	require.Equal(t, uint(10), published.PRNodeID)
+	require.Equal(t, int64(989), published.WorkflowRunID)
+}
+
 func TestRecordWebhookPublishesDependencySatisfiedForMergedPullRequest(t *testing.T) {
 	repo := &memoryRepo{}
 	planningRepo := &memoryPlanningRepo{
