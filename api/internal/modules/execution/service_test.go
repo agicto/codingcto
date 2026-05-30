@@ -534,6 +534,30 @@ func TestHandlerBlocksRunWhenClosedPRLeavesNoRunnableTasks(t *testing.T) {
 	require.Nil(t, updated.Run.CompletedAt)
 }
 
+func TestHandlerBlocksRunWhenPRNodeNeedsDecision(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	bus := events.NewEventBus()
+	NewHandler(svc).RegisterEvents(bus)
+
+	err = bus.Publish(context.Background(), domain.NewSpecForgePRNodeNeedsDecisionEvent(
+		planningRepo.bundle.PRNodes[0].ID,
+		"ci_log_unavailable",
+		"CI logs could not be read.",
+		"Inspect the workflow run in GitHub.",
+	))
+
+	require.NoError(t, err)
+	updated, err := svc.GetRun(context.Background(), created.Run.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.ExecutionRunStatusBlocked, updated.Run.Status)
+	require.Nil(t, updated.Run.CompletedAt)
+	require.Equal(t, domain.PRNodeStatusBlocked, planningRepo.bundle.PRNodes[0].Status)
+}
+
 func TestHandlerCreatesReviewPatchOnlyForActionableFeedback(t *testing.T) {
 	planningRepo := memoryPlanningRepoWithPrompt()
 	prNumber := 42

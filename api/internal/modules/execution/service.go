@@ -34,6 +34,7 @@ type Service interface {
 	CreateReviewPatchTaskForGitHubPR(ctx context.Context, prNumber int, req *ReviewPatchAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	UnlockReadyTasksForPRNode(ctx context.Context, prNodeID uint) (*domain.SpecForgeExecutionBundle, error)
 	CancelTasksBlockedByClosedPRNode(ctx context.Context, prNodeID uint) (*domain.SpecForgeExecutionBundle, error)
+	BlockRunForPRNodeDecision(ctx context.Context, prNodeID uint) (*domain.SpecForgeExecutionBundle, error)
 	PinTaskSession(ctx context.Context, taskID uint, req *PinAgentTaskSessionRequest) (*domain.SpecForgeExecutionBundle, error)
 	ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error)
 	SubmitTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.SpecForgeExecutionBundle, error)
@@ -748,6 +749,39 @@ func (s *service) CancelTasksBlockedByClosedPRNode(ctx context.Context, prNodeID
 	}
 	if err := s.blockRunIfClosedPathReady(ctx, bundle); err != nil {
 		return nil, err
+	}
+	return s.GetRun(ctx, bundle.Run.ID)
+}
+
+func (s *service) BlockRunForPRNodeDecision(ctx context.Context, prNodeID uint) (*domain.SpecForgeExecutionBundle, error) {
+	if prNodeID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	node, err := s.planningRepo.FindPRNodeByID(ctx, prNodeID)
+	if err != nil {
+		return nil, err
+	}
+	if node.Status != domain.PRNodeStatusBlocked {
+		node.Status = domain.PRNodeStatusBlocked
+		if err := s.planningRepo.UpdatePRNode(ctx, node); err != nil {
+			return nil, fmt.Errorf("mark decision PR node blocked: %w", err)
+		}
+	}
+	bundle, err := s.repo.FindLatestActiveExecutionBundleByPlanID(ctx, node.PlanID)
+	if err != nil {
+		return nil, err
+	}
+	if bundle.Run == nil {
+		return nil, domain.ErrNotFound
+	}
+	if executionRunStatusFinished(bundle.Run.Status) {
+		return s.GetRun(ctx, bundle.Run.ID)
+	}
+	if bundle.Run.Status != domain.ExecutionRunStatusBlocked {
+		bundle.Run.Status = domain.ExecutionRunStatusBlocked
+		if err := s.repo.UpdateExecutionRun(ctx, bundle.Run); err != nil {
+			return nil, fmt.Errorf("block run for PR node decision: %w", err)
+		}
 	}
 	return s.GetRun(ctx, bundle.Run.ID)
 }
