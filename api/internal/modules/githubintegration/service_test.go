@@ -691,10 +691,22 @@ func TestDeliverPRNodeCreatesDraftPRAndUpdatesNode(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{
 		nodes: []*domain.SpecForgePRNode{
 			{
-				ID:           10,
-				NodeKey:      "PR-001",
-				Title:        "Add invite API",
-				Goal:         "Implement workspace invite API.",
+				ID:            10,
+				NodeKey:       "PR-001",
+				Title:         "Add invite API",
+				Goal:          "Implement workspace invite API.",
+				DependsOn:     []string{"PR-000"},
+				EstimatedRisk: "medium",
+				ExpectedFiles: []string{
+					"api/internal/modules/invitations/*",
+					"api/tests/feature/invitations_test.go",
+				},
+				NonGoals: []string{
+					"Do not build frontend UI in this PR",
+				},
+				AcceptanceCriteria: []string{
+					"Admin users can create invites",
+				},
 				BranchName:   "specforge/team-invite-01-api",
 				TestCommands: []string{"go test ./..."},
 				Status:       domain.PRNodeStatusReadyForReview,
@@ -722,8 +734,20 @@ func TestDeliverPRNodeCreatesDraftPRAndUpdatesNode(t *testing.T) {
 	require.Equal(t, "specforge/team-invite-01-api", client.input.Head)
 	require.Equal(t, "main", client.input.Base)
 	require.True(t, client.input.Draft)
+	require.Contains(t, client.input.Body, "## Linked Spec")
+	require.Contains(t, client.input.Body, "PR Node: PR-001")
+	require.Contains(t, client.input.Body, "## Scope")
+	require.Contains(t, client.input.Body, "- api/internal/modules/invitations/*")
+	require.Contains(t, client.input.Body, "## Non-goals")
+	require.Contains(t, client.input.Body, "- Do not build frontend UI in this PR")
+	require.Contains(t, client.input.Body, "## Acceptance Criteria")
+	require.Contains(t, client.input.Body, "- Admin users can create invites")
 	require.Contains(t, client.input.Body, "Implement workspace invite API.")
 	require.Contains(t, client.input.Body, "- [ ] go test ./...")
+	require.Contains(t, client.input.Body, "## Risks")
+	require.Contains(t, client.input.Body, "- Estimated risk: medium")
+	require.Contains(t, client.input.Body, "## Dependencies")
+	require.Contains(t, client.input.Body, "- PR-000")
 	require.NotNil(t, node.GitHubPRNumber)
 	require.Equal(t, 42, *node.GitHubPRNumber)
 	require.Equal(t, "https://github.com/agicto/codingcto/pull/42", node.GitHubPRURL)
