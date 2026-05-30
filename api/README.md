@@ -36,7 +36,7 @@ cp .env.example .env
 最少需要确认以下配置：
 
 ```bash
-APP_NAME=Luas
+APP_NAME=CodingCTO
 APP_ENV=development
 SERVER_PORT=8025
 

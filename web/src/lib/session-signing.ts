@@ -16,7 +16,7 @@
 
 import { env, isProd } from '@/config/env';
 
-const FALLBACK_DEV_SECRET = 'luas-dev-only-session-secret-do-not-use-in-production';
+const FALLBACK_DEV_SECRET = 'codingcto-dev-only-session-secret-do-not-use-in-production';
 
 let warnedAboutFallback = false;
 
@@ -29,7 +29,7 @@ function getSecret(): string {
   }
   if (!warnedAboutFallback) {
     console.warn(
-      '[luas] SESSION_SECRET is not set — using a non-production fallback. ' +
+      '[codingcto] SESSION_SECRET is not set — using a non-production fallback. ' +
         'Generate one with `openssl rand -hex 32` and set it in .env.local.',
     );
     warnedAboutFallback = true;

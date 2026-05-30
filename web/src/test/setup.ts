@@ -1,7 +1,7 @@
 import '@testing-library/jest-dom'
 import { vi } from 'vitest'
 
-process.env.SESSION_SECRET ??= 'luas-test-session-secret-at-least-32-chars'
+process.env.SESSION_SECRET ??= 'codingcto-test-session-secret-at-least-32-chars'
 
 // Mock Next.js router
 vi.mock('next/navigation', () => ({
