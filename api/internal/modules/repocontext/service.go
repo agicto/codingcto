@@ -258,6 +258,18 @@ func inferRepoProfile(paths []string, scripts map[string]string) *UpsertRepoProf
 	if hasPath(lowerPaths, "package.json") {
 		stack = append(stack, "Node.js")
 	}
+	if hasPath(lowerPaths, "pnpm-lock.yaml") {
+		stack = append(stack, "pnpm")
+	}
+	if hasPath(lowerPaths, "yarn.lock") {
+		stack = append(stack, "Yarn")
+	}
+	if hasPath(lowerPaths, "package-lock.json") {
+		stack = append(stack, "npm")
+	}
+	if hasPath(lowerPaths, "bun.lockb") || hasPath(lowerPaths, "bun.lock") {
+		stack = append(stack, "Bun")
+	}
 	if hasAnyPath(lowerPaths, "next.config", "app/", "pages/") {
 		stack = append(stack, "Next.js")
 	}
@@ -282,6 +294,15 @@ func inferRepoProfile(paths []string, scripts map[string]string) *UpsertRepoProf
 		appStructure = append(appStructure, "web/src/features")
 		conventions = append(conventions, "Keep frontend work in feature-first folders.")
 	}
+	if hasFileBase(lowerPaths, "agents.md") {
+		conventions = append(conventions, "Follow repository instructions in AGENTS.md before planning or editing.")
+	}
+	if hasFileBase(lowerPaths, "contributing.md") {
+		conventions = append(conventions, "Follow repository contribution guidelines in CONTRIBUTING.md.")
+	}
+	if hasPath(lowerPaths, ".github/copilot-instructions.md") {
+		conventions = append(conventions, "Follow GitHub Copilot repository instructions in .github/copilot-instructions.md.")
+	}
 	if hasAnyPath(lowerPaths, "auth", "permission", "rbac") {
 		riskAreas = append(riskAreas, "auth")
 	}
@@ -289,7 +310,7 @@ func inferRepoProfile(paths []string, scripts map[string]string) *UpsertRepoProf
 		riskAreas = append(riskAreas, "billing")
 	}
 
-	testCommands = append(testCommands, packageTestCommands(scripts)...)
+	testCommands = append(testCommands, packageTestCommands(scripts, packageManagerFromPaths(lowerPaths))...)
 
 	return &UpsertRepoProfileRequest{
 		Stack:             normalizeList(stack),
@@ -302,20 +323,68 @@ func inferRepoProfile(paths []string, scripts map[string]string) *UpsertRepoProf
 	}
 }
 
-func packageTestCommands(scripts map[string]string) []string {
+func packageTestCommands(scripts map[string]string, packageManager string) []string {
 	commands := []string{}
+	packageManager = strings.TrimSpace(packageManager)
+	if packageManager == "" {
+		packageManager = "pnpm"
+	}
 	for _, name := range []string{"lint", "type-check", "typecheck", "test"} {
 		if _, ok := scripts[name]; ok {
-			commands = append(commands, "pnpm "+name)
+			commands = append(commands, packageScriptCommand(packageManager, name))
 		}
 	}
 	return commands
+}
+
+func packageManagerFromPaths(paths []string) string {
+	switch {
+	case hasPath(paths, "pnpm-lock.yaml"):
+		return "pnpm"
+	case hasPath(paths, "yarn.lock"):
+		return "yarn"
+	case hasPath(paths, "bun.lockb") || hasPath(paths, "bun.lock"):
+		return "bun"
+	case hasPath(paths, "package-lock.json"):
+		return "npm"
+	default:
+		return "pnpm"
+	}
+}
+
+func packageScriptCommand(packageManager, scriptName string) string {
+	packageManager = strings.TrimSpace(packageManager)
+	scriptName = strings.TrimSpace(scriptName)
+	switch packageManager {
+	case "npm":
+		return "npm run " + scriptName
+	default:
+		return packageManager + " " + scriptName
+	}
 }
 
 func hasPath(paths []string, needle string) bool {
 	needle = strings.ToLower(needle)
 	for _, path := range paths {
 		if path == needle || strings.HasSuffix(path, "/"+needle) {
+			return true
+		}
+	}
+	return false
+}
+
+func hasFileBase(paths []string, baseName string) bool {
+	baseName = strings.ToLower(strings.TrimSpace(baseName))
+	for _, path := range paths {
+		path = strings.TrimSpace(path)
+		if path == "" {
+			continue
+		}
+		base := path
+		if idx := strings.LastIndex(base, "/"); idx >= 0 {
+			base = base[idx+1:]
+		}
+		if base == baseName {
 			return true
 		}
 	}
