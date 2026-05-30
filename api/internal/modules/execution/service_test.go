@@ -35,6 +35,44 @@ func TestStartRunCreatesTasksFromApprovedPlanDAG(t *testing.T) {
 	require.Contains(t, planningRepo.prompts[0].PromptText, "approved plan snapshot")
 }
 
+func TestStartRunCanLimitExecutionToSelectedPRNodes(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+
+	bundle, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{
+		PRNodeIDs: []uint{planningRepo.bundle.PRNodes[0].ID},
+	})
+
+	require.NoError(t, err)
+	require.Len(t, bundle.Tasks, 1)
+	require.Equal(t, planningRepo.bundle.PRNodes[0].ID, bundle.Tasks[0].PRNodeID)
+	require.Len(t, planningRepo.prompts, 1)
+	require.Equal(t, planningRepo.bundle.PRNodes[0].ID, planningRepo.prompts[0].PRNodeID)
+}
+
+func TestStartRunRejectsSelectedPRNodeWithoutDependency(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	svc := NewService(&memoryExecutionRepo{}, planningRepo, nil, nil, nil, nil, nil)
+
+	_, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{
+		PRNodeIDs: []uint{planningRepo.bundle.PRNodes[1].ID},
+	})
+
+	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
+func TestStartRunRejectsUnknownSelectedPRNode(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	svc := NewService(&memoryExecutionRepo{}, planningRepo, nil, nil, nil, nil, nil)
+
+	_, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{
+		PRNodeIDs: []uint{999},
+	})
+
+	require.ErrorIs(t, err, domain.ErrInvalidInput)
+}
+
 func TestStartRunIncludesRepoProfileInCompiledPrompt(t *testing.T) {
 	bundle := approvedPlanBundle()
 	bundle.RepoProfile = &domain.SpecForgeRepoProfile{

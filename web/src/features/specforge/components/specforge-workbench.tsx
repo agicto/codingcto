@@ -208,6 +208,9 @@ export function SpecForgeWorkbench() {
   const [decisionOverrides, setDecisionOverrides] = useState<Record<string, string>>(() =>
     defaultDecisionOverrides(demoPlan)
   );
+  const [selectedExecutionNodeIds, setSelectedExecutionNodeIds] = useState<string[]>(() =>
+    demoPlan.prNodes.map((node) => node.id)
+  );
   const [planSource, setPlanSource] = useState<"api" | "demo">("demo");
   const [hasPlan, setHasPlan] = useState(true);
   const [approved, setApproved] = useState(false);
@@ -286,6 +289,7 @@ export function SpecForgeWorkbench() {
       const nextPlan = planBundleFromDTO(bundle);
       setActivePlan(nextPlan);
       setDecisionOverrides(defaultDecisionOverrides(nextPlan));
+      setSelectedExecutionNodeIds(nextPlan.prNodes.map((node) => node.id));
       setIdea(nextPlan.idea);
       setPlanSource("api");
       setHasPlan(true);
@@ -294,6 +298,7 @@ export function SpecForgeWorkbench() {
       const fallbackPlan = demoPlanForInput(trimmedIdea, trimmedRepoId);
       setActivePlan(fallbackPlan);
       setDecisionOverrides(defaultDecisionOverrides(fallbackPlan));
+      setSelectedExecutionNodeIds(fallbackPlan.prNodes.map((node) => node.id));
       setPlanSource("demo");
       setHasPlan(true);
       setRun({ status: "idle", tasks: fallbackPlan.prNodes });
@@ -305,6 +310,7 @@ export function SpecForgeWorkbench() {
     setRepoId(demoPlan.repoProfile.repositoryId);
     setActivePlan(demoPlan);
     setDecisionOverrides(defaultDecisionOverrides(demoPlan));
+    setSelectedExecutionNodeIds(demoPlan.prNodes.map((node) => node.id));
     setPlanSource("demo");
     setHasPlan(true);
     setApproved(false);
@@ -312,8 +318,15 @@ export function SpecForgeWorkbench() {
   }
 
   async function approveAndStart() {
+    if (selectedExecutionNodeIds.length === 0) {
+      return;
+    }
+
     if (activePlan.planId) {
       try {
+        const selectedPRNodeIDs = selectedExecutionNodeIds
+          .map((id) => Number(id))
+          .filter((id) => Number.isFinite(id) && id > 0);
         const approvedPlan =
           activePlan.implementationPlan.status === "approved"
             ? activePlan
@@ -330,6 +343,9 @@ export function SpecForgeWorkbench() {
 
         const started = await startRun.mutateAsync({
           planId: approvedPlan.planId ?? activePlan.planId,
+          payload: {
+            pr_node_ids: selectedPRNodeIDs,
+          },
         });
         const dispatched = await dispatchRun.mutateAsync({
           runId: started.run.id,
@@ -348,13 +364,16 @@ export function SpecForgeWorkbench() {
 
     const startedAt = new Date().toISOString();
     setApproved(true);
+    const selectedNodeIDs = new Set(selectedExecutionNodeIds);
     setRun({
       status: "running",
       startedAt,
-      tasks: activePlan.prNodes.map((node) => ({
-        ...node,
-        status: node.dependsOn.length === 0 ? "running" : "waiting_on_dependencies",
-      })),
+      tasks: activePlan.prNodes
+        .filter((node) => selectedNodeIDs.has(node.id))
+        .map((node) => ({
+          ...node,
+          status: node.dependsOn.length === 0 ? "running" : "waiting_on_dependencies",
+        })),
     });
   }
 
@@ -528,11 +547,13 @@ export function SpecForgeWorkbench() {
                 <PlanReview
                   plan={activePlan}
                   decisionOverrides={decisionOverrides}
+                  selectedExecutionNodeIds={selectedExecutionNodeIds}
                   approved={approved}
                   isStarting={isStartingRun}
                   onDecisionOverrideChange={(key, value) =>
                     setDecisionOverrides((current) => ({ ...current, [key]: value }))
                   }
+                  onExecutionNodeSelectionChange={setSelectedExecutionNodeIds}
                   onApprove={approveAndStart}
                 />
               </TabsContent>
@@ -1083,20 +1104,25 @@ function RunSummary({
 function PlanReview({
   plan,
   decisionOverrides,
+  selectedExecutionNodeIds,
   approved,
   isStarting,
   onDecisionOverrideChange,
+  onExecutionNodeSelectionChange,
   onApprove,
 }: {
   plan: PlanBundle;
   decisionOverrides: Record<string, string>;
+  selectedExecutionNodeIds: string[];
   approved: boolean;
   isStarting: boolean;
   onDecisionOverrideChange: (key: string, value: string) => void;
+  onExecutionNodeSelectionChange: (nodeIds: string[]) => void;
   onApprove: () => void;
 }) {
   const { productSpec, implementationPlan } = plan;
   const approvalReadiness = planApprovalReadiness(plan);
+  const canStartSelectedRange = selectedExecutionNodeIds.length > 0;
   const decisionFields = decisionFieldsForPlan(plan);
   const planAssumptions = productSpec.assumptions.filter(
     (item) => !item.startsWith("PR DAG review:")
@@ -1131,6 +1157,12 @@ function PlanReview({
         <CardContent className="space-y-5">
           <ListBlock title="Affected areas" items={implementationPlan.affectedAreas} />
           <ListBlock title="PR DAG review" items={plan.prDagReview} />
+          <ExecutionRangeSelector
+            nodes={plan.prNodes}
+            selectedNodeIds={selectedExecutionNodeIds}
+            disabled={approved || isStarting}
+            onChange={onExecutionNodeSelectionChange}
+          />
           <ListBlock title="Security risks" items={implementationPlan.securityRisks} icon="risk" />
           <ListBlock title="Migration risks" items={implementationPlan.migrationRisks} />
           {!approvalReadiness.canApprove && (
@@ -1138,9 +1170,14 @@ function PlanReview({
               {approvalReadiness.reason}
             </p>
           )}
+          {!canStartSelectedRange && (
+            <p className="rounded-md border border-warning/30 bg-warning-subtle px-3 py-2 text-sm text-warning">
+              Select at least one PR node before starting execution.
+            </p>
+          )}
           <Button
             onClick={onApprove}
-            disabled={approved || isStarting || !approvalReadiness.canApprove}
+            disabled={approved || isStarting || !approvalReadiness.canApprove || !canStartSelectedRange}
             className="w-full justify-center"
           >
             {approved ? "Approved" : isStarting ? "Starting run" : "Approve & Start"}
@@ -1148,6 +1185,56 @@ function PlanReview({
           </Button>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function ExecutionRangeSelector({
+  nodes,
+  selectedNodeIds,
+  disabled,
+  onChange,
+}: {
+  nodes: PRNode[];
+  selectedNodeIds: string[];
+  disabled: boolean;
+  onChange: (nodeIds: string[]) => void;
+}) {
+  const selected = new Set(selectedNodeIds);
+
+  function toggleNode(nodeId: string, checked: boolean) {
+    if (checked) {
+      onChange([...selectedNodeIds, nodeId]);
+      return;
+    }
+    onChange(selectedNodeIds.filter((selectedNodeId) => selectedNodeId !== nodeId));
+  }
+
+  return (
+    <div>
+      <h3 className="text-sm font-medium">Execution range</h3>
+      <div className="mt-3 space-y-3">
+        {nodes.map((node) => (
+          <div
+            key={node.id}
+            className="flex items-start justify-between gap-3 rounded-md border border-border-subtle px-3 py-2"
+          >
+            <div>
+              <div className="text-sm font-medium">
+                {node.nodeKey}: {node.title}
+              </div>
+              <div className="mt-1 text-xs text-text-muted">
+                Depends on {node.dependsOn.length > 0 ? node.dependsOn.join(", ") : "none"}
+              </div>
+            </div>
+            <Switch
+              checked={selected.has(node.id)}
+              disabled={disabled}
+              onCheckedChange={(checked) => toggleNode(node.id, checked)}
+            />
+          </div>
+        ))}
+      </div>
     </div>
   );
 }

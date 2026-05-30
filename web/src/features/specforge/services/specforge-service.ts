@@ -74,6 +74,7 @@ export interface UpsertSkillPayload {
 
 export interface StartRunPayload {
   executor?: string;
+  pr_node_ids?: number[];
 }
 
 export interface DispatchRunPayload {
