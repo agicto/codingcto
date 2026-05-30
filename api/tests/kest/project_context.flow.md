@@ -440,6 +440,27 @@ body.data.can_auto_fix == true
 ```
 
 ```step
+@id review_patch
+@name Queue Review Patch Task
+
+POST /v1/tasks/{{task_id}}/review-patch
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "feedback": "Please preserve the existing API response shape while fixing this task.",
+  "force_fresh_session": true
+}
+
+[Asserts]
+status == 200
+body.data.run.id == {{run_id}}
+body.data.tasks.1.prompt_type == "review_patch"
+body.data.tasks.1.status == "queued"
+body.data.tasks.1.parent_task_id == {{task_id}}
+```
+
+```step
 @id escalation_summary
 @name Read Escalation Summary
 
@@ -559,6 +580,12 @@ body.data.latest_failure_type == "type_error"
 
 ```edge
 @from task_result
+@to review_patch
+@on success
+```
+
+```edge
+@from review_patch
 @to fix_attempt
 @on success
 ```

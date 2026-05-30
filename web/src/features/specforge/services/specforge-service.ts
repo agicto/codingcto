@@ -119,6 +119,11 @@ export interface RetryTaskPayload {
   force_fresh_session?: boolean;
 }
 
+export interface CreateReviewPatchTaskPayload {
+  feedback: string;
+  force_fresh_session?: boolean;
+}
+
 export interface ClaimTaskPayload {
   executor?: string;
   session_id?: string;
@@ -670,6 +675,12 @@ export const specForgeService = {
   retryTask: (taskId: number, payload?: RetryTaskPayload) =>
     request.post<SpecForgeExecutionBundleDTO, RetryTaskPayload | undefined>(
       `/tasks/${taskId}/retry`,
+      payload
+    ),
+
+  createReviewPatchTask: (taskId: number, payload: CreateReviewPatchTaskPayload) =>
+    request.post<SpecForgeExecutionBundleDTO, CreateReviewPatchTaskPayload>(
+      `/tasks/${taskId}/review-patch`,
       payload
     ),
 
