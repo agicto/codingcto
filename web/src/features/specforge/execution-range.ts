@@ -45,6 +45,20 @@ export function executionRangeReview(nodes: PRNode[], selectedNodeIds: string[])
     : [`执行范围审核：已选择 ${selectedNodeIds.length} 个 PR 节点，依赖已包含。`];
 }
 
+export function canStartExecutionRange(nodes: PRNode[], selectedNodeIds: string[]): boolean {
+  if (selectedNodeIds.length === 0) {
+    return false;
+  }
+
+  const selectedNodeKeys = new Set(
+    nodes.filter((node) => selectedNodeIds.includes(node.id)).map((node) => node.nodeKey)
+  );
+
+  return nodes
+    .filter((node) => selectedNodeIds.includes(node.id))
+    .every((node) => node.dependsOn.every((dependency) => selectedNodeKeys.has(dependency)));
+}
+
 function dependencyIdsForNode(nodes: PRNode[], nodeId: string): string[] {
   const nodesByKey = new Map(nodes.map((node) => [node.nodeKey, node]));
   const node = nodes.find((candidate) => candidate.id === nodeId);

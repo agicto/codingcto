@@ -97,8 +97,8 @@ _reference/
 .ref/
 
 # Built binaries
-luas
-server
+/luas
+/server
 
 # Examples (keep source code but ignore build artifacts)
 examples/*/bin/
