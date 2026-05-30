@@ -226,6 +226,83 @@ func TestHandlerUpdatesFixAttemptFromFinishedFixTaskEvent(t *testing.T) {
 	require.Equal(t, domain.FixAttemptStatusSuccess, repo.attempts[0].Status)
 }
 
+func TestHandlerQueuesNextFixAttemptWhenFixTaskFails(t *testing.T) {
+	repo := &memoryRepo{}
+	bus := infraevents.NewEventBus()
+	handler := NewHandler(NewService(repo, nil, bus))
+	handler.RegisterEvents(bus)
+	var queued domain.SpecForgeFixAttemptQueuedEvent
+	bus.Subscribe(domain.EventSpecForgeFixAttemptQueued, func(ctx context.Context, event infraevents.Event) error {
+		var underlying any = event
+		if wrapped, ok := event.(infraevents.WrappedEvent); ok {
+			underlying = wrapped.Event
+		}
+		typed, ok := underlying.(domain.SpecForgeFixAttemptQueuedEvent)
+		require.True(t, ok)
+		queued = typed
+		return nil
+	})
+	attempt, err := handler.service.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
+		FailureType: "type_error",
+		CanAutoFix:  true,
+	})
+	require.NoError(t, err)
+	fixID := attempt.ID
+
+	err = bus.Publish(context.Background(), domain.NewSpecForgeFixTaskFinishedEvent(&domain.SpecForgeAgentTask{
+		ID:            123,
+		PRNodeID:      42,
+		Status:        domain.AgentTaskStatusFailed,
+		FailureReason: "executor_failed",
+		ErrorLog:      "go test ./...\n--- FAIL: TestInvite",
+		FixAttemptID:  &fixID,
+	}))
+
+	require.NoError(t, err)
+	require.Len(t, repo.attempts, 2)
+	require.Equal(t, domain.FixAttemptStatusFailed, repo.attempts[0].Status)
+	require.Equal(t, domain.FixAttemptStatusQueued, repo.attempts[1].Status)
+	require.Equal(t, "executor_failed", repo.attempts[1].FailureType)
+	require.Contains(t, repo.attempts[1].CILogExcerpt, "TestInvite")
+	require.Equal(t, repo.attempts[1].ID, queued.FixAttemptID)
+	require.Equal(t, uint(42), queued.PRNodeID)
+	require.Equal(t, "executor_failed", queued.FailureType)
+}
+
+func TestHandlerStopsQueuingFixAttemptsAtBudgetLimit(t *testing.T) {
+	repo := &memoryRepo{}
+	bus := infraevents.NewEventBus()
+	handler := NewHandler(NewService(repo, nil, bus))
+	handler.RegisterEvents(bus)
+	queuedCount := 0
+	bus.Subscribe(domain.EventSpecForgeFixAttemptQueued, func(ctx context.Context, event infraevents.Event) error {
+		queuedCount++
+		return nil
+	})
+	failureTypes := []string{"type_error", "lint_failure", "unit_test_failure"}
+	for i := 0; i < maxFixAttemptsPerPRNode; i++ {
+		_, err := handler.service.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
+			FailureType: failureTypes[i],
+			Status:      domain.FixAttemptStatusFailed,
+			CanAutoFix:  true,
+		})
+		require.NoError(t, err)
+	}
+	fixID := repo.attempts[len(repo.attempts)-1].ID
+
+	err := bus.Publish(context.Background(), domain.NewSpecForgeFixTaskFinishedEvent(&domain.SpecForgeAgentTask{
+		ID:            123,
+		PRNodeID:      42,
+		Status:        domain.AgentTaskStatusFailed,
+		FailureReason: "executor_failed",
+		FixAttemptID:  &fixID,
+	}))
+
+	require.NoError(t, err)
+	require.Len(t, repo.attempts, maxFixAttemptsPerPRNode)
+	require.Equal(t, 0, queuedCount)
+}
+
 func TestCreateFixAttemptFromCIRejectsMissingReader(t *testing.T) {
 	repo := &memoryRepo{}
 	svc := NewService(repo, nil, nil)

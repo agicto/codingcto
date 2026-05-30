@@ -238,6 +238,8 @@ type SpecForgeFixTaskFinishedEvent struct {
 	TaskStatus       string
 	FixAttemptStatus string
 	FailureReason    string
+	OutputLog        string
+	ErrorLog         string
 }
 
 func (e SpecForgeFixTaskFinishedEvent) EventName() string {
@@ -254,6 +256,8 @@ func NewSpecForgeFixTaskFinishedEvent(task *SpecForgeAgentTask) SpecForgeFixTask
 	event.TaskID = task.ID
 	event.TaskStatus = task.Status
 	event.FailureReason = task.FailureReason
+	event.OutputLog = task.OutputLog
+	event.ErrorLog = task.ErrorLog
 	switch task.Status {
 	case AgentTaskStatusCompleted:
 		event.FixAttemptStatus = FixAttemptStatusSuccess
