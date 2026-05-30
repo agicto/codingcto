@@ -186,6 +186,24 @@ func TestStartRunHydratesProjectContextInCompiledPrompt(t *testing.T) {
 			Summary:       "Web console",
 		},
 	}}
+	require.NoError(t, profileRepo.CreateArchitectureSnapshot(context.Background(), &domain.SpecForgeRepoArchitectureSnapshot{
+		RepositoryID: "repo_api",
+		CommitSHA:    "apiabc123",
+		Modules:      []string{"api/internal/modules/planning", "api/internal/modules/execution"},
+		Entrypoints:  []string{"api/cmd/server/main.go"},
+		CIWorkflows:  []string{".github/workflows/api.yml"},
+		Summary:      "API architecture snapshot",
+		CreatedAt:    time.Now().UTC(),
+	}))
+	require.NoError(t, profileRepo.CreateArchitectureSnapshot(context.Background(), &domain.SpecForgeRepoArchitectureSnapshot{
+		RepositoryID: "repo_web",
+		CommitSHA:    "webabc123",
+		Modules:      []string{"web/src/features/specforge"},
+		Entrypoints:  []string{"web/src/app/(protected)/(console)/console/specforge/page.tsx"},
+		CIWorkflows:  []string{".github/workflows/web.yml"},
+		Summary:      "Web architecture snapshot",
+		CreatedAt:    time.Now().UTC(),
+	}))
 	projectRepo := &memoryExecutionProjectRepo{
 		project: &domain.SpecForgeProject{ID: projectID, WorkspaceID: "ws_1", Name: "SpecForge", Slug: "specforge", Status: domain.ProjectStatusActive},
 		repositories: []*domain.SpecForgeProjectRepository{
@@ -195,6 +213,7 @@ func TestStartRunHydratesProjectContextInCompiledPrompt(t *testing.T) {
 	}
 	svc := NewService(&memoryExecutionRepo{}, planningRepo, nil, nil, nil, nil, nil)
 	svc.profileRepo = profileRepo
+	svc.architectureRepo = profileRepo
 	svc.projectRepo = projectRepo
 
 	_, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
@@ -211,6 +230,12 @@ func TestStartRunHydratesProjectContextInCompiledPrompt(t *testing.T) {
 	require.Contains(t, prompt, "Repository repo_web (dependency)")
 	require.Contains(t, prompt, "Web console")
 	require.Contains(t, prompt, "pnpm type-check")
+	require.Contains(t, planningRepo.prompts[0].EvidenceRefs, "architecture_snapshot:repo_api:apiabc123")
+	require.Contains(t, planningRepo.prompts[0].EvidenceRefs, "architecture_snapshot:repo_api:modules")
+	require.Contains(t, prompt, "Architecture snapshot commit: apiabc123")
+	require.Contains(t, prompt, "Architecture modules: api/internal/modules/planning, api/internal/modules/execution")
+	require.Contains(t, prompt, "Architecture entrypoints: api/cmd/server/main.go")
+	require.Contains(t, prompt, "Architecture CI workflows: .github/workflows/api.yml")
 	require.Contains(t, prompt, "SpecForge planning SOP")
 	require.Contains(t, prompt, "Read repo evidence before planning")
 }
@@ -1436,6 +1461,64 @@ func TestExecuteTaskFailsBeforeExecutorWhenPromptContractIsInvalid(t *testing.T)
 	require.Equal(t, "prompt_contract_failed", updated.Tasks[0].FailureReason)
 	require.Contains(t, updated.Tasks[0].ErrorLog, "missing PR node evidence ref")
 	require.Equal(t, domain.AgentTaskStatusWaiting, updated.Tasks[1].Status)
+}
+
+func TestExecuteTaskFailsWhenArchitectureEvidenceRefIsMissing(t *testing.T) {
+	bundle := approvedPlanBundle()
+	bundle.ProjectContext = &domain.SpecForgeProjectContext{
+		Project:               &domain.SpecForgeProject{ID: 9, WorkspaceID: "ws_1", Name: "CodingCTO", Slug: "codingcto", Status: domain.ProjectStatusActive},
+		PrimaryRepositoryID:   "repo_123",
+		ExecutionRepositoryID: "repo_123",
+		Repositories: []*domain.SpecForgeProjectRepository{
+			{ID: 1, ProjectID: 9, RepositoryID: "repo_123", Role: domain.ProjectRepositoryRolePrimary, Active: true},
+		},
+		RepositoryContexts: []*domain.SpecForgeProjectRepositoryContext{
+			{
+				Repository: &domain.SpecForgeProjectRepository{ID: 1, ProjectID: 9, RepositoryID: "repo_123", Role: domain.ProjectRepositoryRolePrimary, Active: true},
+				ArchitectureSnapshot: &domain.SpecForgeRepoArchitectureSnapshot{
+					RepositoryID: "repo_123",
+					CommitSHA:    "arch123",
+					Modules:      []string{"api/internal/modules/execution"},
+					Entrypoints:  []string{"api/cmd/server/main.go"},
+					CIWorkflows:  []string{".github/workflows/api.yml"},
+					CreatedAt:    time.Now().UTC(),
+				},
+			},
+		},
+	}
+	planningRepo := &memoryPlanningRepo{bundle: bundle}
+	runRepo := &memoryExecutionRepo{}
+	executor := &fakeExecutor{result: &ExecutionResult{Status: "completed", Output: "done", ExitCode: 0}}
+	svc := NewService(runRepo, planningRepo, nil, executor, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+	require.NotEmpty(t, planningRepo.prompts)
+	for _, prompt := range planningRepo.prompts {
+		if prompt.PRNodeID == dispatched.Tasks[0].PRNodeID {
+			prompt.EvidenceRefs = removeStringsWithPrefix(prompt.EvidenceRefs, "architecture_snapshot:")
+		}
+	}
+
+	updated, err := svc.ExecuteTask(context.Background(), dispatched.Tasks[0].ID, &ExecuteAgentTaskRequest{Workdir: "/tmp/repo"})
+
+	require.NoError(t, err)
+	require.Empty(t, executor.prompt.PromptText)
+	require.Equal(t, domain.AgentTaskStatusFailed, updated.Tasks[0].Status)
+	require.Equal(t, "prompt_contract_failed", updated.Tasks[0].FailureReason)
+	require.Contains(t, updated.Tasks[0].ErrorLog, "missing architecture snapshot evidence ref")
+}
+
+func removeStringsWithPrefix(values []string, prefix string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		if strings.HasPrefix(value, prefix) {
+			continue
+		}
+		out = append(out, value)
+	}
+	return out
 }
 
 func TestExecuteTaskUsesPromptMatchingTaskPromptType(t *testing.T) {
@@ -2761,7 +2844,8 @@ func (r *memoryPlanningRepo) ListSkillsByRepositoryID(ctx context.Context, repos
 }
 
 type memoryExecutionProfileRepo struct {
-	profiles map[string]*domain.SpecForgeRepoProfile
+	profiles              map[string]*domain.SpecForgeRepoProfile
+	architectureSnapshots map[string][]*domain.SpecForgeRepoArchitectureSnapshot
 }
 
 func (r *memoryExecutionProfileRepo) UpsertProfile(ctx context.Context, profile *domain.SpecForgeRepoProfile) error {
@@ -2778,6 +2862,28 @@ func (r *memoryExecutionProfileRepo) FindProfileByRepositoryID(ctx context.Conte
 		return nil, domain.ErrNotFound
 	}
 	copied := *r.profiles[repositoryID]
+	return &copied, nil
+}
+
+func (r *memoryExecutionProfileRepo) CreateArchitectureSnapshot(ctx context.Context, snapshot *domain.SpecForgeRepoArchitectureSnapshot) error {
+	copied := *snapshot
+	if copied.CreatedAt.IsZero() {
+		copied.CreatedAt = time.Now().UTC()
+	}
+	if r.architectureSnapshots == nil {
+		r.architectureSnapshots = map[string][]*domain.SpecForgeRepoArchitectureSnapshot{}
+	}
+	r.architectureSnapshots[snapshot.RepositoryID] = append(r.architectureSnapshots[snapshot.RepositoryID], &copied)
+	return nil
+}
+
+func (r *memoryExecutionProfileRepo) FindLatestArchitectureSnapshotByRepositoryID(ctx context.Context, repositoryID string) (*domain.SpecForgeRepoArchitectureSnapshot, error) {
+	snapshots := r.architectureSnapshots[repositoryID]
+	if len(snapshots) == 0 {
+		return nil, domain.ErrNotFound
+	}
+	latest := snapshots[len(snapshots)-1]
+	copied := *latest
 	return &copied, nil
 }
 
