@@ -463,6 +463,53 @@ func TestRecordWebhookPublishesReviewFeedbackEvent(t *testing.T) {
 	require.Equal(t, "https://github.com/agicto/codingcto/pull/42#issuecomment-1", published.HTMLURL)
 }
 
+func TestRecordWebhookBlocksPRNodeOnReviewRequestChangesWithoutQueuingPatch(t *testing.T) {
+	repo := &memoryRepo{}
+	prNumber := 42
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, BranchName: "specforge/team-invite-02-api", GitHubPRNumber: &prNumber, Status: domain.PRNodeStatusReadyForReview},
+		},
+	}
+	bus := infraevents.NewEventBus()
+	publishedFeedback := 0
+	bus.Subscribe(domain.EventSpecForgeReviewFeedbackReceived, func(ctx context.Context, event infraevents.Event) error {
+		publishedFeedback++
+		return nil
+	})
+	svc := NewService(repo, planningRepo, nil, nil, bus)
+	body := []byte(`{
+		"action": "submitted",
+		"installation": {"id": 123},
+		"repository": {"full_name": "agicto/codingcto"},
+		"pull_request": {
+			"number": 42,
+			"state": "open",
+			"html_url": "https://github.com/agicto/codingcto/pull/42",
+			"head": {"ref": "specforge/team-invite-02-api", "sha": "abc123"}
+		},
+		"review": {
+			"body": "",
+			"state": "changes_requested",
+			"html_url": "https://github.com/agicto/codingcto/pull/42#pullrequestreview-1",
+			"commit_id": "abc123",
+			"user": {"login": "reviewer"}
+		}
+	}`)
+
+	_, err := svc.RecordWebhook(context.Background(), &GitHubWebhookRequest{
+		EventType:  GitHubWebhookEventPullRequestReview,
+		DeliveryID: "delivery-review-request-changes",
+		Signature:  "sha256=abc",
+		Body:       body,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, domain.PRNodeStatusBlocked, planningRepo.nodes[0].Status)
+	require.Equal(t, "abc123", planningRepo.nodes[0].GitHubHeadSHA)
+	require.Equal(t, 0, publishedFeedback)
+}
+
 func TestRecordWebhookDoesNotDowngradeReadyPRNodeOnIssueComment(t *testing.T) {
 	repo := &memoryRepo{}
 	prNumber := 42

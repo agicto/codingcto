@@ -689,6 +689,7 @@ func TestActionableReviewFeedbackClassifier(t *testing.T) {
 	require.False(t, actionableReviewFeedback("Thanks for the quick fix."))
 	require.True(t, actionableReviewFeedback("Please add a nil workspace role guard."))
 	require.True(t, actionableReviewFeedback("This branch regresses the existing API response shape."))
+	require.True(t, actionableReviewFeedback("Reviewer requested changes on this PR."))
 }
 
 func TestCancelRunCancelsNonTerminalTasks(t *testing.T) {
