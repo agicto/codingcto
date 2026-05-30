@@ -54,6 +54,9 @@ func (h *Handler) handleReviewFeedbackReceived(ctx context.Context, e events.Eve
 	}
 	event = typed
 	feedback := event.Feedback
+	if !actionableReviewFeedback(feedback) {
+		return nil
+	}
 	if event.HTMLURL != "" {
 		feedback += "\n\nSource: " + event.HTMLURL
 	}
@@ -64,6 +67,57 @@ func (h *Handler) handleReviewFeedbackReceived(ctx context.Context, e events.Eve
 		return nil
 	}
 	return err
+}
+
+func actionableReviewFeedback(feedback string) bool {
+	feedback = strings.TrimSpace(feedback)
+	if feedback == "" {
+		return false
+	}
+	lower := strings.ToLower(feedback)
+	noise := []string{
+		"lgtm",
+		"looks good",
+		"approved",
+		"thanks",
+		"thank you",
+		"merged",
+		"ship it",
+		"nice work",
+	}
+	for _, item := range noise {
+		trimmed := strings.Trim(lower, ".! ")
+		if trimmed == item || strings.HasPrefix(trimmed, item+" ") {
+			return false
+		}
+	}
+	actionHints := []string{
+		"please ",
+		"can you ",
+		"could you ",
+		"request changes",
+		"needs ",
+		"fix ",
+		"change ",
+		"update ",
+		"add ",
+		"remove ",
+		"handle ",
+		"preserve ",
+		"address ",
+		"missing ",
+		"failing ",
+		"broken ",
+		"regression",
+		"nit:",
+		"todo:",
+	}
+	for _, hint := range actionHints {
+		if strings.Contains(lower, hint) {
+			return true
+		}
+	}
+	return len(strings.Fields(feedback)) >= 8
 }
 
 func (h *Handler) handleFixAttemptQueued(ctx context.Context, e events.Event) error {
