@@ -15,7 +15,7 @@ var ProviderSet = wire.NewSet(
 	NewGitHubRepositoryResolver,
 	NewGitHubPRNodeBranchPreparer,
 	NewGitHubPRNodeDeliverer,
-	NewService,
+	NewEventedService,
 	wire.Bind(new(Service), new(*service)),
 	NewHandler,
 )

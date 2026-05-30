@@ -478,6 +478,40 @@ func TestCreateFixTaskForPRNodeCreatesQueuedFixAttempt(t *testing.T) {
 	require.Contains(t, fixPrompt.PromptText, "Patch the failing assertion.")
 }
 
+func TestCompleteTaskPublishesLinkedFixTaskResult(t *testing.T) {
+	planningRepo := memoryPlanningRepoWithPrompt()
+	runRepo := &memoryExecutionRepo{}
+	bus := events.NewEventBus()
+	var published domain.SpecForgeFixTaskFinishedEvent
+	bus.Subscribe(domain.EventSpecForgeFixTaskFinished, func(ctx context.Context, event events.Event) error {
+		var underlying any = event
+		if wrapped, ok := event.(events.WrappedEvent); ok {
+			underlying = wrapped.Event
+		}
+		typed, ok := underlying.(domain.SpecForgeFixTaskFinishedEvent)
+		require.True(t, ok)
+		published = typed
+		return nil
+	})
+	svc := NewEventedService(runRepo, planningRepo, nil, nil, nil, nil, nil, bus)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+	fixAttemptID := uint(99)
+	dispatched.Tasks[0].FixAttemptID = &fixAttemptID
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), dispatched.Tasks[0]))
+
+	_, err = svc.CompleteTask(context.Background(), dispatched.Tasks[0].ID)
+
+	require.NoError(t, err)
+	require.Equal(t, fixAttemptID, published.FixAttemptID)
+	require.Equal(t, dispatched.Tasks[0].ID, published.TaskID)
+	require.Equal(t, dispatched.Tasks[0].PRNodeID, published.PRNodeID)
+	require.Equal(t, domain.AgentTaskStatusCompleted, published.TaskStatus)
+	require.Equal(t, domain.FixAttemptStatusSuccess, published.FixAttemptStatus)
+}
+
 func TestRetryTaskRejectsNonTerminalTask(t *testing.T) {
 	planningRepo := memoryPlanningRepoWithPrompt()
 	runRepo := &memoryExecutionRepo{}

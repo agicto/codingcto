@@ -31,6 +31,7 @@ type SpecForgeFixAttempt struct {
 // SpecForgeVerificationRepository persists verification and auto-fix state.
 type SpecForgeVerificationRepository interface {
 	CreateFixAttempt(ctx context.Context, attempt *SpecForgeFixAttempt) error
+	UpdateFixAttemptStatus(ctx context.Context, fixAttemptID uint, status string) error
 	ListFixAttemptsByPRNodeID(ctx context.Context, prNodeID uint) ([]*SpecForgeFixAttempt, error)
 	CountFixAttemptsByPRNodeID(ctx context.Context, prNodeID uint) (int, error)
 }

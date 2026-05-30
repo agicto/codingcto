@@ -203,6 +203,29 @@ func TestHandlerCreatesFixAttemptFromPRNodeCIFailedEvent(t *testing.T) {
 	require.Equal(t, "github_agicto__codingcto", reader.request.RepositoryID)
 }
 
+func TestHandlerUpdatesFixAttemptFromFinishedFixTaskEvent(t *testing.T) {
+	repo := &memoryRepo{}
+	handler := NewHandler(NewService(repo, nil, nil))
+	bus := infraevents.NewEventBus()
+	handler.RegisterEvents(bus)
+	attempt, err := handler.service.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
+		FailureType: "type_error",
+		CanAutoFix:  true,
+	})
+	require.NoError(t, err)
+	fixID := attempt.ID
+
+	err = bus.Publish(context.Background(), domain.NewSpecForgeFixTaskFinishedEvent(&domain.SpecForgeAgentTask{
+		ID:           123,
+		PRNodeID:     42,
+		Status:       domain.AgentTaskStatusCompleted,
+		FixAttemptID: &fixID,
+	}))
+
+	require.NoError(t, err)
+	require.Equal(t, domain.FixAttemptStatusSuccess, repo.attempts[0].Status)
+}
+
 func TestCreateFixAttemptFromCIRejectsMissingReader(t *testing.T) {
 	repo := &memoryRepo{}
 	svc := NewService(repo, nil, nil)
@@ -310,6 +333,16 @@ func (r *memoryRepo) CreateFixAttempt(ctx context.Context, attempt *domain.SpecF
 	copied := *attempt
 	r.attempts = append(r.attempts, &copied)
 	return nil
+}
+
+func (r *memoryRepo) UpdateFixAttemptStatus(ctx context.Context, fixAttemptID uint, status string) error {
+	for _, attempt := range r.attempts {
+		if attempt.ID == fixAttemptID {
+			attempt.Status = status
+			return nil
+		}
+	}
+	return domain.ErrNotFound
 }
 
 func (r *memoryRepo) ListFixAttemptsByPRNodeID(ctx context.Context, prNodeID uint) ([]*domain.SpecForgeFixAttempt, error) {

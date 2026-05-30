@@ -16,6 +16,7 @@ const maxConsecutiveFixAttemptsPerFailureType = 2
 type Service interface {
 	CreateFixAttempt(ctx context.Context, userID, prNodeID uint, req *CreateFixAttemptRequest) (*domain.SpecForgeFixAttempt, error)
 	CreateFixAttemptFromCI(ctx context.Context, userID, prNodeID uint, req *CreateFixAttemptFromCIRequest) (*domain.SpecForgeFixAttempt, error)
+	UpdateFixAttemptStatus(ctx context.Context, fixAttemptID uint, status string) error
 	ListFixAttempts(ctx context.Context, prNodeID uint) ([]*domain.SpecForgeFixAttempt, error)
 	GetEscalationSummary(ctx context.Context, prNodeID uint) (*EscalationSummary, error)
 }
@@ -83,6 +84,19 @@ func (s *service) publishFixAttemptQueued(ctx context.Context, attempt *domain.S
 		return nil
 	}
 	return s.eventBus.Publish(ctx, domain.NewSpecForgeFixAttemptQueuedEvent(attempt))
+}
+
+func (s *service) UpdateFixAttemptStatus(ctx context.Context, fixAttemptID uint, status string) error {
+	status = strings.TrimSpace(status)
+	switch status {
+	case domain.FixAttemptStatusQueued, domain.FixAttemptStatusSuccess, domain.FixAttemptStatusFailed:
+	default:
+		return domain.ErrInvalidInput
+	}
+	if err := s.repo.UpdateFixAttemptStatus(ctx, fixAttemptID, status); err != nil {
+		return fmt.Errorf("update fix attempt status: %w", err)
+	}
+	return nil
 }
 
 func consecutiveFailureTypeCount(attempts []*domain.SpecForgeFixAttempt, failureType string) int {
