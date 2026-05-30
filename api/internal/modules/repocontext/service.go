@@ -3,6 +3,7 @@ package repocontext
 import (
 	"context"
 	"encoding/json"
+	"errors"
 	"fmt"
 	"strings"
 	"time"
@@ -14,6 +15,8 @@ type Service interface {
 	UpsertProfile(ctx context.Context, userID uint, repoID string, req *UpsertRepoProfileRequest) (*domain.SpecForgeRepoProfile, error)
 	InferProfile(ctx context.Context, userID uint, repoID string, req *InferRepoProfileRequest) (*domain.SpecForgeRepoProfile, error)
 	GetProfile(ctx context.Context, repoID string) (*domain.SpecForgeRepoProfile, error)
+	ReindexArchitecture(ctx context.Context, userID uint, repoID string, req *ReindexRepoArchitectureRequest) (*RepoArchitectureStatusResponse, error)
+	GetArchitectureStatus(ctx context.Context, repoID string) (*RepoArchitectureStatusResponse, error)
 }
 
 type RepositoryTreeSource interface {
@@ -33,12 +36,18 @@ type RepositoryFileSnapshot struct {
 	Content string
 }
 
+type store interface {
+	domain.SpecForgeRepoProfileRepository
+	CreateArchitectureSnapshot(ctx context.Context, snapshot *domain.SpecForgeRepoArchitectureSnapshot) error
+	FindLatestArchitectureSnapshotByRepositoryID(ctx context.Context, repositoryID string) (*domain.SpecForgeRepoArchitectureSnapshot, error)
+}
+
 type service struct {
-	repo       domain.SpecForgeRepoProfileRepository
+	repo       store
 	treeSource RepositoryTreeSource
 }
 
-func NewService(repo domain.SpecForgeRepoProfileRepository, treeSource RepositoryTreeSource) *service {
+func NewService(repo store, treeSource RepositoryTreeSource) *service {
 	return &service{repo: repo, treeSource: treeSource}
 }
 
@@ -134,6 +143,81 @@ func (s *service) GetProfile(ctx context.Context, repoID string) (*domain.SpecFo
 	return s.repo.FindProfileByRepositoryID(ctx, strings.TrimSpace(repoID))
 }
 
+func (s *service) ReindexArchitecture(ctx context.Context, userID uint, repoID string, req *ReindexRepoArchitectureRequest) (*RepoArchitectureStatusResponse, error) {
+	repoID = strings.TrimSpace(repoID)
+	if userID == 0 || repoID == "" || req == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	ref := strings.TrimSpace(req.DefaultBranch)
+	rawPaths := normalizeList(req.FilePaths)
+	warnings := []string{}
+	source := "request_hints"
+	if len(rawPaths) == 0 {
+		if s.treeSource == nil {
+			return nil, domain.ErrInvalidInput
+		}
+		tree, err := s.treeSource.ListRepositoryTree(ctx, repoID, ref, true)
+		if err != nil {
+			return nil, fmt.Errorf("list repository tree: %w", err)
+		}
+		if tree == nil {
+			return nil, domain.ErrNotFound
+		}
+		source = "github_tree"
+		rawPaths = normalizeList(tree.Paths)
+		if strings.TrimSpace(tree.Ref) != "" {
+			ref = strings.TrimSpace(tree.Ref)
+		}
+		if tree.Truncated {
+			warnings = append(warnings, "GitHub tree response was truncated; architecture snapshot may miss files.")
+		}
+	}
+	paths, filteredCount := filterSensitivePaths(rawPaths)
+	if filteredCount > 0 {
+		warnings = append(warnings, fmt.Sprintf("SpecForge filtered %d sensitive repository paths from the architecture snapshot.", filteredCount))
+	}
+	if ref == "" {
+		ref = "main"
+	}
+	scripts := normalizeScripts(req.PackageScripts)
+	if len(scripts) == 0 && s.treeSource != nil {
+		scripts = normalizeScripts(s.packageScriptsFromRepository(ctx, repoID, ref, paths))
+	}
+	instructions := []string{}
+	if s.treeSource != nil {
+		instructions = s.instructionConventionsFromRepository(ctx, repoID, ref, paths)
+	}
+	inferred := inferRepoProfile(paths, scripts, instructions)
+	inferred.DefaultBranch = ref
+	inferred.Source = "architecture_snapshot"
+	inferred.Warnings = normalizeList(warnings)
+	profile, err := s.UpsertProfile(ctx, userID, repoID, inferred)
+	if err != nil {
+		return nil, err
+	}
+	snapshot := architectureSnapshotFromProfile(userID, repoID, ref, paths, profile, append(warnings, "Architecture snapshot source: "+source+"."))
+	if err := s.repo.CreateArchitectureSnapshot(ctx, snapshot); err != nil {
+		return nil, fmt.Errorf("create architecture snapshot: %w", err)
+	}
+	return architectureStatusResponse(snapshot, false, nil), nil
+}
+
+func (s *service) GetArchitectureStatus(ctx context.Context, repoID string) (*RepoArchitectureStatusResponse, error) {
+	repoID = strings.TrimSpace(repoID)
+	if repoID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	snapshot, err := s.repo.FindLatestArchitectureSnapshotByRepositoryID(ctx, repoID)
+	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			return architectureStatusResponse(nil, true, []string{"No architecture snapshot has been generated yet."}), nil
+		}
+		return nil, err
+	}
+	stale, reasons := architectureSnapshotStale(snapshot, time.Now())
+	return architectureStatusResponse(snapshot, stale, reasons), nil
+}
+
 func (s *service) packageScriptsFromRepository(ctx context.Context, repoID, ref string, paths []string) map[string]string {
 	scripts := map[string]string{}
 	for _, path := range packageJSONPaths(paths, 5) {
@@ -164,6 +248,131 @@ func (s *service) instructionConventionsFromRepository(ctx context.Context, repo
 		conventions = append(conventions, fmt.Sprintf("Instruction excerpt from %s: %s", path, excerpt))
 	}
 	return normalizeList(conventions)
+}
+
+func architectureSnapshotFromProfile(userID uint, repoID, ref string, paths []string, profile *domain.SpecForgeRepoProfile, warnings []string) *domain.SpecForgeRepoArchitectureSnapshot {
+	return &domain.SpecForgeRepoArchitectureSnapshot{
+		RepositoryID: strings.TrimSpace(repoID),
+		CommitSHA:    strings.TrimSpace(ref),
+		Stack:        normalizeList(profile.Stack),
+		Modules:      architectureModules(paths),
+		Entrypoints:  architectureEntrypoints(paths),
+		TestCommands: normalizeList(profile.TestCommands),
+		CIWorkflows:  architectureCIWorkflows(paths),
+		RiskAreas:    normalizeList(profile.RiskAreas),
+		Summary:      strings.TrimSpace(profile.Summary),
+		GeneratedBy:  "repo_context_service",
+		Warnings:     normalizeList(warnings),
+		CreatedBy:    userID,
+	}
+}
+
+func architectureModules(paths []string) []string {
+	modules := []string{}
+	for _, path := range paths {
+		lower := strings.ToLower(strings.TrimSpace(path))
+		switch {
+		case strings.HasPrefix(lower, "api/internal/modules/"):
+			parts := strings.Split(lower, "/")
+			if len(parts) >= 4 {
+				modules = append(modules, "api/internal/modules/"+parts[3])
+			}
+		case strings.HasPrefix(lower, "web/src/features/"):
+			parts := strings.Split(lower, "/")
+			if len(parts) >= 4 {
+				modules = append(modules, "web/src/features/"+parts[3])
+			}
+		case strings.HasPrefix(lower, "src/features/"):
+			parts := strings.Split(lower, "/")
+			if len(parts) >= 3 {
+				modules = append(modules, "src/features/"+parts[2])
+			}
+		case strings.HasPrefix(lower, "packages/"):
+			parts := strings.Split(lower, "/")
+			if len(parts) >= 2 {
+				modules = append(modules, "packages/"+parts[1])
+			}
+		}
+	}
+	return normalizeList(modules)
+}
+
+func architectureEntrypoints(paths []string) []string {
+	entrypoints := []string{}
+	for _, path := range paths {
+		lower := strings.ToLower(strings.TrimSpace(path))
+		if lower == "" {
+			continue
+		}
+		switch {
+		case lower == "main.go" || strings.HasSuffix(lower, "/main.go"):
+			entrypoints = append(entrypoints, path)
+		case lower == "cmd/server/main.go" || strings.HasPrefix(lower, "cmd/"):
+			if strings.HasSuffix(lower, "main.go") {
+				entrypoints = append(entrypoints, path)
+			}
+		case strings.HasSuffix(lower, "next.config.js") || strings.HasSuffix(lower, "next.config.ts"):
+			entrypoints = append(entrypoints, path)
+		case strings.HasSuffix(lower, "app/page.tsx") || strings.HasSuffix(lower, "pages/index.tsx"):
+			entrypoints = append(entrypoints, path)
+		}
+	}
+	return normalizeList(entrypoints)
+}
+
+func architectureCIWorkflows(paths []string) []string {
+	workflows := []string{}
+	for _, path := range paths {
+		lower := strings.ToLower(strings.TrimSpace(path))
+		if strings.HasPrefix(lower, ".github/workflows/") && (strings.HasSuffix(lower, ".yml") || strings.HasSuffix(lower, ".yaml")) {
+			workflows = append(workflows, path)
+		}
+	}
+	return normalizeList(workflows)
+}
+
+func architectureSnapshotStale(snapshot *domain.SpecForgeRepoArchitectureSnapshot, now time.Time) (bool, []string) {
+	if snapshot == nil {
+		return true, []string{"No architecture snapshot has been generated yet."}
+	}
+	reasons := []string{}
+	if strings.TrimSpace(snapshot.CommitSHA) == "" {
+		reasons = append(reasons, "Architecture snapshot has no commit or ref recorded.")
+	}
+	if snapshot.CreatedAt.IsZero() {
+		reasons = append(reasons, "Architecture snapshot has no creation timestamp.")
+	} else if now.Sub(snapshot.CreatedAt) > 24*time.Hour {
+		reasons = append(reasons, "Architecture snapshot is older than 24 hours.")
+	}
+	return len(reasons) > 0, reasons
+}
+
+func architectureStatusResponse(snapshot *domain.SpecForgeRepoArchitectureSnapshot, stale bool, reasons []string) *RepoArchitectureStatusResponse {
+	var responseSnapshot *RepoArchitectureSnapshotResponse
+	if snapshot != nil {
+		responseSnapshot = &RepoArchitectureSnapshotResponse{
+			ID:           snapshot.ID,
+			RepositoryID: snapshot.RepositoryID,
+			CommitSHA:    snapshot.CommitSHA,
+			Stack:        snapshot.Stack,
+			Modules:      snapshot.Modules,
+			Entrypoints:  snapshot.Entrypoints,
+			TestCommands: snapshot.TestCommands,
+			CIWorkflows:  snapshot.CIWorkflows,
+			RiskAreas:    snapshot.RiskAreas,
+			Summary:      snapshot.Summary,
+			GeneratedBy:  snapshot.GeneratedBy,
+			Warnings:     snapshot.Warnings,
+			CreatedBy:    snapshot.CreatedBy,
+			CreatedAt:    snapshot.CreatedAt.Format(time.RFC3339),
+			UpdatedAt:    snapshot.UpdatedAt.Format(time.RFC3339),
+		}
+	}
+	return &RepoArchitectureStatusResponse{
+		Snapshot:     responseSnapshot,
+		Stale:        stale,
+		StaleReasons: normalizeList(reasons),
+	}
 }
 
 func packageJSONPaths(paths []string, limit int) []string {

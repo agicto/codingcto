@@ -9,5 +9,7 @@ func (h *Handler) RegisterRoutes(r *router.Router) {
 		auth.GET("/repositories/:repo_id/profile", h.GetProfile).Name("specforge.repositories.profile.show")
 		auth.POST("/repositories/:repo_id/profile", h.UpsertProfile).Name("specforge.repositories.profile.store")
 		auth.POST("/repositories/:repo_id/profile/infer", h.InferProfile).Name("specforge.repositories.profile.infer")
+		auth.GET("/repositories/:repo_id/architecture", h.GetArchitectureStatus).Name("specforge.repositories.architecture.show")
+		auth.POST("/repositories/:repo_id/architecture/reindex", h.ReindexArchitecture).Name("specforge.repositories.architecture.reindex")
 	})
 }

@@ -35,6 +35,7 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 		"specforge_pr_nodes",
 		"specforge_compiled_prompts",
 		"specforge_repo_profiles",
+		"specforge_repo_architecture_snapshots",
 		"specforge_execution_runs",
 		"specforge_agent_tasks",
 		"specforge_fix_attempts",
@@ -95,6 +96,18 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 			"source",
 			"warnings",
 		},
+		"specforge_repo_architecture_snapshots": {
+			"repository_id",
+			"commit_sha",
+			"stack",
+			"modules",
+			"entrypoints",
+			"test_commands",
+			"ci_workflows",
+			"risk_areas",
+			"generated_by",
+			"warnings",
+		},
 		"specforge_agent_tasks": {
 			"prompt_type",
 			"runtime_id",
@@ -146,6 +159,7 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 		name  string
 	}{
 		{table: "specforge_ideas", name: "idx_specforge_ideas_project_id"},
+		{table: "specforge_repo_architecture_snapshots", name: "idx_specforge_repo_architecture_snapshots_repository_id"},
 		{table: "specforge_skills", name: "idx_specforge_skill_repo_name"},
 		{table: "specforge_task_events", name: "idx_specforge_task_events_task_seq"},
 	}

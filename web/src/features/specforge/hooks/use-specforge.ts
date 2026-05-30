@@ -17,6 +17,7 @@ import {
   type ListSpecForgeRuntimesParams,
   type PreparePRNodeBranchPayload,
   type ReadPRNodeFailureLogPayload,
+  type ReindexRepoArchitecturePayload,
   type RepoProfilePayload,
   type DeliverPRNodePayload,
   type RefreshPRNodeCIPayload,
@@ -38,6 +39,8 @@ const silentQueryMeta = { silentError: true };
 export const specForgeKeys = {
   all: ['specforge'] as const,
   repoProfile: (repoId: string) => [...specForgeKeys.all, 'repo-profile', repoId] as const,
+  repoArchitecture: (repoId: string) =>
+    [...specForgeKeys.all, 'repo-architecture', repoId] as const,
   skills: (repoId: string) => [...specForgeKeys.all, 'skills', repoId] as const,
   ideaPlan: (ideaId: number) => [...specForgeKeys.all, 'idea-plan', ideaId] as const,
   run: (runId: number) => [...specForgeKeys.all, 'run', runId] as const,
@@ -82,6 +85,28 @@ export function useInferRepoProfile(repoId: string) {
     mutationFn: (payload: InferRepoProfilePayload) =>
       specForgeService.inferRepoProfile(repoId, payload),
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: specForgeKeys.repoProfile(repoId) });
+    },
+  });
+}
+
+export function useRepoArchitectureStatus(repoId: string) {
+  return useQuery({
+    queryKey: specForgeKeys.repoArchitecture(repoId),
+    queryFn: () => specForgeService.getRepoArchitectureStatus(repoId, silentQueryConfig),
+    enabled: Boolean(repoId),
+    meta: silentQueryMeta,
+  });
+}
+
+export function useReindexRepoArchitecture(repoId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: ReindexRepoArchitecturePayload) =>
+      specForgeService.reindexRepoArchitecture(repoId, payload),
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: specForgeKeys.repoArchitecture(repoId) });
       queryClient.invalidateQueries({ queryKey: specForgeKeys.repoProfile(repoId) });
     },
   });

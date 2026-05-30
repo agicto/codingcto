@@ -61,6 +61,8 @@ import {
   useInferRepoProfile,
   usePrepareSpecForgePRNodeBranch,
   useRepoProfile,
+  useRepoArchitectureStatus,
+  useReindexRepoArchitecture,
   useRefreshSpecForgePRNodeCI,
   useCompleteExecutionTask,
   useCreateReviewPatchTask,
@@ -93,6 +95,7 @@ import type {
   SpecForgeExecutionBundleDTO,
   GitHubWebhookEventDTO,
   SpecForgePRNodeFailureLogDTO,
+  SpecForgeRepoArchitectureStatusDTO,
   SpecForgeRepoProfileDTO,
   SpecForgeSkillDTO,
   SpecForgeTaskEventDTO,
@@ -762,6 +765,7 @@ function RepoProfileSummary({
   onProfileSaved: (profile: RepoProfile) => void;
 }) {
   const profileQuery = useRepoProfile(repoId);
+  const architectureQuery = useRepoArchitectureStatus(repoId);
   const [savedProfile, setSavedProfile] = useState<SpecForgeRepoProfileDTO>();
   const effectiveProfile = savedProfile
     ? repoProfileFromDTO(savedProfile)
@@ -823,6 +827,7 @@ function RepoProfileSummary({
         key={editorKey}
         repoId={repoId}
         initialProfile={effectiveProfile}
+        architectureStatus={architectureQuery.data}
         isOffline={profileQuery.isError}
         onSaved={profile => {
           setSavedProfile(profile);
@@ -836,16 +841,19 @@ function RepoProfileSummary({
 function RepoProfileEditor({
   repoId,
   initialProfile,
+  architectureStatus,
   isOffline,
   onSaved,
 }: {
   repoId: string;
   initialProfile: RepoProfile;
+  architectureStatus?: SpecForgeRepoArchitectureStatusDTO;
   isOffline: boolean;
   onSaved: (profile: SpecForgeRepoProfileDTO) => void;
 }) {
   const upsertProfile = useUpsertRepoProfile(repoId);
   const inferProfile = useInferRepoProfile(repoId);
+  const reindexArchitecture = useReindexRepoArchitecture(repoId);
   const [defaultBranch, setDefaultBranch] = useState(initialProfile.defaultBranch);
   const [stack, setStack] = useState(profileListValue(initialProfile.stack));
   const [testCommands, setTestCommands] = useState(profileListValue(initialProfile.testCommands));
@@ -885,8 +893,22 @@ function RepoProfileEditor({
     onSaved(inferred);
   }
 
+  async function reindexRepositoryArchitecture() {
+    if (!repoId) {
+      return;
+    }
+
+    await reindexArchitecture.mutateAsync({ default_branch: defaultBranch.trim() || undefined });
+  }
+
   return (
     <div className="mt-4 space-y-3">
+      <RepoArchitectureStatus
+        status={architectureStatus}
+        isOffline={isOffline}
+        isReindexing={reindexArchitecture.isPending}
+        onReindex={reindexRepositoryArchitecture}
+      />
       <div className="grid gap-3 md:grid-cols-2">
         <Input
           value={defaultBranch}
@@ -950,6 +972,86 @@ function RepoProfileEditor({
             {upsertProfile.isPending ? 'Saving' : 'Save profile'}
           </Button>
         </div>
+      </div>
+    </div>
+  );
+}
+
+function RepoArchitectureStatus({
+  status,
+  isOffline,
+  isReindexing,
+  onReindex,
+}: {
+  status?: SpecForgeRepoArchitectureStatusDTO;
+  isOffline: boolean;
+  isReindexing: boolean;
+  onReindex: () => void;
+}) {
+  const snapshot = status?.snapshot;
+  const staleReasons = status?.stale_reasons ?? [];
+  const badgeLabel = isOffline
+    ? 'Offline'
+    : status?.stale
+      ? 'Reindex needed'
+      : snapshot
+        ? 'Architecture fresh'
+        : 'No snapshot';
+
+  return (
+    <div className="rounded-md border border-border-subtle bg-bg-surface px-3 py-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <ListChecks className="h-4 w-4 text-primary" />
+          Architecture snapshot
+        </div>
+        <Badge
+          variant="outline"
+          className={!status?.stale && snapshot ? statusClassName('completed') : ''}
+        >
+          {badgeLabel}
+        </Badge>
+      </div>
+      <div className="mt-2 text-xs leading-5 text-text-muted">
+        {snapshot ? (
+          <>
+            <span>{snapshot.commit_sha || 'unknown ref'}</span>
+            <span className="mx-2">·</span>
+            <span>{snapshot.modules.length} modules</span>
+            <span className="mx-2">·</span>
+            <span>{snapshot.ci_workflows.length} CI workflows</span>
+          </>
+        ) : (
+          <span>Generate a snapshot to make repo analysis traceable before planning.</span>
+        )}
+      </div>
+      {staleReasons.length > 0 ? (
+        <div className="mt-2 space-y-1">
+          {staleReasons.map(reason => (
+            <div key={reason} className="text-xs leading-5 text-warning">
+              {reason}
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {snapshot?.modules.length ? (
+        <div className="mt-2 flex flex-wrap gap-1.5">
+          {snapshot.modules.slice(0, 6).map(moduleName => (
+            <Badge key={moduleName} variant="outline" className="text-text-muted">
+              {moduleName}
+            </Badge>
+          ))}
+        </div>
+      ) : null}
+      <div className="mt-3 flex justify-end">
+        <Button
+          variant="outline"
+          size="sm"
+          onClick={onReindex}
+          disabled={isOffline || isReindexing}
+        >
+          {isReindexing ? 'Reindexing' : 'Reindex'}
+        </Button>
       </div>
     </div>
   );
