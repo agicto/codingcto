@@ -78,6 +78,33 @@ func TestCreateIdeaBuildsFrontendAndBackendPRDAGFromRepoProfile(t *testing.T) {
 	require.Contains(t, bundle.ProductSpec.Assumptions, "PR DAG review: validation passed for 4 reviewable PR nodes; dependencies resolve within the generated plan.")
 }
 
+func TestCreateIdeaAddsMilestoneGuardrailForOverlargeIdeas(t *testing.T) {
+	repo := &memoryRepo{}
+	profileRepo := &memoryProfileRepo{profile: &domain.SpecForgeRepoProfile{
+		RepositoryID:  "repo_123",
+		DefaultBranch: "main",
+		Stack:         []string{"Go", "Gin", "Next.js", "React", "Postgres"},
+		TestCommands:  []string{"go test ./...", "pnpm test"},
+		CIProvider:    "github_actions",
+		AppStructure:  []string{"api/internal/modules", "web/src/features"},
+		RiskAreas:     []string{"auth", "billing"},
+	}}
+	svc := NewService(repo, profileRepo, repo)
+
+	bundle, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
+		Input: "Add workspace invite with database schema, admin UI, email notifications, role permissions, audit log, Stripe billing limits, and Slack integration",
+		Type:  "feature",
+	})
+
+	require.NoError(t, err)
+	require.Contains(t, bundle.ProductSpec.Assumptions, "Complexity guardrail: this idea spans data model or migration, backend API, frontend UI, email or notification, auth or permission, audit or compliance, billing, external integration; keep the first execution milestone to at most five PRs and one high-risk surface.")
+	require.Contains(t, bundle.ProductSpec.EdgeCases, "If the approved scope still requires all detected surfaces, split execution into separate milestones before starting autonomous implementation.")
+	require.Contains(t, bundle.ProductSpec.NonGoals, "Do not execute all high-risk surfaces in one MVP run; approve a milestone slice first.")
+	require.Contains(t, bundle.Plan.SecurityRisks, "Complexity guardrail: combined changes across data model or migration, backend API, frontend UI, email or notification, auth or permission, audit or compliance, billing, external integration increase review and regression risk; isolate security-sensitive changes before UI or notification work.")
+	require.Contains(t, bundle.Plan.MigrationRisks, "Complexity guardrail: if persistence or migration work is required, land it in a foundation milestone before dependent API, UI, notification, or audit work.")
+	require.Contains(t, bundle.ProductSpec.Assumptions, "PR DAG review: complexity guardrail recommends a milestone split before execution because the idea spans data model or migration, backend API, frontend UI, email or notification, auth or permission, audit or compliance, billing, external integration.")
+}
+
 func TestApprovePlanRecordsApproverAndRejectsSecondApproval(t *testing.T) {
 	repo := &memoryRepo{}
 	svc := NewService(repo, &memoryProfileRepo{}, repo)
