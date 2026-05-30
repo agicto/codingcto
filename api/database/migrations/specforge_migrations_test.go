@@ -29,6 +29,7 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 
 	expectedTables := []string{
 		"specforge_ideas",
+		"specforge_requirements",
 		"specforge_product_specs",
 		"specforge_implementation_plans",
 		"specforge_pr_nodes",
@@ -51,14 +52,27 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 	requiredColumns := map[string][]string{
 		"specforge_ideas": {
 			"project_id",
+			"requirement_id",
+		},
+		"specforge_requirements": {
+			"workspace_id",
+			"project_id",
+			"raw_input",
+			"type",
+			"status",
 		},
 		"specforge_implementation_plans": {
+			"requirement_id",
+			"version",
 			"technical_summary",
 			"decision_overrides",
 			"approved_by",
 			"approved_at",
+			"approved_snapshot_hash",
+			"approved_snapshot_at",
 		},
 		"specforge_pr_nodes": {
+			"repository_id",
 			"node_key",
 			"depends_on",
 			"expected_files",

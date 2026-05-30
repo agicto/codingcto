@@ -8,19 +8,36 @@ import (
 )
 
 type IdeaPO struct {
-	ID           uint   `gorm:"primaryKey"`
-	ProjectID    *uint  `gorm:"index"`
-	RepositoryID string `gorm:"size:255;not null;index"`
-	CreatedBy    uint   `gorm:"not null;index"`
-	RawInput     string `gorm:"type:text;not null"`
-	Type         string `gorm:"size:50;not null;index"`
-	Status       string `gorm:"size:50;not null;index"`
-	CreatedAt    time.Time
-	UpdatedAt    time.Time
+	ID            uint   `gorm:"primaryKey"`
+	RequirementID *uint  `gorm:"index"`
+	ProjectID     *uint  `gorm:"index"`
+	RepositoryID  string `gorm:"size:255;not null;index"`
+	CreatedBy     uint   `gorm:"not null;index"`
+	RawInput      string `gorm:"type:text;not null"`
+	Type          string `gorm:"size:50;not null;index"`
+	Status        string `gorm:"size:50;not null;index"`
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
 }
 
 func (IdeaPO) TableName() string {
 	return "specforge_ideas"
+}
+
+type RequirementPO struct {
+	ID          uint   `gorm:"primaryKey"`
+	WorkspaceID string `gorm:"size:255;not null;index"`
+	ProjectID   uint   `gorm:"not null;index"`
+	CreatedBy   uint   `gorm:"not null;index"`
+	RawInput    string `gorm:"type:text;not null"`
+	Type        string `gorm:"size:50;not null;index"`
+	Status      string `gorm:"size:50;not null;index"`
+	CreatedAt   time.Time
+	UpdatedAt   time.Time
+}
+
+func (RequirementPO) TableName() string {
+	return "specforge_requirements"
 }
 
 type ProductSpecPO struct {
@@ -43,23 +60,27 @@ func (ProductSpecPO) TableName() string {
 }
 
 type ImplementationPlanPO struct {
-	ID                uint   `gorm:"primaryKey"`
-	IdeaID            uint   `gorm:"not null;uniqueIndex"`
-	ProductSpecID     uint   `gorm:"not null;index"`
-	TechnicalSummary  string `gorm:"type:text;not null"`
-	AffectedAreas     string `gorm:"type:text"`
-	DataModelChanges  string `gorm:"type:text"`
-	APIChanges        string `gorm:"type:text"`
-	UIChanges         string `gorm:"type:text"`
-	TestStrategy      string `gorm:"type:text"`
-	SecurityRisks     string `gorm:"type:text"`
-	MigrationRisks    string `gorm:"type:text"`
-	Status            string `gorm:"size:50;not null;index"`
-	ApprovedBy        *uint
-	ApprovedAt        *time.Time
-	DecisionOverrides string `gorm:"type:text"`
-	CreatedAt         time.Time
-	UpdatedAt         time.Time
+	ID                   uint   `gorm:"primaryKey"`
+	RequirementID        *uint  `gorm:"index:idx_specforge_plan_requirement_version"`
+	IdeaID               uint   `gorm:"not null;uniqueIndex"`
+	ProductSpecID        uint   `gorm:"not null;index"`
+	Version              int    `gorm:"not null;default:1;index:idx_specforge_plan_requirement_version"`
+	TechnicalSummary     string `gorm:"type:text;not null"`
+	AffectedAreas        string `gorm:"type:text"`
+	DataModelChanges     string `gorm:"type:text"`
+	APIChanges           string `gorm:"type:text"`
+	UIChanges            string `gorm:"type:text"`
+	TestStrategy         string `gorm:"type:text"`
+	SecurityRisks        string `gorm:"type:text"`
+	MigrationRisks       string `gorm:"type:text"`
+	Status               string `gorm:"size:50;not null;index"`
+	ApprovedBy           *uint
+	ApprovedAt           *time.Time
+	ApprovedSnapshotHash string `gorm:"size:64;index"`
+	ApprovedSnapshotAt   *time.Time
+	DecisionOverrides    string `gorm:"type:text"`
+	CreatedAt            time.Time
+	UpdatedAt            time.Time
 }
 
 func (ImplementationPlanPO) TableName() string {
@@ -69,6 +90,7 @@ func (ImplementationPlanPO) TableName() string {
 type PRNodePO struct {
 	ID                 uint   `gorm:"primaryKey"`
 	PlanID             uint   `gorm:"not null;index"`
+	RepositoryID       string `gorm:"size:255;index"`
 	NodeKey            string `gorm:"size:50;not null;index"`
 	Order              int    `gorm:"not null;index"`
 	Title              string `gorm:"size:255;not null"`
@@ -127,7 +149,7 @@ func (SkillPO) TableName() string {
 
 func newIdeaPO(idea *domain.SpecForgeIdea) *IdeaPO {
 	return &IdeaPO{
-		ID: idea.ID, ProjectID: idea.ProjectID, RepositoryID: idea.RepositoryID, CreatedBy: idea.CreatedBy,
+		ID: idea.ID, RequirementID: idea.RequirementID, ProjectID: idea.ProjectID, RepositoryID: idea.RepositoryID, CreatedBy: idea.CreatedBy,
 		RawInput: idea.RawInput, Type: idea.Type, Status: idea.Status,
 		CreatedAt: idea.CreatedAt, UpdatedAt: idea.UpdatedAt,
 	}
@@ -135,9 +157,37 @@ func newIdeaPO(idea *domain.SpecForgeIdea) *IdeaPO {
 
 func (po *IdeaPO) toDomain() *domain.SpecForgeIdea {
 	return &domain.SpecForgeIdea{
-		ID: po.ID, ProjectID: po.ProjectID, RepositoryID: po.RepositoryID, CreatedBy: po.CreatedBy,
+		ID: po.ID, RequirementID: po.RequirementID, ProjectID: po.ProjectID, RepositoryID: po.RepositoryID, CreatedBy: po.CreatedBy,
 		RawInput: po.RawInput, Type: po.Type, Status: po.Status,
 		CreatedAt: po.CreatedAt, UpdatedAt: po.UpdatedAt,
+	}
+}
+
+func newRequirementPO(requirement *domain.SpecForgeRequirement) *RequirementPO {
+	return &RequirementPO{
+		ID:          requirement.ID,
+		WorkspaceID: requirement.WorkspaceID,
+		ProjectID:   requirement.ProjectID,
+		CreatedBy:   requirement.CreatedBy,
+		RawInput:    requirement.RawInput,
+		Type:        requirement.Type,
+		Status:      requirement.Status,
+		CreatedAt:   requirement.CreatedAt,
+		UpdatedAt:   requirement.UpdatedAt,
+	}
+}
+
+func (po *RequirementPO) toDomain() *domain.SpecForgeRequirement {
+	return &domain.SpecForgeRequirement{
+		ID:          po.ID,
+		WorkspaceID: po.WorkspaceID,
+		ProjectID:   po.ProjectID,
+		CreatedBy:   po.CreatedBy,
+		RawInput:    po.RawInput,
+		Type:        po.Type,
+		Status:      po.Status,
+		CreatedAt:   po.CreatedAt,
+		UpdatedAt:   po.UpdatedAt,
 	}
 }
 
@@ -163,31 +213,35 @@ func (po *ProductSpecPO) toDomain() *domain.SpecForgeProductSpec {
 
 func newImplementationPlanPO(plan *domain.SpecForgeImplementationPlan) *ImplementationPlanPO {
 	return &ImplementationPlanPO{
-		ID: plan.ID, IdeaID: plan.IdeaID, ProductSpecID: plan.ProductSpecID,
+		ID: plan.ID, RequirementID: plan.RequirementID, IdeaID: plan.IdeaID, ProductSpecID: plan.ProductSpecID,
+		Version:          plan.Version,
 		TechnicalSummary: plan.TechnicalSummary, AffectedAreas: encodeStrings(plan.AffectedAreas),
 		DataModelChanges: encodeStrings(plan.DataModelChanges), APIChanges: encodeStrings(plan.APIChanges),
 		UIChanges: encodeStrings(plan.UIChanges), TestStrategy: encodeStrings(plan.TestStrategy),
 		SecurityRisks: encodeStrings(plan.SecurityRisks), MigrationRisks: encodeStrings(plan.MigrationRisks),
 		Status: plan.Status, ApprovedBy: plan.ApprovedBy, ApprovedAt: plan.ApprovedAt,
+		ApprovedSnapshotHash: plan.ApprovedSnapshotHash, ApprovedSnapshotAt: plan.ApprovedSnapshotAt,
 		DecisionOverrides: encodeStrings(plan.DecisionOverrides), CreatedAt: plan.CreatedAt, UpdatedAt: plan.UpdatedAt,
 	}
 }
 
 func (po *ImplementationPlanPO) toDomain() *domain.SpecForgeImplementationPlan {
 	return &domain.SpecForgeImplementationPlan{
-		ID: po.ID, IdeaID: po.IdeaID, ProductSpecID: po.ProductSpecID,
+		ID: po.ID, RequirementID: po.RequirementID, IdeaID: po.IdeaID, ProductSpecID: po.ProductSpecID,
+		Version:          po.Version,
 		TechnicalSummary: po.TechnicalSummary, AffectedAreas: decodeStrings(po.AffectedAreas),
 		DataModelChanges: decodeStrings(po.DataModelChanges), APIChanges: decodeStrings(po.APIChanges),
 		UIChanges: decodeStrings(po.UIChanges), TestStrategy: decodeStrings(po.TestStrategy),
 		SecurityRisks: decodeStrings(po.SecurityRisks), MigrationRisks: decodeStrings(po.MigrationRisks),
 		Status: po.Status, ApprovedBy: po.ApprovedBy, ApprovedAt: po.ApprovedAt,
+		ApprovedSnapshotHash: po.ApprovedSnapshotHash, ApprovedSnapshotAt: po.ApprovedSnapshotAt,
 		DecisionOverrides: decodeStrings(po.DecisionOverrides), CreatedAt: po.CreatedAt, UpdatedAt: po.UpdatedAt,
 	}
 }
 
 func newPRNodePO(node *domain.SpecForgePRNode) *PRNodePO {
 	return &PRNodePO{
-		ID: node.ID, PlanID: node.PlanID, NodeKey: node.NodeKey, Order: node.Order,
+		ID: node.ID, PlanID: node.PlanID, RepositoryID: node.RepositoryID, NodeKey: node.NodeKey, Order: node.Order,
 		Title: node.Title, Type: node.Type, Goal: node.Goal, DependsOn: encodeStrings(node.DependsOn),
 		EstimatedRisk: node.EstimatedRisk, ExpectedFiles: encodeStrings(node.ExpectedFiles),
 		NonGoals: encodeStrings(node.NonGoals), AcceptanceCriteria: encodeStrings(node.AcceptanceCriteria),
@@ -199,7 +253,7 @@ func newPRNodePO(node *domain.SpecForgePRNode) *PRNodePO {
 
 func (po *PRNodePO) toDomain() *domain.SpecForgePRNode {
 	return &domain.SpecForgePRNode{
-		ID: po.ID, PlanID: po.PlanID, NodeKey: po.NodeKey, Order: po.Order,
+		ID: po.ID, PlanID: po.PlanID, RepositoryID: po.RepositoryID, NodeKey: po.NodeKey, Order: po.Order,
 		Title: po.Title, Type: po.Type, Goal: po.Goal, DependsOn: decodeStrings(po.DependsOn),
 		EstimatedRisk: po.EstimatedRisk, ExpectedFiles: decodeStrings(po.ExpectedFiles),
 		NonGoals: decodeStrings(po.NonGoals), AcceptanceCriteria: decodeStrings(po.AcceptanceCriteria),

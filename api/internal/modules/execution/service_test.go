@@ -94,6 +94,7 @@ func TestStartRunIncludesRepoProfileInCompiledPrompt(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, planningRepo.prompts)
 	prompt := planningRepo.prompts[0].PromptText
+	require.Contains(t, prompt, "Target repository: repo_123")
 	require.Contains(t, prompt, "Repository context")
 	require.Contains(t, prompt, "Next.js app with a Go API backend.")
 	require.Contains(t, prompt, "GitHub Actions")
@@ -546,6 +547,7 @@ func TestHandlerCancelsTasksBlockedByClosedPRNodeEvent(t *testing.T) {
 		AcceptanceCriteria: []string{"Tests cover the accepted flow."},
 		TestCommands:       []string{"go test ./..."},
 		BranchName:         "specforge/team-invite-03-tests",
+		RepositoryID:       "repo_123",
 		Status:             domain.PRNodeStatusPlanned,
 	})
 	planningRepo := &memoryPlanningRepo{bundle: bundle}
@@ -2510,8 +2512,40 @@ func (r *memoryPlanningRepo) CreatePlanBundle(ctx context.Context, bundle *domai
 	return nil
 }
 
+func (r *memoryPlanningRepo) CreateRequirement(ctx context.Context, requirement *domain.SpecForgeRequirement) error {
+	if requirement == nil {
+		return domain.ErrInvalidInput
+	}
+	requirement.ID = 1
+	return nil
+}
+
+func (r *memoryPlanningRepo) FindRequirementByID(ctx context.Context, requirementID uint) (*domain.SpecForgeRequirement, error) {
+	if r.bundle != nil && r.bundle.Requirement != nil && r.bundle.Requirement.ID == requirementID {
+		copied := *r.bundle.Requirement
+		return &copied, nil
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryPlanningRepo) UpdateRequirement(ctx context.Context, requirement *domain.SpecForgeRequirement) error {
+	if r.bundle == nil || requirement == nil {
+		return domain.ErrNotFound
+	}
+	copied := *requirement
+	r.bundle.Requirement = &copied
+	return nil
+}
+
 func (r *memoryPlanningRepo) FindPlanBundleByIdeaID(ctx context.Context, ideaID uint) (*domain.SpecForgePlanBundle, error) {
 	if r.bundle == nil || r.bundle.Idea.ID != ideaID {
+		return nil, domain.ErrNotFound
+	}
+	return clonePlanBundle(r.bundle), nil
+}
+
+func (r *memoryPlanningRepo) FindLatestPlanBundleByRequirementID(ctx context.Context, requirementID uint) (*domain.SpecForgePlanBundle, error) {
+	if r.bundle == nil || r.bundle.Requirement == nil || r.bundle.Requirement.ID != requirementID {
 		return nil, domain.ErrNotFound
 	}
 	return clonePlanBundle(r.bundle), nil
@@ -2522,6 +2556,13 @@ func (r *memoryPlanningRepo) FindPlanBundleByPlanID(ctx context.Context, planID 
 		return nil, domain.ErrNotFound
 	}
 	return clonePlanBundle(r.bundle), nil
+}
+
+func (r *memoryPlanningRepo) NextPlanVersionByRequirementID(ctx context.Context, requirementID uint) (int, error) {
+	if r.bundle != nil && r.bundle.Plan != nil && r.bundle.Plan.RequirementID != nil && *r.bundle.Plan.RequirementID == requirementID {
+		return r.bundle.Plan.Version + 1, nil
+	}
+	return 1, nil
 }
 
 func (r *memoryPlanningRepo) FindPRNodeByID(ctx context.Context, prNodeID uint) (*domain.SpecForgePRNode, error) {
@@ -2895,6 +2936,7 @@ func approvedPlanBundle() *domain.SpecForgePlanBundle {
 			{
 				ID:                 4,
 				PlanID:             3,
+				RepositoryID:       "repo_123",
 				NodeKey:            "PR-001",
 				Order:              1,
 				Title:              "Foundation",
@@ -2909,6 +2951,7 @@ func approvedPlanBundle() *domain.SpecForgePlanBundle {
 			{
 				ID:                 5,
 				PlanID:             3,
+				RepositoryID:       "repo_123",
 				NodeKey:            "PR-002",
 				Order:              2,
 				Title:              "Implementation",
@@ -2960,6 +3003,10 @@ func clonePlanBundle(bundle *domain.SpecForgePlanBundle) *domain.SpecForgePlanBu
 	out.Idea = &idea
 	out.ProductSpec = &spec
 	out.Plan = &plan
+	if bundle.Requirement != nil {
+		requirement := *bundle.Requirement
+		out.Requirement = &requirement
+	}
 	if bundle.RepoProfile != nil {
 		profile := *bundle.RepoProfile
 		out.RepoProfile = &profile

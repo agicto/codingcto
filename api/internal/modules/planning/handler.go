@@ -45,6 +45,10 @@ func (h *Handler) CreateIdea(c *gin.Context) {
 }
 
 func (h *Handler) CreateProjectIdea(c *gin.Context) {
+	h.CreateProjectRequirement(c)
+}
+
+func (h *Handler) CreateProjectRequirement(c *gin.Context) {
 	userID, ok := handler.GetUserID(c)
 	if !ok {
 		return
@@ -60,13 +64,53 @@ func (h *Handler) CreateProjectIdea(c *gin.Context) {
 		return
 	}
 
-	bundle, err := h.service.CreateProjectIdea(c.Request.Context(), userID, projectID, &req)
+	bundle, err := h.service.CreateProjectRequirement(c.Request.Context(), userID, projectID, &req)
 	if err != nil {
-		response.HandleError(c, "Failed to create project idea", err)
+		response.HandleError(c, "Failed to create project requirement", err)
 		return
 	}
 
 	response.Created(c, toPlanReviewResponse(bundle))
+}
+
+func (h *Handler) GenerateRequirementPlan(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+
+	requirementID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+
+	var req CreateIdeaRequest
+	if c.Request.ContentLength > 0 && !handler.BindJSON(c, &req) {
+		return
+	}
+
+	bundle, err := h.service.GenerateRequirementPlan(c.Request.Context(), userID, requirementID, &req)
+	if err != nil {
+		response.HandleError(c, "Failed to generate requirement plan", err)
+		return
+	}
+
+	response.Created(c, toPlanReviewResponse(bundle))
+}
+
+func (h *Handler) GetRequirementPlan(c *gin.Context) {
+	requirementID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+
+	bundle, err := h.service.GetPlanForRequirement(c.Request.Context(), requirementID)
+	if err != nil {
+		response.HandleError(c, "Failed to get requirement plan", err)
+		return
+	}
+
+	response.Success(c, toPlanReviewResponse(bundle))
 }
 
 func (h *Handler) GetPlan(c *gin.Context) {

@@ -201,9 +201,9 @@ export function useCreateSpecForgeProjectIdea(projectId?: number) {
   return useMutation({
     mutationFn: (payload: CreateIdeaPayload) => {
       if (!projectId) {
-        throw new Error("Project ID is required to create a project-scoped CodingCTO idea.");
+        throw new Error("Project ID is required to create a project-scoped CodingCTO requirement.");
       }
-      return specForgeService.createProjectIdea(projectId, payload);
+      return specForgeService.createProjectRequirement(projectId, payload);
     },
   });
 }

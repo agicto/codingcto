@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -17,7 +18,10 @@ import (
 type Service interface {
 	CreateIdea(ctx context.Context, userID uint, repoID string, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error)
 	CreateProjectIdea(ctx context.Context, userID, projectID uint, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error)
+	CreateProjectRequirement(ctx context.Context, userID, projectID uint, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error)
+	GenerateRequirementPlan(ctx context.Context, userID, requirementID uint, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error)
 	GetPlanForIdea(ctx context.Context, ideaID uint) (*domain.SpecForgePlanBundle, error)
+	GetPlanForRequirement(ctx context.Context, requirementID uint) (*domain.SpecForgePlanBundle, error)
 	ApprovePlan(ctx context.Context, userID, planID uint, req *ApprovePlanRequest) (*domain.SpecForgePlanBundle, error)
 	UpsertSkill(ctx context.Context, userID uint, repoID string, req *UpsertSkillRequest) (*domain.SpecForgeSkill, error)
 	ListSkills(ctx context.Context, repoID string) ([]*domain.SpecForgeSkill, error)
@@ -51,6 +55,7 @@ func (s *service) CreateIdea(ctx context.Context, userID uint, repoID string, re
 	}
 
 	bundle := compileInitialPlan(userID, repoID, strings.TrimSpace(req.Input), ideaType, profile)
+	bundle.Plan.Version = 1
 	if err := s.repo.CreatePlanBundle(ctx, bundle); err != nil {
 		return nil, fmt.Errorf("create plan bundle: %w", err)
 	}
@@ -58,6 +63,10 @@ func (s *service) CreateIdea(ctx context.Context, userID uint, repoID string, re
 }
 
 func (s *service) CreateProjectIdea(ctx context.Context, userID, projectID uint, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error) {
+	return s.CreateProjectRequirement(ctx, userID, projectID, req)
+}
+
+func (s *service) CreateProjectRequirement(ctx context.Context, userID, projectID uint, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error) {
 	if userID == 0 || projectID == 0 || req == nil || strings.TrimSpace(req.Input) == "" {
 		return nil, domain.ErrInvalidInput
 	}
@@ -76,13 +85,77 @@ func (s *service) CreateProjectIdea(ctx context.Context, userID, projectID uint,
 		ideaType = "feature"
 	}
 
+	requirement := &domain.SpecForgeRequirement{
+		WorkspaceID: projectContext.Project.WorkspaceID,
+		ProjectID:   projectID,
+		CreatedBy:   userID,
+		RawInput:    strings.TrimSpace(req.Input),
+		Type:        ideaType,
+		Status:      domain.RequirementStatusAwaitingApproval,
+	}
 	profile := synthesizedProjectProfile(projectContext, primaryRepoID)
-	bundle := compileInitialPlan(userID, primaryRepoID, strings.TrimSpace(req.Input), ideaType, profile)
+	bundle := compileInitialPlan(userID, primaryRepoID, requirement.RawInput, ideaType, profile)
+	bundle.Requirement = requirement
 	bundle.Idea.ProjectID = &projectID
 	bundle.ProjectContext = projectContext
+	bundle.Plan.Version = 1
 	bundle.ProductSpec.Assumptions = append(bundle.ProductSpec.Assumptions, projectContextAssumption(projectContext))
 	if err := s.repo.CreatePlanBundle(ctx, bundle); err != nil {
-		return nil, fmt.Errorf("create project plan bundle: %w", err)
+		return nil, fmt.Errorf("create project requirement plan bundle: %w", err)
+	}
+	return bundle, nil
+}
+
+func (s *service) GenerateRequirementPlan(ctx context.Context, userID, requirementID uint, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error) {
+	if userID == 0 || requirementID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	requirement, err := s.repo.FindRequirementByID(ctx, requirementID)
+	if err != nil {
+		return nil, err
+	}
+	if requirement.Status == domain.RequirementStatusExecuting {
+		return nil, domain.ErrConflict
+	}
+	projectContext, err := s.projectContextFor(ctx, requirement.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	primaryRepoID := primaryRepositoryID(projectContext)
+	if primaryRepoID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	input := strings.TrimSpace(requirement.RawInput)
+	ideaType := strings.TrimSpace(requirement.Type)
+	if req != nil {
+		if strings.TrimSpace(req.Input) != "" {
+			input = strings.TrimSpace(req.Input)
+		}
+		if strings.TrimSpace(req.Type) != "" {
+			ideaType = strings.TrimSpace(req.Type)
+		}
+	}
+	if input == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	if ideaType == "" {
+		ideaType = "feature"
+	}
+	version, err := s.repo.NextPlanVersionByRequirementID(ctx, requirementID)
+	if err != nil {
+		return nil, err
+	}
+	profile := synthesizedProjectProfile(projectContext, primaryRepoID)
+	bundle := compileInitialPlan(userID, primaryRepoID, input, ideaType, profile)
+	bundle.Requirement = requirement
+	bundle.Idea.RequirementID = &requirement.ID
+	bundle.Idea.ProjectID = &requirement.ProjectID
+	bundle.ProjectContext = projectContext
+	bundle.Plan.RequirementID = &requirement.ID
+	bundle.Plan.Version = version
+	bundle.ProductSpec.Assumptions = append(bundle.ProductSpec.Assumptions, projectContextAssumption(projectContext))
+	if err := s.repo.CreatePlanBundle(ctx, bundle); err != nil {
+		return nil, fmt.Errorf("generate requirement plan: %w", err)
 	}
 	return bundle, nil
 }
@@ -92,6 +165,17 @@ func (s *service) GetPlanForIdea(ctx context.Context, ideaID uint) (*domain.Spec
 		return nil, domain.ErrInvalidInput
 	}
 	bundle, err := s.repo.FindPlanBundleByIdeaID(ctx, ideaID)
+	if err != nil {
+		return nil, err
+	}
+	return s.withRepoProfile(ctx, bundle)
+}
+
+func (s *service) GetPlanForRequirement(ctx context.Context, requirementID uint) (*domain.SpecForgePlanBundle, error) {
+	if requirementID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	bundle, err := s.repo.FindLatestPlanBundleByRequirementID(ctx, requirementID)
 	if err != nil {
 		return nil, err
 	}
@@ -110,6 +194,15 @@ func (s *service) ApprovePlan(ctx context.Context, userID, planID uint, req *App
 	if bundle.Plan.Status == domain.PlanStatusApproved {
 		return nil, domain.ErrConflict
 	}
+	if bundle.Plan.RequirementID != nil {
+		latest, err := s.repo.FindLatestPlanBundleByRequirementID(ctx, *bundle.Plan.RequirementID)
+		if err != nil {
+			return nil, err
+		}
+		if latest == nil || latest.Plan == nil || latest.Plan.ID != bundle.Plan.ID || latest.Plan.Status != domain.PlanStatusDraft {
+			return nil, domain.ErrConflict
+		}
+	}
 	if !domain.ExecutableSpecForgePRDAG(bundle.PRNodes) {
 		return nil, domain.ErrConflict
 	}
@@ -118,6 +211,8 @@ func (s *service) ApprovePlan(ctx context.Context, userID, planID uint, req *App
 	bundle.Plan.Status = domain.PlanStatusApproved
 	bundle.Plan.ApprovedBy = &userID
 	bundle.Plan.ApprovedAt = &now
+	bundle.Plan.ApprovedSnapshotAt = &now
+	bundle.Plan.ApprovedSnapshotHash = approvedPlanSnapshotHash(bundle)
 	bundle.Plan.DecisionOverrides = decisionOverridesToStrings(req.DecisionOverrides)
 	if err := s.repo.UpdatePlan(ctx, bundle.Plan); err != nil {
 		return nil, fmt.Errorf("approve plan: %w", err)
@@ -307,6 +402,9 @@ func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, no
 	b.WriteString("You are implementing a SpecForge PR node.\n\n")
 	b.WriteString("Prompt type: " + promptType + "\n")
 	b.WriteString("PR node: " + node.NodeKey + " - " + node.Title + "\n")
+	if strings.TrimSpace(node.RepositoryID) != "" {
+		b.WriteString("Target repository: " + strings.TrimSpace(node.RepositoryID) + "\n")
+	}
 	b.WriteString("Goal:\n" + node.Goal + "\n\n")
 	writePromptTypeInstructions(&b, promptType)
 	b.WriteString("Product context:\n")
@@ -324,6 +422,7 @@ func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, no
 	writeList(&b, "Test commands", node.TestCommands)
 	b.WriteString("\nAfter implementation:\n")
 	b.WriteString("- Keep the diff within this PR node scope.\n")
+	b.WriteString("- Modify only the target repository for this PR node.\n")
 	b.WriteString("- Run the listed test commands.\n")
 	b.WriteString("- Prepare a PR description with summary, scope, non-goals, tests, risks, and dependencies.\n")
 	return b.String()
@@ -615,6 +714,7 @@ func compileInitialPlan(userID uint, repoID, input, ideaType string, profile *do
 		spec.NonGoals = append(spec.NonGoals, "Do not execute all high-risk surfaces in one MVP run; approve a milestone slice first.")
 	}
 	plan := &domain.SpecForgeImplementationPlan{
+		Version:          1,
 		TechnicalSummary: "Implement " + featureName + " using the existing repository architecture and conventions.",
 		AffectedAreas:    affectedAreas,
 		DataModelChanges: inferredDataModelChanges(input, profile),
@@ -633,6 +733,7 @@ func compileInitialPlan(userID uint, repoID, input, ideaType string, profile *do
 		plan.MigrationRisks = append(plan.MigrationRisks, complexity.MigrationRisk)
 	}
 	nodes := featurePRNodes(slug, featureName, input, profile)
+	assignPRNodeRepository(nodes, repoID)
 
 	bundle := &domain.SpecForgePlanBundle{
 		Idea:        idea,
@@ -643,6 +744,47 @@ func compileInitialPlan(userID uint, repoID, input, ideaType string, profile *do
 	}
 	bundle.ProductSpec.Assumptions = append(bundle.ProductSpec.Assumptions, reviewPRDAG(bundle.PRNodes, complexity)...)
 	return bundle
+}
+
+func assignPRNodeRepository(nodes []*domain.SpecForgePRNode, repositoryID string) {
+	repositoryID = strings.TrimSpace(repositoryID)
+	if repositoryID == "" {
+		return
+	}
+	for _, node := range nodes {
+		if node != nil && strings.TrimSpace(node.RepositoryID) == "" {
+			node.RepositoryID = repositoryID
+		}
+	}
+}
+
+func approvedPlanSnapshotHash(bundle *domain.SpecForgePlanBundle) string {
+	if bundle == nil {
+		return ""
+	}
+	snapshot := struct {
+		RequirementID *uint                               `json:"requirement_id,omitempty"`
+		Idea          *domain.SpecForgeIdea               `json:"idea"`
+		ProductSpec   *domain.SpecForgeProductSpec        `json:"product_spec"`
+		Plan          *domain.SpecForgeImplementationPlan `json:"implementation_plan"`
+		PRNodes       []*domain.SpecForgePRNode           `json:"pr_nodes"`
+	}{
+		Idea:        bundle.Idea,
+		ProductSpec: bundle.ProductSpec,
+		Plan:        bundle.Plan,
+		PRNodes:     bundle.PRNodes,
+	}
+	if bundle.Requirement != nil {
+		snapshot.RequirementID = &bundle.Requirement.ID
+	} else if bundle.Idea != nil {
+		snapshot.RequirementID = bundle.Idea.RequirementID
+	}
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 type ideaComplexity struct {
@@ -947,10 +1089,15 @@ func projectContextAssumption(context *domain.SpecForgeProjectContext) string {
 
 func prNode(slug, key string, order int, nodeType, title, goal string, dependsOn, expectedFiles []string, profile *domain.SpecForgeRepoProfile) *domain.SpecForgePRNode {
 	testCommands := []string{"Run the repository's relevant verification commands."}
+	repositoryID := ""
 	if profile != nil && len(profile.TestCommands) > 0 {
 		testCommands = append([]string(nil), profile.TestCommands...)
 	}
+	if profile != nil {
+		repositoryID = strings.TrimSpace(profile.RepositoryID)
+	}
 	return &domain.SpecForgePRNode{
+		RepositoryID:       repositoryID,
 		NodeKey:            key,
 		Order:              order,
 		Title:              title,
@@ -1017,6 +1164,9 @@ func reviewPRDAG(nodes []*domain.SpecForgePRNode, complexity ...ideaComplexity) 
 			continue
 		}
 		label := nodeLabel(node)
+		if strings.TrimSpace(node.RepositoryID) == "" {
+			notes = append(notes, "PR DAG review: "+label+" is missing a target repository.")
+		}
 		if strings.TrimSpace(node.Title) == "" || strings.TrimSpace(node.Goal) == "" {
 			notes = append(notes, "PR DAG review: "+label+" must have both title and goal before execution.")
 		}

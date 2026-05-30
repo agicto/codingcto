@@ -1114,12 +1114,16 @@ func (s *service) prepareTaskBranch(ctx context.Context, task *domain.SpecForgeA
 	if node == nil {
 		return "", domain.ErrNotFound
 	}
+	repositoryID, err := targetRepositoryIDForNode(bundle.Plan, node)
+	if err != nil {
+		return "", err
+	}
 	branchName := strings.TrimSpace(node.BranchName)
 	if s.preparer == nil {
 		return branchName, nil
 	}
 	_, err = s.preparer.PreparePRNodeBranch(ctx, &githubintegration.PreparePRNodeBranchRequest{
-		RepositoryID: bundle.Plan.Idea.RepositoryID,
+		RepositoryID: repositoryID,
 		PRNodeID:     task.PRNodeID,
 	})
 	if err != nil {
@@ -1139,7 +1143,15 @@ func (s *service) prepareTaskWorktree(ctx context.Context, task *domain.SpecForg
 	if bundle.Plan == nil || bundle.Plan.Idea == nil || strings.TrimSpace(bundle.Plan.Idea.RepositoryID) == "" {
 		return "", domain.ErrInvalidInput
 	}
-	repository, err := s.repositoryResolver.GetRepository(ctx, bundle.Plan.Idea.RepositoryID)
+	node := nodeByID(bundle.Plan.PRNodes)[task.PRNodeID]
+	if node == nil {
+		return "", domain.ErrNotFound
+	}
+	repositoryID, err := targetRepositoryIDForNode(bundle.Plan, node)
+	if err != nil {
+		return "", err
+	}
+	repository, err := s.repositoryResolver.GetRepository(ctx, repositoryID)
 	if err != nil {
 		return "", err
 	}
@@ -1169,8 +1181,16 @@ func (s *service) deliverTaskPR(ctx context.Context, task *domain.SpecForgeAgent
 	if bundle.Plan == nil || bundle.Plan.Idea == nil || strings.TrimSpace(bundle.Plan.Idea.RepositoryID) == "" {
 		return domain.ErrInvalidInput
 	}
+	node := nodeByID(bundle.Plan.PRNodes)[task.PRNodeID]
+	if node == nil {
+		return domain.ErrNotFound
+	}
+	repositoryID, err := targetRepositoryIDForNode(bundle.Plan, node)
+	if err != nil {
+		return err
+	}
 	_, err = s.deliverer.DeliverPRNode(ctx, &githubintegration.DeliverPRNodeRequest{
-		RepositoryID: bundle.Plan.Idea.RepositoryID,
+		RepositoryID: repositoryID,
 		PRNodeID:     task.PRNodeID,
 	})
 	if err != nil {
@@ -1191,6 +1211,10 @@ func (s *service) buildClaimResponse(ctx context.Context, task *domain.SpecForge
 	if node == nil {
 		return nil, domain.ErrNotFound
 	}
+	repositoryID, err := targetRepositoryIDForNode(bundle.Plan, node)
+	if err != nil {
+		return nil, err
+	}
 	prompt, err := s.planningRepo.FindLatestCompiledPromptByPRNodeIDAndType(ctx, task.PRNodeID, taskPromptType(task))
 	if err != nil {
 		return nil, fmt.Errorf("find compiled prompt for claimed task: %w", err)
@@ -1206,7 +1230,7 @@ func (s *service) buildClaimResponse(ctx context.Context, task *domain.SpecForge
 			PromptHash: prompt.PromptHash,
 		},
 		ExecutionContext: &ClaimedTaskExecutionContext{
-			RepositoryID: bundle.Plan.Idea.RepositoryID,
+			RepositoryID: repositoryID,
 			BranchName:   node.BranchName,
 		},
 	}, nil
@@ -1416,6 +1440,9 @@ func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecF
 	b.WriteString("You are implementing a SpecForge PR node from an approved plan snapshot.\n\n")
 	b.WriteString("Prompt type: " + promptType + "\n")
 	b.WriteString("PR node: " + node.NodeKey + " - " + node.Title + "\n")
+	if strings.TrimSpace(node.RepositoryID) != "" {
+		b.WriteString("Target repository: " + strings.TrimSpace(node.RepositoryID) + "\n")
+	}
 	b.WriteString("Goal:\n" + strings.TrimSpace(node.Goal) + "\n\n")
 	writeExecutionPromptModeInstructions(&b, promptType, parent)
 	if bundle != nil && bundle.ProductSpec != nil {
@@ -1435,6 +1462,7 @@ func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecF
 	writeExecutionList(&b, "Test commands", node.TestCommands)
 	b.WriteString("Execution instructions:\n")
 	b.WriteString("- Implement this PR node only; do not broaden scope beyond its non-goals.\n")
+	b.WriteString("- Modify only the target repository for this PR node; MVP execution must not edit dependency, docs, or infra repositories.\n")
 	b.WriteString("- Prefer established repository patterns discovered while editing.\n")
 	b.WriteString("- Run the listed test commands before submitting the result.\n")
 	b.WriteString("- Prepare a PR description with summary, scope, non-goals, tests, risks, and dependencies.\n")
@@ -1741,6 +1769,46 @@ func nodeByID(nodes []*domain.SpecForgePRNode) map[uint]*domain.SpecForgePRNode 
 	return out
 }
 
+func targetRepositoryIDForNode(bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode) (string, error) {
+	if bundle == nil || bundle.Idea == nil || node == nil {
+		return "", domain.ErrInvalidInput
+	}
+	target := strings.TrimSpace(node.RepositoryID)
+	if target == "" {
+		target = strings.TrimSpace(bundle.Idea.RepositoryID)
+	}
+	if target == "" {
+		return "", domain.ErrInvalidInput
+	}
+	if primary := executionPrimaryRepositoryID(bundle.ProjectContext); primary != "" && target != primary {
+		return "", domain.ErrConflict
+	}
+	return target, nil
+}
+
+func executionPrimaryRepositoryID(context *domain.SpecForgeProjectContext) string {
+	if context == nil {
+		return ""
+	}
+	for _, repoContext := range context.RepositoryContexts {
+		if repoContext == nil || repoContext.Repository == nil || !repoContext.Repository.Active {
+			continue
+		}
+		if repoContext.Repository.Role == domain.ProjectRepositoryRolePrimary && strings.TrimSpace(repoContext.Repository.RepositoryID) != "" {
+			return strings.TrimSpace(repoContext.Repository.RepositoryID)
+		}
+	}
+	for _, repository := range context.Repositories {
+		if repository == nil || !repository.Active {
+			continue
+		}
+		if repository.Role == domain.ProjectRepositoryRolePrimary && strings.TrimSpace(repository.RepositoryID) != "" {
+			return strings.TrimSpace(repository.RepositoryID)
+		}
+	}
+	return ""
+}
+
 func dependenciesComplete(node *domain.SpecForgePRNode, completed map[string]struct{}) bool {
 	for _, dependency := range node.DependsOn {
 		if _, ok := completed[dependency]; !ok {
@@ -1964,6 +2032,7 @@ func toClaimedTaskPRNode(node *domain.SpecForgePRNode) *ClaimedTaskPRNode {
 	}
 	return &ClaimedTaskPRNode{
 		ID:                 node.ID,
+		RepositoryID:       node.RepositoryID,
 		NodeKey:            node.NodeKey,
 		Title:              node.Title,
 		Type:               node.Type,

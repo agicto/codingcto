@@ -17,7 +17,8 @@ func ExecutableSpecForgePRDAG(nodes []*SpecForgePRNode) bool {
 		}
 		key := strings.TrimSpace(node.NodeKey)
 		branch := strings.TrimSpace(node.BranchName)
-		if key == "" || branch == "" || strings.TrimSpace(node.Title) == "" || strings.TrimSpace(node.Goal) == "" {
+		repositoryID := strings.TrimSpace(node.RepositoryID)
+		if key == "" || branch == "" || repositoryID == "" || strings.TrimSpace(node.Title) == "" || strings.TrimSpace(node.Goal) == "" {
 			return false
 		}
 		if len(node.ExpectedFiles) == 0 || len(node.NonGoals) == 0 || len(node.AcceptanceCriteria) == 0 || len(node.TestCommands) == 0 {

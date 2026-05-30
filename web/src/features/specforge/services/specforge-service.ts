@@ -193,8 +193,20 @@ export interface SpecForgeRepoProfileDTO {
 }
 
 export interface SpecForgePlanBundleDTO {
+  requirement?: {
+    id: number;
+    workspace_id: string;
+    project_id: number;
+    created_by: number;
+    raw_input: string;
+    type: string;
+    status: string;
+    created_at: string;
+    updated_at: string;
+  };
   idea: {
     id: number;
+    requirement_id?: number;
     project_id?: number;
     repository_id: string;
     created_by: number;
@@ -222,8 +234,10 @@ export interface SpecForgePlanBundleDTO {
   };
   implementation_plan: {
     id: number;
+    requirement_id?: number;
     idea_id: number;
     product_spec_id: number;
+    version: number;
     technical_summary: string;
     affected_areas: string[];
     data_model_changes: string[];
@@ -235,6 +249,8 @@ export interface SpecForgePlanBundleDTO {
     status: string;
     approved_by?: number;
     approved_at?: string;
+    approved_snapshot_hash?: string;
+    approved_snapshot_at?: string;
     decision_overrides?: string[];
     created_at: string;
     updated_at: string;
@@ -246,6 +262,7 @@ export interface SpecForgePlanBundleDTO {
 export interface SpecForgePRNodeDTO {
   id: number;
   plan_id: number;
+  repository_id: string;
   node_key: string;
   order: number;
   title: string;
@@ -361,6 +378,7 @@ export interface SpecForgeClaimedTaskDTO {
 
 export interface SpecForgeClaimedPRNodeDTO {
   id: number;
+  repository_id: string;
   node_key: string;
   title: string;
   type: string;
@@ -482,7 +500,22 @@ export const specForgeService = {
       payload
     ),
 
+  createProjectRequirement: (projectId: number, payload: CreateIdeaPayload) =>
+    request.post<SpecForgePlanBundleDTO, CreateIdeaPayload>(
+      `/projects/${projectId}/requirements`,
+      payload
+    ),
+
   getPlanForIdea: (ideaId: number) => request.get<SpecForgePlanBundleDTO>(`/ideas/${ideaId}/plan`),
+
+  getPlanForRequirement: (requirementId: number) =>
+    request.get<SpecForgePlanBundleDTO>(`/requirements/${requirementId}/plan`),
+
+  generateRequirementPlan: (requirementId: number, payload?: CreateIdeaPayload) =>
+    request.post<SpecForgePlanBundleDTO, CreateIdeaPayload | undefined>(
+      `/requirements/${requirementId}/generate-plan`,
+      payload
+    ),
 
   approvePlan: (planId: number, payload: ApprovePlanPayload) =>
     request.post<SpecForgePlanBundleDTO, ApprovePlanPayload>(`/plans/${planId}/approve`, payload),

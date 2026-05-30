@@ -190,6 +190,7 @@ func TestCompilePromptPersistsVersionedPromptForPRNode(t *testing.T) {
 	require.Equal(t, "prompt_v1", prompt.Version)
 	require.Len(t, prompt.PromptHash, 64)
 	require.Contains(t, prompt.PromptText, created.PRNodes[1].Title)
+	require.Contains(t, prompt.PromptText, "Target repository: repo_123")
 	require.Contains(t, prompt.PromptText, "Repository context")
 	require.Contains(t, prompt.PromptText, "Backend API scaffold")
 	require.Contains(t, prompt.PromptText, "Profile source: github_tree")
@@ -295,6 +296,10 @@ func TestCreateProjectIdeaUsesProjectContextProfilesAndSkills(t *testing.T) {
 	})
 
 	require.NoError(t, err)
+	require.NotNil(t, bundle.Requirement)
+	require.Equal(t, bundle.Requirement.ID, *bundle.Idea.RequirementID)
+	require.Equal(t, bundle.Requirement.ID, *bundle.Plan.RequirementID)
+	require.Equal(t, 1, bundle.Plan.Version)
 	require.NotNil(t, bundle.Idea.ProjectID)
 	require.Equal(t, uint(9), *bundle.Idea.ProjectID)
 	require.Equal(t, "repo_api", bundle.Idea.RepositoryID)
@@ -304,6 +309,51 @@ func TestCreateProjectIdeaUsesProjectContextProfilesAndSkills(t *testing.T) {
 	require.Contains(t, bundle.Plan.AffectedAreas, "api/internal/modules")
 	require.Contains(t, bundle.Plan.AffectedAreas, "web/src/features")
 	require.Contains(t, bundle.ProductSpec.Assumptions, "Plan generation used project context for SpecForge across 2 active repositories.")
+	for _, node := range bundle.PRNodes {
+		require.Equal(t, "repo_api", node.RepositoryID)
+	}
+}
+
+func TestGenerateRequirementPlanCreatesNextVersionAndApprovalRejectsStalePlan(t *testing.T) {
+	repo := &memoryRepo{}
+	profileRepo := &memoryProfileRepo{}
+	require.NoError(t, profileRepo.UpsertProfile(context.Background(), &domain.SpecForgeRepoProfile{
+		RepositoryID:  "repo_api",
+		DefaultBranch: "main",
+		Stack:         []string{"Go", "Gin"},
+		TestCommands:  []string{"go test ./..."},
+		Summary:       "API service",
+	}))
+	projectRepo := &memoryProjectRepo{
+		project: &domain.SpecForgeProject{ID: 9, WorkspaceID: "ws_1", Name: "CodingCTO", Slug: "codingcto", Status: domain.ProjectStatusActive},
+		repositories: []*domain.SpecForgeProjectRepository{
+			{ID: 1, ProjectID: 9, RepositoryID: "repo_api", Role: domain.ProjectRepositoryRolePrimary, Active: true},
+		},
+	}
+	svc := NewService(repo, profileRepo, repo, projectRepo)
+
+	v1, err := svc.CreateProjectRequirement(context.Background(), 42, 9, &CreateIdeaRequest{
+		Input: "Add team invite UI and API for workspace admins",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, v1.Requirement)
+	require.Equal(t, 1, v1.Plan.Version)
+
+	v2, err := svc.GenerateRequirementPlan(context.Background(), 42, v1.Requirement.ID, &CreateIdeaRequest{
+		Input: "Add team invite UI, API, and audit trail for workspace admins",
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, v2.Plan.Version)
+	require.Equal(t, v1.Requirement.ID, *v2.Plan.RequirementID)
+
+	_, err = svc.ApprovePlan(context.Background(), 7, v1.Plan.ID, &ApprovePlanRequest{Approved: true})
+	require.ErrorIs(t, err, domain.ErrConflict)
+
+	approved, err := svc.ApprovePlan(context.Background(), 7, v2.Plan.ID, &ApprovePlanRequest{Approved: true})
+	require.NoError(t, err)
+	require.Equal(t, domain.PlanStatusApproved, approved.Plan.Status)
+	require.NotEmpty(t, approved.Plan.ApprovedSnapshotHash)
+	require.NotNil(t, approved.Plan.ApprovedSnapshotAt)
 }
 
 func TestCompilePromptInjectsProjectContextSkills(t *testing.T) {
@@ -452,10 +502,11 @@ func TestReviewPRDAGReportsCyclesAndOutOfOrderDependencies(t *testing.T) {
 }
 
 type memoryRepo struct {
-	nextID uint
-	bundle *domain.SpecForgePlanBundle
-	prompt *domain.SpecForgeCompiledPrompt
-	skills []*domain.SpecForgeSkill
+	nextID  uint
+	bundle  *domain.SpecForgePlanBundle
+	bundles []*domain.SpecForgePlanBundle
+	prompt  *domain.SpecForgeCompiledPrompt
+	skills  []*domain.SpecForgeSkill
 }
 
 type memoryProfileRepo struct {
@@ -490,6 +541,15 @@ func (r *memoryProfileRepo) FindProfileByRepositoryID(ctx context.Context, repos
 }
 
 func (r *memoryRepo) CreatePlanBundle(ctx context.Context, bundle *domain.SpecForgePlanBundle) error {
+	if bundle.Requirement != nil && bundle.Requirement.ID == 0 {
+		r.nextID++
+		bundle.Requirement.ID = r.nextID
+	}
+	if bundle.Requirement != nil {
+		bundle.Idea.RequirementID = &bundle.Requirement.ID
+		bundle.Idea.ProjectID = &bundle.Requirement.ProjectID
+		bundle.Plan.RequirementID = &bundle.Requirement.ID
+	}
 	r.nextID++
 	bundle.Idea.ID = r.nextID
 	r.nextID++
@@ -504,31 +564,112 @@ func (r *memoryRepo) CreatePlanBundle(ctx context.Context, bundle *domain.SpecFo
 		node.ID = r.nextID
 		node.PlanID = bundle.Plan.ID
 	}
-	r.bundle = cloneBundle(bundle)
+	copied := cloneBundle(bundle)
+	r.bundle = copied
+	r.bundles = append(r.bundles, copied)
+	return nil
+}
+
+func (r *memoryRepo) CreateRequirement(ctx context.Context, requirement *domain.SpecForgeRequirement) error {
+	r.nextID++
+	requirement.ID = r.nextID
+	return nil
+}
+
+func (r *memoryRepo) FindRequirementByID(ctx context.Context, requirementID uint) (*domain.SpecForgeRequirement, error) {
+	for _, bundle := range r.bundles {
+		if bundle.Requirement != nil && bundle.Requirement.ID == requirementID {
+			copied := *bundle.Requirement
+			return &copied, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryRepo) UpdateRequirement(ctx context.Context, requirement *domain.SpecForgeRequirement) error {
+	if r.bundle == nil || requirement == nil {
+		return domain.ErrNotFound
+	}
+	copied := *requirement
+	r.bundle.Requirement = &copied
 	return nil
 }
 
 func (r *memoryRepo) FindPlanBundleByIdeaID(ctx context.Context, ideaID uint) (*domain.SpecForgePlanBundle, error) {
-	if r.bundle == nil || r.bundle.Idea.ID != ideaID {
+	for _, bundle := range r.bundles {
+		if bundle.Idea.ID == ideaID {
+			return cloneBundle(bundle), nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryRepo) FindLatestPlanBundleByRequirementID(ctx context.Context, requirementID uint) (*domain.SpecForgePlanBundle, error) {
+	var latest *domain.SpecForgePlanBundle
+	for _, bundle := range r.bundles {
+		if bundle.Requirement == nil || bundle.Requirement.ID != requirementID {
+			continue
+		}
+		if latest == nil || bundle.Plan.Version > latest.Plan.Version {
+			latest = bundle
+		}
+	}
+	if latest == nil {
 		return nil, domain.ErrNotFound
 	}
-	return cloneBundle(r.bundle), nil
+	return cloneBundle(latest), nil
 }
 
 func (r *memoryRepo) FindPlanBundleByPlanID(ctx context.Context, planID uint) (*domain.SpecForgePlanBundle, error) {
-	if r.bundle == nil || r.bundle.Plan.ID != planID {
-		return nil, domain.ErrNotFound
+	for _, bundle := range r.bundles {
+		if bundle.Plan.ID == planID {
+			return cloneBundle(bundle), nil
+		}
 	}
-	return cloneBundle(r.bundle), nil
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryRepo) NextPlanVersionByRequirementID(ctx context.Context, requirementID uint) (int, error) {
+	next := 1
+	for _, bundle := range r.bundles {
+		if bundle.Plan != nil && bundle.Plan.RequirementID != nil && *bundle.Plan.RequirementID == requirementID && bundle.Plan.Version >= next {
+			next = bundle.Plan.Version + 1
+		}
+	}
+	return next, nil
 }
 
 func (r *memoryRepo) UpdatePlan(ctx context.Context, plan *domain.SpecForgeImplementationPlan) error {
-	r.bundle.Plan = plan
-	return nil
+	for _, bundle := range r.bundles {
+		if bundle.Plan.ID == plan.ID {
+			copied := *plan
+			bundle.Plan = &copied
+			if r.bundle != nil && r.bundle.Plan.ID == plan.ID {
+				r.bundle.Plan = &copied
+			}
+			return nil
+		}
+	}
+	return domain.ErrNotFound
+}
+
+func (r *memoryRepo) bundleByPRNodeID(prNodeID uint) *domain.SpecForgePlanBundle {
+	for _, bundle := range r.bundles {
+		for _, node := range bundle.PRNodes {
+			if node.ID == prNodeID {
+				return bundle
+			}
+		}
+	}
+	return r.bundle
 }
 
 func (r *memoryRepo) FindPRNodeByID(ctx context.Context, prNodeID uint) (*domain.SpecForgePRNode, error) {
-	for _, node := range r.bundle.PRNodes {
+	bundle := r.bundleByPRNodeID(prNodeID)
+	if bundle == nil {
+		return nil, domain.ErrNotFound
+	}
+	for _, node := range bundle.PRNodes {
 		if node.ID == prNodeID {
 			copied := *node
 			return &copied, nil
@@ -538,31 +679,37 @@ func (r *memoryRepo) FindPRNodeByID(ctx context.Context, prNodeID uint) (*domain
 }
 
 func (r *memoryRepo) FindPRNodeByBranchName(ctx context.Context, branchName string) (*domain.SpecForgePRNode, error) {
-	for _, node := range r.bundle.PRNodes {
-		if node.BranchName == branchName {
-			copied := *node
-			return &copied, nil
+	for _, bundle := range r.bundles {
+		for _, node := range bundle.PRNodes {
+			if node.BranchName == branchName {
+				copied := *node
+				return &copied, nil
+			}
 		}
 	}
 	return nil, domain.ErrNotFound
 }
 
 func (r *memoryRepo) FindPRNodeByGitHubPRNumber(ctx context.Context, prNumber int) (*domain.SpecForgePRNode, error) {
-	for _, node := range r.bundle.PRNodes {
-		if node.GitHubPRNumber != nil && *node.GitHubPRNumber == prNumber {
-			copied := *node
-			return &copied, nil
+	for _, bundle := range r.bundles {
+		for _, node := range bundle.PRNodes {
+			if node.GitHubPRNumber != nil && *node.GitHubPRNumber == prNumber {
+				copied := *node
+				return &copied, nil
+			}
 		}
 	}
 	return nil, domain.ErrNotFound
 }
 
 func (r *memoryRepo) UpdatePRNode(ctx context.Context, node *domain.SpecForgePRNode) error {
-	for i, existing := range r.bundle.PRNodes {
-		if existing.ID == node.ID {
-			copied := *node
-			r.bundle.PRNodes[i] = &copied
-			return nil
+	for _, bundle := range r.bundles {
+		for i, existing := range bundle.PRNodes {
+			if existing.ID == node.ID {
+				copied := *node
+				bundle.PRNodes[i] = &copied
+				return nil
+			}
 		}
 	}
 	return domain.ErrNotFound
@@ -744,6 +891,10 @@ func cloneBundle(bundle *domain.SpecForgePlanBundle) *domain.SpecForgePlanBundle
 	out.Idea = &idea
 	out.ProductSpec = &spec
 	out.Plan = &plan
+	if bundle.Requirement != nil {
+		requirement := *bundle.Requirement
+		out.Requirement = &requirement
+	}
 	if bundle.RepoProfile != nil {
 		profile := *bundle.RepoProfile
 		out.RepoProfile = &profile
