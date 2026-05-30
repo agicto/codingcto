@@ -369,6 +369,40 @@ func TestCancelRunCancelsNonTerminalTasks(t *testing.T) {
 	require.Equal(t, "run_cancelled", cancelled.Tasks[1].FailureReason)
 }
 
+func TestCancelRunPublishesLinkedFixTaskResult(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	bus := events.NewEventBus()
+	var published domain.SpecForgeFixTaskFinishedEvent
+	bus.Subscribe(domain.EventSpecForgeFixTaskFinished, func(ctx context.Context, event events.Event) error {
+		var underlying any = event
+		if wrapped, ok := event.(events.WrappedEvent); ok {
+			underlying = wrapped.Event
+		}
+		typed, ok := underlying.(domain.SpecForgeFixTaskFinishedEvent)
+		require.True(t, ok)
+		published = typed
+		return nil
+	})
+	svc := NewEventedService(runRepo, planningRepo, nil, nil, nil, nil, nil, bus)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+	fixAttemptID := uint(99)
+	dispatched.Tasks[0].FixAttemptID = &fixAttemptID
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), dispatched.Tasks[0]))
+
+	_, err = svc.CancelRun(context.Background(), dispatched.Run.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, fixAttemptID, published.FixAttemptID)
+	require.Equal(t, dispatched.Tasks[0].ID, published.TaskID)
+	require.Equal(t, domain.AgentTaskStatusCancelled, published.TaskStatus)
+	require.Equal(t, domain.FixAttemptStatusFailed, published.FixAttemptStatus)
+	require.Equal(t, "run_cancelled", published.FailureReason)
+}
+
 func TestCancelRunRejectsCompletedRun(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
 	runRepo := &memoryExecutionRepo{}
@@ -1466,6 +1500,46 @@ func TestSweepStaleTasksFailsTimedOutTasks(t *testing.T) {
 	require.Equal(t, domain.AgentTaskStatusFailed, updated.Tasks[0].Status)
 	require.Equal(t, domain.AgentTaskStatusFailed, updated.Tasks[1].Status)
 	require.Equal(t, domain.AgentTaskStatusRunning, updated.Tasks[2].Status)
+}
+
+func TestSweepStaleTasksPublishesLinkedFixTaskResult(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	bus := events.NewEventBus()
+	var published domain.SpecForgeFixTaskFinishedEvent
+	bus.Subscribe(domain.EventSpecForgeFixTaskFinished, func(ctx context.Context, event events.Event) error {
+		var underlying any = event
+		if wrapped, ok := event.(events.WrappedEvent); ok {
+			underlying = wrapped.Event
+		}
+		typed, ok := underlying.(domain.SpecForgeFixTaskFinishedEvent)
+		require.True(t, ok)
+		published = typed
+		return nil
+	})
+	svc := NewEventedService(runRepo, planningRepo, nil, nil, nil, nil, nil, bus)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{})
+	require.NoError(t, err)
+	oldStartedAt := time.Now().Add(-3 * time.Hour)
+	fixAttemptID := uint(99)
+	dispatched.Tasks[0].Status = domain.AgentTaskStatusRunning
+	dispatched.Tasks[0].StartedAt = &oldStartedAt
+	dispatched.Tasks[0].FixAttemptID = &fixAttemptID
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), dispatched.Tasks[0]))
+
+	_, err = svc.SweepStaleTasks(context.Background(), &StaleTaskSweepRequest{
+		RunningTimeoutSeconds: 7200,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, fixAttemptID, published.FixAttemptID)
+	require.Equal(t, dispatched.Tasks[0].ID, published.TaskID)
+	require.Equal(t, domain.AgentTaskStatusFailed, published.TaskStatus)
+	require.Equal(t, domain.FixAttemptStatusFailed, published.FixAttemptStatus)
+	require.Equal(t, "execution_timeout", published.FailureReason)
+	require.Contains(t, published.ErrorLog, "task execution timed out")
 }
 
 type memoryExecutionRepo struct {
