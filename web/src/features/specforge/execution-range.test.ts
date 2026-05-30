@@ -30,13 +30,13 @@ describe('execution range selection', () => {
 
   it('reports dependency-complete ranges as executable', () => {
     expect(executionRangeReview(nodes, [nodes[0].id, nodes[1].id])).toEqual([
-      'Execution range review: 2 PR nodes are selected with dependencies included.',
+      '执行范围审核：已选择 2 个 PR 节点，依赖已包含。',
     ]);
   });
 
   it('reports missing dependencies', () => {
     expect(executionRangeReview(nodes, [nodes[1].id])).toEqual([
-      'Execution range review: PR-002 requires PR-001; include the dependency or remove this node.',
+      '执行范围审核：PR-002 依赖 PR-001；请包含该依赖，或移除此节点。',
     ]);
   });
 });

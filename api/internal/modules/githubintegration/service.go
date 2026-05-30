@@ -16,9 +16,12 @@ import (
 
 type Service interface {
 	UpsertInstallation(ctx context.Context, userID uint, req *UpsertInstallationRequest) (*domain.GitHubInstallation, error)
+	SyncInstallation(ctx context.Context, userID uint, req *SyncInstallationRequest) (*SyncInstallationResponse, error)
 	GetInstallation(ctx context.Context, id uint) (*domain.GitHubInstallation, error)
 	UpsertRepository(ctx context.Context, userID uint, req *UpsertRepositoryRequest) (*domain.Repository, error)
 	GetRepository(ctx context.Context, repositoryID string) (*domain.Repository, error)
+	GetSettings(ctx context.Context, workspaceID string) (*domain.GitHubSettings, error)
+	UpsertSettings(ctx context.Context, userID uint, req *UpsertSettingsRequest) (*domain.GitHubSettings, error)
 	ListRepositoryTree(ctx context.Context, req *ListRepositoryTreeRequest) (*RepositoryTreeSnapshot, error)
 	ReadRepositoryFile(ctx context.Context, req *ReadRepositoryFileRequest) (*RepositoryFileSnapshot, error)
 	PreparePRNodeBranch(ctx context.Context, req *PreparePRNodeBranchRequest) (*domain.SpecForgePRNode, error)
@@ -64,6 +67,60 @@ func (s *service) UpsertInstallation(ctx context.Context, userID uint, req *Upse
 	return installation, nil
 }
 
+func (s *service) SyncInstallation(ctx context.Context, userID uint, req *SyncInstallationRequest) (*SyncInstallationResponse, error) {
+	if userID == 0 || req == nil || strings.TrimSpace(req.WorkspaceID) == "" || req.InstallationID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	appInstallation, err := s.tokenProvider.Installation(ctx, req.InstallationID)
+	if err != nil {
+		return nil, err
+	}
+	installation := &domain.GitHubInstallation{
+		WorkspaceID:    strings.TrimSpace(req.WorkspaceID),
+		InstallationID: req.InstallationID,
+		AccountLogin:   strings.TrimSpace(appInstallation.Account.Login),
+		Permissions:    normalizePermissions(appInstallation.Permissions),
+		CreatedBy:      userID,
+	}
+	if err := s.repo.UpsertInstallation(ctx, installation); err != nil {
+		return nil, fmt.Errorf("sync github installation: %w", err)
+	}
+
+	token, err := s.tokenProvider.InstallationToken(ctx, req.InstallationID)
+	if err != nil {
+		return nil, err
+	}
+	client, err := s.clientFactory.NewRepositoryClient(token.Token)
+	if err != nil {
+		return nil, err
+	}
+	repositories, err := client.ListInstallationRepositories(ctx)
+	if err != nil {
+		return nil, err
+	}
+	options := make([]GitHubRepositoryOption, 0, len(repositories))
+	for _, repository := range repositories {
+		owner, repoName := splitRepositoryFullName(repository.FullName)
+		if owner == "" {
+			owner = strings.TrimSpace(repository.Owner.Login)
+		}
+		if repoName == "" {
+			repoName = strings.TrimSpace(repository.Name)
+		}
+		options = append(options, GitHubRepositoryOption{
+			ID:            repository.ID,
+			Name:          repository.Name,
+			FullName:      repository.FullName,
+			Owner:         owner,
+			Repo:          repoName,
+			DefaultBranch: defaultText(strings.TrimSpace(repository.DefaultBranch), "main"),
+			IsPrivate:     repository.Private,
+			HTMLURL:       repository.HTMLURL,
+		})
+	}
+	return &SyncInstallationResponse{Installation: installation, Repositories: options}, nil
+}
+
 func (s *service) GetInstallation(ctx context.Context, id uint) (*domain.GitHubInstallation, error) {
 	if id == 0 {
 		return nil, domain.ErrInvalidInput
@@ -94,6 +151,9 @@ func (s *service) UpsertRepository(ctx context.Context, userID uint, req *Upsert
 		IsPrivate:            req.IsPrivate,
 		CreatedBy:            userID,
 	}
+	if err := s.validateRepositoryAccess(ctx, repository); err != nil {
+		return nil, err
+	}
 	if err := s.repo.UpsertRepository(ctx, repository); err != nil {
 		return nil, fmt.Errorf("upsert repository: %w", err)
 	}
@@ -105,6 +165,40 @@ func (s *service) GetRepository(ctx context.Context, repositoryID string) (*doma
 		return nil, domain.ErrInvalidInput
 	}
 	return s.repo.FindRepositoryByRepositoryID(ctx, strings.TrimSpace(repositoryID))
+}
+
+func (s *service) GetSettings(ctx context.Context, workspaceID string) (*domain.GitHubSettings, error) {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	settings, err := s.repo.FindSettingsByWorkspaceID(ctx, workspaceID)
+	if err == nil {
+		return settings, nil
+	}
+	if errors.Is(err, domain.ErrNotFound) {
+		return defaultGitHubSettings(workspaceID), nil
+	}
+	return nil, err
+}
+
+func (s *service) UpsertSettings(ctx context.Context, userID uint, req *UpsertSettingsRequest) (*domain.GitHubSettings, error) {
+	if userID == 0 || req == nil || strings.TrimSpace(req.WorkspaceID) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	settings, err := s.GetSettings(ctx, req.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	settings.Enabled = boolValue(req.Enabled, settings.Enabled)
+	settings.PullRequestSidebar = boolValue(req.PullRequestSidebar, settings.PullRequestSidebar)
+	settings.CoAuthoredByTrailer = boolValue(req.CoAuthoredByTrailer, settings.CoAuthoredByTrailer)
+	settings.IssuePRAutoLink = boolValue(req.IssuePRAutoLink, settings.IssuePRAutoLink)
+	settings.UpdatedBy = userID
+	if err := s.repo.UpsertSettings(ctx, settings); err != nil {
+		return nil, fmt.Errorf("upsert github settings: %w", err)
+	}
+	return settings, nil
 }
 
 func (s *service) ListRepositoryTree(ctx context.Context, req *ListRepositoryTreeRequest) (*RepositoryTreeSnapshot, error) {
@@ -199,6 +293,13 @@ func (s *service) PreparePRNodeBranch(ctx context.Context, req *PreparePRNodeBra
 	if err != nil {
 		return nil, err
 	}
+	settings, err := s.settingsForRepository(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
+	if !settings.Enabled {
+		return nil, domain.ErrInvalidInput
+	}
 	node, err := s.planningRepo.FindPRNodeByID(ctx, req.PRNodeID)
 	if err != nil {
 		return nil, err
@@ -240,6 +341,13 @@ func (s *service) DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) 
 	if err != nil {
 		return nil, err
 	}
+	settings, err := s.settingsForRepository(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
+	if !settings.Enabled {
+		return nil, domain.ErrInvalidInput
+	}
 	node, err := s.planningRepo.FindPRNodeByID(ctx, req.PRNodeID)
 	if err != nil {
 		return nil, err
@@ -272,7 +380,7 @@ func (s *service) DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) 
 		Title: title,
 		Head:  node.BranchName,
 		Base:  baseBranch,
-		Body:  prDescription(node, strings.TrimSpace(req.Body)),
+		Body:  prDescription(node, strings.TrimSpace(req.Body), settings),
 		Draft: draft,
 	})
 	if err != nil {
@@ -411,6 +519,33 @@ func (s *service) repositoryClientForRepository(ctx context.Context, repository 
 	return client, nil
 }
 
+func (s *service) validateRepositoryAccess(ctx context.Context, repository *domain.Repository) error {
+	client, err := s.repositoryClientForRepository(ctx, repository)
+	if err != nil {
+		return err
+	}
+	branch := strings.TrimSpace(repository.DefaultBranch)
+	if branch == "" {
+		branch = "main"
+	}
+	ref, err := client.GetBranchRef(ctx, repository.GitHubOwner, repository.GitHubRepo, branch)
+	if err != nil {
+		return fmt.Errorf("github integration: validate repository access: %w", err)
+	}
+	if ref == nil || strings.TrimSpace(ref.Object.SHA) == "" {
+		return fmt.Errorf("github integration: validate repository access: default branch response missing sha")
+	}
+	return nil
+}
+
+func (s *service) settingsForRepository(ctx context.Context, repository *domain.Repository) (*domain.GitHubSettings, error) {
+	workspaceID := "default"
+	if repository != nil && strings.TrimSpace(repository.WorkspaceID) != "" {
+		workspaceID = strings.TrimSpace(repository.WorkspaceID)
+	}
+	return s.GetSettings(ctx, workspaceID)
+}
+
 func (s *service) RecordWebhook(ctx context.Context, req *GitHubWebhookRequest) (*domain.GitHubWebhookEvent, error) {
 	if req == nil || strings.TrimSpace(req.EventType) == "" || strings.TrimSpace(req.DeliveryID) == "" || len(req.Body) == 0 {
 		return nil, domain.ErrInvalidInput
@@ -463,11 +598,11 @@ func (s *service) ListWebhookEvents(ctx context.Context, req *ListWebhookEventsR
 	return s.repo.ListWebhookEvents(ctx, strings.TrimSpace(req.Status), strings.TrimSpace(req.RepositoryFullName), limit)
 }
 
-func prDescription(node *domain.SpecForgePRNode, body string) string {
+func prDescription(node *domain.SpecForgePRNode, body string, settings *domain.GitHubSettings) string {
 	if body != "" {
-		return body
+		return applyGitHubSettingsToPRDescription(body, node, settings)
 	}
-	return fmt.Sprintf("## Summary\n\n%s\n\n## Linked Spec\n\nPR Node: %s\n\n## Scope\n\n%s\n\n## Non-goals\n\n%s\n\n## Acceptance Criteria\n\n%s\n\n## Test Plan\n\n%s\n\n## Risks\n\n- Estimated risk: %s\n\n## Dependencies\n\n%s\n\nGenerated by SpecForge.\n",
+	description := fmt.Sprintf("## Summary\n\n%s\n\n## Linked Spec\n\nPR Node: %s\n\n## Scope\n\n%s\n\n## Non-goals\n\n%s\n\n## Acceptance Criteria\n\n%s\n\n## Test Plan\n\n%s\n\n## Risks\n\n- Estimated risk: %s\n\n## Dependencies\n\n%s\n\nGenerated by SpecForge.\n",
 		defaultText(strings.TrimSpace(node.Goal), "No summary provided."),
 		defaultText(strings.TrimSpace(node.NodeKey), "Unassigned"),
 		formatMarkdownList(node.ExpectedFiles),
@@ -477,6 +612,50 @@ func prDescription(node *domain.SpecForgePRNode, body string) string {
 		defaultText(strings.TrimSpace(node.EstimatedRisk), "unknown"),
 		formatDependencies(node.DependsOn),
 	)
+	return applyGitHubSettingsToPRDescription(description, node, settings)
+}
+
+func applyGitHubSettingsToPRDescription(body string, node *domain.SpecForgePRNode, settings *domain.GitHubSettings) string {
+	body = strings.TrimSpace(body)
+	if settings == nil {
+		return body
+	}
+	extras := []string{}
+	if settings.IssuePRAutoLink && node != nil && strings.TrimSpace(node.NodeKey) != "" {
+		extras = append(extras, fmt.Sprintf("CodingCTO issue key: %s", strings.TrimSpace(node.NodeKey)))
+	}
+	if settings.CoAuthoredByTrailer {
+		extras = append(extras, "Co-authored-by: codingcto-agent <github@codingcto.local>")
+	}
+	if len(extras) == 0 {
+		return body
+	}
+	return strings.TrimSpace(body) + "\n\n" + strings.Join(extras, "\n") + "\n"
+}
+
+func defaultGitHubSettings(workspaceID string) *domain.GitHubSettings {
+	return &domain.GitHubSettings{
+		WorkspaceID:         strings.TrimSpace(workspaceID),
+		Enabled:             true,
+		PullRequestSidebar:  true,
+		CoAuthoredByTrailer: true,
+		IssuePRAutoLink:     true,
+	}
+}
+
+func boolValue(value *bool, fallback bool) bool {
+	if value == nil {
+		return fallback
+	}
+	return *value
+}
+
+func splitRepositoryFullName(fullName string) (string, string) {
+	parts := strings.SplitN(strings.TrimSpace(fullName), "/", 2)
+	if len(parts) != 2 {
+		return "", ""
+	}
+	return strings.TrimSpace(parts[0]), strings.TrimSpace(parts[1])
 }
 
 func defaultText(value, fallback string) string {

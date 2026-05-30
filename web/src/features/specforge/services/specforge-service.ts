@@ -157,6 +157,89 @@ export interface ListGitHubWebhookEventsParams {
   limit?: number;
 }
 
+export interface UpsertGitHubInstallationPayload {
+  workspace_id: string;
+  installation_id: number;
+  account_login: string;
+  permissions?: Record<string, string>;
+}
+
+export interface GitHubInstallationDTO {
+  id: number;
+  workspace_id: string;
+  installation_id: number;
+  account_login: string;
+  permissions: Record<string, string>;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SyncGitHubInstallationPayload {
+  workspace_id: string;
+  installation_id: number;
+}
+
+export interface GitHubRepositoryOptionDTO {
+  id: number;
+  name: string;
+  full_name: string;
+  owner: string;
+  repo: string;
+  default_branch: string;
+  is_private: boolean;
+  html_url: string;
+}
+
+export interface SyncGitHubInstallationDTO {
+  installation: GitHubInstallationDTO;
+  repositories: GitHubRepositoryOptionDTO[];
+}
+
+export interface UpsertGitHubRepositoryPayload {
+  repository_id?: string;
+  workspace_id: string;
+  github_installation_id: number;
+  github_owner: string;
+  github_repo: string;
+  default_branch?: string;
+  is_private?: boolean;
+}
+
+export interface GitHubRepositoryDTO {
+  id: number;
+  repository_id: string;
+  workspace_id: string;
+  github_installation_id: number;
+  github_owner: string;
+  github_repo: string;
+  default_branch: string;
+  is_private: boolean;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface GitHubSettingsPayload {
+  workspace_id: string;
+  enabled?: boolean;
+  pull_request_sidebar?: boolean;
+  co_authored_by_trailer?: boolean;
+  issue_pr_auto_link?: boolean;
+}
+
+export interface GitHubSettingsDTO {
+  id: number;
+  workspace_id: string;
+  enabled: boolean;
+  pull_request_sidebar: boolean;
+  co_authored_by_trailer: boolean;
+  issue_pr_auto_link: boolean;
+  updated_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface GitHubWebhookEventDTO {
   id: number;
   delivery_id: string;
@@ -443,6 +526,36 @@ export interface SpecForgeExecutionBundleDTO {
 }
 
 export const specForgeService = {
+  upsertGitHubInstallation: (payload: UpsertGitHubInstallationPayload) =>
+    request.post<GitHubInstallationDTO, UpsertGitHubInstallationPayload>(
+      "/github/installations",
+      payload
+    ),
+
+  syncGitHubInstallation: (payload: SyncGitHubInstallationPayload) =>
+    request.post<SyncGitHubInstallationDTO, SyncGitHubInstallationPayload>(
+      "/github/installations/sync",
+      payload
+    ),
+
+  upsertGitHubRepository: (payload: UpsertGitHubRepositoryPayload) =>
+    request.post<GitHubRepositoryDTO, UpsertGitHubRepositoryPayload>(
+      "/github/repositories",
+      payload
+    ),
+
+  getGitHubRepository: (repoId: string, config?: RequestConfig) =>
+    request.get<GitHubRepositoryDTO>(`/repositories/${repoId}`, config),
+
+  getGitHubSettings: (workspaceId: string, config?: RequestConfig) =>
+    request.get<GitHubSettingsDTO>(
+      `/github/settings?workspace_id=${encodeURIComponent(workspaceId)}`,
+      config
+    ),
+
+  upsertGitHubSettings: (payload: GitHubSettingsPayload) =>
+    request.put<GitHubSettingsDTO, GitHubSettingsPayload>("/github/settings", payload),
+
   upsertRepoProfile: (repoId: string, payload: RepoProfilePayload) =>
     request.post<SpecForgeRepoProfileDTO, RepoProfilePayload>(
       `/repositories/${repoId}/profile`,

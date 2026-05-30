@@ -29,7 +29,7 @@ function getSecret(): string {
   }
   if (!warnedAboutFallback) {
     console.warn(
-      '[luas] SESSION_SECRET is not set — using a non-production fallback. ' +
+      '[CodingCTO] SESSION_SECRET is not set — using a non-production fallback. ' +
         'Generate one with `openssl rand -hex 32` and set it in .env.local.',
     );
     warnedAboutFallback = true;

@@ -1,5 +1,7 @@
 package githubintegration
 
+import "github.com/zgiai/luas/api/internal/domain"
+
 type UpsertInstallationRequest struct {
 	WorkspaceID    string            `json:"workspace_id" binding:"required,max=255"`
 	InstallationID int64             `json:"installation_id" binding:"required"`
@@ -15,6 +17,39 @@ type UpsertRepositoryRequest struct {
 	GitHubRepo           string `json:"github_repo" binding:"required,max=255"`
 	DefaultBranch        string `json:"default_branch" binding:"omitempty,max=100"`
 	IsPrivate            bool   `json:"is_private"`
+}
+
+type SyncInstallationRequest struct {
+	WorkspaceID    string `json:"workspace_id" binding:"required,max=255"`
+	InstallationID int64  `json:"installation_id" binding:"required"`
+}
+
+type SyncInstallationResponse struct {
+	Installation *domain.GitHubInstallation `json:"installation"`
+	Repositories []GitHubRepositoryOption   `json:"repositories"`
+}
+
+type GitHubRepositoryOption struct {
+	ID            int64  `json:"id"`
+	Name          string `json:"name"`
+	FullName      string `json:"full_name"`
+	Owner         string `json:"owner"`
+	Repo          string `json:"repo"`
+	DefaultBranch string `json:"default_branch"`
+	IsPrivate     bool   `json:"is_private"`
+	HTMLURL       string `json:"html_url"`
+}
+
+type UpsertSettingsRequest struct {
+	WorkspaceID         string `json:"workspace_id" binding:"required,max=255"`
+	Enabled             *bool  `json:"enabled"`
+	PullRequestSidebar  *bool  `json:"pull_request_sidebar"`
+	CoAuthoredByTrailer *bool  `json:"co_authored_by_trailer"`
+	IssuePRAutoLink     *bool  `json:"issue_pr_auto_link"`
+}
+
+type GetSettingsRequest struct {
+	WorkspaceID string `form:"workspace_id" binding:"required,max=255"`
 }
 
 type GitHubWebhookRequest struct {

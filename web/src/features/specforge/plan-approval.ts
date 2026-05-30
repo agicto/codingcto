@@ -1,27 +1,30 @@
 import type { PlanBundle } from '@/features/specforge/types';
 
-const dagValidationPassedPrefix = 'PR DAG review: validation passed';
+const dagValidationPassedPrefixes = [
+  'PR DAG 审核：校验通过',
+  'PR DAG review: validation passed',
+];
 
 export function planApprovalReadiness(plan: PlanBundle) {
   if (plan.prDagReview.length === 0) {
     return {
       canApprove: false,
-      reason: 'PR DAG review has not run.',
+      reason: 'PR DAG 尚未完成审核。',
     };
   }
 
   const blockers = plan.prDagReview.filter(
-    (note) => !note.startsWith(dagValidationPassedPrefix)
+    (note) => !dagValidationPassedPrefixes.some((prefix) => note.startsWith(prefix))
   );
   if (blockers.length > 0) {
     return {
       canApprove: false,
-      reason: 'Resolve PR DAG review blockers before starting execution.',
+      reason: '开始执行前请先处理 PR DAG 审核阻塞项。',
     };
   }
 
   return {
     canApprove: true,
-    reason: 'PR DAG review passed.',
+    reason: 'PR DAG 审核已通过。',
   };
 }

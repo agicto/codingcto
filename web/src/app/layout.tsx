@@ -16,8 +16,8 @@ const inter = Inter({ subsets: ["latin"] });
 
 export const metadata: Metadata = {
   title: {
-    default: "Luas",
-    template: "%s | Luas",
+    default: "CodingCTO",
+    template: "%s | CodingCTO",
   },
   description: "Modern web application scaffold built with Next.js, TypeScript, and Tailwind CSS",
   metadataBase: new URL(env.NEXT_PUBLIC_APP_URL),

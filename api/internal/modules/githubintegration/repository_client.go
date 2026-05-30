@@ -20,6 +20,7 @@ type GitHubRepositoryClient struct {
 }
 
 type RepositoryClient interface {
+	ListInstallationRepositories(ctx context.Context) ([]InstallationRepository, error)
 	GetBranchRef(ctx context.Context, owner, repo, branch string) (*GitReference, error)
 	ListRepositoryTree(ctx context.Context, owner, repo, ref string, recursive bool) (*GitTree, error)
 	GetRepositoryFile(ctx context.Context, owner, repo, path, ref string) (*RepositoryFile, error)
@@ -81,6 +82,18 @@ type GitReference struct {
 	Ref    string       `json:"ref"`
 	URL    string       `json:"url"`
 	Object GitRefObject `json:"object"`
+}
+
+type InstallationRepository struct {
+	ID            int64  `json:"id"`
+	Name          string `json:"name"`
+	FullName      string `json:"full_name"`
+	Private       bool   `json:"private"`
+	DefaultBranch string `json:"default_branch"`
+	HTMLURL       string `json:"html_url"`
+	Owner         struct {
+		Login string `json:"login"`
+	} `json:"owner"`
 }
 
 type GitRefObject struct {
@@ -186,6 +199,16 @@ func (c *GitHubRepositoryClient) GetBranchRef(ctx context.Context, owner, repo, 
 		return nil, err
 	}
 	return &ref, nil
+}
+
+func (c *GitHubRepositoryClient) ListInstallationRepositories(ctx context.Context) ([]InstallationRepository, error) {
+	var out struct {
+		Repositories []InstallationRepository `json:"repositories"`
+	}
+	if err := c.do(ctx, http.MethodGet, "/installation/repositories?per_page=100", nil, &out); err != nil {
+		return nil, err
+	}
+	return out.Repositories, nil
 }
 
 func (c *GitHubRepositoryClient) ListRepositoryTree(ctx context.Context, owner, repo, ref string, recursive bool) (*GitTree, error) {

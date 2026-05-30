@@ -21,14 +21,18 @@ import {
   type ReadPRNodeFailureLogPayload,
   type RepoProfilePayload,
   type DeliverPRNodePayload,
+  type GitHubSettingsPayload,
   type RefreshPRNodeCIPayload,
   type RetryTaskPayload,
   type RuntimeDeregisterPayload,
   type RuntimeHeartbeatPayload,
+  type SyncGitHubInstallationPayload,
   type RuntimeSweepPayload,
   type StartRunPayload,
   type StaleTaskSweepPayload,
   type SubmitTaskResultPayload,
+  type UpsertGitHubInstallationPayload,
+  type UpsertGitHubRepositoryPayload,
   type UpsertSkillPayload,
   specForgeService,
 } from "@/features/specforge/services/specforge-service";
@@ -66,6 +70,10 @@ export const specForgeKeys = {
       params?.repository_full_name ?? "",
       params?.limit ?? 50,
     ] as const,
+  githubRepository: (repoId: string) =>
+    [...specForgeKeys.all, "github-repository", repoId] as const,
+  githubSettings: (workspaceId: string) =>
+    [...specForgeKeys.all, "github-settings", workspaceId] as const,
 };
 
 export function useRepoProfile(repoId: string) {
@@ -166,6 +174,67 @@ export function useGitHubWebhookEvents(params?: ListGitHubWebhookEventsParams) {
     queryKey: specForgeKeys.githubWebhookEvents(params),
     queryFn: () => specForgeService.listGitHubWebhookEvents(params, silentQueryConfig),
     meta: silentQueryMeta,
+  });
+}
+
+export function useGitHubRepository(repoId: string) {
+  return useQuery({
+    queryKey: specForgeKeys.githubRepository(repoId),
+    queryFn: () => specForgeService.getGitHubRepository(repoId, silentQueryConfig),
+    enabled: Boolean(repoId),
+    meta: silentQueryMeta,
+  });
+}
+
+export function useGitHubSettings(workspaceId: string) {
+  return useQuery({
+    queryKey: specForgeKeys.githubSettings(workspaceId),
+    queryFn: () => specForgeService.getGitHubSettings(workspaceId, silentQueryConfig),
+    enabled: Boolean(workspaceId),
+    meta: silentQueryMeta,
+  });
+}
+
+export function useUpsertGitHubSettings() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: GitHubSettingsPayload) => specForgeService.upsertGitHubSettings(payload),
+    onSuccess: (settings) => {
+      queryClient.setQueryData(specForgeKeys.githubSettings(settings.workspace_id), settings);
+      queryClient.invalidateQueries({ queryKey: specForgeKeys.githubSettings(settings.workspace_id) });
+    },
+  });
+}
+
+export function useUpsertGitHubInstallation() {
+  return useMutation({
+    mutationFn: (payload: UpsertGitHubInstallationPayload) =>
+      specForgeService.upsertGitHubInstallation(payload),
+  });
+}
+
+export function useSyncGitHubInstallation() {
+  return useMutation({
+    mutationFn: (payload: SyncGitHubInstallationPayload) =>
+      specForgeService.syncGitHubInstallation(payload),
+  });
+}
+
+export function useUpsertGitHubRepository() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: UpsertGitHubRepositoryPayload) =>
+      specForgeService.upsertGitHubRepository(payload),
+    onSuccess: (repository) => {
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubRepository(repository.repository_id),
+      });
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.repoProfile(repository.repository_id),
+      });
+    },
   });
 }
 

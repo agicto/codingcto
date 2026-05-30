@@ -61,7 +61,7 @@ export default function AuthLayout({ children }: PropsWithChildren) {
                 <Logo className="h-8 w-8 text-white" />
               </div>
             </div>
-            <span className="text-2xl font-bold tracking-tight drop-shadow-lg">Luas</span>
+            <span className="text-2xl font-bold tracking-tight drop-shadow-lg">CodingCTO</span>
           </div>
           
           {/* Hero Text */}
@@ -123,9 +123,7 @@ export default function AuthLayout({ children }: PropsWithChildren) {
           <div className="lg:hidden mb-6 flex flex-col items-center space-y-3">
             <div className="flex items-center space-x-3">
               <Logo className="h-9 w-9 text-primary" />
-              <span className="text-2xl font-bold bg-linear-to-r from-primary to-primary-deeper bg-clip-text text-transparent">
-                Luas
-              </span>
+              <span className="text-2xl font-bold bg-linear-to-r from-primary to-primary-deeper bg-clip-text text-transparent">CodingCTO</span>
             </div>
             <p className="text-center text-sm text-muted-foreground max-w-xs">
               {t('auth.heroSubtitle')}
@@ -140,7 +138,7 @@ export default function AuthLayout({ children }: PropsWithChildren) {
         
         {/* Footer */}
         <div className="relative shrink-0 py-5 text-center text-xs text-muted-foreground">
-          &copy; {new Date().getFullYear()} Luas. {t('auth.allRightsReserved')}.
+          &copy; {new Date().getFullYear()} CodingCTO. {t('auth.allRightsReserved')}.
         </div>
       </div>
     </div>

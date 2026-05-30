@@ -7,14 +7,14 @@ describe('planApprovalReadiness', () => {
   it('allows approval when the PR DAG review passed', () => {
     expect(planApprovalReadiness(demoPlan)).toEqual({
       canApprove: true,
-      reason: 'PR DAG review passed.',
+      reason: 'PR DAG 审核已通过。',
     });
   });
 
   it('blocks approval when the PR DAG review has not run', () => {
     expect(planApprovalReadiness({ ...demoPlan, prDagReview: [] })).toEqual({
       canApprove: false,
-      reason: 'PR DAG review has not run.',
+      reason: 'PR DAG 尚未完成审核。',
     });
   });
 
@@ -26,7 +26,7 @@ describe('planApprovalReadiness', () => {
       })
     ).toEqual({
       canApprove: false,
-      reason: 'Resolve PR DAG review blockers before starting execution.',
+      reason: '开始执行前请先处理 PR DAG 审核阻塞项。',
     });
   });
 });
