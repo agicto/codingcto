@@ -114,6 +114,75 @@ func TestStartRunRejectsUnapprovedPlan(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrConflict)
 }
 
+func TestStartRunRejectsInvalidPRDAG(t *testing.T) {
+	cases := []struct {
+		name   string
+		mutate func(*domain.SpecForgePlanBundle)
+	}{
+		{
+			name: "too many nodes",
+			mutate: func(bundle *domain.SpecForgePlanBundle) {
+				for len(bundle.PRNodes) <= 5 {
+					node := *bundle.PRNodes[len(bundle.PRNodes)-1]
+					node.ID += uint(len(bundle.PRNodes) + 1)
+					node.Order = len(bundle.PRNodes) + 1
+					node.NodeKey = fmt.Sprintf("PR-%03d", node.Order)
+					node.BranchName = fmt.Sprintf("specforge/extra-%02d", node.Order)
+					bundle.PRNodes = append(bundle.PRNodes, &node)
+				}
+			},
+		},
+		{
+			name: "missing node scope",
+			mutate: func(bundle *domain.SpecForgePlanBundle) {
+				bundle.PRNodes[0].ExpectedFiles = nil
+			},
+		},
+		{
+			name: "missing non-goals",
+			mutate: func(bundle *domain.SpecForgePlanBundle) {
+				bundle.PRNodes[0].NonGoals = nil
+			},
+		},
+		{
+			name: "duplicate branch",
+			mutate: func(bundle *domain.SpecForgePlanBundle) {
+				bundle.PRNodes[1].BranchName = bundle.PRNodes[0].BranchName
+			},
+		},
+		{
+			name: "unknown dependency",
+			mutate: func(bundle *domain.SpecForgePlanBundle) {
+				bundle.PRNodes[1].DependsOn = []string{"PR-404"}
+			},
+		},
+		{
+			name: "self dependency",
+			mutate: func(bundle *domain.SpecForgePlanBundle) {
+				bundle.PRNodes[1].DependsOn = []string{bundle.PRNodes[1].NodeKey}
+			},
+		},
+		{
+			name: "out of order dependency",
+			mutate: func(bundle *domain.SpecForgePlanBundle) {
+				bundle.PRNodes[0].DependsOn = []string{bundle.PRNodes[1].NodeKey}
+			},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			bundle := approvedPlanBundle()
+			tc.mutate(bundle)
+			svc := NewService(&memoryExecutionRepo{}, &memoryPlanningRepo{bundle: bundle}, nil, nil, nil, nil, nil)
+
+			_, err := svc.StartRun(context.Background(), 42, bundle.Plan.ID, &StartExecutionRunRequest{})
+
+			require.ErrorIs(t, err, domain.ErrConflict)
+		})
+	}
+}
+
 func TestStartRunRejectsDuplicateActiveRunForPlan(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
 	runRepo := &memoryExecutionRepo{}
@@ -2220,8 +2289,35 @@ func approvedPlanBundle() *domain.SpecForgePlanBundle {
 			Status:        domain.PlanStatusApproved,
 		},
 		PRNodes: []*domain.SpecForgePRNode{
-			{ID: 4, PlanID: 3, NodeKey: "PR-001", BranchName: "specforge/pr-001", Status: domain.PRNodeStatusPlanned},
-			{ID: 5, PlanID: 3, NodeKey: "PR-002", BranchName: "specforge/pr-002", DependsOn: []string{"PR-001"}, Status: domain.PRNodeStatusPlanned},
+			{
+				ID:                 4,
+				PlanID:             3,
+				NodeKey:            "PR-001",
+				Order:              1,
+				Title:              "Foundation",
+				Goal:               "Prepare the implementation boundary.",
+				BranchName:         "specforge/pr-001",
+				ExpectedFiles:      []string{"api/internal/modules"},
+				NonGoals:           []string{"Do not broaden scope."},
+				AcceptanceCriteria: []string{"Foundation is independently reviewable."},
+				TestCommands:       []string{"go test ./..."},
+				Status:             domain.PRNodeStatusPlanned,
+			},
+			{
+				ID:                 5,
+				PlanID:             3,
+				NodeKey:            "PR-002",
+				Order:              2,
+				Title:              "Implementation",
+				Goal:               "Implement the approved feature slice.",
+				BranchName:         "specforge/pr-002",
+				DependsOn:          []string{"PR-001"},
+				ExpectedFiles:      []string{"api/internal/modules"},
+				NonGoals:           []string{"Do not broaden scope."},
+				AcceptanceCriteria: []string{"Implementation is independently reviewable."},
+				TestCommands:       []string{"go test ./..."},
+				Status:             domain.PRNodeStatusPlanned,
+			},
 		},
 	}
 }
