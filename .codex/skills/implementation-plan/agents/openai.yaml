@@ -1,0 +1,4 @@
+interface:
+  display_name: "Implementation Plan"
+  short_description: "Turn PRDs into engineering plans"
+  default_prompt: "Create a detailed implementation plan from this PRD and codebase context."
