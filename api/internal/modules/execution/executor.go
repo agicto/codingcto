@@ -6,6 +6,7 @@ import (
 	"fmt"
 	"os"
 	"os/exec"
+	"strconv"
 	"strings"
 	"time"
 )
@@ -57,6 +58,8 @@ type CodexCLIExecutorConfig struct {
 	ApprovalPolicy string
 	Timeout        time.Duration
 	ExtraArgs      []string
+	GitAuthorName  string
+	GitAuthorEmail string
 }
 
 type CodexCLIExecutor struct {
@@ -164,6 +167,18 @@ func (e *CodexCLIExecutor) Run(ctx context.Context, execContext ExecutionContext
 	if err != nil && errorOutput == "" {
 		errorOutput = err.Error()
 	}
+	if err == nil && result.ExitCode == 0 && strings.TrimSpace(execContext.BranchName) != "" {
+		if deliveryErr := e.commitAndPush(ctx, execContext, prompt); deliveryErr != nil {
+			status = "failed"
+			if errorOutput == "" {
+				errorOutput = deliveryErr.Error()
+			} else {
+				errorOutput += "\n" + deliveryErr.Error()
+			}
+			err = deliveryErr
+			result.ExitCode = -1
+		}
+	}
 	return &ExecutionResult{
 		Status:     status,
 		Output:     output,
@@ -171,6 +186,103 @@ func (e *CodexCLIExecutor) Run(ctx context.Context, execContext ExecutionContext
 		ExitCode:   result.ExitCode,
 		DurationMs: durationMs,
 	}, err
+}
+
+func (e *CodexCLIExecutor) commitAndPush(ctx context.Context, execContext ExecutionContext, prompt CompiledExecutionPrompt) error {
+	branch := strings.TrimSpace(execContext.BranchName)
+	if branch == "" || strings.HasPrefix(branch, "-") {
+		return fmt.Errorf("codex executor: branch name is invalid")
+	}
+	status, err := e.runner.Run(ctx, CommandSpec{
+		Executable: "git",
+		Args:       []string{"status", "--porcelain"},
+		Dir:        execContext.Workdir,
+		Env:        execContext.Env,
+	})
+	if err != nil || status.ExitCode != 0 {
+		return commandFailure("inspect worktree changes", status, err)
+	}
+	if strings.TrimSpace(status.Stdout) != "" {
+		if result, runErr := e.runner.Run(ctx, CommandSpec{
+			Executable: "git",
+			Args:       []string{"add", "-A"},
+			Dir:        execContext.Workdir,
+			Env:        execContext.Env,
+		}); runErr != nil || result.ExitCode != 0 {
+			return commandFailure("stage executor changes", result, runErr)
+		}
+		diff, runErr := e.runner.Run(ctx, CommandSpec{
+			Executable: "git",
+			Args:       []string{"diff", "--cached", "--quiet"},
+			Dir:        execContext.Workdir,
+			Env:        execContext.Env,
+		})
+		if runErr == nil && diff.ExitCode == 0 {
+			return fmt.Errorf("codex executor: executor changed no tracked content")
+		}
+		if diff.ExitCode != 1 && runErr != nil {
+			return commandFailure("inspect staged executor changes", diff, runErr)
+		}
+		if diff.ExitCode != 1 && runErr == nil {
+			return commandFailure("inspect staged executor changes", diff, nil)
+		}
+		if result, runErr := e.runner.Run(ctx, CommandSpec{
+			Executable: "git",
+			Args:       e.gitCommitArgs(prompt),
+			Dir:        execContext.Workdir,
+			Env:        execContext.Env,
+		}); runErr != nil || result.ExitCode != 0 {
+			return commandFailure("commit executor changes", result, runErr)
+		}
+	}
+	ahead, err := e.runner.Run(ctx, CommandSpec{
+		Executable: "git",
+		Args:       []string{"rev-list", "--count", "origin/" + branch + "..HEAD"},
+		Dir:        execContext.Workdir,
+		Env:        execContext.Env,
+	})
+	if err != nil || ahead.ExitCode != 0 {
+		return commandFailure("inspect branch commits", ahead, err)
+	}
+	commitCount, parseErr := strconv.Atoi(strings.TrimSpace(ahead.Stdout))
+	if parseErr != nil {
+		return fmt.Errorf("codex executor: parse branch commit count: %w", parseErr)
+	}
+	if commitCount == 0 {
+		return fmt.Errorf("codex executor: executor produced no commits for %s", branch)
+	}
+	if result, runErr := e.runner.Run(ctx, CommandSpec{
+		Executable: "git",
+		Args:       []string{"push", "origin", "HEAD:" + branch},
+		Dir:        execContext.Workdir,
+		Env:        execContext.Env,
+	}); runErr != nil || result.ExitCode != 0 {
+		return commandFailure("push executor branch", result, runErr)
+	}
+	return nil
+}
+
+func (e *CodexCLIExecutor) gitCommitArgs(prompt CompiledExecutionPrompt) []string {
+	authorName := strings.TrimSpace(e.cfg.GitAuthorName)
+	if authorName == "" {
+		authorName = "CodingCTO"
+	}
+	authorEmail := strings.TrimSpace(e.cfg.GitAuthorEmail)
+	if authorEmail == "" {
+		authorEmail = "codingcto@users.noreply.github.com"
+	}
+	message := fmt.Sprintf("Implement %s task", strings.TrimSpace(prompt.Type))
+	if strings.TrimSpace(prompt.Type) == "" {
+		message = "Implement Codex task"
+	}
+	if prompt.PRNodeID != 0 {
+		message = fmt.Sprintf("%s for PR node %d", message, prompt.PRNodeID)
+	}
+	return []string{
+		"-c", "user.name=" + authorName,
+		"-c", "user.email=" + authorEmail,
+		"commit", "-m", message,
+	}
 }
 
 func (e *CodexCLIExecutor) Cancel(ctx context.Context, runID string) error {
