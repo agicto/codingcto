@@ -17,6 +17,9 @@ type FixAttemptPO struct {
 	LikelyCause       string  `gorm:"type:text"`
 	RecommendedAction string  `gorm:"type:text"`
 	CanAutoFix        bool    `gorm:"not null"`
+	WorkflowRunID     int64   `gorm:"index:idx_specforge_fix_attempt_workflow_run"`
+	WorkflowRunURL    string  `gorm:"size:500"`
+	Conclusion        string  `gorm:"size:100;index"`
 	CreatedBy         uint    `gorm:"not null;index"`
 	CreatedAt         time.Time
 	UpdatedAt         time.Time
@@ -38,6 +41,9 @@ func newFixAttemptPO(attempt *domain.SpecForgeFixAttempt) *FixAttemptPO {
 		LikelyCause:       attempt.LikelyCause,
 		RecommendedAction: attempt.RecommendedAction,
 		CanAutoFix:        attempt.CanAutoFix,
+		WorkflowRunID:     attempt.WorkflowRunID,
+		WorkflowRunURL:    attempt.WorkflowRunURL,
+		Conclusion:        attempt.Conclusion,
 		CreatedBy:         attempt.CreatedBy,
 		CreatedAt:         attempt.CreatedAt,
 		UpdatedAt:         attempt.UpdatedAt,
@@ -56,6 +62,9 @@ func (po *FixAttemptPO) toDomain() *domain.SpecForgeFixAttempt {
 		LikelyCause:       po.LikelyCause,
 		RecommendedAction: po.RecommendedAction,
 		CanAutoFix:        po.CanAutoFix,
+		WorkflowRunID:     po.WorkflowRunID,
+		WorkflowRunURL:    po.WorkflowRunURL,
+		Conclusion:        po.Conclusion,
 		CreatedBy:         po.CreatedBy,
 		CreatedAt:         po.CreatedAt,
 		UpdatedAt:         po.UpdatedAt,

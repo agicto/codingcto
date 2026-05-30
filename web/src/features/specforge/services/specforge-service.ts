@@ -298,6 +298,9 @@ export interface SpecForgeFixAttemptDTO {
   likely_cause: string;
   recommended_action: string;
   can_auto_fix: boolean;
+  workflow_run_id?: number;
+  workflow_run_url?: string;
+  conclusion?: string;
   created_by: number;
   created_at: string;
   updated_at: string;

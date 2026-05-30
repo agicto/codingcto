@@ -41,6 +41,15 @@ func (s *service) CreateFixAttempt(ctx context.Context, userID, prNodeID uint, r
 	if prNodeID == 0 || req == nil || strings.TrimSpace(req.FailureType) == "" {
 		return nil, domain.ErrInvalidInput
 	}
+	if req.WorkflowRunID > 0 {
+		attempt, err := s.repo.FindFixAttemptByPRNodeIDAndWorkflowRunID(ctx, prNodeID, req.WorkflowRunID)
+		if err == nil {
+			return attempt, nil
+		}
+		if !errors.Is(err, domain.ErrNotFound) {
+			return nil, fmt.Errorf("find existing CI fix attempt: %w", err)
+		}
+	}
 	count, err := s.repo.CountFixAttemptsByPRNodeID(ctx, prNodeID)
 	if err != nil {
 		return nil, fmt.Errorf("count fix attempts: %w", err)
@@ -70,6 +79,9 @@ func (s *service) CreateFixAttempt(ctx context.Context, userID, prNodeID uint, r
 		LikelyCause:       strings.TrimSpace(req.LikelyCause),
 		RecommendedAction: strings.TrimSpace(req.RecommendedAction),
 		CanAutoFix:        req.CanAutoFix,
+		WorkflowRunID:     req.WorkflowRunID,
+		WorkflowRunURL:    strings.TrimSpace(req.WorkflowRunURL),
+		Conclusion:        strings.TrimSpace(req.Conclusion),
 		CreatedBy:         userID,
 	}
 	if err := s.repo.CreateFixAttempt(ctx, attempt); err != nil {
@@ -204,6 +216,9 @@ func (s *service) CreateFixAttemptFromCI(ctx context.Context, userID, prNodeID u
 		LikelyCause:       likelyCause(failure),
 		RecommendedAction: recommendedAction(failure),
 		CanAutoFix:        canAutoFix(failure),
+		WorkflowRunID:     req.WorkflowRunID,
+		WorkflowRunURL:    req.WorkflowRunURL,
+		Conclusion:        req.Conclusion,
 	})
 }
 
@@ -227,6 +242,9 @@ func (s *service) createMissingCILogAttempt(ctx context.Context, userID, prNodeI
 		LikelyCause:       fmt.Sprintf("GitHub Actions completed with %s, but SpecForge could not read a failed job log.", conclusion),
 		RecommendedAction: "Open the workflow run in GitHub, inspect the failed or incomplete job, then decide whether to retry auto-fix with a narrower prompt or replan this PR node.",
 		CanAutoFix:        false,
+		WorkflowRunID:     req.WorkflowRunID,
+		WorkflowRunURL:    req.WorkflowRunURL,
+		Conclusion:        conclusion,
 	})
 }
 

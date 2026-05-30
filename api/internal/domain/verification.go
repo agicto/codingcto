@@ -23,6 +23,9 @@ type SpecForgeFixAttempt struct {
 	LikelyCause       string    `json:"likely_cause"`
 	RecommendedAction string    `json:"recommended_action"`
 	CanAutoFix        bool      `json:"can_auto_fix"`
+	WorkflowRunID     int64     `json:"workflow_run_id,omitempty"`
+	WorkflowRunURL    string    `json:"workflow_run_url,omitempty"`
+	Conclusion        string    `json:"conclusion,omitempty"`
 	CreatedBy         uint      `json:"created_by"`
 	CreatedAt         time.Time `json:"created_at"`
 	UpdatedAt         time.Time `json:"updated_at"`
@@ -32,6 +35,7 @@ type SpecForgeFixAttempt struct {
 type SpecForgeVerificationRepository interface {
 	CreateFixAttempt(ctx context.Context, attempt *SpecForgeFixAttempt) error
 	UpdateFixAttemptStatus(ctx context.Context, fixAttemptID uint, status string) error
+	FindFixAttemptByPRNodeIDAndWorkflowRunID(ctx context.Context, prNodeID uint, workflowRunID int64) (*SpecForgeFixAttempt, error)
 	ListFixAttemptsByPRNodeID(ctx context.Context, prNodeID uint) ([]*SpecForgeFixAttempt, error)
 	CountFixAttemptsByPRNodeID(ctx context.Context, prNodeID uint) (int, error)
 }
