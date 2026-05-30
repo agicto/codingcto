@@ -49,7 +49,10 @@ func (h *Handler) handlePRNodeCIFailed(ctx context.Context, e events.Event) erro
 		return nil
 	}
 	_, err := h.service.CreateFixAttemptFromCI(ctx, 0, event.PRNodeID, &CreateFixAttemptFromCIRequest{
-		RepositoryID: event.RepositoryID,
+		RepositoryID:   event.RepositoryID,
+		WorkflowRunID:  event.WorkflowRunID,
+		WorkflowRunURL: event.WorkflowRunURL,
+		Conclusion:     event.Conclusion,
 	})
 	if errors.Is(err, domain.ErrNotFound) || errors.Is(err, domain.ErrConflict) {
 		return nil

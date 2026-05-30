@@ -63,6 +63,9 @@ export interface ReadPRNodeFailureLogPayload {
 
 export interface CreateFixAttemptFromCIPayload {
   repository_id: string;
+  workflow_run_id?: number;
+  workflow_run_url?: string;
+  conclusion?: string;
 }
 
 export interface UpsertSkillPayload {
