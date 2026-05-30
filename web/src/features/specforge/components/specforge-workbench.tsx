@@ -84,6 +84,7 @@ import {
   useUpsertRepoProfile,
   useUpsertSpecForgeSkill,
 } from "@/features/specforge/hooks/use-specforge";
+import { hasActiveFixAttempt } from "@/features/specforge/fix-attempts";
 import type {
   CompilePromptPayload,
   SpecForgeFixAttemptDTO,
@@ -1179,14 +1180,16 @@ function PRDag({
   const canReadFixAttempts =
     selectedFixNodeId !== undefined && Number.isFinite(selectedFixNodeId) && selectedFixNodeId > 0;
   const fixAttemptsQuery = useSpecForgeFixAttempts(canReadFixAttempts ? selectedFixNodeId : undefined);
-  const escalationSummaryQuery = useSpecForgeEscalationSummary(
-    canReadFixAttempts ? selectedFixNodeId : undefined
-  );
   const createFixAttempt = useCreateSpecForgeFixAttemptFromCI();
   const readFailureLog = useReadSpecForgePRNodeFailureLog();
   const fixAttempts = canReadFixAttempts
     ? (fixAttemptsQuery.data ?? localFixAttempts)
     : localFixAttempts;
+  const hasLiveFixAttempt = hasActiveFixAttempt(fixAttempts);
+  const escalationSummaryQuery = useSpecForgeEscalationSummary(
+    canReadFixAttempts ? selectedFixNodeId : undefined,
+    hasLiveFixAttempt
+  );
   const highestFixAttempt = Math.max(0, ...fixAttempts.map((attempt) => attempt.attempt_number));
   const remainingFixAttempts = Math.max(0, maxFixAttemptsPerNode - highestFixAttempt);
   const fixBudgetExhausted = highestFixAttempt >= maxFixAttemptsPerNode;

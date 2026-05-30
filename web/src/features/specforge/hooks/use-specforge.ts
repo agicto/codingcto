@@ -3,6 +3,10 @@
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 
 import {
+  activeFixAttemptPollMs,
+  hasActiveFixAttempt,
+} from "@/features/specforge/fix-attempts";
+import {
   type ApprovePlanPayload,
   type CompilePromptPayload,
   type ClaimTaskPayload,
@@ -127,14 +131,17 @@ export function useSpecForgeFixAttempts(prNodeId?: number) {
     queryKey: specForgeKeys.fixAttempts(prNodeId ?? 0),
     queryFn: () => specForgeService.listFixAttempts(prNodeId ?? 0),
     enabled: Boolean(prNodeId),
+    refetchInterval: (query) =>
+      hasActiveFixAttempt(query.state.data) ? activeFixAttemptPollMs : false,
   });
 }
 
-export function useSpecForgeEscalationSummary(prNodeId?: number) {
+export function useSpecForgeEscalationSummary(prNodeId?: number, refetchWhileActive = false) {
   return useQuery({
     queryKey: specForgeKeys.escalationSummary(prNodeId ?? 0),
     queryFn: () => specForgeService.getEscalationSummary(prNodeId ?? 0),
     enabled: Boolean(prNodeId),
+    refetchInterval: refetchWhileActive ? activeFixAttemptPollMs : false,
   });
 }
 
