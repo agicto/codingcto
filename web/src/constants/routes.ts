@@ -18,6 +18,9 @@ export const ROUTES = {
   // Console (Admin) routes
   CONSOLE: {
     HOME: '/console',
+    PROJECTS: '/console/projects',
+    PROJECT: '/console/projects/:projectId',
+    PROJECT_SPECFORGE: '/console/projects/:projectId/specforge',
     SPECFORGE: '/console/specforge',
     SETTINGS: '/console/settings',
   },

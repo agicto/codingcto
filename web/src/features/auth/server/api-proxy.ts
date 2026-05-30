@@ -26,12 +26,23 @@ export async function proxyAPIRequest(request: NextRequest, path: string[]): Pro
   const method = request.method.toUpperCase();
   const body = METHODS_WITHOUT_BODY.has(method) ? undefined : await request.arrayBuffer();
 
-  const response = await fetch(apiURL, {
-    method,
-    headers,
-    body,
-    redirect: 'manual',
-  });
+  let response: globalThis.Response;
+  try {
+    response = await fetch(apiURL, {
+      method,
+      headers,
+      body,
+      redirect: 'manual',
+    });
+  } catch {
+    return Response.json(
+      {
+        code: 'UPSTREAM_UNAVAILABLE',
+        message: 'API upstream is unavailable',
+      },
+      { status: 503 }
+    );
+  }
 
   return new Response(response.body, {
     status: response.status,
