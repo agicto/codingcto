@@ -2,7 +2,28 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LucideIcon, BarChart3, Settings, Home, Bell, LogOut, Palette, GitPullRequest, Boxes } from "lucide-react";
+import {
+  LucideIcon,
+  Settings,
+  Bell,
+  LogOut,
+  Palette,
+  GitPullRequest,
+  GitBranch,
+  Boxes,
+  Search,
+  SquarePen,
+  Inbox,
+  CircleUserRound,
+  ListChecks,
+  Zap,
+  Bot,
+  BarChart3,
+  Monitor,
+  BookOpen,
+  HelpCircle,
+  ChevronDown,
+} from "lucide-react";
 
 import { cn } from "@/utils";
 import { ROUTES } from "@/constants/routes";
@@ -19,12 +40,12 @@ import { LanguageSwitcher } from "@/components/common";
 import { useT } from "@/i18n";
 import { useLogout } from "@/features/auth/hooks/use-auth";
 import { useAuthStore } from "@/features/auth/store/auth-store";
-import type { AllTranslationKeys } from "@/i18n/translations";
 
-interface NavItem {
-  titleKey: Extract<AllTranslationKeys, `nav.${string}`>;
+interface WorkspaceNavItem {
+  title: string;
   href: string;
   icon: LucideIcon;
+  badge?: string;
 }
 
 export default function ConsoleLayout({
@@ -37,176 +58,196 @@ export default function ConsoleLayout({
   const user = useAuthStore.use.user();
   const { mutate: logout, isPending: isLoggingOut } = useLogout();
 
-  const mainNavItems: NavItem[] = [
-    {
-      titleKey: "nav.dashboard",
-      href: ROUTES.CONSOLE.HOME,
-      icon: Home,
-    },
-    {
-      titleKey: "nav.projects",
-      href: ROUTES.CONSOLE.PROJECTS,
-      icon: Boxes,
-    },
-    {
-      titleKey: "nav.specforge",
-      href: ROUTES.CONSOLE.SPECFORGE,
-      icon: GitPullRequest,
-    },
+  const workspaceNavItems: WorkspaceNavItem[] = [
+    { title: 'Command Center', href: ROUTES.CONSOLE.SPECFORGE, icon: ListChecks, badge: '4' },
+    { title: 'Projects', href: ROUTES.CONSOLE.PROJECTS, icon: Boxes },
+    { title: 'Repositories', href: ROUTES.CONSOLE.PROJECTS, icon: GitBranch },
+    { title: 'Autopilot', href: ROUTES.CONSOLE.SPECFORGE, icon: Zap },
+    { title: 'Runs', href: ROUTES.CONSOLE.SPECFORGE, icon: Bot },
+    { title: 'Usage', href: ROUTES.CONSOLE.HOME, icon: BarChart3 },
   ];
 
-  const secondaryNavItems: NavItem[] = [
-    {
-      titleKey: "nav.styleguide",
-      href: ROUTES.DEVTOOLS.STYLEGUIDE,
-      icon: Palette,
-    },
-    {
-      titleKey: "nav.settings",
-      href: ROUTES.CONSOLE.SETTINGS,
-      icon: Settings,
-    },
+  const configureNavItems: WorkspaceNavItem[] = [
+    { title: 'Runtimes', href: ROUTES.CONSOLE.SPECFORGE, icon: Monitor },
+    { title: 'Skills', href: ROUTES.CONSOLE.SPECFORGE, icon: BookOpen },
+    { title: 'Settings', href: ROUTES.CONSOLE.SETTINGS, icon: Settings },
   ];
 
   return (
-    <div className="flex h-screen flex-col overflow-hidden bg-bg-canvas text-text-main">
-      {/* Fixed Header */}
-      <header className="flex h-16 shrink-0 items-center justify-between border-b bg-bg-surface px-4 md:px-6 shadow-sm z-50">
-        <div className="flex items-center gap-4">
-          <Link href={ROUTES.SITE.HOME} className="flex items-center gap-2 group">
-            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-primary text-primary-foreground transition-transform group-hover:scale-110">
-              <BarChart3 className="h-5 w-5" />
-            </div>
-            <span className="text-xl font-bold tracking-tight">CodingCTO Console</span>
+    <div className="flex h-screen overflow-hidden bg-[#f7f7f6] text-[#18181b]">
+      <aside className="hidden w-[256px] shrink-0 flex-col border-r border-[#e6e6e4] bg-[#f4f4f3] px-3 py-3 md:flex">
+        <button className="flex h-9 w-full items-center justify-between rounded-md px-2 text-left text-sm font-medium hover:bg-[#ececea]">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="flex h-6 w-6 items-center justify-center rounded-md border border-[#ddddda] bg-white text-xs font-semibold text-[#6b6b70]">
+              A
+            </span>
+            <span className="truncate">agicto</span>
+          </span>
+          <ChevronDown className="h-4 w-4 text-[#6f6f76]" />
+        </button>
+
+        <div className="mt-4 space-y-1">
+          <button className="flex h-9 w-full items-center justify-between rounded-lg bg-[#ececea] px-2 text-sm text-[#202024]">
+            <span className="flex items-center gap-2">
+              <Search className="h-4 w-4" />
+              Search...
+            </span>
+            <kbd className="rounded border border-[#d8d8d5] bg-[#f8f8f7] px-1.5 py-0.5 text-[11px] text-[#73737a]">
+              ⌘ K
+            </kbd>
+          </button>
+          <Link
+            href={ROUTES.CONSOLE.SPECFORGE}
+            className="flex h-9 items-center justify-between rounded-lg px-2 text-sm text-[#6f6f76] hover:bg-[#ececea] hover:text-[#202024]"
+          >
+            <span className="flex items-center gap-2">
+              <SquarePen className="h-4 w-4" />
+              New Requirement
+            </span>
+            <kbd className="rounded border border-[#d8d8d5] bg-[#f8f8f7] px-1.5 py-0.5 text-[11px]">
+              C
+            </kbd>
           </Link>
         </div>
 
-        <div className="flex items-center gap-2">
-          <LanguageSwitcher />
-          <ThemeToggle />
-          
-          <Button variant="ghost" isIcon className="h-9 w-9 rounded-full relative">
-            <Bell className="h-4 w-4 text-text-muted" />
-            <span className="absolute top-2 right-2 h-2 w-2 rounded-full bg-primary border-2 border-bg-surface" />
-            <span className="sr-only">通知</span>
-          </Button>
+        <nav className="mt-8 space-y-1 text-sm">
+          <SidebarLink href={ROUTES.CONSOLE.HOME} icon={Inbox} label="Review Queue" pathname={pathname} />
+          <SidebarLink
+            href={ROUTES.CONSOLE.HOME}
+            icon={CircleUserRound}
+            label="My PR Sets"
+            pathname={pathname}
+          />
+        </nav>
 
-          <DropdownMenu>
-            <DropdownMenuTrigger asChild>
-              <Button
-                variant="ghost"
-                isIcon
-                noScale
-                className="h-9 w-9 rounded-full overflow-hidden border border-border/50 hover:border-primary/50 transition-colors"
-              >
-                <Avatar className="h-full w-full">
-                  <AvatarImage src="https://github.com/shadcn.png" />
-                  <AvatarFallback className="bg-primary/10 text-primary">
-                    {user?.name
-                      ?.split(' ')
-                      .map((part) => part[0])
-                      .join('')
-                      .slice(0, 2)
-                      .toUpperCase() || 'CT'}
-                  </AvatarFallback>
-                </Avatar>
-                <span className="sr-only">个人资料</span>
-              </Button>
-            </DropdownMenuTrigger>
-            <DropdownMenuContent align="end" className="w-56 rounded-xl p-1 shadow-premium">
-              <div className="px-2 py-1.5 text-xs font-medium text-text-muted uppercase tracking-wider">
-                {user?.name || t('nav.profile')}
-              </div>
-              <DropdownMenuItem className="rounded-lg cursor-pointer">
-                {t('nav.profile')}
-              </DropdownMenuItem>
-              <DropdownMenuItem className="rounded-lg cursor-pointer">
-                {t('nav.settings')}
-              </DropdownMenuItem>
-              <div className="h-px bg-border/50 my-1" />
-              <DropdownMenuItem
-                className="rounded-lg cursor-pointer text-destructive focus:bg-destructive/10"
-                onSelect={(event) => {
-                  event.preventDefault();
-                  logout();
-                }}
-                disabled={isLoggingOut}
-              >
-                <div className="flex w-full items-center">
-                  <LogOut className="mr-2 h-4 w-4" />
-                  <span>{t('auth.logout')}</span>
-                </div>
-              </DropdownMenuItem>
-            </DropdownMenuContent>
-          </DropdownMenu>
+        <SidebarSection title="Workspace" items={workspaceNavItems} pathname={pathname} />
+        <SidebarSection title="Configure" items={configureNavItems} pathname={pathname} />
+
+        <div className="mt-auto flex items-center justify-between px-2">
+          <Link
+            href={ROUTES.DEVTOOLS.STYLEGUIDE}
+            className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-[#6f6f76] hover:bg-[#ececea] hover:text-[#202024]"
+          >
+            <Palette className="h-4 w-4" />
+            Styleguide
+          </Link>
+          <HelpCircle className="h-4 w-4 text-[#7b7b82]" />
         </div>
-      </header>
+      </aside>
 
-      {/* Body: Sidebar + Main Content */}
-      <div className="flex h-0 grow overflow-hidden">
-        {/* Fixed Sidebar */}
-        <aside className="hidden w-[220px] shrink-0 border-r bg-background md:flex md:flex-col">
-          <div className="flex flex-1 flex-col overflow-y-auto py-2">
-            <nav className="grid items-start px-2 text-sm font-medium">
-              {mainNavItems.map((item, index) => {
-                const IconComponent = item.icon;
-                const isActive =
-                  pathname === item.href ||
-                  (item.href !== ROUTES.CONSOLE.HOME && pathname.startsWith(`${item.href}/`));
-                return (
-                  <Link
-                    key={index}
-                    href={item.href}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2 transition-all hover:text-primary",
-                      isActive
-                        ? "bg-muted text-primary"
-                        : "text-text-subtle hover:bg-muted/50"
-                    )}
-                  >
-                    <IconComponent className="h-4.5 w-4.5" />
-                    {t(item.titleKey)}
-                  </Link>
-                );
-              })}
-            </nav>
+      <section className="flex min-w-0 flex-1 flex-col">
+        <header className="flex h-12 shrink-0 items-center justify-between border-b border-[#e6e6e4] bg-white px-4">
+          <div className="flex items-center gap-2 text-sm font-semibold">
+            <GitPullRequest className="h-4 w-4 text-[#6f6f76]" />
+            CodingCTO
           </div>
-          <div className="mt-auto p-4">
-            <nav className="grid items-start gap-1 text-sm font-medium">
-              {secondaryNavItems.map((item, index) => {
-                const IconComponent = item.icon;
-                const isActive = pathname === item.href;
-                return (
-                  <Link
-                    key={index}
-                    href={item.href}
-                    className={cn(
-                      "flex items-center gap-3 rounded-lg px-3 py-2 transition-all hover:text-primary",
-                      isActive
-                        ? "bg-muted text-primary"
-                        : "text-text-subtle hover:bg-muted/50"
-                    )}
-                  >
-                    <IconComponent className="h-4.5 w-4.5" />
-                    {t(item.titleKey)}
-                  </Link>
-                );
-              })}
-            </nav>
-            <Link
-              href={ROUTES.SITE.HOME}
-              className="flex h-8 items-center gap-2 text-sm text-muted-foreground hover:text-foreground"
-            >
-              <span>返回站点</span>
-            </Link>
+          <div className="flex items-center gap-1.5">
+            <LanguageSwitcher />
+            <ThemeToggle />
+            <Button variant="ghost" isIcon className="h-8 w-8 rounded-md">
+              <Bell className="h-4 w-4 text-[#6f6f76]" />
+              <span className="sr-only">Notifications</span>
+            </Button>
+            <DropdownMenu>
+              <DropdownMenuTrigger asChild>
+                <Button variant="ghost" isIcon noScale className="h-8 w-8 overflow-hidden rounded-full">
+                  <Avatar className="h-full w-full">
+                    <AvatarImage src="https://github.com/shadcn.png" />
+                    <AvatarFallback className="bg-[#ececea] text-xs text-[#202024]">
+                      {user?.name
+                        ?.split(' ')
+                        .map((part) => part[0])
+                        .join('')
+                        .slice(0, 2)
+                        .toUpperCase() || 'CT'}
+                    </AvatarFallback>
+                  </Avatar>
+                  <span className="sr-only">Profile</span>
+                </Button>
+              </DropdownMenuTrigger>
+              <DropdownMenuContent align="end" className="w-56 rounded-lg p-1">
+                <div className="px-2 py-1.5 text-xs font-medium text-text-muted">
+                  {user?.name || t('nav.profile')}
+                </div>
+                <DropdownMenuItem>{t('nav.profile')}</DropdownMenuItem>
+                <DropdownMenuItem>{t('nav.settings')}</DropdownMenuItem>
+                <DropdownMenuItem
+                  className="text-destructive"
+                  onSelect={(event) => {
+                    event.preventDefault();
+                    logout();
+                  }}
+                  disabled={isLoggingOut}
+                >
+                  <LogOut className="mr-2 h-4 w-4" />
+                  {t('auth.logout')}
+                </DropdownMenuItem>
+              </DropdownMenuContent>
+            </DropdownMenu>
           </div>
-        </aside>
+        </header>
 
-        {/* Scrollable Main Content */}
-        <main className="h-full w-full overflow-y-auto">
-          {children}
-        </main>
-      </div>
+        <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
+      </section>
     </div>
+  );
+}
+
+function SidebarSection({
+  title,
+  items,
+  pathname,
+}: {
+  title: string;
+  items: WorkspaceNavItem[];
+  pathname: string;
+}) {
+  return (
+    <div className="mt-8">
+      <div className="px-2 pb-2 text-xs font-medium text-[#66666d]">{title}</div>
+      <nav className="space-y-1 text-sm">
+        {items.map(item => (
+          <SidebarLink key={`${title}-${item.title}`} {...item} pathname={pathname} />
+        ))}
+      </nav>
+    </div>
+  );
+}
+
+function SidebarLink({
+  href,
+  icon: Icon,
+  label,
+  title,
+  badge,
+  pathname,
+}: {
+  href: string;
+  icon: LucideIcon;
+  label?: string;
+  title?: string;
+  badge?: string;
+  pathname: string;
+}) {
+  const text = label ?? title ?? '';
+  const active =
+    pathname === href ||
+    (href !== ROUTES.CONSOLE.HOME && pathname.startsWith(`${href}/`)) ||
+    (text === 'Command Center' && pathname.includes('/specforge'));
+
+  return (
+    <Link
+      href={href}
+      className={cn(
+        'flex h-9 items-center justify-between rounded-lg px-2 text-[#66666d] hover:bg-[#ececea] hover:text-[#202024]',
+        active && 'bg-[#e9e9e7] text-[#18181b]'
+      )}
+    >
+      <span className="flex min-w-0 items-center gap-2">
+        <Icon className="h-4 w-4 shrink-0" />
+        <span className="truncate">{text}</span>
+      </span>
+      {badge ? <span className="text-xs text-[#7b7b82]">{badge}</span> : null}
+    </Link>
   );
 }

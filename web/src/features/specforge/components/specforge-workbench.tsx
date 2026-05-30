@@ -26,7 +26,6 @@ import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/com
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/utils';
@@ -254,6 +253,9 @@ export function SpecForgeWorkbench({
     selectedPRNodeIds: [],
     tasks: demoPlan.prNodes,
   });
+  const [selectedWorkItem, setSelectedWorkItem] = useState<
+    'intake' | 'plan' | 'dag' | 'run' | 'context'
+  >('intake');
   const [currentRuntimeNow] = useState(() => Date.now());
 
   const createIdea = useCreateSpecForgeIdea(repoId.trim());
@@ -501,123 +503,302 @@ export function SpecForgeWorkbench({
     return `Prompt type: ${mode}\n\n${buildPromptPreview(activePlan, node)}`;
   }
 
+  const deliveryStages = [
+    {
+      id: 'intake',
+      title: 'Idea intake',
+      tone: 'bg-white',
+      emptyLabel: 'Waiting for idea',
+      items: [
+        {
+          id: 'intake' as const,
+          key: 'IDEA',
+          title: 'Capture product intent',
+          description: 'Describe the feature outcome, constraints, and acceptance boundaries.',
+          status: idea.trim() ? 'Ready for planning' : 'Needs input',
+          icon: Sparkles,
+        },
+      ],
+    },
+    {
+      id: 'context',
+      title: 'Repo intelligence',
+      tone: 'bg-[#fbfbfb]',
+      emptyLabel: 'No repo selected',
+      items: [
+        {
+          id: 'context' as const,
+          key: 'CTX',
+          title: 'Analyze repos and skills',
+          description: `${activePlan.repoProfile.stack.slice(0, 3).join(', ')} · ${repoId}`,
+          status: planSource === 'api' ? 'API context' : 'Demo fallback',
+          icon: GitBranch,
+        },
+      ],
+    },
+    {
+      id: 'planning',
+      title: 'Planning',
+      tone: 'bg-[#fffdf6]',
+      emptyLabel: 'Plan not generated',
+      items: [
+        {
+          id: 'plan' as const,
+          key: 'PLAN',
+          title: 'Approve product and tech plan',
+          description: `${activePlan.prNodes.length} PR nodes · one approval checkpoint`,
+          status: approved ? 'Approved' : 'Needs review',
+          icon: ScrollText,
+        },
+        {
+          id: 'dag' as const,
+          key: 'PROMPT',
+          title: 'Compile PR DAG and prompts',
+          description: 'Check dependencies, file scope, tests, and prompt contracts.',
+          status: `${activePlan.prNodes.length} nodes`,
+          icon: GitMerge,
+        },
+      ],
+    },
+    {
+      id: 'execution',
+      title: 'Execution',
+      tone: 'bg-[#f6fbf8]',
+      emptyLabel: 'No run started',
+      items: [
+        {
+          id: 'run' as const,
+          key: 'RUN',
+          title: 'Run Codex and deliver PRs',
+          description: progressText,
+          status: run.status === 'idle' ? 'Not started' : run.status,
+          icon: Play,
+        },
+      ],
+    },
+    {
+      id: 'delivery',
+      title: 'PR delivery',
+      tone: 'bg-[#f7faff]',
+      emptyLabel: 'PRs appear here after execution',
+      items: [],
+    },
+    {
+      id: 'blocked',
+      title: 'Decision needed',
+      tone: 'bg-[#fff7f8]',
+      emptyLabel: 'No escalation',
+      items: [],
+    },
+  ];
+
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
-      <header className="flex flex-col gap-4 border-b border-border-subtle pb-6 lg:flex-row lg:items-end lg:justify-between">
-        <div className="max-w-3xl">
-          <h1 className="text-2xl font-semibold tracking-tight md:text-3xl">CodingCTO</h1>
-          <p className="mt-2 text-sm leading-6 text-text-muted">
-            {projectLabel
-              ? `${projectLabel}: describe a feature, review the plan, then start a PR-oriented execution run.`
-              : 'Describe a feature, review the product and technical plan, then start a PR-oriented execution run.'}
-          </p>
+    <div className="flex h-full min-h-0 flex-col bg-white">
+      <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-[#e7e7e4] px-4 py-2">
+        <div className="flex items-center gap-3">
+          <ListChecks className="h-4 w-4 text-[#65656c]" />
+          <div>
+            <h1 className="text-base font-semibold">Project command center</h1>
+            <p className="text-xs text-[#71717a]">
+              {projectLabel ? `${projectLabel} · ` : ''}Idea to plan, prompts, Codex run, and PR delivery
+            </p>
+          </div>
         </div>
-        <div className="grid grid-cols-3 gap-2 text-sm">
-          <Metric label="Ready" value={String(readyCount)} />
-          <Metric label="Running" value={String(runningCount)} />
-          <Metric label="Executors" value={String(runtimeSummary.online)} />
+        <div className="flex flex-wrap items-center gap-2">
+          <Badge variant="outline">{runningCount} active runs</Badge>
+          <Button variant="outline" size="sm" onClick={() => setSelectedWorkItem('context')}>
+            Analyze repo
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setSelectedWorkItem('plan')}>
+            Manual plan
+          </Button>
+          <Button variant="outline" size="sm" onClick={() => setSelectedWorkItem('dag')}>
+            Pipeline
+          </Button>
         </div>
       </header>
 
-      <section className="grid gap-4 lg:grid-cols-[minmax(320px,0.8fr)_minmax(0,1.2fr)]">
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Sparkles className="h-4 w-4 text-primary" />
-              Idea intake
-            </CardTitle>
-            <CardDescription>Start with product intent, not issue-sized tasks.</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Textarea
-              value={idea}
-              onChange={event => setIdea(event.target.value)}
-              className="min-h-36"
-              aria-label="Describe the feature CodingCTO should turn into reviewable PRs"
-              placeholder="Describe the product outcome, constraints, and any implementation boundaries..."
-            />
-            <Input
-              value={repoId}
-              onChange={event => setRepoId(event.target.value)}
-              aria-label="Repository ID"
-              placeholder="Repository ID"
-              disabled={repositoryLocked}
-            />
-            <div className="flex flex-wrap gap-2">
-              <Button
-                onClick={generatePlan}
-                disabled={
-                  !idea.trim() ||
-                  !repoId.trim() ||
-                  createIdea.isPending ||
-                  createProjectIdea.isPending
+      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-[#eeeeeb] px-4">
+        <Button
+          variant={selectedWorkItem === 'intake' || selectedWorkItem === 'context' ? 'secondary' : 'outline'}
+          size="sm"
+          onClick={() => setSelectedWorkItem('intake')}
+        >
+          All work
+        </Button>
+        <Button
+          variant={selectedWorkItem === 'plan' || selectedWorkItem === 'dag' ? 'secondary' : 'outline'}
+          size="sm"
+          onClick={() => setSelectedWorkItem('plan')}
+        >
+          Plans
+        </Button>
+        <Button
+          variant={selectedWorkItem === 'run' ? 'secondary' : 'outline'}
+          size="sm"
+          onClick={() => setSelectedWorkItem('run')}
+        >
+          Runs
+        </Button>
+      </div>
+
+      <section className="grid min-h-0 flex-1 grid-rows-[minmax(360px,1fr)_minmax(340px,42vh)] overflow-hidden xl:grid-cols-[minmax(0,1fr)_420px] xl:grid-rows-1">
+        <div className="min-w-0 overflow-x-auto p-3">
+          <div className="grid h-full min-w-[1320px] grid-cols-6 gap-3">
+            {deliveryStages.map(column => (
+              <div key={column.id} className={cn('flex min-h-0 flex-col rounded-xl p-3', column.tone)}>
+                <div className="flex h-8 items-center justify-between text-sm">
+                  <div className="flex items-center gap-2 font-medium">
+                    <CircleDot className="h-3.5 w-3.5 text-[#71717a]" />
+                    {column.title}
+                    <span className="text-xs text-[#8a8a90]">{column.items.length}</span>
+                  </div>
+                  <span className="text-[#8a8a90]">+</span>
+                </div>
+                <div className="mt-3 space-y-2">
+                  {column.items.length === 0 ? (
+                    <div className="flex h-40 items-center justify-center text-sm text-[#77777f]">
+                      {column.emptyLabel}
+                    </div>
+                  ) : (
+                    column.items.map(item => {
+                      const Icon = item.icon;
+                      return (
+                        <button
+                          key={item.id}
+                          onClick={() => setSelectedWorkItem(item.id)}
+                          className={cn(
+                            'w-full rounded-lg border bg-white p-3 text-left shadow-sm transition hover:border-[#cfcfcb]',
+                            selectedWorkItem === item.id
+                              ? 'border-[#18181b] ring-1 ring-[#18181b]'
+                              : 'border-[#e1e1de]'
+                          )}
+                        >
+                          <div className="flex items-center gap-2 text-xs text-[#77777f]">
+                            <Icon className="h-3.5 w-3.5 text-[#d08b00]" />
+                            {item.key}
+                          </div>
+                          <div className="mt-2 text-sm font-semibold leading-5">{item.title}</div>
+                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-[#77777f]">
+                            {item.description}
+                          </p>
+                          <div className="mt-3 flex items-center justify-between text-xs">
+                            <span className="rounded-full bg-[#f1f1ef] px-2 py-1 text-[#5f5f66]">
+                              {item.status}
+                            </span>
+                            <span className="text-[#8a8a90]">Current</span>
+                          </div>
+                        </button>
+                      );
+                    })
+                  )}
+                </div>
+              </div>
+            ))}
+          </div>
+        </div>
+
+        <aside className="min-h-0 overflow-y-auto border-t border-[#e7e7e4] bg-[#fbfbfa] p-4 xl:border-l xl:border-t-0">
+          {selectedWorkItem === 'intake' && (
+            <DetailPanel title="IDEA" heading="Capture product intent">
+              <div className="space-y-4">
+                <Textarea
+                  value={idea}
+                  onChange={event => setIdea(event.target.value)}
+                  className="min-h-40 bg-white"
+                  aria-label="Describe the feature CodingCTO should turn into reviewable PRs"
+                  placeholder="Describe the product outcome, constraints, and implementation boundaries..."
+                />
+                <Input
+                  value={repoId}
+                  onChange={event => setRepoId(event.target.value)}
+                  aria-label="Repository ID"
+                  placeholder="Repository ID"
+                  disabled={repositoryLocked}
+                  className="bg-white"
+                />
+                <div className="flex flex-wrap gap-2">
+                  <Button
+                    onClick={generatePlan}
+                    disabled={
+                      !idea.trim() ||
+                      !repoId.trim() ||
+                      createIdea.isPending ||
+                      createProjectIdea.isPending
+                    }
+                  >
+                    {createIdea.isPending || createProjectIdea.isPending
+                      ? 'Generating'
+                      : 'Generate plan'}
+                    <ArrowRight className="ml-1.5 h-4 w-4" />
+                  </Button>
+                  <Button variant="outline" onClick={resetIdea}>
+                    Reset
+                  </Button>
+                </div>
+              </div>
+            </DetailPanel>
+          )}
+
+          {selectedWorkItem === 'context' && (
+            <DetailPanel title="CTX" heading="Repo intelligence and skills">
+              <div className="space-y-4">
+                <RepoProfileSummary
+                  repoId={repoId.trim()}
+                  repoProfile={activePlan.repoProfile}
+                  planSource={planSource}
+                  onProfileSaved={profile => {
+                    setActivePlan(current => ({
+                      ...current,
+                      repoProfile: profile,
+                    }));
+                  }}
+                />
+                <RepoSkillsPanel repoId={repoId.trim()} projectId={projectId} />
+                <GitHubWebhookEventsPanel />
+              </div>
+            </DetailPanel>
+          )}
+
+          {selectedWorkItem === 'plan' && hasPlan && (
+            <DetailPanel title="PLAN" heading="Review and approve plan">
+              <PlanReview
+                plan={activePlan}
+                decisionOverrides={decisionOverrides}
+                selectedExecutionNodeIds={selectedExecutionNodeIds}
+                approved={approved}
+                isStarting={isStartingRun}
+                onDecisionOverrideChange={(key, value) =>
+                  setDecisionOverrides(current => ({ ...current, [key]: value }))
                 }
-              >
-                {createIdea.isPending || createProjectIdea.isPending
-                  ? 'Generating plan'
-                  : 'Generate implementation plan'}
-                <ArrowRight className="ml-1.5 h-4 w-4" />
-              </Button>
-              <Button variant="outline" onClick={resetIdea}>
-                Reset
-              </Button>
-            </div>
-            <RepoProfileSummary
-              repoId={repoId.trim()}
-              repoProfile={activePlan.repoProfile}
-              planSource={planSource}
-              onProfileSaved={profile => {
-                setActivePlan(current => ({
-                  ...current,
-                  repoProfile: profile,
-                }));
-              }}
-            />
-            <RepoSkillsPanel repoId={repoId.trim()} projectId={projectId} />
-            <GitHubWebhookEventsPanel />
-          </CardContent>
-        </Card>
+                onExecutionNodeSelectionChange={setSelectedExecutionNodeIds}
+                onApprove={approveAndStart}
+              />
+            </DetailPanel>
+          )}
 
-        <div className="space-y-4">
-          <RunSummary progressText={progressText} approved={approved} run={run} />
-          <RuntimeReadiness
-            onlineCount={runtimeSummary.online}
-            recentlyLostCount={runtimeSummary.recently_lost}
-            runtimes={runtimes}
-            isLoading={runtimesQuery.isLoading}
-            isFallback={Boolean(runtimesQuery.isError || !runtimeDTOs?.length)}
-          />
-          {hasPlan && (
-            <Tabs defaultValue="plan" className="gap-4">
-              <TabsList className="grid w-full grid-cols-3 md:w-fit">
-                <TabsTrigger value="plan">Plan</TabsTrigger>
-                <TabsTrigger value="dag">PR DAG</TabsTrigger>
-                <TabsTrigger value="run">Run</TabsTrigger>
-              </TabsList>
+          {selectedWorkItem === 'dag' && hasPlan && (
+            <DetailPanel title="PROMPT" heading="PR DAG and prompt contracts">
+              <PRDag
+                nodes={activePlan.prNodes}
+                repositoryId={activePlan.repoProfile.repositoryId}
+                isCompilingPrompt={compilePrompt.isPending}
+                onCompilePrompt={compileNodePrompt}
+              />
+            </DetailPanel>
+          )}
 
-              <TabsContent value="plan" className="space-y-4">
-                <PlanReview
-                  plan={activePlan}
-                  decisionOverrides={decisionOverrides}
-                  selectedExecutionNodeIds={selectedExecutionNodeIds}
-                  approved={approved}
-                  isStarting={isStartingRun}
-                  onDecisionOverrideChange={(key, value) =>
-                    setDecisionOverrides(current => ({ ...current, [key]: value }))
-                  }
-                  onExecutionNodeSelectionChange={setSelectedExecutionNodeIds}
-                  onApprove={approveAndStart}
+          {selectedWorkItem === 'run' && (
+            <DetailPanel title="RUN" heading="Execution and PR delivery">
+              <div className="space-y-4">
+                <RunSummary progressText={progressText} approved={approved} run={run} />
+                <RuntimeReadiness
+                  onlineCount={runtimeSummary.online}
+                  recentlyLostCount={runtimeSummary.recently_lost}
+                  runtimes={runtimes}
+                  isLoading={runtimesQuery.isLoading}
+                  isFallback={Boolean(runtimesQuery.isError || !runtimeDTOs?.length)}
                 />
-              </TabsContent>
-              <TabsContent value="dag">
-                <PRDag
-                  nodes={activePlan.prNodes}
-                  repositoryId={activePlan.repoProfile.repositoryId}
-                  isCompilingPrompt={compilePrompt.isPending}
-                  onCompilePrompt={compileNodePrompt}
-                />
-              </TabsContent>
-              <TabsContent value="run">
                 <ExecutionStatus
                   run={run}
                   isCancelling={cancelRun.isPending}
@@ -625,11 +806,31 @@ export function SpecForgeWorkbench({
                   onCancel={cancelActiveRun}
                   onExecutionBundle={applyExecutionBundle}
                 />
-              </TabsContent>
-            </Tabs>
+              </div>
+            </DetailPanel>
           )}
-        </div>
+        </aside>
       </section>
+    </div>
+  );
+}
+
+function DetailPanel({
+  title,
+  heading,
+  children,
+}: {
+  title: string;
+  heading: string;
+  children: React.ReactNode;
+}) {
+  return (
+    <div className="space-y-4">
+      <div>
+        <div className="text-xs font-medium text-[#8a8a90]">{title}</div>
+        <h2 className="mt-1 text-lg font-semibold leading-6">{heading}</h2>
+      </div>
+      {children}
     </div>
   );
 }
@@ -753,15 +954,6 @@ function RuntimeReadiness({
           {maintenanceMessage}
         </div>
       )}
-    </div>
-  );
-}
-
-function Metric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="min-w-24 rounded-lg border border-border-subtle bg-bg-surface px-3 py-2">
-      <div className="text-lg font-semibold leading-none">{value}</div>
-      <div className="mt-1 text-xs text-text-muted">{label}</div>
     </div>
   );
 }
