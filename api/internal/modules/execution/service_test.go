@@ -1315,6 +1315,7 @@ func TestExecuteTaskFailsBeforeExecutorWhenWorktreePreparationFails(t *testing.T
 	require.Equal(t, "worktree_preparation_failed", updated.Tasks[0].FailureReason)
 	require.Contains(t, updated.Tasks[0].ErrorLog, "git fetch failed")
 	require.Equal(t, domain.AgentTaskStatusWaiting, updated.Tasks[1].Status)
+	require.Equal(t, domain.PRNodeStatusBlocked, planningRepo.bundle.PRNodes[0].Status)
 }
 
 func TestExecuteTaskFailsBeforeExecutorWhenBranchPreparationFails(t *testing.T) {
@@ -1344,6 +1345,52 @@ func TestExecuteTaskFailsBeforeExecutorWhenBranchPreparationFails(t *testing.T) 
 	require.Equal(t, "branch_preparation_failed", updated.Tasks[0].FailureReason)
 	require.Contains(t, updated.Tasks[0].ErrorLog, "prepare PR node branch: base branch missing")
 	require.Equal(t, domain.AgentTaskStatusWaiting, updated.Tasks[1].Status)
+	require.Equal(t, domain.PRNodeStatusBlocked, planningRepo.bundle.PRNodes[0].Status)
+}
+
+func TestExecuteTaskPublishesLinkedFixTaskResultForEarlyFailure(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{
+		bundle: approvedPlanBundle(),
+		prompt: &domain.SpecForgeCompiledPrompt{
+			ID:         7,
+			PRNodeID:   4,
+			Version:    "prompt_v1",
+			PromptText: "Implement PR-001",
+		},
+	}
+	runRepo := &memoryExecutionRepo{}
+	bus := events.NewEventBus()
+	var published domain.SpecForgeFixTaskFinishedEvent
+	bus.Subscribe(domain.EventSpecForgeFixTaskFinished, func(ctx context.Context, event events.Event) error {
+		var underlying any = event
+		if wrapped, ok := event.(events.WrappedEvent); ok {
+			underlying = wrapped.Event
+		}
+		typed, ok := underlying.(domain.SpecForgeFixTaskFinishedEvent)
+		require.True(t, ok)
+		published = typed
+		return nil
+	})
+	executor := &fakeExecutor{result: &ExecutionResult{Status: "completed", Output: "done", ExitCode: 0}}
+	preparer := &fakePRNodeBranchPreparer{err: fmt.Errorf("base branch missing")}
+	svc := NewEventedService(runRepo, planningRepo, nil, executor, nil, preparer, nil, bus)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+	fixAttemptID := uint(99)
+	dispatched.Tasks[0].FixAttemptID = &fixAttemptID
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), dispatched.Tasks[0]))
+
+	_, err = svc.ExecuteTask(context.Background(), dispatched.Tasks[0].ID, &ExecuteAgentTaskRequest{Workdir: "/tmp/repo"})
+
+	require.NoError(t, err)
+	require.Equal(t, fixAttemptID, published.FixAttemptID)
+	require.Equal(t, dispatched.Tasks[0].ID, published.TaskID)
+	require.Equal(t, dispatched.Tasks[0].PRNodeID, published.PRNodeID)
+	require.Equal(t, domain.AgentTaskStatusFailed, published.TaskStatus)
+	require.Equal(t, domain.FixAttemptStatusFailed, published.FixAttemptStatus)
+	require.Equal(t, "branch_preparation_failed", published.FailureReason)
 }
 
 func TestExecuteTaskDeliversPRBeforeUnlockingDependents(t *testing.T) {
