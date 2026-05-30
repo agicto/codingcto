@@ -53,6 +53,21 @@ make run      # start server on :8025
 
 See [api/README.md](api/README.md) for the full Go backend guide. Some internal module names still use `luas` for compatibility with the original scaffold history.
 
+### Local Codex Runtime
+
+After the API has an approved plan and dispatched execution task, a local Codex runtime can claim and execute work:
+
+```bash
+cd api
+go run ./cmd/specforge-runtime \
+  --api-base-url http://localhost:8025/v1 \
+  --token "$SPECFORGE_RUNTIME_TOKEN" \
+  --repo-dir /path/to/local/repo \
+  --repository-id github_owner__repo
+```
+
+The runtime sends heartbeat events, claims `codex_cli` tasks, checks out the PR node branch in the local repo, runs `codex exec`, streams task events back to the API, and submits the task result. Use `--once` for a single claim/execute cycle during local testing.
+
 ### Web (`web/`)
 
 ```bash
