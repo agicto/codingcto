@@ -753,20 +753,12 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 	}
 	branchName, err := s.prepareTaskBranch(ctx, task)
 	if err != nil {
-		markTaskFailed(task, "branch_preparation_failed", err.Error(), -1)
-		if updateErr := s.repo.UpdateAgentTask(ctx, task); updateErr != nil {
-			return nil, fmt.Errorf("update failed branch preparation task: %w", updateErr)
-		}
-		return s.GetRun(ctx, task.RunID)
+		return s.failTaskBeforeExecutor(ctx, task, "branch_preparation_failed", err.Error())
 	}
 	if strings.TrimSpace(task.Workdir) == "" {
 		worktree, err := s.prepareTaskWorktree(ctx, task, branchName)
 		if err != nil {
-			markTaskFailed(task, "worktree_preparation_failed", err.Error(), -1)
-			if updateErr := s.repo.UpdateAgentTask(ctx, task); updateErr != nil {
-				return nil, fmt.Errorf("update failed worktree preparation task: %w", updateErr)
-			}
-			return s.GetRun(ctx, task.RunID)
+			return s.failTaskBeforeExecutor(ctx, task, "worktree_preparation_failed", err.Error())
 		}
 		task.Workdir = worktree
 		if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
@@ -1063,6 +1055,20 @@ func (s *service) finalizeTaskResult(ctx context.Context, task *domain.SpecForge
 		return nil, err
 	}
 	if err := s.completeRunIfDeliveryReady(ctx, bundle, finishedAt); err != nil {
+		return nil, err
+	}
+	return s.GetRun(ctx, task.RunID)
+}
+
+func (s *service) failTaskBeforeExecutor(ctx context.Context, task *domain.SpecForgeAgentTask, reason, detail string) (*domain.SpecForgeExecutionBundle, error) {
+	markTaskFailed(task, reason, detail, -1)
+	if updateErr := s.repo.UpdateAgentTask(ctx, task); updateErr != nil {
+		return nil, fmt.Errorf("update failed %s task: %w", reason, updateErr)
+	}
+	if err := s.markPRNodeBlockedForFailedTask(ctx, task); err != nil {
+		return nil, err
+	}
+	if err := s.publishFixTaskFinished(ctx, task); err != nil {
 		return nil, err
 	}
 	return s.GetRun(ctx, task.RunID)
