@@ -125,6 +125,53 @@ func TestRepositoryFindsLatestCompiledPromptForPRNodeByType(t *testing.T) {
 	require.Equal(t, "new fix prompt", found.PromptText)
 }
 
+func TestRepositoryPersistsEvidenceRefs(t *testing.T) {
+	repo := newTestPlanningRepository(t)
+	bundle := testPlanBundle()
+	bundle.Plan.EvidenceRefs = []string{"idea:1", "implementation_plan:1:v1"}
+	bundle.PRNodes[0].EvidenceRefs = []string{"pr_node:1", "target_repository:repo_123"}
+	require.NoError(t, repo.CreatePlanBundle(context.Background(), bundle))
+
+	bundle.Plan.EvidenceRefs = []string{"idea:1", "implementation_plan:1:v1", "product_spec:1:goals"}
+	require.NoError(t, repo.UpdatePlan(context.Background(), bundle.Plan))
+	bundle.PRNodes[0].EvidenceRefs = []string{"pr_node:1", "target_repository:repo_123", "repo_profile:repo_123"}
+	require.NoError(t, repo.UpdatePRNode(context.Background(), bundle.PRNodes[0]))
+
+	prompt := &domain.SpecForgeCompiledPrompt{
+		PRNodeID:     bundle.PRNodes[0].ID,
+		PlanID:       bundle.Plan.ID,
+		Type:         domain.PromptTypeImplementation,
+		Version:      "prompt_v2",
+		PromptText:   "prompt",
+		PromptHash:   "hash",
+		EvidenceRefs: []string{"pr_node:1", "skill:2"},
+		CreatedBy:    7,
+	}
+	require.NoError(t, repo.CreateCompiledPrompt(context.Background(), prompt))
+	run := &domain.SpecForgeSkillRun{
+		PlanID:        &bundle.Plan.ID,
+		Stage:         domain.SkillRunStageProductPlan,
+		Status:        domain.SkillRunStatusCompleted,
+		InputSummary:  "input",
+		OutputSummary: "output",
+		EvidenceRefs:  []string{"implementation_plan:1:v1", "skill_run.stage:product_plan"},
+		CreatedBy:     7,
+	}
+	require.NoError(t, repo.CreateSkillRun(context.Background(), run))
+
+	foundBundle, err := repo.FindPlanBundleByPlanID(context.Background(), bundle.Plan.ID)
+	require.NoError(t, err)
+	require.Contains(t, foundBundle.Plan.EvidenceRefs, "product_spec:1:goals")
+	require.Contains(t, foundBundle.PRNodes[0].EvidenceRefs, "repo_profile:repo_123")
+	foundPrompt, err := repo.FindLatestCompiledPromptByPRNodeID(context.Background(), bundle.PRNodes[0].ID)
+	require.NoError(t, err)
+	require.Contains(t, foundPrompt.EvidenceRefs, "skill:2")
+	runs, err := repo.ListSkillRunsByPlanID(context.Background(), bundle.Plan.ID)
+	require.NoError(t, err)
+	require.Len(t, runs, 1)
+	require.Contains(t, runs[0].EvidenceRefs, "skill_run.stage:product_plan")
+}
+
 func TestRepositoryUpsertsAndListsSkills(t *testing.T) {
 	repo := newTestPlanningRepository(t)
 	skill := &domain.SpecForgeSkill{

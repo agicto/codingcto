@@ -69,6 +69,7 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 			"version",
 			"technical_summary",
 			"decision_overrides",
+			"evidence_refs",
 			"approved_by",
 			"approved_at",
 			"approved_snapshot_hash",
@@ -79,6 +80,7 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 			"node_key",
 			"depends_on",
 			"expected_files",
+			"evidence_refs",
 			"github_pr_number",
 			"github_pr_url",
 			"github_head_sha",
@@ -88,6 +90,7 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 			"prompt_text",
 			"prompt_hash",
 			"type",
+			"evidence_refs",
 		},
 		"specforge_repo_profiles": {
 			"stack",
@@ -142,6 +145,7 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 			"status",
 			"input_summary",
 			"output_summary",
+			"evidence_refs",
 		},
 		"specforge_fix_attempts": {
 			"failure_type",

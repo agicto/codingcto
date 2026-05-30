@@ -111,6 +111,7 @@ type SpecForgeImplementationPlan struct {
 	ApprovedSnapshotHash string     `json:"approved_snapshot_hash,omitempty"`
 	ApprovedSnapshotAt   *time.Time `json:"approved_snapshot_at,omitempty"`
 	DecisionOverrides    []string   `json:"decision_overrides,omitempty"`
+	EvidenceRefs         []string   `json:"evidence_refs,omitempty"`
 	CreatedAt            time.Time  `json:"created_at"`
 	UpdatedAt            time.Time  `json:"updated_at"`
 }
@@ -136,21 +137,23 @@ type SpecForgePRNode struct {
 	GitHubPRURL        string    `json:"github_pr_url,omitempty"`
 	GitHubHeadSHA      string    `json:"github_head_sha,omitempty"`
 	Status             string    `json:"status"`
+	EvidenceRefs       []string  `json:"evidence_refs,omitempty"`
 	CreatedAt          time.Time `json:"created_at"`
 	UpdatedAt          time.Time `json:"updated_at"`
 }
 
 // SpecForgeCompiledPrompt records the exact prompt generated for a PR node.
 type SpecForgeCompiledPrompt struct {
-	ID         uint      `json:"id"`
-	PRNodeID   uint      `json:"pr_node_id"`
-	PlanID     uint      `json:"plan_id"`
-	Type       string    `json:"type"`
-	Version    string    `json:"version"`
-	PromptText string    `json:"prompt_text"`
-	PromptHash string    `json:"prompt_hash"`
-	CreatedBy  uint      `json:"created_by"`
-	CreatedAt  time.Time `json:"created_at"`
+	ID           uint      `json:"id"`
+	PRNodeID     uint      `json:"pr_node_id"`
+	PlanID       uint      `json:"plan_id"`
+	Type         string    `json:"type"`
+	Version      string    `json:"version"`
+	PromptText   string    `json:"prompt_text"`
+	PromptHash   string    `json:"prompt_hash"`
+	EvidenceRefs []string  `json:"evidence_refs,omitempty"`
+	CreatedBy    uint      `json:"created_by"`
+	CreatedAt    time.Time `json:"created_at"`
 }
 
 // SpecForgeRuntime tracks a local or hosted executor that can claim agent tasks.
@@ -206,6 +209,7 @@ type SpecForgeSkillRun struct {
 	InputSummary  string     `json:"input_summary"`
 	OutputSummary string     `json:"output_summary"`
 	OutputJSON    string     `json:"output_json,omitempty"`
+	EvidenceRefs  []string   `json:"evidence_refs,omitempty"`
 	ErrorMessage  string     `json:"error_message,omitempty"`
 	StartedAt     *time.Time `json:"started_at,omitempty"`
 	CompletedAt   *time.Time `json:"completed_at,omitempty"`

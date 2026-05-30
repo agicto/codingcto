@@ -68,6 +68,9 @@ func (s *service) CreateIdea(ctx context.Context, userID uint, repoID string, re
 	if err := s.repo.CreatePlanBundle(ctx, bundle); err != nil {
 		return nil, fmt.Errorf("create plan bundle: %w", err)
 	}
+	if err := s.persistBundleEvidenceRefs(ctx, bundle); err != nil {
+		return nil, err
+	}
 	if err := s.recordPlanSkillRuns(ctx, userID, bundle); err != nil {
 		return nil, err
 	}
@@ -114,6 +117,9 @@ func (s *service) CreateProjectRequirement(ctx context.Context, userID, projectI
 	bundle.ProductSpec.Assumptions = append(bundle.ProductSpec.Assumptions, projectContextAssumption(projectContext))
 	if err := s.repo.CreatePlanBundle(ctx, bundle); err != nil {
 		return nil, fmt.Errorf("create project requirement plan bundle: %w", err)
+	}
+	if err := s.persistBundleEvidenceRefs(ctx, bundle); err != nil {
+		return nil, err
 	}
 	if err := s.recordPlanSkillRuns(ctx, userID, bundle); err != nil {
 		return nil, err
@@ -171,6 +177,9 @@ func (s *service) GenerateRequirementPlan(ctx context.Context, userID, requireme
 	bundle.ProductSpec.Assumptions = append(bundle.ProductSpec.Assumptions, projectContextAssumption(projectContext))
 	if err := s.repo.CreatePlanBundle(ctx, bundle); err != nil {
 		return nil, fmt.Errorf("generate requirement plan: %w", err)
+	}
+	if err := s.persistBundleEvidenceRefs(ctx, bundle); err != nil {
+		return nil, err
 	}
 	if err := s.recordPlanSkillRuns(ctx, userID, bundle); err != nil {
 		return nil, err
@@ -365,13 +374,14 @@ func (s *service) CompilePrompt(ctx context.Context, userID, prNodeID uint, req 
 	text := compilePromptText(promptType, bundle, node, skills)
 	hash := sha256.Sum256([]byte(text))
 	prompt := &domain.SpecForgeCompiledPrompt{
-		PRNodeID:   node.ID,
-		PlanID:     node.PlanID,
-		Type:       promptType,
-		Version:    "prompt_v2",
-		PromptText: text,
-		PromptHash: hex.EncodeToString(hash[:]),
-		CreatedBy:  userID,
+		PRNodeID:     node.ID,
+		PlanID:       node.PlanID,
+		Type:         promptType,
+		Version:      "prompt_v2",
+		PromptText:   text,
+		PromptHash:   hex.EncodeToString(hash[:]),
+		EvidenceRefs: evidenceRefsFor(bundle, node, skills),
+		CreatedBy:    userID,
 	}
 	if err := s.repo.CreateCompiledPrompt(ctx, prompt); err != nil {
 		return nil, fmt.Errorf("create compiled prompt: %w", err)
@@ -423,6 +433,30 @@ func (s *service) recordPlanSkillRuns(ctx context.Context, userID uint, bundle *
 	for _, run := range plannedSkillRuns(userID, requirementID, planID, projectID, bundle, skills, now) {
 		if err := s.pipelineRepo.CreateSkillRun(ctx, run); err != nil {
 			return fmt.Errorf("create skill run: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *service) persistBundleEvidenceRefs(ctx context.Context, bundle *domain.SpecForgePlanBundle) error {
+	if bundle == nil || bundle.Plan == nil {
+		return nil
+	}
+	skills, err := s.activeSkillsFor(ctx, bundle)
+	if err != nil {
+		return err
+	}
+	bundle.Plan.EvidenceRefs = evidenceRefsFor(bundle, nil, skills)
+	if err := s.repo.UpdatePlan(ctx, bundle.Plan); err != nil {
+		return fmt.Errorf("update plan evidence refs: %w", err)
+	}
+	for _, node := range bundle.PRNodes {
+		if node == nil {
+			continue
+		}
+		node.EvidenceRefs = evidenceRefsFor(bundle, node, skills)
+		if err := s.repo.UpdatePRNode(ctx, node); err != nil {
+			return fmt.Errorf("update pr node evidence refs: %w", err)
 		}
 	}
 	return nil
@@ -968,12 +1002,118 @@ func plannedSkillRuns(userID uint, requirementID, planID, projectID *uint, bundl
 			InputSummary:  inputSummary,
 			OutputSummary: strings.TrimSpace(stage.output),
 			OutputJSON:    outputJSON,
+			EvidenceRefs:  skillRunEvidenceRefs(stage.stage, bundle, skills),
 			StartedAt:     &started,
 			CompletedAt:   &completed,
 			CreatedBy:     userID,
 		})
 	}
 	return runs
+}
+
+func skillRunEvidenceRefs(stage string, bundle *domain.SpecForgePlanBundle, skills []*domain.SpecForgeSkill) []string {
+	refs := evidenceRefsFor(bundle, nil, skills)
+	stage = strings.TrimSpace(stage)
+	if stage != "" {
+		refs = append(refs, "skill_run.stage:"+stage)
+	}
+	return normalizePlanList(refs)
+}
+
+func evidenceRefsFor(bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, skills []*domain.SpecForgeSkill) []string {
+	refs := []string{}
+	if bundle != nil {
+		if bundle.Requirement != nil && bundle.Requirement.ID != 0 {
+			refs = append(refs, fmt.Sprintf("requirement:%d", bundle.Requirement.ID))
+			if bundle.Requirement.ProjectID != 0 {
+				refs = append(refs, fmt.Sprintf("project:%d", bundle.Requirement.ProjectID))
+			}
+		}
+		if bundle.Idea != nil {
+			if bundle.Idea.ID != 0 {
+				refs = append(refs, fmt.Sprintf("idea:%d", bundle.Idea.ID))
+			}
+			if strings.TrimSpace(bundle.Idea.RepositoryID) != "" {
+				refs = append(refs, "repository:"+strings.TrimSpace(bundle.Idea.RepositoryID))
+			}
+			if bundle.Idea.ProjectID != nil && *bundle.Idea.ProjectID != 0 {
+				refs = append(refs, fmt.Sprintf("project:%d", *bundle.Idea.ProjectID))
+			}
+		}
+		if bundle.ProductSpec != nil && bundle.ProductSpec.ID != 0 {
+			refs = append(refs,
+				fmt.Sprintf("product_spec:%d:goals", bundle.ProductSpec.ID),
+				fmt.Sprintf("product_spec:%d:acceptance_criteria", bundle.ProductSpec.ID),
+			)
+		}
+		if bundle.Plan != nil && bundle.Plan.ID != 0 {
+			version := bundle.Plan.Version
+			if version <= 0 {
+				version = 1
+			}
+			refs = append(refs,
+				fmt.Sprintf("implementation_plan:%d:v%d", bundle.Plan.ID, version),
+				fmt.Sprintf("implementation_plan:%d:test_strategy", bundle.Plan.ID),
+			)
+		}
+		if bundle.RepoProfile != nil && strings.TrimSpace(bundle.RepoProfile.RepositoryID) != "" {
+			refs = append(refs, "repo_profile:"+strings.TrimSpace(bundle.RepoProfile.RepositoryID))
+			if strings.TrimSpace(bundle.RepoProfile.Source) != "" {
+				refs = append(refs, "repo_profile_source:"+strings.TrimSpace(bundle.RepoProfile.Source))
+			}
+		}
+		if bundle.ProjectContext != nil {
+			refs = append(refs, projectContextEvidenceRefs(bundle.ProjectContext)...)
+		}
+	}
+	if node != nil {
+		if node.ID != 0 {
+			refs = append(refs, fmt.Sprintf("pr_node:%d", node.ID))
+		}
+		if strings.TrimSpace(node.NodeKey) != "" {
+			refs = append(refs, "pr_node_key:"+strings.TrimSpace(node.NodeKey))
+		}
+		if strings.TrimSpace(node.RepositoryID) != "" {
+			refs = append(refs, "target_repository:"+strings.TrimSpace(node.RepositoryID))
+		}
+	}
+	for _, skill := range skills {
+		if skill == nil || skill.ID == 0 {
+			continue
+		}
+		refs = append(refs, fmt.Sprintf("skill:%d", skill.ID))
+	}
+	return normalizePlanList(refs)
+}
+
+func projectContextEvidenceRefs(context *domain.SpecForgeProjectContext) []string {
+	if context == nil {
+		return []string{}
+	}
+	refs := []string{}
+	if context.Project != nil && context.Project.ID != 0 {
+		refs = append(refs, fmt.Sprintf("project:%d", context.Project.ID))
+	}
+	if strings.TrimSpace(context.PrimaryRepositoryID) != "" {
+		refs = append(refs, "project_primary_repository:"+strings.TrimSpace(context.PrimaryRepositoryID))
+	}
+	for _, repositoryID := range normalizePlanList(context.ReadOnlyRepositoryIDs) {
+		refs = append(refs, "project_read_only_repository:"+repositoryID)
+	}
+	for _, repoContext := range context.RepositoryContexts {
+		if repoContext == nil || repoContext.Repository == nil {
+			continue
+		}
+		repositoryID := strings.TrimSpace(repoContext.Repository.RepositoryID)
+		if repositoryID == "" {
+			continue
+		}
+		refs = append(refs, "project_repository:"+repositoryID+":role:"+strings.TrimSpace(repoContext.Repository.Role))
+		if repoContext.Profile != nil {
+			refs = append(refs, "repo_profile:"+repositoryID)
+		}
+	}
+	return refs
 }
 
 func skillRunInputSummary(bundle *domain.SpecForgePlanBundle, skills []*domain.SpecForgeSkill) string {

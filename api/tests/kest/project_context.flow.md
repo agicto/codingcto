@@ -392,6 +392,7 @@ body.data.idea.project_id exists
 body.data.idea.requirement_id exists
 body.data.implementation_plan.requirement_id exists
 body.data.implementation_plan.version == 1
+body.data.implementation_plan.evidence_refs.0 exists
 body.data.project_context.project.name exists
 body.data.project_context.primary_repository_id == "{{repo_id}}"
 body.data.project_context.execution_repository_id == "{{repo_id}}"
@@ -400,6 +401,7 @@ body.data.repo_profile.stack.0 exists
 body.data.product_spec.assumptions.0 exists
 body.data.pr_nodes.0.id exists
 body.data.pr_nodes.0.repository_id == "{{repo_id}}"
+body.data.pr_nodes.0.evidence_refs.0 exists
 ```
 
 ```step
@@ -417,6 +419,7 @@ body.data.skill_runs.2.stage == "pr_dag"
 body.data.skill_runs.3.stage == "self_review"
 body.data.skill_runs.0.input_summary exists
 body.data.skill_runs.0.output_summary exists
+body.data.skill_runs.0.evidence_refs.0 exists
 ```
 
 ```step
@@ -436,6 +439,7 @@ status == 201
 body.data.prompt.prompt_text exists
 body.data.prompt.prompt_hash exists
 body.data.prompt.version exists
+body.data.prompt.evidence_refs.0 exists
 ```
 
 ```step
