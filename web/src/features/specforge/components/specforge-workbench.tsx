@@ -114,6 +114,10 @@ import {
   webhookEventRepo,
 } from "@/features/specforge/webhook-events";
 import { isPRNodeActive, isPRNodeDelivered } from "@/features/specforge/status";
+import {
+  specForgeSkillTemplates,
+  type SpecForgeSkillTemplate,
+} from "@/features/specforge/skill-templates";
 import type {
   ExecutionRun,
   ExecutorRuntime,
@@ -981,6 +985,13 @@ function RepoSkillsPanel({ repoId }: { repoId: string }) {
     setSavedSkill(response.skill);
   }
 
+  function applySkillTemplate(template: SpecForgeSkillTemplate) {
+    setName(template.name);
+    setDescription(template.description);
+    setContent(template.content);
+    setActive(true);
+  }
+
   return (
     <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
@@ -1008,6 +1019,19 @@ function RepoSkillsPanel({ repoId }: { repoId: string }) {
       </div>
 
       <div className="mt-4 space-y-3">
+        <div className="flex flex-wrap gap-2">
+          {specForgeSkillTemplates.map((template) => (
+            <Button
+              key={template.id}
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => applySkillTemplate(template)}
+            >
+              {template.name}
+            </Button>
+          ))}
+        </div>
         <Input
           value={name}
           onChange={(event) => setName(event.target.value)}
