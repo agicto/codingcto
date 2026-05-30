@@ -6,6 +6,7 @@ import {
   CheckCircle2,
   CircleDot,
   CircleX,
+  ExternalLink,
   GitBranch,
   GitPullRequest,
   Info,
@@ -1657,7 +1658,20 @@ function PRDag({
                   <div className="text-sm font-medium">
                     Attempt {attempt.attempt_number}: {attempt.failure_type}
                   </div>
-                  <Badge variant="outline">{attempt.status}</Badge>
+                  <div className="flex flex-wrap items-center gap-2">
+                    {attempt.workflow_run_url ? (
+                      <Button variant="outline" size="sm" asChild>
+                        <a href={attempt.workflow_run_url} target="_blank" rel="noreferrer">
+                          Run {attempt.workflow_run_id || "CI"}
+                          <ExternalLink className="ml-1.5 h-4 w-4" />
+                        </a>
+                      </Button>
+                    ) : attempt.workflow_run_id ? (
+                      <Badge variant="outline">run {attempt.workflow_run_id}</Badge>
+                    ) : null}
+                    {attempt.conclusion && <Badge variant="outline">{attempt.conclusion}</Badge>}
+                    <Badge variant="outline">{attempt.status}</Badge>
+                  </div>
                 </div>
                 <p className="mt-2 text-sm leading-6 text-text-muted">{attempt.likely_cause}</p>
                 <p className="mt-2 text-sm leading-6 text-text-main">
