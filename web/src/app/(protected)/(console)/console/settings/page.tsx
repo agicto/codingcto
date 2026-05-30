@@ -1,10 +1,17 @@
-import { Button } from "@/components/ui/button";
-import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle } from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Tabs, TabsContent, TabsList, TabsTrigger } from "@/components/ui/tabs";
-import { Switch } from "@/components/ui/switch";
-import { GitHubConnectionPanel } from "./_components/github-connection-panel";
+import { Button } from '@/components/ui/button';
+import {
+  Card,
+  CardContent,
+  CardDescription,
+  CardFooter,
+  CardHeader,
+  CardTitle,
+} from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
+import { GitHubConnectionPanel } from './_components/github-connection-panel';
 
 type SettingsPageProps = {
   searchParams?: Promise<{
@@ -17,192 +24,189 @@ type SettingsPageProps = {
  */
 export default async function SettingsPage({ searchParams }: SettingsPageProps) {
   const params = await searchParams;
-  const defaultTab = params?.tab === "github" ? "github" : "general";
+  const defaultTab = params?.tab === 'github' ? 'github' : 'general';
 
   return (
     <div className="flex-1 space-y-4 p-6 pt-6">
       <div className="flex items-center justify-between">
-        <h2 className="text-3xl font-bold tracking-tight">设置</h2>
+        <h2 className="text-3xl font-bold tracking-tight">Settings</h2>
       </div>
-      
+
       <Tabs defaultValue={defaultTab} className="space-y-4">
         <TabsList>
-          <TabsTrigger value="general">通用设置</TabsTrigger>
+          <TabsTrigger value="general">General</TabsTrigger>
           <TabsTrigger value="github">GitHub</TabsTrigger>
-          <TabsTrigger value="notifications">通知</TabsTrigger>
-          <TabsTrigger value="security">安全</TabsTrigger>
+          <TabsTrigger value="notifications">Notifications</TabsTrigger>
+          <TabsTrigger value="security">Security</TabsTrigger>
           <TabsTrigger value="api">API</TabsTrigger>
         </TabsList>
-        
+
         <TabsContent value="general" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>系统信息</CardTitle>
-              <CardDescription>
-                查看并更新系统基础设置
-              </CardDescription>
+              <CardTitle>System Information</CardTitle>
+              <CardDescription>Review and update the basic workspace settings.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="company-name">公司名称</Label>
-                <Input id="company-name" placeholder="请输入公司名称" defaultValue="示例科技有限公司" />
+                <Label htmlFor="company-name">Company name</Label>
+                <Input
+                  id="company-name"
+                  placeholder="Enter company name"
+                  defaultValue="Example Inc."
+                />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="site-url">网站地址</Label>
-                <Input id="site-url" placeholder="请输入网站地址" defaultValue="https://example.com" />
+                <Label htmlFor="site-url">Website URL</Label>
+                <Input
+                  id="site-url"
+                  placeholder="Enter website URL"
+                  defaultValue="https://example.com"
+                />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="support-email">支持邮箱</Label>
-                <Input id="support-email" placeholder="请输入支持邮箱" defaultValue="support@example.com" />
+                <Label htmlFor="support-email">Support email</Label>
+                <Input
+                  id="support-email"
+                  placeholder="Enter support email"
+                  defaultValue="support@example.com"
+                />
               </div>
             </CardContent>
             <CardFooter>
-              <Button>保存设置</Button>
+              <Button>Save settings</Button>
             </CardFooter>
           </Card>
-          
+
           <Card>
             <CardHeader>
-              <CardTitle>显示设置</CardTitle>
-              <CardDescription>
-                自定义系统显示偏好
-              </CardDescription>
+              <CardTitle>Display Settings</CardTitle>
+              <CardDescription>Customize display preferences for the console.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label className="text-base">深色模式</Label>
-                  <p className="text-sm text-muted-foreground">
-                    启用全局深色模式
-                  </p>
+                  <Label className="text-base">Dark mode</Label>
+                  <p className="text-sm text-muted-foreground">Enable dark mode globally.</p>
                 </div>
                 <Switch />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label className="text-base">自动切换主题</Label>
-                  <p className="text-sm text-muted-foreground">
-                    跟随系统设置自动切换
-                  </p>
+                  <Label className="text-base">Automatic theme</Label>
+                  <p className="text-sm text-muted-foreground">Follow the system theme setting.</p>
                 </div>
                 <Switch defaultChecked />
               </div>
             </CardContent>
             <CardFooter>
-              <Button>保存偏好</Button>
+              <Button>Save preferences</Button>
             </CardFooter>
           </Card>
-
         </TabsContent>
 
         <TabsContent value="github" className="space-y-4">
           <GitHubConnectionPanel />
         </TabsContent>
-        
+
         <TabsContent value="notifications" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>通知设置</CardTitle>
+              <CardTitle>Notification Settings</CardTitle>
               <CardDescription>
-                配置接收通知的方式
+                Configure how this workspace receives notifications.
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label className="text-base">邮件通知</Label>
+                  <Label className="text-base">Email notifications</Label>
                   <p className="text-sm text-muted-foreground">
-                    接收订单和系统通知邮件
+                    Receive system notifications by email.
                   </p>
                 </div>
                 <Switch defaultChecked />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label className="text-base">短信通知</Label>
-                  <p className="text-sm text-muted-foreground">
-                    重要事件通过短信提醒
-                  </p>
+                  <Label className="text-base">SMS notifications</Label>
+                  <p className="text-sm text-muted-foreground">Send important alerts by SMS.</p>
                 </div>
                 <Switch />
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label className="text-base">浏览器推送</Label>
-                  <p className="text-sm text-muted-foreground">
-                    允许浏览器推送通知
-                  </p>
+                  <Label className="text-base">Browser push</Label>
+                  <p className="text-sm text-muted-foreground">Allow browser push notifications.</p>
                 </div>
                 <Switch defaultChecked />
               </div>
             </CardContent>
             <CardFooter>
-              <Button>更新通知设置</Button>
+              <Button>Update notifications</Button>
             </CardFooter>
           </Card>
         </TabsContent>
-        
+
         <TabsContent value="security" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>安全设置</CardTitle>
-              <CardDescription>
-                管理账户安全和权限
-              </CardDescription>
+              <CardTitle>Security Settings</CardTitle>
+              <CardDescription>Manage account security and access controls.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label className="text-base">两步验证</Label>
+                  <Label className="text-base">Two-step verification</Label>
                   <p className="text-sm text-muted-foreground">
-                    使用两步验证提升账户安全性
+                    Use two-step verification for stronger account security.
                   </p>
                 </div>
                 <Switch defaultChecked />
               </div>
               <div className="space-y-2">
-                <Label htmlFor="session-timeout">会话超时（分钟）</Label>
+                <Label htmlFor="session-timeout">Session timeout (minutes)</Label>
                 <Input id="session-timeout" type="number" defaultValue="30" />
               </div>
-              <Button variant="outline">修改密码</Button>
+              <Button variant="outline">Change password</Button>
             </CardContent>
             <CardFooter>
-              <Button>保存安全设置</Button>
+              <Button>Save security settings</Button>
             </CardFooter>
           </Card>
         </TabsContent>
-        
+
         <TabsContent value="api" className="space-y-4">
           <Card>
             <CardHeader>
-              <CardTitle>API 设置</CardTitle>
-              <CardDescription>
-                管理 API 密钥和访问权限
-              </CardDescription>
+              <CardTitle>API Settings</CardTitle>
+              <CardDescription>Manage API keys and access controls.</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
               <div className="space-y-2">
-                <Label htmlFor="api-key">API 密钥</Label>
+                <Label htmlFor="api-key">API key</Label>
                 <div className="flex items-center space-x-2">
                   <Input id="api-key" value="sk_live_xxxxxxxxxxxxx" readOnly />
-                  <Button variant="outline" size="sm">重新生成</Button>
+                  <Button variant="outline" size="sm">
+                    Regenerate
+                  </Button>
                 </div>
                 <p className="text-sm text-muted-foreground">
-                  请妥善保管 API 密钥，它拥有完整账户访问权限
+                  Store this API key carefully. It can access workspace data.
                 </p>
               </div>
               <div className="flex items-center justify-between">
                 <div className="space-y-0.5">
-                  <Label className="text-base">启用 API 访问</Label>
+                  <Label className="text-base">Enable API access</Label>
                   <p className="text-sm text-muted-foreground">
-                    允许通过 API 访问系统数据
+                    Allow API access to workspace data.
                   </p>
                 </div>
                 <Switch defaultChecked />
               </div>
             </CardContent>
             <CardFooter>
-              <Button>保存 API 设置</Button>
+              <Button>Save API settings</Button>
             </CardFooter>
           </Card>
         </TabsContent>

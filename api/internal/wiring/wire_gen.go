@@ -19,6 +19,7 @@ import (
 	"github.com/zgiai/luas/api/internal/modules/execution"
 	"github.com/zgiai/luas/api/internal/modules/githubintegration"
 	"github.com/zgiai/luas/api/internal/modules/planning"
+	"github.com/zgiai/luas/api/internal/modules/project"
 	"github.com/zgiai/luas/api/internal/modules/repocontext"
 	"github.com/zgiai/luas/api/internal/modules/user"
 	"github.com/zgiai/luas/api/internal/modules/verification"
@@ -50,7 +51,8 @@ func InitApplication() (*app.Application, error) {
 	apikeyHandler := apikey.NewHandler(apikeyService)
 	planningRepository := planning.NewRepository(db)
 	repocontextRepository := repocontext.NewRepository(db)
-	planningService := planning.NewService(planningRepository, repocontextRepository, planningRepository)
+	projectRepository := project.NewRepository(db)
+	planningService := planning.NewService(planningRepository, repocontextRepository, planningRepository, projectRepository)
 	planningHandler := planning.NewHandler(planningService)
 	githubintegrationRepository := githubintegration.NewRepository(db)
 	repositoryClientFactory := githubintegration.NewDefaultRepositoryClientFactory()
@@ -65,19 +67,22 @@ func InitApplication() (*app.Application, error) {
 	worktreeManager := execution.NewDefaultWorktreeManager()
 	prNodeBranchPreparer := execution.NewGitHubPRNodeBranchPreparer(githubintegrationService)
 	prNodeDeliverer := execution.NewGitHubPRNodeDeliverer(githubintegrationService)
-	executionService := execution.NewEventedService(executionRepository, planningRepository, repositoryResolver, codeExecutor, worktreeManager, prNodeBranchPreparer, prNodeDeliverer, eventBus)
+	executionService := execution.NewProjectAwareEventedService(executionRepository, planningRepository, repositoryResolver, codeExecutor, worktreeManager, prNodeBranchPreparer, prNodeDeliverer, repocontextRepository, projectRepository, eventBus)
 	executionHandler := execution.NewHandler(executionService)
 	githubintegrationHandler := githubintegration.NewHandler(githubintegrationService)
+	projectService := project.NewService(projectRepository, githubintegrationRepository, repocontextRepository, planningRepository)
+	projectHandler := project.NewHandler(projectService)
 	verificationRepository := verification.NewRepository(db)
+	prNodeCIRefresher := verification.NewGitHubPRNodeCIRefresher(githubintegrationService)
 	ciFailureReader := verification.NewGitHubCIFailureReader(githubintegrationService)
-	verificationService := verification.NewService(verificationRepository, ciFailureReader, eventBus)
+	verificationService := verification.NewService(verificationRepository, prNodeCIRefresher, ciFailureReader, eventBus)
 	verificationHandler := verification.NewHandler(verificationService)
 	userRepository := user.NewRepository(db)
 	jwtService := jwt.NewService(configConfig)
 	userMailer := user.NewUserMailer(service)
 	userService := user.NewService(userRepository, userRepository, jwtService, eventBus, userMailer)
 	userHandler := user.NewHandler(userService, userService, userService, jwtService, userMailer)
-	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, verificationHandler, userHandler)
+	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, projectHandler, verificationHandler, userHandler)
 	if err != nil {
 		return nil, err
 	}
@@ -111,7 +116,8 @@ func InitApplicationWithConfig(cfg *config.Config) (*app.Application, error) {
 	apikeyHandler := apikey.NewHandler(apikeyService)
 	planningRepository := planning.NewRepository(db)
 	repocontextRepository := repocontext.NewRepository(db)
-	planningService := planning.NewService(planningRepository, repocontextRepository, planningRepository)
+	projectRepository := project.NewRepository(db)
+	planningService := planning.NewService(planningRepository, repocontextRepository, planningRepository, projectRepository)
 	planningHandler := planning.NewHandler(planningService)
 	githubintegrationRepository := githubintegration.NewRepository(db)
 	repositoryClientFactory := githubintegration.NewDefaultRepositoryClientFactory()
@@ -126,19 +132,22 @@ func InitApplicationWithConfig(cfg *config.Config) (*app.Application, error) {
 	worktreeManager := execution.NewDefaultWorktreeManager()
 	prNodeBranchPreparer := execution.NewGitHubPRNodeBranchPreparer(githubintegrationService)
 	prNodeDeliverer := execution.NewGitHubPRNodeDeliverer(githubintegrationService)
-	executionService := execution.NewEventedService(executionRepository, planningRepository, repositoryResolver, codeExecutor, worktreeManager, prNodeBranchPreparer, prNodeDeliverer, eventBus)
+	executionService := execution.NewProjectAwareEventedService(executionRepository, planningRepository, repositoryResolver, codeExecutor, worktreeManager, prNodeBranchPreparer, prNodeDeliverer, repocontextRepository, projectRepository, eventBus)
 	executionHandler := execution.NewHandler(executionService)
 	githubintegrationHandler := githubintegration.NewHandler(githubintegrationService)
+	projectService := project.NewService(projectRepository, githubintegrationRepository, repocontextRepository, planningRepository)
+	projectHandler := project.NewHandler(projectService)
 	verificationRepository := verification.NewRepository(db)
+	prNodeCIRefresher := verification.NewGitHubPRNodeCIRefresher(githubintegrationService)
 	ciFailureReader := verification.NewGitHubCIFailureReader(githubintegrationService)
-	verificationService := verification.NewService(verificationRepository, ciFailureReader, eventBus)
+	verificationService := verification.NewService(verificationRepository, prNodeCIRefresher, ciFailureReader, eventBus)
 	verificationHandler := verification.NewHandler(verificationService)
 	userRepository := user.NewRepository(db)
 	jwtService := jwt.NewService(cfg)
 	userMailer := user.NewUserMailer(service)
 	userService := user.NewService(userRepository, userRepository, jwtService, eventBus, userMailer)
 	userHandler := user.NewHandler(userService, userService, userService, jwtService, userMailer)
-	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, verificationHandler, userHandler)
+	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, projectHandler, verificationHandler, userHandler)
 	if err != nil {
 		return nil, err
 	}

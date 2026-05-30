@@ -1,5 +1,7 @@
 package verification
 
+import "github.com/zgiai/luas/api/internal/domain"
+
 type CreateFixAttemptRequest struct {
 	FailureType       string  `json:"failure_type" binding:"required,max=100"`
 	CILogExcerpt      string  `json:"ci_log_excerpt" binding:"omitempty,max=20000"`
@@ -18,6 +20,18 @@ type CreateFixAttemptFromCIRequest struct {
 	WorkflowRunID  int64  `json:"workflow_run_id" binding:"omitempty"`
 	WorkflowRunURL string `json:"workflow_run_url" binding:"omitempty,max=500"`
 	Conclusion     string `json:"conclusion" binding:"omitempty,max=100"`
+}
+
+type VerifyPRNodeCIRequest struct {
+	RepositoryID string `json:"repository_id" binding:"required,max=255"`
+}
+
+type VerifyPRNodeCIResponse struct {
+	PRNode            *domain.SpecForgePRNode     `json:"pr_node"`
+	FixAttempt        *domain.SpecForgeFixAttempt `json:"fix_attempt,omitempty"`
+	EscalationSummary *EscalationSummary          `json:"escalation_summary,omitempty"`
+	VerificationState string                      `json:"verification_state"`
+	NextAction        string                      `json:"next_action"`
 }
 
 type EscalationSummary struct {

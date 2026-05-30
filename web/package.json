@@ -1,7 +1,7 @@
 {
-  "name": "luas-web",
+  "name": "codingcto-web",
   "version": "0.1.0",
-  "description": "Luas web — the Next.js + TypeScript half of the Luas AI scaffold (Luas: Irish for 'speed').",
+  "description": "CodingCTO web console for GitHub-native PRD-to-PR automation.",
   "private": true,
   "scripts": {
     "dev": "next dev --turbopack",
@@ -29,9 +29,10 @@
     "ai-development",
     "frontend",
     "ui-components",
-    "luas"
+    "codingcto",
+    "prd-to-pr"
   ],
-  "author": "Luas Team",
+  "author": "CodingCTO contributors",
   "license": "MIT",
   "engines": {
     "node": ">=20.11.0",

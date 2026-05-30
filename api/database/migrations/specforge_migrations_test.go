@@ -29,11 +29,15 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 
 	expectedTables := []string{
 		"specforge_ideas",
+		"specforge_requirements",
 		"specforge_product_specs",
 		"specforge_implementation_plans",
 		"specforge_pr_nodes",
 		"specforge_compiled_prompts",
 		"specforge_repo_profiles",
+		"specforge_repo_architecture_snapshots",
+		"specforge_project_skills",
+		"specforge_skill_runs",
 		"specforge_execution_runs",
 		"specforge_agent_tasks",
 		"specforge_fix_attempts",
@@ -49,13 +53,29 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 	}
 
 	requiredColumns := map[string][]string{
+		"specforge_ideas": {
+			"project_id",
+			"requirement_id",
+		},
+		"specforge_requirements": {
+			"workspace_id",
+			"project_id",
+			"raw_input",
+			"type",
+			"status",
+		},
 		"specforge_implementation_plans": {
+			"requirement_id",
+			"version",
 			"technical_summary",
 			"decision_overrides",
 			"approved_by",
 			"approved_at",
+			"approved_snapshot_hash",
+			"approved_snapshot_at",
 		},
 		"specforge_pr_nodes": {
+			"repository_id",
 			"node_key",
 			"depends_on",
 			"expected_files",
@@ -78,6 +98,18 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 			"source",
 			"warnings",
 		},
+		"specforge_repo_architecture_snapshots": {
+			"repository_id",
+			"commit_sha",
+			"stack",
+			"modules",
+			"entrypoints",
+			"test_commands",
+			"ci_workflows",
+			"risk_areas",
+			"generated_by",
+			"warnings",
+		},
 		"specforge_agent_tasks": {
 			"prompt_type",
 			"runtime_id",
@@ -92,6 +124,24 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 			"dispatched_at",
 			"started_at",
 			"finished_at",
+		},
+		"specforge_project_skills": {
+			"workspace_id",
+			"project_id",
+			"repository_id",
+			"skill_id",
+			"active",
+			"sort_order",
+		},
+		"specforge_skill_runs": {
+			"requirement_id",
+			"plan_id",
+			"project_id",
+			"skill_id",
+			"stage",
+			"status",
+			"input_summary",
+			"output_summary",
 		},
 		"specforge_fix_attempts": {
 			"failure_type",
@@ -128,6 +178,9 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 		table string
 		name  string
 	}{
+		{table: "specforge_ideas", name: "idx_specforge_ideas_project_id"},
+		{table: "specforge_repo_architecture_snapshots", name: "idx_specforge_repo_architecture_snapshots_repository_id"},
+		{table: "specforge_project_skills", name: "idx_specforge_project_skill"},
 		{table: "specforge_skills", name: "idx_specforge_skill_repo_name"},
 		{table: "specforge_task_events", name: "idx_specforge_task_events_task_seq"},
 	}

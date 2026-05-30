@@ -4,7 +4,7 @@
 
 ## Project Overview
 
-**Luas** - A production-ready Next.js scaffold optimized for rapid AI-assisted development.
+**CodingCTO** - A production-ready Next.js console for AI-assisted PRD-to-PR development.
 
 | Tech | Version | Purpose |
 |------|---------|---------|

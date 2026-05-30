@@ -2,7 +2,7 @@
 
 import Link from "next/link";
 import { usePathname } from "next/navigation";
-import { LucideIcon, BarChart3, Settings, Home, Bell, LogOut, Palette, GitPullRequest } from "lucide-react";
+import { LucideIcon, BarChart3, Settings, Home, Bell, LogOut, Palette, GitPullRequest, Boxes } from "lucide-react";
 
 import { cn } from "@/utils";
 import { ROUTES } from "@/constants/routes";
@@ -42,6 +42,11 @@ export default function ConsoleLayout({
       titleKey: "nav.dashboard",
       href: ROUTES.CONSOLE.HOME,
       icon: Home,
+    },
+    {
+      titleKey: "nav.projects",
+      href: ROUTES.CONSOLE.PROJECTS,
+      icon: Boxes,
     },
     {
       titleKey: "nav.specforge",
@@ -102,7 +107,7 @@ export default function ConsoleLayout({
                       .map((part) => part[0])
                       .join('')
                       .slice(0, 2)
-                      .toUpperCase() || 'LF'}
+                      .toUpperCase() || 'CT'}
                   </AvatarFallback>
                 </Avatar>
                 <span className="sr-only">个人资料</span>
@@ -145,7 +150,9 @@ export default function ConsoleLayout({
             <nav className="grid items-start px-2 text-sm font-medium">
               {mainNavItems.map((item, index) => {
                 const IconComponent = item.icon;
-                const isActive = pathname === item.href;
+                const isActive =
+                  pathname === item.href ||
+                  (item.href !== ROUTES.CONSOLE.HOME && pathname.startsWith(`${item.href}/`));
                 return (
                   <Link
                     key={index}

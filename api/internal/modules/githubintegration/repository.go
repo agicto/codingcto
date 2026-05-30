@@ -63,7 +63,7 @@ func (r *repository) UpsertRepository(ctx context.Context, repository *domain.Re
 	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "repository_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"workspace_id", "github_installation_id", "github_owner", "github_repo",
+			"workspace_id", "git_hub_installation_id", "git_hub_owner", "git_hub_repo",
 			"default_branch", "is_private", "created_by", "updated_at",
 		}),
 	}).Create(po).Error; err != nil {

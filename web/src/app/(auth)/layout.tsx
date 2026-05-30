@@ -123,7 +123,9 @@ export default function AuthLayout({ children }: PropsWithChildren) {
           <div className="lg:hidden mb-6 flex flex-col items-center space-y-3">
             <div className="flex items-center space-x-3">
               <Logo className="h-9 w-9 text-primary" />
-              <span className="text-2xl font-bold bg-linear-to-r from-primary to-primary-deeper bg-clip-text text-transparent">CodingCTO</span>
+              <span className="text-2xl font-bold bg-linear-to-r from-primary to-primary-deeper bg-clip-text text-transparent">
+                CodingCTO
+              </span>
             </div>
             <p className="text-center text-sm text-muted-foreground max-w-xs">
               {t('auth.heroSubtitle')}

@@ -6,45 +6,72 @@ import (
 )
 
 const (
-	IdeaStatusAwaitingApproval  = "awaiting_approval"
-	PlanStatusDraft             = "draft"
-	PlanStatusApproved          = "approved"
-	PRNodeStatusPlanned         = "planned"
-	PRNodeStatusPROpened        = "pr_opened"
-	PRNodeStatusCIRunning       = "ci_running"
-	PRNodeStatusReadyForReview  = "ready_for_review"
-	PRNodeStatusBlocked         = "blocked"
-	PRNodeStatusMerged          = "merged"
-	PRNodeStatusClosed          = "closed"
-	ExecutionRunStatusQueued    = "queued"
-	ExecutionRunStatusRunning   = "running"
-	ExecutionRunStatusCompleted = "completed"
-	ExecutionRunStatusBlocked   = "blocked"
-	ExecutionRunStatusCancelled = "cancelled"
-	RuntimeStatusOnline         = "online"
-	RuntimeStatusOffline        = "offline"
-	AgentTaskStatusQueued       = "queued"
-	AgentTaskStatusDispatched   = "dispatched"
-	AgentTaskStatusWaiting      = "waiting_on_dependencies"
-	AgentTaskStatusRunning      = "running"
-	AgentTaskStatusCompleted    = "completed"
-	AgentTaskStatusFailed       = "failed"
-	AgentTaskStatusCancelled    = "cancelled"
-	PromptTypeImplementation    = "implementation"
-	PromptTypeFix               = "fix"
-	PromptTypeReviewPatch       = "review_patch"
+	IdeaStatusAwaitingApproval        = "awaiting_approval"
+	RequirementStatusDraft            = "draft"
+	RequirementStatusAwaitingApproval = "awaiting_approval"
+	RequirementStatusExecuting        = "executing"
+	RequirementStatusCompleted        = "completed"
+	RequirementStatusCancelled        = "cancelled"
+	RequirementStatusBlocked          = "blocked"
+	PlanStatusDraft                   = "draft"
+	PlanStatusApproved                = "approved"
+	PRNodeStatusPlanned               = "planned"
+	PRNodeStatusPROpened              = "pr_opened"
+	PRNodeStatusCIRunning             = "ci_running"
+	PRNodeStatusReadyForReview        = "ready_for_review"
+	PRNodeStatusBlocked               = "blocked"
+	PRNodeStatusMerged                = "merged"
+	PRNodeStatusClosed                = "closed"
+	ExecutionRunStatusQueued          = "queued"
+	ExecutionRunStatusRunning         = "running"
+	ExecutionRunStatusCompleted       = "completed"
+	ExecutionRunStatusBlocked         = "blocked"
+	ExecutionRunStatusCancelled       = "cancelled"
+	RuntimeStatusOnline               = "online"
+	RuntimeStatusOffline              = "offline"
+	AgentTaskStatusQueued             = "queued"
+	AgentTaskStatusDispatched         = "dispatched"
+	AgentTaskStatusWaiting            = "waiting_on_dependencies"
+	AgentTaskStatusRunning            = "running"
+	AgentTaskStatusCompleted          = "completed"
+	AgentTaskStatusFailed             = "failed"
+	AgentTaskStatusCancelled          = "cancelled"
+	PromptTypeImplementation          = "implementation"
+	PromptTypeFix                     = "fix"
+	PromptTypeReviewPatch             = "review_patch"
+	SkillRunStageProductPlan          = "product_plan"
+	SkillRunStageTechnicalPlan        = "technical_plan"
+	SkillRunStagePRDAG                = "pr_dag"
+	SkillRunStageSelfReview           = "self_review"
+	SkillRunStatusCompleted           = "completed"
+	SkillRunStatusFailed              = "failed"
 )
 
 // SpecForgeIdea captures the original product intent submitted for a repository.
 type SpecForgeIdea struct {
-	ID           uint      `json:"id"`
-	RepositoryID string    `json:"repository_id"`
-	CreatedBy    uint      `json:"created_by"`
-	RawInput     string    `json:"raw_input"`
-	Type         string    `json:"type"`
-	Status       string    `json:"status"`
-	CreatedAt    time.Time `json:"created_at"`
-	UpdatedAt    time.Time `json:"updated_at"`
+	ID            uint      `json:"id"`
+	RequirementID *uint     `json:"requirement_id,omitempty"`
+	ProjectID     *uint     `json:"project_id,omitempty"`
+	RepositoryID  string    `json:"repository_id"`
+	CreatedBy     uint      `json:"created_by"`
+	RawInput      string    `json:"raw_input"`
+	Type          string    `json:"type"`
+	Status        string    `json:"status"`
+	CreatedAt     time.Time `json:"created_at"`
+	UpdatedAt     time.Time `json:"updated_at"`
+}
+
+// SpecForgeRequirement is the stable user intent record that can produce multiple plan versions.
+type SpecForgeRequirement struct {
+	ID          uint      `json:"id"`
+	WorkspaceID string    `json:"workspace_id"`
+	ProjectID   uint      `json:"project_id"`
+	CreatedBy   uint      `json:"created_by"`
+	RawInput    string    `json:"raw_input"`
+	Type        string    `json:"type"`
+	Status      string    `json:"status"`
+	CreatedAt   time.Time `json:"created_at"`
+	UpdatedAt   time.Time `json:"updated_at"`
 }
 
 // SpecForgeProductSpec is the lightweight PRD generated from an idea.
@@ -65,29 +92,34 @@ type SpecForgeProductSpec struct {
 
 // SpecForgeImplementationPlan turns the product spec into an engineering plan.
 type SpecForgeImplementationPlan struct {
-	ID                uint       `json:"id"`
-	IdeaID            uint       `json:"idea_id"`
-	ProductSpecID     uint       `json:"product_spec_id"`
-	TechnicalSummary  string     `json:"technical_summary"`
-	AffectedAreas     []string   `json:"affected_areas"`
-	DataModelChanges  []string   `json:"data_model_changes"`
-	APIChanges        []string   `json:"api_changes"`
-	UIChanges         []string   `json:"ui_changes"`
-	TestStrategy      []string   `json:"test_strategy"`
-	SecurityRisks     []string   `json:"security_risks"`
-	MigrationRisks    []string   `json:"migration_risks"`
-	Status            string     `json:"status"`
-	ApprovedBy        *uint      `json:"approved_by,omitempty"`
-	ApprovedAt        *time.Time `json:"approved_at,omitempty"`
-	DecisionOverrides []string   `json:"decision_overrides,omitempty"`
-	CreatedAt         time.Time  `json:"created_at"`
-	UpdatedAt         time.Time  `json:"updated_at"`
+	ID                   uint       `json:"id"`
+	RequirementID        *uint      `json:"requirement_id,omitempty"`
+	IdeaID               uint       `json:"idea_id"`
+	ProductSpecID        uint       `json:"product_spec_id"`
+	Version              int        `json:"version"`
+	TechnicalSummary     string     `json:"technical_summary"`
+	AffectedAreas        []string   `json:"affected_areas"`
+	DataModelChanges     []string   `json:"data_model_changes"`
+	APIChanges           []string   `json:"api_changes"`
+	UIChanges            []string   `json:"ui_changes"`
+	TestStrategy         []string   `json:"test_strategy"`
+	SecurityRisks        []string   `json:"security_risks"`
+	MigrationRisks       []string   `json:"migration_risks"`
+	Status               string     `json:"status"`
+	ApprovedBy           *uint      `json:"approved_by,omitempty"`
+	ApprovedAt           *time.Time `json:"approved_at,omitempty"`
+	ApprovedSnapshotHash string     `json:"approved_snapshot_hash,omitempty"`
+	ApprovedSnapshotAt   *time.Time `json:"approved_snapshot_at,omitempty"`
+	DecisionOverrides    []string   `json:"decision_overrides,omitempty"`
+	CreatedAt            time.Time  `json:"created_at"`
+	UpdatedAt            time.Time  `json:"updated_at"`
 }
 
 // SpecForgePRNode is a review-sized pull request node in the planned DAG.
 type SpecForgePRNode struct {
 	ID                 uint      `json:"id"`
 	PlanID             uint      `json:"plan_id"`
+	RepositoryID       string    `json:"repository_id"`
 	NodeKey            string    `json:"node_key"`
 	Order              int       `json:"order"`
 	Title              string    `json:"title"`
@@ -145,6 +177,41 @@ type SpecForgeSkill struct {
 	CreatedBy    uint      `json:"created_by"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// SpecForgeProjectSkill pins a repository skill into a project planning pipeline.
+type SpecForgeProjectSkill struct {
+	ID           uint            `json:"id"`
+	WorkspaceID  string          `json:"workspace_id"`
+	ProjectID    uint            `json:"project_id"`
+	RepositoryID string          `json:"repository_id"`
+	SkillID      uint            `json:"skill_id"`
+	Active       bool            `json:"active"`
+	SortOrder    int             `json:"sort_order"`
+	CreatedBy    uint            `json:"created_by"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+	Skill        *SpecForgeSkill `json:"skill,omitempty"`
+}
+
+// SpecForgeSkillRun records one grounded planning skill execution.
+type SpecForgeSkillRun struct {
+	ID            uint       `json:"id"`
+	RequirementID *uint      `json:"requirement_id,omitempty"`
+	PlanID        *uint      `json:"plan_id,omitempty"`
+	ProjectID     *uint      `json:"project_id,omitempty"`
+	SkillID       *uint      `json:"skill_id,omitempty"`
+	Stage         string     `json:"stage"`
+	Status        string     `json:"status"`
+	InputSummary  string     `json:"input_summary"`
+	OutputSummary string     `json:"output_summary"`
+	OutputJSON    string     `json:"output_json,omitempty"`
+	ErrorMessage  string     `json:"error_message,omitempty"`
+	StartedAt     *time.Time `json:"started_at,omitempty"`
+	CompletedAt   *time.Time `json:"completed_at,omitempty"`
+	CreatedBy     uint       `json:"created_by"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 // SpecForgeExecutionRun is one approved plan execution attempt.
@@ -237,20 +304,46 @@ type SpecForgeRepoProfile struct {
 	UpdatedAt         time.Time `json:"updated_at"`
 }
 
+// SpecForgeRepoArchitectureSnapshot records the evidence behind an inferred repo profile.
+type SpecForgeRepoArchitectureSnapshot struct {
+	ID           uint      `json:"id"`
+	RepositoryID string    `json:"repository_id"`
+	CommitSHA    string    `json:"commit_sha"`
+	Stack        []string  `json:"stack"`
+	Modules      []string  `json:"modules"`
+	Entrypoints  []string  `json:"entrypoints"`
+	TestCommands []string  `json:"test_commands"`
+	CIWorkflows  []string  `json:"ci_workflows"`
+	RiskAreas    []string  `json:"risk_areas"`
+	Summary      string    `json:"summary"`
+	GeneratedBy  string    `json:"generated_by"`
+	Warnings     []string  `json:"warnings"`
+	CreatedBy    uint      `json:"created_by"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
 // SpecForgePlanBundle is the aggregate returned to plan review screens.
 type SpecForgePlanBundle struct {
-	Idea        *SpecForgeIdea               `json:"idea"`
-	RepoProfile *SpecForgeRepoProfile        `json:"repo_profile,omitempty"`
-	ProductSpec *SpecForgeProductSpec        `json:"product_spec"`
-	Plan        *SpecForgeImplementationPlan `json:"implementation_plan"`
-	PRNodes     []*SpecForgePRNode           `json:"pr_nodes"`
+	Requirement    *SpecForgeRequirement        `json:"requirement,omitempty"`
+	Idea           *SpecForgeIdea               `json:"idea"`
+	RepoProfile    *SpecForgeRepoProfile        `json:"repo_profile,omitempty"`
+	ProjectContext *SpecForgeProjectContext     `json:"project_context,omitempty"`
+	ProductSpec    *SpecForgeProductSpec        `json:"product_spec"`
+	Plan           *SpecForgeImplementationPlan `json:"implementation_plan"`
+	PRNodes        []*SpecForgePRNode           `json:"pr_nodes"`
 }
 
 // SpecForgePlanningRepository persists the idea-to-plan aggregate.
 type SpecForgePlanningRepository interface {
 	CreatePlanBundle(ctx context.Context, bundle *SpecForgePlanBundle) error
+	CreateRequirement(ctx context.Context, requirement *SpecForgeRequirement) error
+	FindRequirementByID(ctx context.Context, requirementID uint) (*SpecForgeRequirement, error)
+	UpdateRequirement(ctx context.Context, requirement *SpecForgeRequirement) error
 	FindPlanBundleByIdeaID(ctx context.Context, ideaID uint) (*SpecForgePlanBundle, error)
+	FindLatestPlanBundleByRequirementID(ctx context.Context, requirementID uint) (*SpecForgePlanBundle, error)
 	FindPlanBundleByPlanID(ctx context.Context, planID uint) (*SpecForgePlanBundle, error)
+	NextPlanVersionByRequirementID(ctx context.Context, requirementID uint) (int, error)
 	FindPRNodeByID(ctx context.Context, prNodeID uint) (*SpecForgePRNode, error)
 	FindPRNodeByBranchName(ctx context.Context, branchName string) (*SpecForgePRNode, error)
 	FindPRNodeByGitHubPRNumber(ctx context.Context, prNumber int) (*SpecForgePRNode, error)
@@ -272,6 +365,16 @@ type SpecForgeSkillRepository interface {
 	UpsertSkill(ctx context.Context, skill *SpecForgeSkill) error
 	ListActiveSkillsByRepositoryID(ctx context.Context, repositoryID string) ([]*SpecForgeSkill, error)
 	ListSkillsByRepositoryID(ctx context.Context, repositoryID string) ([]*SpecForgeSkill, error)
+}
+
+// SpecForgeSkillPipelineRepository persists project skill selections and planning pipeline history.
+type SpecForgeSkillPipelineRepository interface {
+	UpsertProjectSkill(ctx context.Context, projectSkill *SpecForgeProjectSkill) error
+	ListProjectSkillsByProjectID(ctx context.Context, projectID uint) ([]*SpecForgeProjectSkill, error)
+	ListActiveProjectSkillsByProjectID(ctx context.Context, projectID uint) ([]*SpecForgeProjectSkill, error)
+	CreateSkillRun(ctx context.Context, run *SpecForgeSkillRun) error
+	ListSkillRunsByRequirementID(ctx context.Context, requirementID uint) ([]*SpecForgeSkillRun, error)
+	ListSkillRunsByPlanID(ctx context.Context, planID uint) ([]*SpecForgeSkillRun, error)
 }
 
 // SpecForgeExecutionRepository persists execution run state.

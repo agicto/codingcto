@@ -980,6 +980,38 @@ func TestDeliverPRNodeCreatesDraftPRAndUpdatesNode(t *testing.T) {
 	require.Equal(t, node.GitHubPRURL, planningRepo.nodes[0].GitHubPRURL)
 }
 
+func TestDeliverPRNodeRejectsMismatchedTargetRepository(t *testing.T) {
+	repo := &memoryRepo{
+		repository: &domain.Repository{
+			ID:                   1,
+			RepositoryID:         "github_agicto__codingcto",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto",
+			DefaultBranch:        "main",
+		},
+	}
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{
+				ID:           10,
+				NodeKey:      "PR-001",
+				Title:        "Add invite API",
+				BranchName:   "specforge/team-invite-01-api",
+				RepositoryID: "github_agicto__docs",
+			},
+		},
+	}
+	svc := NewService(repo, planningRepo, nil, nil, nil)
+
+	_, err := svc.DeliverPRNode(context.Background(), &DeliverPRNodeRequest{
+		RepositoryID: "github_agicto__codingcto",
+		PRNodeID:     10,
+	})
+
+	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
 func TestDeliverPRNodeUsesDependencyBranchByDefault(t *testing.T) {
 	repo := &memoryRepo{
 		installation: &domain.GitHubInstallation{
@@ -1547,7 +1579,23 @@ func (r *memoryPlanningRepo) CreatePlanBundle(ctx context.Context, bundle *domai
 	return nil
 }
 
+func (r *memoryPlanningRepo) CreateRequirement(ctx context.Context, requirement *domain.SpecForgeRequirement) error {
+	return nil
+}
+
+func (r *memoryPlanningRepo) FindRequirementByID(ctx context.Context, requirementID uint) (*domain.SpecForgeRequirement, error) {
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryPlanningRepo) UpdateRequirement(ctx context.Context, requirement *domain.SpecForgeRequirement) error {
+	return nil
+}
+
 func (r *memoryPlanningRepo) FindPlanBundleByIdeaID(ctx context.Context, ideaID uint) (*domain.SpecForgePlanBundle, error) {
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryPlanningRepo) FindLatestPlanBundleByRequirementID(ctx context.Context, requirementID uint) (*domain.SpecForgePlanBundle, error) {
 	return nil, domain.ErrNotFound
 }
 
@@ -1556,6 +1604,10 @@ func (r *memoryPlanningRepo) FindPlanBundleByPlanID(ctx context.Context, planID 
 		return nil, domain.ErrNotFound
 	}
 	return r.bundle, nil
+}
+
+func (r *memoryPlanningRepo) NextPlanVersionByRequirementID(ctx context.Context, requirementID uint) (int, error) {
+	return 1, nil
 }
 
 func (r *memoryPlanningRepo) FindPRNodeByID(ctx context.Context, prNodeID uint) (*domain.SpecForgePRNode, error) {

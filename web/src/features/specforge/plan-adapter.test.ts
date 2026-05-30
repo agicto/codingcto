@@ -56,6 +56,7 @@ const baseBundle: SpecForgePlanBundleDTO = {
     id: 1,
     idea_id: 1,
     product_spec_id: 1,
+    version: 1,
     technical_summary: 'Add invitation model, APIs, and UI.',
     affected_areas: ['api/internal/modules/invitation'],
     data_model_changes: ['WorkspaceInvitation'],
@@ -75,6 +76,7 @@ const baseBundle: SpecForgePlanBundleDTO = {
     {
       id: 1,
       plan_id: 1,
+      repository_id: 'repo_abc',
       node_key: 'PR-001',
       order: 1,
       title: 'Add invitation model',

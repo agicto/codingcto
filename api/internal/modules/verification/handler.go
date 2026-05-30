@@ -98,6 +98,28 @@ func (h *Handler) CreateFixAttempt(c *gin.Context) {
 	response.Success(c, attempt)
 }
 
+func (h *Handler) VerifyPRNodeCI(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	prNodeID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || prNodeID == 0 {
+		response.HandleError(c, "Invalid PR node id", err)
+		return
+	}
+	var req VerifyPRNodeCIRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+	result, err := h.service.VerifyPRNodeCI(c.Request.Context(), userID, uint(prNodeID), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to verify PR node CI", err)
+		return
+	}
+	response.Success(c, result)
+}
+
 func (h *Handler) CreateFixAttemptFromCI(c *gin.Context) {
 	userID, ok := handler.GetUserID(c)
 	if !ok {

@@ -1,8 +1,8 @@
-"use client";
+'use client';
 
-import Link from "next/link";
-import { useEffect, useMemo, useState, type ReactNode } from "react";
-import { useSearchParams } from "next/navigation";
+import Link from 'next/link';
+import { useCallback, useMemo, useState, type ReactNode } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   ArrowRight,
   Bot,
@@ -13,9 +13,9 @@ import {
   Link2,
   PanelRight,
   SlidersHorizontal,
-} from "lucide-react";
+} from 'lucide-react';
 
-import { Button } from "@/components/ui/button";
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
@@ -23,19 +23,19 @@ import {
   CardFooter,
   CardHeader,
   CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
-import { Switch } from "@/components/ui/switch";
-import { env } from "@/config/env";
-import { ROUTES } from "@/constants/routes";
+} from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
+import { env } from '@/config/env';
+import { ROUTES } from '@/constants/routes';
 import {
   useGitHubSettings,
   useSyncGitHubInstallation,
   useUpsertGitHubSettings,
   useUpsertGitHubRepository,
-} from "@/features/specforge/hooks/use-specforge";
-import type { GitHubRepositoryOptionDTO } from "@/features/specforge/services/specforge-service";
+} from '@/features/specforge/hooks/use-specforge';
+import type { GitHubRepositoryOptionDTO } from '@/features/specforge/services/specforge-service';
 
 type GitHubSettings = {
   enabled: boolean;
@@ -55,28 +55,32 @@ function errorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message;
   }
-  return "连接 GitHub 仓库失败，请检查后端登录状态和 GitHub App 配置。";
+  return 'Failed to connect the GitHub repository. Check backend auth and GitHub App configuration.';
 }
 
 export function GitHubConnectionPanel() {
   const searchParams = useSearchParams();
-  const [workspaceId, setWorkspaceId] = useState("default");
-  const [installationId, setInstallationId] = useState("");
-  const [accountLogin, setAccountLogin] = useState("agicto");
-  const [owner, setOwner] = useState("agicto");
-  const [repo, setRepo] = useState("codingcto");
-  const [defaultBranch, setDefaultBranch] = useState("main");
+  const [workspaceId, setWorkspaceId] = useState(
+    () => searchParams.get('state')?.trim() || 'default'
+  );
+  const [installationId, setInstallationId] = useState(
+    () => searchParams.get('installation_id')?.trim() || ''
+  );
+  const [accountLogin, setAccountLogin] = useState('agicto');
+  const [owner, setOwner] = useState('agicto');
+  const [repo, setRepo] = useState('codingcto');
+  const [defaultBranch, setDefaultBranch] = useState('main');
   const [isPrivate, setIsPrivate] = useState(true);
   const [repositoryOptions, setRepositoryOptions] = useState<GitHubRepositoryOptionDTO[]>([]);
-  const [selectedRepository, setSelectedRepository] = useState("");
-  const [savedRepoId, setSavedRepoId] = useState("");
+  const [selectedRepository, setSelectedRepository] = useState('');
+  const [savedRepoId, setSavedRepoId] = useState('');
   const [savedInstallationDbId, setSavedInstallationDbId] = useState<number>();
-  const [message, setMessage] = useState("");
+  const [message, setMessage] = useState('');
   const [installEntry, setInstallEntry] = useState(
-    env.NEXT_PUBLIC_GITHUB_APP_INSTALL_URL || env.NEXT_PUBLIC_GITHUB_APP_SLUG || ""
+    env.NEXT_PUBLIC_GITHUB_APP_INSTALL_URL || env.NEXT_PUBLIC_GITHUB_APP_SLUG || ''
   );
 
-  const githubSettings = useGitHubSettings(workspaceId.trim() || "default");
+  const githubSettings = useGitHubSettings(workspaceId.trim() || 'default');
   const upsertSettings = useUpsertGitHubSettings();
   const syncInstallation = useSyncGitHubInstallation();
   const upsertRepository = useUpsertGitHubRepository();
@@ -107,121 +111,106 @@ export function GitHubConnectionPanel() {
   const installURL = useMemo(() => {
     const entry = installEntry.trim();
     if (!entry) {
-      return "";
+      return '';
     }
-    if (entry.startsWith("https://github.com/")) {
+    if (entry.startsWith('https://github.com/')) {
       return entry;
     }
     const slug = entry
-      .replace(/^https?:\/\/github\.com\/apps\//, "")
-      .replace(/\/installations\/new.*$/, "")
-      .replace(/^\/+|\/+$/g, "");
-    const state = encodeURIComponent(workspaceId.trim() || "default");
+      .replace(/^https?:\/\/github\.com\/apps\//, '')
+      .replace(/\/installations\/new.*$/, '')
+      .replace(/^\/+|\/+$/g, '');
+    const state = encodeURIComponent(workspaceId.trim() || 'default');
     return `https://github.com/apps/${slug}/installations/new?state=${state}`;
   }, [installEntry, workspaceId]);
 
-  useEffect(() => {
-    const returnedInstallationId = searchParams.get("installation_id")?.trim();
-    const setupAction = searchParams.get("setup_action")?.trim();
-    const stateWorkspaceId = searchParams.get("state")?.trim();
-    if (stateWorkspaceId) {
-      setWorkspaceId(stateWorkspaceId);
-    }
-    if (!returnedInstallationId) {
-      return;
-    }
-    setInstallationId(returnedInstallationId);
-    setMessage(
-      setupAction === "update"
-        ? "GitHub App 安装已更新，正在同步可访问仓库。"
-        : "GitHub App 已安装，正在同步可访问仓库。"
-    );
-    void syncGitHubInstallation(returnedInstallationId, stateWorkspaceId || workspaceId);
-  }, [searchParams]);
-
-  function applyRepositoryOption(option: GitHubRepositoryOptionDTO) {
+  const applyRepositoryOption = useCallback((option: GitHubRepositoryOptionDTO) => {
     setSelectedRepository(option.full_name);
     setOwner(option.owner);
     setRepo(option.repo);
-    setDefaultBranch(option.default_branch || "main");
+    setDefaultBranch(option.default_branch || 'main');
     setIsPrivate(option.is_private);
-  }
+  }, []);
 
-  async function syncGitHubInstallation(
-    installationIdValue = installationId,
-    workspaceIdValue = workspaceId
-  ) {
-    const parsedInstallationId = Number(installationIdValue);
-    if (!Number.isFinite(parsedInstallationId) || parsedInstallationId <= 0) {
-      setMessage("请先完成 GitHub App 安装，或填写有效的 Installation ID。");
-      return;
-    }
-    setMessage("");
-    try {
-      const result = await syncInstallation.mutateAsync({
-        workspace_id: workspaceIdValue.trim() || "default",
-        installation_id: parsedInstallationId,
-      });
-      setInstallationId(String(result.installation.installation_id));
-      setSavedInstallationDbId(result.installation.id);
-      setAccountLogin(result.installation.account_login);
-      setRepositoryOptions(result.repositories);
-      if (result.repositories[0]) {
-        applyRepositoryOption(result.repositories[0]);
+  const syncGitHubInstallation = useCallback(
+    async (installationIdValue: string, workspaceIdValue: string) => {
+      const parsedInstallationId = Number(installationIdValue);
+      if (!Number.isFinite(parsedInstallationId) || parsedInstallationId <= 0) {
+        setMessage('Install the GitHub App first, or enter a valid installation ID.');
+        return false;
       }
-      setMessage(
-        result.repositories.length > 0
-          ? "GitHub App 已同步，请选择要绑定的仓库后保存。"
-          : "GitHub App 已同步，但没有返回可访问仓库。请确认安装时选择了仓库权限。"
-      );
-    } catch (error) {
-      setMessage(`${errorMessage(error)} 请确认后端已配置 GITHUB_APP_ID 和 GITHUB_APP_PRIVATE_KEY。`);
-    }
-  }
+      setMessage('');
+      try {
+        const result = await syncInstallation.mutateAsync({
+          workspace_id: workspaceIdValue.trim() || 'default',
+          installation_id: parsedInstallationId,
+        });
+        setInstallationId(String(result.installation.installation_id));
+        setSavedInstallationDbId(result.installation.id);
+        setAccountLogin(result.installation.account_login);
+        setRepositoryOptions(result.repositories);
+        if (result.repositories[0]) {
+          applyRepositoryOption(result.repositories[0]);
+        }
+        setMessage(
+          result.repositories.length > 0
+            ? 'GitHub App synced. Choose the repository to bind, then save it.'
+            : 'GitHub App synced, but no accessible repositories were returned. Check the repositories selected during installation.'
+        );
+        return true;
+      } catch (error) {
+        setMessage(
+          `${errorMessage(error)} Confirm the backend has GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY configured.`
+        );
+        return false;
+      }
+    },
+    [applyRepositoryOption, syncInstallation]
+  );
 
   async function updateSetting<Key extends keyof GitHubSettings>(
     key: Key,
     value: GitHubSettings[Key]
   ) {
     const next = { ...settings, [key]: value };
-    setMessage("");
+    setMessage('');
     try {
       await upsertSettings.mutateAsync({
-        workspace_id: workspaceId.trim() || "default",
+        workspace_id: workspaceId.trim() || 'default',
         enabled: next.enabled,
         pull_request_sidebar: next.pullRequestSidebar,
         co_authored_by_trailer: next.coAuthoredByTrailer,
         issue_pr_auto_link: next.issuePrAutoLink,
       });
-      setMessage("GitHub 功能设置已保存。");
+      setMessage('GitHub feature settings saved.');
     } catch (error) {
-      setMessage(`${errorMessage(error)} GitHub 功能设置未保存。`);
+      setMessage(`${errorMessage(error)} GitHub feature settings were not saved.`);
     }
   }
 
   function focusConnectionForm() {
-    document.getElementById("github-repository-form")?.scrollIntoView({
-      behavior: "smooth",
-      block: "start",
+    document.getElementById('github-repository-form')?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'start',
     });
   }
 
   function focusInstallEntry() {
-    document.getElementById("github-app-install-entry")?.scrollIntoView({
-      behavior: "smooth",
-      block: "center",
+    document.getElementById('github-app-install-entry')?.scrollIntoView({
+      behavior: 'smooth',
+      block: 'center',
     });
-    window.setTimeout(() => document.getElementById("github-app-install-entry")?.focus(), 250);
+    window.setTimeout(() => document.getElementById('github-app-install-entry')?.focus(), 250);
   }
 
   async function connectRepository() {
     if (!canSubmit) {
-      setMessage("请填写 GitHub installation ID、账号和仓库信息。");
+      setMessage('Enter the GitHub installation ID, account, and repository details.');
       return;
     }
 
-    setMessage("");
-    setSavedRepoId("");
+    setMessage('');
+    setSavedRepoId('');
     try {
       let installationDbId = savedInstallationDbId;
       if (!installationDbId) {
@@ -240,15 +229,15 @@ export function GitHubConnectionPanel() {
         github_installation_id: installationDbId,
         github_owner: owner.trim(),
         github_repo: repo.trim(),
-        default_branch: defaultBranch.trim() || "main",
+        default_branch: defaultBranch.trim() || 'main',
         is_private: isPrivate,
       });
 
       setSavedRepoId(repository.repository_id);
-      setMessage("GitHub 仓库已连接，可以在 SpecForge 中使用这个仓库 ID。");
+      setMessage('GitHub repository connected. You can use this repository ID in CodingCTO.');
     } catch (error) {
       setMessage(
-        `${errorMessage(error)} 如果当前使用的是演示登录，需要先启用 LUAS_AUTH_BACKEND_ENABLED=true 并用后端账号登录。`
+        `${errorMessage(error)} If you are using demo auth, switch to backend auth and sign in with a backend user first.`
       );
     }
   }
@@ -256,7 +245,8 @@ export function GitHubConnectionPanel() {
   return (
     <div className="mx-auto max-w-4xl space-y-8">
       <p className="text-sm leading-6 text-text-muted">
-        连接 GitHub App，控制 Pull Request 如何出现在 CodingCTO 中，并决定智能体在 commit 记录里留下哪些痕迹。
+        Connect the GitHub App, control how pull requests appear in CodingCTO, and choose which
+        agent attribution is added to commits.
       </p>
 
       <Card>
@@ -266,22 +256,23 @@ export function GitHubConnectionPanel() {
               <Github className="h-5 w-5" />
             </div>
             <div>
-              <div className="font-medium">启用 GitHub 功能</div>
+              <div className="font-medium">Enable GitHub features</div>
               <p className="mt-1 text-sm leading-6 text-text-muted">
-                关闭后，所有 GitHub 入口都会被隐藏，也不再产生新的副作用。已有数据不会被删除；团队不使用 GitHub 时可以直接关闭。
+                When disabled, GitHub entry points are hidden and no new GitHub side effects are
+                created. Existing records are kept.
               </p>
             </div>
           </div>
           <Switch
             checked={settings.enabled}
             disabled={isSaving}
-            onCheckedChange={(checked) => updateSetting("enabled", checked)}
+            onCheckedChange={checked => updateSetting('enabled', checked)}
           />
         </CardContent>
       </Card>
 
       <section className="space-y-3">
-        <h3 className="text-base font-semibold">连接</h3>
+        <h3 className="text-base font-semibold">Connection</h3>
         <Card>
           <CardContent className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
             <div className="flex gap-3">
@@ -291,29 +282,30 @@ export function GitHubConnectionPanel() {
               <div>
                 <div className="font-medium">GitHub App</div>
                 <p className="mt-1 text-sm leading-6 text-text-muted">
-                  自动把 issue 关联到 Pull Request。当 PR 的分支、标题或正文中包含{" "}
-                  <code className="rounded bg-bg-subtle px-1.5 py-0.5 text-xs">MUL-123</code>{" "}
-                  并被合并时，对应 issue 会自动转为已完成。
+                  Automatically link issues to pull requests. When a PR branch, title, or body
+                  contains{' '}
+                  <code className="rounded bg-bg-subtle px-1.5 py-0.5 text-xs">MUL-123</code> and
+                  the PR is merged, the matching issue can be marked as completed.
                 </p>
               </div>
             </div>
             {installURL ? (
               <Button asChild disabled={!settings.enabled}>
                 <a href={installURL} target="_blank" rel="noreferrer">
-                  安装 GitHub App
+                  Install GitHub App
                 </a>
               </Button>
             ) : (
               <Button
                 onClick={() => {
                   setMessage(
-                    "请先填写 GitHub App slug 或安装地址。没有 GitHub App 时，需要先在 GitHub 创建一个 App。"
+                    'Enter a GitHub App slug or installation URL first. If you do not have a GitHub App yet, create one in GitHub.'
                   );
                   focusInstallEntry();
                 }}
                 disabled={!settings.enabled}
               >
-                安装 GitHub App
+                Install GitHub App
               </Button>
             )}
           </CardContent>
@@ -321,57 +313,57 @@ export function GitHubConnectionPanel() {
       </section>
 
       <section className="space-y-3">
-        <h3 className="text-base font-semibold">功能</h3>
+        <h3 className="text-base font-semibold">Features</h3>
         <Card>
           <CardContent className="divide-y divide-border-subtle p-0">
             <FeatureToggle
               icon={PanelRight}
-              title="Pull Request 侧栏"
-              description="在 issue 详情侧栏中展示关联的 Pull Request。"
+              title="Pull request sidebar"
+              description="Show linked pull requests in the issue detail sidebar."
               checked={settings.pullRequestSidebar}
               disabled={!settings.enabled || isSaving}
-              onCheckedChange={(checked) => updateSetting("pullRequestSidebar", checked)}
+              onCheckedChange={checked => updateSetting('pullRequestSidebar', checked)}
             />
             <FeatureToggle
               icon={SlidersHorizontal}
               title="Co-authored-by trailer"
               description={
                 <>
-                  在智能体提交的 commit 中追加{" "}
+                  Append{' '}
                   <code className="rounded bg-bg-subtle px-1.5 py-0.5 text-xs">
                     Co-authored-by: codingcto-agent &lt;github@codingcto.local&gt;
-                  </code>
-                  。
+                  </code>{' '}
+                  to agent-generated commits.
                 </>
               }
               checked={settings.coAuthoredByTrailer}
               disabled={!settings.enabled || isSaving}
-              onCheckedChange={(checked) => updateSetting("coAuthoredByTrailer", checked)}
+              onCheckedChange={checked => updateSetting('coAuthoredByTrailer', checked)}
             />
             <FeatureToggle
               icon={Link2}
-              title="Issue ↔ PR 自动关联"
-              description="根据 PR 标题、正文和分支名匹配 issue 编号并自动建立链接。"
+              title="Issue and PR auto-linking"
+              description="Match issue IDs from PR titles, bodies, and branch names, then create links automatically."
               checked={settings.issuePrAutoLink}
               disabled={!settings.enabled || isSaving}
-              onCheckedChange={(checked) => updateSetting("issuePrAutoLink", checked)}
+              onCheckedChange={checked => updateSetting('issuePrAutoLink', checked)}
             />
           </CardContent>
         </Card>
       </section>
 
       <section className="space-y-3">
-        <h3 className="text-base font-semibold">代码仓库</h3>
+        <h3 className="text-base font-semibold">Code Repository</h3>
         <Card>
           <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <div className="font-medium">仓库 URL 仍在「代码仓库」标签页中管理</div>
+              <div className="font-medium">Repository URLs still live under the repository tab</div>
               <p className="mt-1 text-sm text-text-muted">
-                在这里连接 GitHub App 后，再登记具体仓库给 SpecForge 使用。
+                Connect the GitHub App here, then bind the concrete repository for CodingCTO runs.
               </p>
             </div>
             <Button variant="outline" onClick={focusConnectionForm} disabled={!settings.enabled}>
-              填写仓库
+              Enter repository
               <ExternalLink className="ml-1.5 h-4 w-4" />
             </Button>
           </CardContent>
@@ -382,48 +374,50 @@ export function GitHubConnectionPanel() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Bot className="h-5 w-5" />
-            SpecForge 仓库连接
+            CodingCTO repository connection
           </CardTitle>
           <CardDescription>
-            安装 GitHub App 后，保存 installation 和仓库映射。后端会读取默认分支做一次真实校验，确认 App 有权限访问这个仓库。
+            After installing the GitHub App, save the installation and repository mapping. The
+            backend reads the default branch to verify that the App can access this repository.
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="github-app-install-entry">GitHub App slug 或安装地址</Label>
+            <Label htmlFor="github-app-install-entry">GitHub App slug or installation URL</Label>
             <div className="flex flex-col gap-2 md:flex-row">
               <Input
                 id="github-app-install-entry"
                 value={installEntry}
-                onChange={(event) => setInstallEntry(event.target.value)}
-                placeholder="例如 codingcto 或 https://github.com/apps/codingcto/installations/new"
+                onChange={event => setInstallEntry(event.target.value)}
+                placeholder="codingcto or https://github.com/apps/codingcto/installations/new"
               />
               {installURL ? (
                 <Button asChild variant="outline" disabled={!settings.enabled}>
                   <a href={installURL} target="_blank" rel="noreferrer">
-                    打开安装页
+                    Open install page
                     <ExternalLink className="ml-1.5 h-4 w-4" />
                   </a>
                 </Button>
               ) : (
                 <Button variant="outline" onClick={focusInstallEntry} disabled={!settings.enabled}>
-                  打开安装页
+                  Open install page
                   <ExternalLink className="ml-1.5 h-4 w-4" />
                 </Button>
               )}
             </div>
             <p className="text-sm leading-6 text-text-muted">
-              这里是平台 GitHub App 的安装入口。普通用户只需要点安装并选择自己的 GitHub 账号/组织和仓库。
+              This is the platform GitHub App installation entry. Users install it and select the
+              GitHub account, organization, and repositories CodingCTO may access.
             </p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
-              <Label htmlFor="github-workspace">工作区 ID</Label>
+              <Label htmlFor="github-workspace">Workspace ID</Label>
               <Input
                 id="github-workspace"
                 value={workspaceId}
-                onChange={(event) => setWorkspaceId(event.target.value)}
+                onChange={event => setWorkspaceId(event.target.value)}
                 placeholder="default"
               />
             </div>
@@ -433,17 +427,17 @@ export function GitHubConnectionPanel() {
                 id="github-installation"
                 inputMode="numeric"
                 value={installationId}
-                onChange={(event) => setInstallationId(event.target.value)}
-                placeholder="GitHub App 安装 ID"
+                onChange={event => setInstallationId(event.target.value)}
+                placeholder="GitHub App installation ID"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="github-account">安装账号</Label>
+              <Label htmlFor="github-account">Installed account</Label>
               <Input
                 id="github-account"
                 value={accountLogin}
-                onChange={(event) => setAccountLogin(event.target.value)}
-                placeholder="组织或用户，例如 agicto"
+                onChange={event => setAccountLogin(event.target.value)}
+                placeholder="Organization or user, for example agicto"
               />
             </div>
           </div>
@@ -452,30 +446,30 @@ export function GitHubConnectionPanel() {
             <Button
               type="button"
               variant="outline"
-              onClick={() => syncGitHubInstallation()}
+              onClick={() => syncGitHubInstallation(installationId, workspaceId)}
               disabled={!settings.enabled || !installationId.trim() || isSaving}
             >
-              {syncInstallation.isPending ? "同步中" : "同步可访问仓库"}
+              {syncInstallation.isPending ? 'Syncing' : 'Sync accessible repositories'}
             </Button>
           </div>
 
           {repositoryOptions.length > 0 && (
             <div className="space-y-2">
-              <Label htmlFor="github-repository-option">选择仓库</Label>
+              <Label htmlFor="github-repository-option">Select repository</Label>
               <select
                 id="github-repository-option"
                 className="h-10 w-full rounded-md border border-border bg-bg-canvas px-3 text-sm"
                 value={selectedRepository}
-                onChange={(event) => {
+                onChange={event => {
                   const option = repositoryOptions.find(
-                    (candidate) => candidate.full_name === event.target.value
+                    candidate => candidate.full_name === event.target.value
                   );
                   if (option) {
                     applyRepositoryOption(option);
                   }
                 }}
               >
-                {repositoryOptions.map((option) => (
+                {repositoryOptions.map(option => (
                   <option key={option.full_name} value={option.full_name}>
                     {option.full_name}
                   </option>
@@ -486,29 +480,29 @@ export function GitHubConnectionPanel() {
 
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
-              <Label htmlFor="github-owner">仓库 Owner</Label>
+              <Label htmlFor="github-owner">Repository owner</Label>
               <Input
                 id="github-owner"
                 value={owner}
-                onChange={(event) => setOwner(event.target.value)}
+                onChange={event => setOwner(event.target.value)}
                 placeholder="agicto"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="github-repo">仓库名称</Label>
+              <Label htmlFor="github-repo">Repository name</Label>
               <Input
                 id="github-repo"
                 value={repo}
-                onChange={(event) => setRepo(event.target.value)}
+                onChange={event => setRepo(event.target.value)}
                 placeholder="codingcto"
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="github-default-branch">默认分支</Label>
+              <Label htmlFor="github-default-branch">Default branch</Label>
               <Input
                 id="github-default-branch"
                 value={defaultBranch}
-                onChange={(event) => setDefaultBranch(event.target.value)}
+                onChange={event => setDefaultBranch(event.target.value)}
                 placeholder="main"
               />
             </div>
@@ -516,9 +510,10 @@ export function GitHubConnectionPanel() {
 
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-subtle bg-bg-subtle px-3 py-2">
             <div>
-              <Label className="text-base">私有仓库</Label>
+              <Label className="text-base">Private repository</Label>
               <p className="mt-1 text-sm text-text-muted">
-                勾选后仅影响本地仓库记录；实际访问权限由 GitHub App installation 决定。
+                This only affects the local repository record. Actual access is controlled by the
+                GitHub App installation.
               </p>
             </div>
             <Switch checked={isPrivate} onCheckedChange={setIsPrivate} />
@@ -534,28 +529,33 @@ export function GitHubConnectionPanel() {
             <div className="rounded-lg border border-success/30 bg-success-subtle p-3 text-sm leading-6 text-success">
               <div className="flex items-center gap-2 font-medium">
                 <CheckCircle2 className="h-4 w-4" />
-                已连接：{savedRepoId}
+                Connected: {savedRepoId}
               </div>
               {savedInstallationDbId ? (
-                <div className="mt-1 text-xs">本地 installation 记录 ID：{savedInstallationDbId}</div>
+                <div className="mt-1 text-xs">
+                  Local installation record ID: {savedInstallationDbId}
+                </div>
               ) : null}
             </div>
           )}
         </CardContent>
         <CardFooter className="flex flex-wrap gap-2">
-          <Button onClick={connectRepository} disabled={!settings.enabled || !canSubmit || isSaving}>
-            {isSaving ? "连接中" : "连接 GitHub 仓库"}
+          <Button
+            onClick={connectRepository}
+            disabled={!settings.enabled || !canSubmit || isSaving}
+          >
+            {isSaving ? 'Connecting' : 'Connect GitHub repository'}
           </Button>
           {savedRepoId ? (
             <Button asChild variant="outline">
               <Link href={specForgeHref}>
-                去 SpecForge 使用
+                Use in CodingCTO
                 <ArrowRight className="ml-1.5 h-4 w-4" />
               </Link>
             </Button>
           ) : (
             <Button variant="outline" disabled>
-              去 SpecForge 使用
+              Use in CodingCTO
               <ArrowRight className="ml-1.5 h-4 w-4" />
             </Button>
           )}

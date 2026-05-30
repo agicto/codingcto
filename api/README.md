@@ -1,42 +1,40 @@
-# Luas
+# CodingCTO API
 
-> 面向模块化 Go API 的纯脚手架
+The CodingCTO API is the Go backend for the GitHub-native PRD-to-PR automation system. It owns workspace and project state, GitHub repository metadata, repository profiling, planning artifacts, execution runs, CI verification, and audit-ready backend workflows.
 
-Luas 是一个用于搭建 Go 后端项目的脚手架，目标是提供稳定的项目结构、依赖注入、模块边界、统一响应、分页、迁移、测试工具和常用基础设施集成。
+The Go module path is still `github.com/zgiai/luas/api` for compatibility with the repository history. Treat `luas` as an internal identifier only; the public project name is **CodingCTO**.
 
-这个仓库的定位是“框架与模板”，不是某个具体业务系统。默认只保留最小可用的认证、API key 和审计 starter，增强型业务模块和示例能力不再自动挂载到主应用。
+## What It Provides
 
-## 核心能力
+- Gin HTTP server with versioned `/v1` routes
+- Wire dependency injection
+- GORM persistence and migration registry
+- DDD-flavored domain and module boundaries
+- Starter modules for users, API keys, and audit logs
+- GitHub-native SpecForge planning and execution modules
+- Repository profile, skill, plan, prompt, execution, and verification services
+- Unified API responses, pagination, validation, logging, JWT, and middleware
+- Kest flow tests and Go unit/integration tests
+- Optional integrations for Redis, mail, OpenTelemetry, ClickHouse, and Sentry
 
-- 模块化目录结构，适合 DDD + 分层架构
-- Gin HTTP 服务入口与统一路由注册
-- Wire 依赖注入
-- GORM 数据访问与迁移体系
-- 内置 starter：`user`, `apikey`, `audit`
-- Provider-neutral AI capability 与内置 CLI `ai:chat`
-- 统一 API 响应与错误处理
-- 分页、验证、日志、JWT、中间件
-- 测试辅助工具与集成测试基线
-- 可选集成：Redis、邮件、OpenTelemetry、ClickHouse 日志通道、Sentry
+## Quick Start
 
-## 快速开始
-
-### 1. 环境准备
+### Requirements
 
 - Go 1.24+
-- PostgreSQL 12+ 或 SQLite
-- Redis 6+（可选）
+- PostgreSQL 12+ or SQLite
+- Redis 6+ when cache-backed features are enabled
 
-### 2. 初始化配置
+### Configure
 
 ```bash
 cp .env.example .env
 ```
 
-最少需要确认以下配置：
+Minimum local values:
 
 ```bash
-APP_NAME=Luas
+APP_NAME=CodingCTO
 APP_ENV=development
 SERVER_PORT=8025
 
@@ -50,206 +48,155 @@ DB_NAME=luas
 JWT_SECRET=replace-me
 ```
 
-### 3. 生成依赖注入代码
+`DB_NAME=luas` is currently a compatibility default. You may use a different local database name.
+
+### Generate Dependency Injection
 
 ```bash
 make wire
 ```
 
-### 4. 启动 HTTP 服务
+### Run the Server
 
 ```bash
-go run ./cmd/server
+make run
 ```
 
-默认地址：
+Default local endpoints:
 
-- 应用首页：`http://localhost:8025/`
-- 健康检查：`http://localhost:8025/v1/health`
-- Swagger：`http://localhost:8025/swagger/index.html`
+- Home: `http://localhost:8025/`
+- Health: `http://localhost:8025/v1/health`
+- Swagger: `http://localhost:8025/swagger/index.html`
 
-### 5. 使用 CLI
+### Run the CLI
 
 ```bash
 go run ./cmd/luas version
 go run ./cmd/luas route:list
 go run ./cmd/luas migrate
 go run ./cmd/luas seed
-go run ./cmd/luas ai:chat "Summarize this scaffold in one sentence"
+go run ./cmd/luas ai:chat "Summarize this project in one sentence"
 ```
 
-## 常用命令
+The CLI binary path remains `cmd/luas` until a dedicated compatibility migration is planned.
+
+### Run a Local Codex Runtime
+
+The SpecForge execution module can be driven by a local runtime process. The runtime talks to the API over `/v1`, claims dispatched `codex_cli` tasks, runs Codex CLI in a local repository directory, records task events, and submits the final result.
 
 ```bash
-make build
-make test
-make lint
-make wire
-make air
+go run ./cmd/specforge-runtime \
+  --api-base-url http://localhost:8025/v1 \
+  --token "$CODINGCTO_RUNTIME_TOKEN" \
+  --runtime-id local-codex-1 \
+  --repo-dir /path/to/local/repo \
+  --repository-id github_owner__repo
 ```
 
-## 项目结构
+Useful flags:
+
+- `--once`: perform one heartbeat/claim/execute cycle and exit.
+- `--poll-interval 10s`: set daemon polling cadence.
+- `--codex-path codex`: select the Codex CLI binary.
+- `--sandbox workspace-write`: pass the Codex sandbox mode.
+- `--approval-policy never`: keep execution non-interactive for automation.
+
+Environment equivalents are available with `SPECFORGE_API_BASE_URL`, `SPECFORGE_RUNTIME_TOKEN`, `SPECFORGE_RUNTIME_ID`, `SPECFORGE_RUNTIME_REPO_DIR`, `SPECFORGE_RUNTIME_REPOSITORY_ID`, `CODEX_CLI_PATH`, `SPECFORGE_CODEX_SANDBOX`, `SPECFORGE_CODEX_APPROVAL_POLICY`, and `SPECFORGE_CODEX_TIMEOUT`.
+
+## Repository Layout
 
 ```text
-luas/api/
+api/
 ├── cmd/
-│   ├── server/               # HTTP 服务入口
-│   └── luas/                  # CLI 入口
-├── internal/
-│   ├── app/                  # 应用聚合对象
-│   ├── bootstrap/            # 启动与生命周期
-│   ├── domain/               # 领域对象与领域错误
-│   ├── infra/                # 通用基础设施
-│   ├── modules/              # 业务模块
-│   └── wiring/               # Wire DI
-├── pkg/                      # 通用公共包
-├── routes/                   # 全局路由入口
+│   ├── luas/              # compatibility CLI entrypoint
+│   └── server/            # HTTP server entrypoint
 ├── database/
-│   ├── migrations/           # 数据迁移
-│   └── seeders/              # 数据初始化
-└── tests/
-    ├── feature/
-    ├── integration/
-    └── unit/
+│   ├── migrations/        # ordered migration registry
+│   └── seeders/
+├── internal/
+│   ├── bootstrap/         # application startup
+│   ├── capabilities/      # technical helpers such as idgen and crypto
+│   ├── domain/            # domain entities and contracts
+│   ├── infra/             # infrastructure adapters
+│   ├── modules/           # feature modules and services
+│   └── wiring/            # Wire-generated dependency graph
+├── pkg/                   # public helper packages
+├── routes/                # global route registration
+└── tests/                 # Kest and integration flows
 ```
 
-## 模块约定
+## Architecture Rules
 
-默认模块边界：
+- Keep the API and web apps independent. The API never imports from `web/`.
+- Flow request handling through `handler -> service -> repository -> database`.
+- Use domain structs at service boundaries; keep persistence objects in module repositories.
+- Keep route-owning modules close to the starter shape: `model`, `dto`, `repository`, `service`, `handler`, `routes`, `provider`, and tests.
+- Keep package names lowercase and singular.
+- Use `snake_case` JSON tags.
+- Use explicit interfaces only at real seams such as repositories, external services, clocks, or runners.
+- Keep all new comments and documentation in English.
 
-- `internal/modules/user` 是默认认证 starter，会参与默认路由、迁移和数据初始化
-- `internal/modules/apikey` 是默认 API key starter，会参与默认路由和迁移，并提供 `api_key` 中间件组
-- `internal/modules/audit` 是默认审计 starter，会记录全局写请求，并提供当前用户的审计历史查询
+## SpecForge Modules
 
-业务模块建议遵循 8 文件结构：
+SpecForge is the CodingCTO workflow that turns product intent into delivery artifacts:
 
-```text
-internal/modules/<module>/
-├── model.go
-├── dto.go
-├── repository.go
-├── service.go
-├── handler.go
-├── routes.go
-├── provider.go
-└── service_test.go
-```
+1. Repository context indexing
+2. Product plan generation
+3. Technical plan generation
+4. PR DAG planning
+5. Prompt compilation
+6. Execution orchestration
+7. GitHub PR delivery
+8. CI verification and auto-fix
+9. Review feedback loops
 
-分层流向：
+The core implementation lives under `internal/modules/planning`, `internal/modules/execution`, `internal/modules/githubintegration`, `internal/modules/verification`, and related domain files.
 
-```text
-Handler -> Service -> Repository -> Database
-DTO -> Domain -> PO
-```
-
-约束建议：
-
-- `handler` 负责参数绑定、鉴权上下文和响应输出
-- `service` 负责业务规则和错误语义
-- `repository` 负责 PO 与 domain 的边界转换
-- API 统一走 `pkg/response`
-- 列表接口统一使用分页
-
-## 测试
+## Common Commands
 
 ```bash
-make test
-make test-kest
+make wire          # generate Wire dependency injection
+make run           # start the API server
+make test          # run Go tests
+go test ./...      # run all Go packages
+go vet ./...       # quick correctness check
+make test-kest     # run Kest API flow tests
+```
+
+Run checks from `api/` unless noted otherwise.
+
+## Migrations
+
+Migrations are registered in `database/migrations`. Keep migrations small, ordered, reversible, and covered by migration tests when adding schema that is part of the SpecForge workflow.
+
+Useful commands:
+
+```bash
+go run ./cmd/luas migrate
+go run ./cmd/luas migrate:status
+```
+
+## Testing
+
+Recommended validation before opening a PR that touches the API:
+
+```bash
+make wire
 go test ./...
-go test ./tests/feature/...
-go test ./tests/integration/...
-```
-
-Kest flow 入口：
-
-- `tests/kest/auth.flow.md`
-- `tests/kest/api_keys.flow.md`
-
-本地一键运行：
-
-```bash
+go vet ./...
 make test-kest
-./tests/kest/run_local.sh tests/kest/auth.flow.md
 ```
 
-## AI Capability
+For focused work, run the affected module package first, then run the full suite before pushing.
 
-脚手架内置了 provider-neutral 的 `internal/capabilities/ai` 能力层，当前默认接了 OpenAI Responses API。
+## Environment Notes
 
-最小配置：
+- Never commit secrets.
+- Do not read or inject `.env` values into AI prompts.
+- Keep GitHub App permissions minimal.
+- Redact tokens and sensitive logs.
+- Treat runner workspaces as isolated execution environments.
 
-```bash
-AI_ENABLED=true
-AI_DEFAULT_PROVIDER=openai
-AI_DEFAULT_MODEL=gpt-5.4
-OPENAI_API_KEY=replace-me
-```
+## Compatibility Notes
 
-命令示例：
-
-```bash
-go run ./cmd/luas ai:chat "Write a short project summary"
-go run ./cmd/luas ai:chat --system="Answer in JSON" --model=gpt-5.4 "List 3 scaffold priorities"
-```
-
-## API Key Starter
-
-脚手架默认内置 API key 管理模块，提供：
-
-- `GET /v1/api-keys`
-- `POST /v1/api-keys`
-- `DELETE /v1/api-keys/:id`
-
-并自动注册 `api_key` 中间件组与 `key` alias，业务模块可以直接使用：
-
-```go
-r.Group("/v1", func(api *router.Router) {
-    api.WithMiddleware("api_key")
-    api.GET("/inference", handler.Run)
-})
-```
-
-## 可选集成
-
-这些能力保留在仓库中，但都应该被视为可选基础设施，而不是脚手架默认业务身份：
-
-- `Redis`
-- `Sentry`
-- `ClickHouse` 日志输出
-- `OpenTelemetry`
-- `Resend` 邮件服务
-- `R2` 对象存储
-
-如果你的项目不需要这些能力，可以只保留核心 HTTP、配置、数据库、路由和模块层。
-
-## 部署
-
-仓库提供基础 GitHub Actions 质量门禁。镜像发布和 Zeabur 更新可以在此基础上按项目需要扩展：
-
-```
-git push / pull request
-  → GH Actions: go test ./...
-  → 可选扩展: docker build + push ghcr.io/zgiai/luas-api:sha-<short>
-  → 可选扩展: 调用目标平台 API 滚动更新服务
-```
-
-构建配置：
-
-- `Dockerfile`：多阶段构建，runtime 用 `gcr.io/distroless/static-debian12:nonroot`，最终镜像约 92MB
-- `.dockerignore`：排除 `.git`、`tmp`、`docs`、`tests` 等无关目录
-- `.github/workflows/ci.yml`：API 测试与 Web 类型、lint、测试基线
-- 可选镜像发布工作流可以使用 buildx + `cache-from/to: type=gha` 共享 Docker 层缓存
-- 可选平台部署需要配置对应平台的 API token Secret
-
-是否公开镜像、使用哪个 registry、是否自动部署，都应由具体项目决定。
-
-## 设计原则
-
-- 根仓库只表达脚手架能力，不表达具体业务产品
-- 模块边界清晰，优先保证可替换和可测试
-- 默认配置最小化，额外能力显式开启
-- 框架自身必须遵守自己定义的模块规范
-
-## License
-
-MIT
+Some internal names still include `luas` because this repository preserves scaffold history and module paths. New user-facing copy should say **CodingCTO**. A full module/package rename should be done as a separate, planned compatibility migration.

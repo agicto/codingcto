@@ -27,8 +27,20 @@ type UpsertSkillRequest struct {
 	Active      *bool  `json:"active" binding:"omitempty"`
 }
 
+type UpsertProjectSkillRequest struct {
+	RepositoryID string `json:"repository_id" binding:"required,min=1,max=255"`
+	Name         string `json:"name" binding:"required,min=2,max=120"`
+	Description  string `json:"description" binding:"omitempty,max=1000"`
+	Content      string `json:"content" binding:"required,min=3,max=50000"`
+	Active       *bool  `json:"active" binding:"omitempty"`
+	SortOrder    int    `json:"sort_order" binding:"omitempty,min=0,max=1000"`
+}
+
 type PlanReviewResponse struct {
+	Requirement        *domain.SpecForgeRequirement        `json:"requirement,omitempty"`
 	Idea               *domain.SpecForgeIdea               `json:"idea"`
+	RepoProfile        *domain.SpecForgeRepoProfile        `json:"repo_profile,omitempty"`
+	ProjectContext     *domain.SpecForgeProjectContext     `json:"project_context,omitempty"`
 	ProductSpec        *domain.SpecForgeProductSpec        `json:"product_spec"`
 	ImplementationPlan *domain.SpecForgeImplementationPlan `json:"implementation_plan"`
 	PRNodes            []*domain.SpecForgePRNode           `json:"pr_nodes"`
@@ -47,12 +59,27 @@ type SkillListResponse struct {
 	Skills []*domain.SpecForgeSkill `json:"skills"`
 }
 
+type ProjectSkillResponse struct {
+	ProjectSkill *domain.SpecForgeProjectSkill `json:"project_skill"`
+}
+
+type ProjectSkillListResponse struct {
+	ProjectSkills []*domain.SpecForgeProjectSkill `json:"project_skills"`
+}
+
+type SkillRunListResponse struct {
+	SkillRuns []*domain.SpecForgeSkillRun `json:"skill_runs"`
+}
+
 func toPlanReviewResponse(bundle *domain.SpecForgePlanBundle) *PlanReviewResponse {
 	if bundle == nil {
 		return nil
 	}
 	return &PlanReviewResponse{
+		Requirement:        bundle.Requirement,
 		Idea:               bundle.Idea,
+		RepoProfile:        bundle.RepoProfile,
+		ProjectContext:     bundle.ProjectContext,
 		ProductSpec:        bundle.ProductSpec,
 		ImplementationPlan: bundle.Plan,
 		PRNodes:            bundle.PRNodes,

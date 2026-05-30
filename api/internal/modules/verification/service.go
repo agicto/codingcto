@@ -15,6 +15,7 @@ const maxFixAttemptsPerPRNode = 3
 const maxConsecutiveFixAttemptsPerFailureType = 2
 
 type Service interface {
+	VerifyPRNodeCI(ctx context.Context, userID, prNodeID uint, req *VerifyPRNodeCIRequest) (*VerifyPRNodeCIResponse, error)
 	CreateFixAttempt(ctx context.Context, userID, prNodeID uint, req *CreateFixAttemptRequest) (*domain.SpecForgeFixAttempt, error)
 	CreateFixAttemptFromCI(ctx context.Context, userID, prNodeID uint, req *CreateFixAttemptFromCIRequest) (*domain.SpecForgeFixAttempt, error)
 	UpdateFixAttemptStatus(ctx context.Context, fixAttemptID uint, status string) error
@@ -27,14 +28,120 @@ type CIFailureReader interface {
 	ReadPRNodeFailureLog(ctx context.Context, req *githubintegration.ReadPRNodeFailureLogRequest) (*githubintegration.PRNodeFailureLog, error)
 }
 
+type PRNodeCIRefresher interface {
+	RefreshPRNodeCI(ctx context.Context, req *githubintegration.RefreshPRNodeCIRequest) (*domain.SpecForgePRNode, error)
+}
+
 type service struct {
 	repo          domain.SpecForgeVerificationRepository
+	ciRefresher   PRNodeCIRefresher
 	failureReader CIFailureReader
 	eventBus      *events.EventBus
 }
 
-func NewService(repo domain.SpecForgeVerificationRepository, failureReader CIFailureReader, eventBus *events.EventBus) *service {
-	return &service{repo: repo, failureReader: failureReader, eventBus: eventBus}
+func NewService(repo domain.SpecForgeVerificationRepository, ciRefresher PRNodeCIRefresher, failureReader CIFailureReader, eventBus *events.EventBus) *service {
+	return &service{repo: repo, ciRefresher: ciRefresher, failureReader: failureReader, eventBus: eventBus}
+}
+
+func (s *service) VerifyPRNodeCI(ctx context.Context, userID, prNodeID uint, req *VerifyPRNodeCIRequest) (*VerifyPRNodeCIResponse, error) {
+	if prNodeID == 0 || req == nil || strings.TrimSpace(req.RepositoryID) == "" || s.ciRefresher == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	repositoryID := strings.TrimSpace(req.RepositoryID)
+	node, err := s.ciRefresher.RefreshPRNodeCI(ctx, &githubintegration.RefreshPRNodeCIRequest{
+		RepositoryID: repositoryID,
+		PRNodeID:     prNodeID,
+	})
+	if err != nil {
+		return nil, err
+	}
+	response := &VerifyPRNodeCIResponse{
+		PRNode:            node,
+		VerificationState: verificationStateForPRNode(node),
+		NextAction:        nextActionForPRNode(node),
+	}
+	if node == nil || node.Status != domain.PRNodeStatusBlocked {
+		return response, nil
+	}
+	attempt, err := s.CreateFixAttemptFromCI(ctx, userID, prNodeID, &CreateFixAttemptFromCIRequest{
+		RepositoryID: repositoryID,
+	})
+	if errors.Is(err, domain.ErrNotFound) {
+		attempt, err = s.createMissingCILogAttempt(ctx, userID, prNodeID, &CreateFixAttemptFromCIRequest{
+			RepositoryID: repositoryID,
+			Conclusion:   "failure",
+		})
+	}
+	if err == nil {
+		response.FixAttempt = attempt
+		response.VerificationState = verificationStateForFixAttempt(attempt)
+		response.NextAction = nextActionForFixAttempt(attempt)
+	}
+	if err != nil && !errors.Is(err, domain.ErrConflict) {
+		return nil, err
+	}
+	summary, summaryErr := s.GetEscalationSummary(ctx, prNodeID)
+	if summaryErr != nil {
+		return nil, summaryErr
+	}
+	response.EscalationSummary = summary
+	if response.FixAttempt == nil {
+		response.VerificationState = "needs_user_decision"
+		response.NextAction = summary.RecommendedOption
+	}
+	return response, nil
+}
+
+func verificationStateForPRNode(node *domain.SpecForgePRNode) string {
+	if node == nil {
+		return "unknown"
+	}
+	switch node.Status {
+	case domain.PRNodeStatusReadyForReview:
+		return "ci_passed"
+	case domain.PRNodeStatusCIRunning:
+		return "ci_running"
+	case domain.PRNodeStatusBlocked:
+		return "ci_failed"
+	default:
+		return "ci_not_ready"
+	}
+}
+
+func nextActionForPRNode(node *domain.SpecForgePRNode) string {
+	if node == nil {
+		return "Refresh the PR node again after GitHub reports a workflow run."
+	}
+	switch node.Status {
+	case domain.PRNodeStatusReadyForReview:
+		return "Review the pull request in GitHub."
+	case domain.PRNodeStatusCIRunning:
+		return "Wait for GitHub Actions to complete, then verify CI again."
+	case domain.PRNodeStatusBlocked:
+		return "Read the failed workflow logs and create a bounded fix attempt."
+	default:
+		return "Open or update the pull request, then wait for CI."
+	}
+}
+
+func verificationStateForFixAttempt(attempt *domain.SpecForgeFixAttempt) string {
+	if attempt == nil {
+		return "needs_user_decision"
+	}
+	if attempt.CanAutoFix && attempt.Status == domain.FixAttemptStatusQueued {
+		return "fix_attempt_queued"
+	}
+	return "needs_user_decision"
+}
+
+func nextActionForFixAttempt(attempt *domain.SpecForgeFixAttempt) string {
+	if attempt == nil {
+		return "Review the escalation summary and choose the next action."
+	}
+	if attempt.CanAutoFix && attempt.Status == domain.FixAttemptStatusQueued {
+		return "Dispatch the queued fix attempt to the Codex runtime."
+	}
+	return strings.TrimSpace(attempt.RecommendedAction)
 }
 
 func (s *service) CreateFixAttempt(ctx context.Context, userID, prNodeID uint, req *CreateFixAttemptRequest) (*domain.SpecForgeFixAttempt, error) {
@@ -236,6 +343,10 @@ func (s *service) CreateFixAttemptFromCI(ctx context.Context, userID, prNodeID u
 		}
 		return nil, domain.ErrNotFound
 	}
+	workflowRunID := req.WorkflowRunID
+	if workflowRunID == 0 {
+		workflowRunID = failure.WorkflowRunID
+	}
 	return s.CreateFixAttempt(ctx, userID, prNodeID, &CreateFixAttemptRequest{
 		FailureType:       classifyFailureType(failure),
 		CILogExcerpt:      failure.LogExcerpt,
@@ -243,7 +354,7 @@ func (s *service) CreateFixAttemptFromCI(ctx context.Context, userID, prNodeID u
 		LikelyCause:       likelyCause(failure),
 		RecommendedAction: recommendedAction(failure),
 		CanAutoFix:        canAutoFix(failure),
-		WorkflowRunID:     req.WorkflowRunID,
+		WorkflowRunID:     workflowRunID,
 		WorkflowRunURL:    req.WorkflowRunURL,
 		Conclusion:        req.Conclusion,
 	})

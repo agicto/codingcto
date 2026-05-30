@@ -4,7 +4,8 @@ import type { NavMessages } from './zh-Hans';
 const messages: NavMessages = {
   home: 'Home',
   dashboard: 'Platform',
-  specforge: 'SpecForge',
+  projects: 'Projects',
+  specforge: 'CodingCTO',
   settings: 'Settings',
   profile: 'Profile',
   analytics: 'Analytics',

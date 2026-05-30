@@ -73,3 +73,33 @@ func (h *Handler) GetProfile(c *gin.Context) {
 
 	response.Success(c, profile)
 }
+
+func (h *Handler) ReindexArchitecture(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+
+	var req ReindexRepoArchitectureRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+
+	status, err := h.service.ReindexArchitecture(c.Request.Context(), userID, c.Param("repo_id"), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to reindex repo architecture", err)
+		return
+	}
+
+	response.Success(c, status)
+}
+
+func (h *Handler) GetArchitectureStatus(c *gin.Context) {
+	status, err := h.service.GetArchitectureStatus(c.Request.Context(), c.Param("repo_id"))
+	if err != nil {
+		response.HandleError(c, "Failed to get repo architecture status", err)
+		return
+	}
+
+	response.Success(c, status)
+}

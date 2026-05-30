@@ -19,7 +19,7 @@ export const metadata: Metadata = {
     default: "CodingCTO",
     template: "%s | CodingCTO",
   },
-  description: "Modern web application scaffold built with Next.js, TypeScript, and Tailwind CSS",
+  description: "GitHub-native PRD-to-PR automation for AI-assisted engineering teams",
   metadataBase: new URL(env.NEXT_PUBLIC_APP_URL),
 };
 

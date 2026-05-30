@@ -12,7 +12,7 @@ import (
 
 func TestCreateFixAttemptAssignsAttemptNumberAndDefaults(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil, nil)
+	svc := NewService(repo, nil, nil, nil)
 
 	first, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
 		FailureType:       " type_error ",
@@ -39,7 +39,7 @@ func TestCreateFixAttemptAssignsAttemptNumberAndDefaults(t *testing.T) {
 
 func TestCreateFixAttemptRejectsAfterRetryLimit(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil, nil)
+	svc := NewService(repo, nil, nil, nil)
 
 	failureTypes := []string{"type_error", "lint_failure", "type_error"}
 	for _, failureType := range failureTypes {
@@ -58,7 +58,7 @@ func TestCreateFixAttemptRejectsAfterRetryLimit(t *testing.T) {
 
 func TestCreateFixAttemptRejectsRepeatedSameFailureType(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil, nil)
+	svc := NewService(repo, nil, nil, nil)
 
 	for i := 0; i < maxConsecutiveFixAttemptsPerFailureType; i++ {
 		_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
@@ -76,7 +76,7 @@ func TestCreateFixAttemptRejectsRepeatedSameFailureType(t *testing.T) {
 
 func TestCreateFixAttemptAllowsSameFailureTypeAfterDifferentFailure(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil, nil)
+	svc := NewService(repo, nil, nil, nil)
 
 	for _, failureType := range []string{"type_error", "lint_failure"} {
 		_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
@@ -95,7 +95,7 @@ func TestCreateFixAttemptAllowsSameFailureTypeAfterDifferentFailure(t *testing.T
 
 func TestListFixAttemptsReturnsPRNodeAttempts(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil, nil)
+	svc := NewService(repo, nil, nil, nil)
 	_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{FailureType: "type_error"})
 	require.NoError(t, err)
 	_, err = svc.CreateFixAttempt(context.Background(), 7, 99, &CreateFixAttemptRequest{FailureType: "lint_failure"})
@@ -118,7 +118,7 @@ func TestCreateFixAttemptFromCIClassifiesFailedLogs(t *testing.T) {
 			FailedSteps: []string{"go test"},
 		},
 	}
-	svc := NewService(repo, reader, nil)
+	svc := NewService(repo, nil, reader, nil)
 
 	attempt, err := svc.CreateFixAttemptFromCI(context.Background(), 7, 42, &CreateFixAttemptFromCIRequest{
 		RepositoryID:   "github_agicto__codingcto",
@@ -150,7 +150,7 @@ func TestCreateFixAttemptFromCIDedupesWorkflowRun(t *testing.T) {
 			FailedSteps: []string{"go test"},
 		},
 	}
-	svc := NewService(repo, reader, nil)
+	svc := NewService(repo, nil, reader, nil)
 
 	first, err := svc.CreateFixAttemptFromCI(context.Background(), 7, 42, &CreateFixAttemptFromCIRequest{
 		RepositoryID:  "github_agicto__codingcto",
@@ -185,7 +185,7 @@ func TestCreateFixAttemptFromCIRecordsEscalationWhenLogsAreUnavailable(t *testin
 		decision = typed
 		return nil
 	})
-	svc := NewService(repo, reader, bus)
+	svc := NewService(repo, nil, reader, bus)
 
 	attempt, err := svc.CreateFixAttemptFromCI(context.Background(), 7, 42, &CreateFixAttemptFromCIRequest{
 		RepositoryID:   "github_agicto__codingcto",
@@ -216,10 +216,11 @@ func TestCreateFixAttemptFromCIPublishesQueuedAutoFixEvent(t *testing.T) {
 	repo := &memoryRepo{}
 	reader := &fakeFailureReader{
 		failure: &githubintegration.PRNodeFailureLog{
-			PRNodeID:    42,
-			JobName:     "Web",
-			LogExcerpt:  "pnpm typecheck\nTS2322: Type mismatch\n",
-			FailedSteps: []string{"pnpm typecheck"},
+			PRNodeID:      42,
+			WorkflowRunID: 654,
+			JobName:       "Web",
+			LogExcerpt:    "pnpm typecheck\nTS2322: Type mismatch\n",
+			FailedSteps:   []string{"pnpm typecheck"},
 		},
 	}
 	bus := infraevents.NewEventBus()
@@ -234,7 +235,7 @@ func TestCreateFixAttemptFromCIPublishesQueuedAutoFixEvent(t *testing.T) {
 		published = typed
 		return nil
 	})
-	svc := NewService(repo, reader, bus)
+	svc := NewService(repo, nil, reader, bus)
 
 	attempt, err := svc.CreateFixAttemptFromCI(context.Background(), 7, 42, &CreateFixAttemptFromCIRequest{
 		RepositoryID: "github_agicto__codingcto",
@@ -242,11 +243,140 @@ func TestCreateFixAttemptFromCIPublishesQueuedAutoFixEvent(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, attempt.ID, published.FixAttemptID)
+	require.Equal(t, int64(654), attempt.WorkflowRunID)
 	require.Equal(t, uint(42), published.PRNodeID)
 	require.Equal(t, "type_error", published.FailureType)
 	require.Contains(t, published.CILogExcerpt, "TS2322")
 	require.Contains(t, published.LikelyCause, "pnpm typecheck")
 	require.NotEmpty(t, published.RecommendedAction)
+}
+
+func TestVerifyPRNodeCIQueuesFixAttemptWhenRefreshFindsFailure(t *testing.T) {
+	repo := &memoryRepo{}
+	refresher := &fakeCIRefresher{
+		node: &domain.SpecForgePRNode{
+			ID:     42,
+			Status: domain.PRNodeStatusBlocked,
+		},
+	}
+	reader := &fakeFailureReader{
+		failure: &githubintegration.PRNodeFailureLog{
+			PRNodeID:      42,
+			WorkflowRunID: 654,
+			JobName:       "Web",
+			LogExcerpt:    "pnpm typecheck\nTS2322: Type mismatch\n",
+			FailedSteps:   []string{"pnpm typecheck"},
+		},
+	}
+	svc := NewService(repo, refresher, reader, nil)
+
+	result, err := svc.VerifyPRNodeCI(context.Background(), 7, 42, &VerifyPRNodeCIRequest{
+		RepositoryID: "github_agicto__codingcto",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "github_agicto__codingcto", refresher.request.RepositoryID)
+	require.Equal(t, uint(42), refresher.request.PRNodeID)
+	require.Equal(t, "github_agicto__codingcto", reader.request.RepositoryID)
+	require.NotNil(t, result.PRNode)
+	require.NotNil(t, result.FixAttempt)
+	require.NotNil(t, result.EscalationSummary)
+	require.Equal(t, "fix_attempt_queued", result.VerificationState)
+	require.Equal(t, "Dispatch the queued fix attempt to the Codex runtime.", result.NextAction)
+	require.Equal(t, "type_error", result.FixAttempt.FailureType)
+	require.Equal(t, int64(654), result.FixAttempt.WorkflowRunID)
+	require.Equal(t, 1, result.EscalationSummary.AttemptsUsed)
+}
+
+func TestVerifyPRNodeCIReturnsPassedStateWithoutFixAttempt(t *testing.T) {
+	repo := &memoryRepo{}
+	refresher := &fakeCIRefresher{
+		node: &domain.SpecForgePRNode{
+			ID:     42,
+			Status: domain.PRNodeStatusReadyForReview,
+		},
+	}
+	reader := &fakeFailureReader{}
+	svc := NewService(repo, refresher, reader, nil)
+
+	result, err := svc.VerifyPRNodeCI(context.Background(), 7, 42, &VerifyPRNodeCIRequest{
+		RepositoryID: "github_agicto__codingcto",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "ci_passed", result.VerificationState)
+	require.Equal(t, "Review the pull request in GitHub.", result.NextAction)
+	require.Nil(t, result.FixAttempt)
+	require.Nil(t, result.EscalationSummary)
+	require.Zero(t, reader.request.PRNodeID)
+	require.Empty(t, repo.attempts)
+}
+
+func TestVerifyPRNodeCIReturnsEscalationWhenAutoFixBudgetIsExhausted(t *testing.T) {
+	repo := &memoryRepo{}
+	for _, failureType := range []string{"type_error", "lint_failure", "unit_test_failure"} {
+		err := repo.CreateFixAttempt(context.Background(), &domain.SpecForgeFixAttempt{
+			PRNodeID:      42,
+			FailureType:   failureType,
+			AttemptNumber: len(repo.attempts) + 1,
+			Status:        domain.FixAttemptStatusFailed,
+			CanAutoFix:    true,
+		})
+		require.NoError(t, err)
+	}
+	refresher := &fakeCIRefresher{
+		node: &domain.SpecForgePRNode{
+			ID:     42,
+			Status: domain.PRNodeStatusBlocked,
+		},
+	}
+	reader := &fakeFailureReader{
+		failure: &githubintegration.PRNodeFailureLog{
+			PRNodeID:      42,
+			WorkflowRunID: 999,
+			JobName:       "API",
+			LogExcerpt:    "go test ./...\n--- FAIL: TestInvite\n",
+			FailedSteps:   []string{"go test"},
+		},
+	}
+	svc := NewService(repo, refresher, reader, nil)
+
+	result, err := svc.VerifyPRNodeCI(context.Background(), 7, 42, &VerifyPRNodeCIRequest{
+		RepositoryID: "github_agicto__codingcto",
+	})
+
+	require.NoError(t, err)
+	require.Nil(t, result.FixAttempt)
+	require.NotNil(t, result.EscalationSummary)
+	require.Equal(t, "needs_user_decision", result.VerificationState)
+	require.Contains(t, result.NextAction, "Pause auto-fix")
+	require.Equal(t, maxFixAttemptsPerPRNode, result.EscalationSummary.AttemptsUsed)
+	require.False(t, result.EscalationSummary.CanContinueAutoFix)
+}
+
+func TestVerifyPRNodeCICreatesEscalationWhenFailureLogIsMissing(t *testing.T) {
+	repo := &memoryRepo{}
+	refresher := &fakeCIRefresher{
+		node: &domain.SpecForgePRNode{
+			ID:     42,
+			Status: domain.PRNodeStatusBlocked,
+		},
+	}
+	reader := &fakeFailureReader{err: domain.ErrNotFound}
+	svc := NewService(repo, refresher, reader, nil)
+
+	result, err := svc.VerifyPRNodeCI(context.Background(), 7, 42, &VerifyPRNodeCIRequest{
+		RepositoryID: "github_agicto__codingcto",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, result.FixAttempt)
+	require.NotNil(t, result.EscalationSummary)
+	require.Equal(t, "needs_user_decision", result.VerificationState)
+	require.Equal(t, "ci_log_unavailable", result.FixAttempt.FailureType)
+	require.Equal(t, domain.FixAttemptStatusFailed, result.FixAttempt.Status)
+	require.False(t, result.FixAttempt.CanAutoFix)
+	require.Contains(t, result.FixAttempt.CILogExcerpt, "Conclusion: failure")
 }
 
 func TestHandlerCreatesFixAttemptFromPRNodeCIFailedEvent(t *testing.T) {
@@ -259,7 +389,7 @@ func TestHandlerCreatesFixAttemptFromPRNodeCIFailedEvent(t *testing.T) {
 			FailedSteps: []string{"go test"},
 		},
 	}
-	handler := NewHandler(NewService(repo, reader, nil))
+	handler := NewHandler(NewService(repo, nil, reader, nil))
 	bus := infraevents.NewEventBus()
 	handler.RegisterEvents(bus)
 
@@ -284,7 +414,7 @@ func TestHandlerCreatesFixAttemptFromPRNodeCIFailedEvent(t *testing.T) {
 func TestHandlerCreatesEscalationAttemptWhenCILogsAreUnavailable(t *testing.T) {
 	repo := &memoryRepo{}
 	reader := &fakeFailureReader{err: domain.ErrNotFound}
-	handler := NewHandler(NewService(repo, reader, nil))
+	handler := NewHandler(NewService(repo, nil, reader, nil))
 	bus := infraevents.NewEventBus()
 	handler.RegisterEvents(bus)
 
@@ -308,7 +438,7 @@ func TestHandlerCreatesEscalationAttemptWhenCILogsAreUnavailable(t *testing.T) {
 
 func TestHandlerUpdatesFixAttemptFromFinishedFixTaskEvent(t *testing.T) {
 	repo := &memoryRepo{}
-	handler := NewHandler(NewService(repo, nil, nil))
+	handler := NewHandler(NewService(repo, nil, nil, nil))
 	bus := infraevents.NewEventBus()
 	handler.RegisterEvents(bus)
 	attempt, err := handler.service.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
@@ -332,7 +462,7 @@ func TestHandlerUpdatesFixAttemptFromFinishedFixTaskEvent(t *testing.T) {
 func TestHandlerQueuesNextFixAttemptWhenFixTaskFails(t *testing.T) {
 	repo := &memoryRepo{}
 	bus := infraevents.NewEventBus()
-	handler := NewHandler(NewService(repo, nil, bus))
+	handler := NewHandler(NewService(repo, nil, nil, bus))
 	handler.RegisterEvents(bus)
 	var queued domain.SpecForgeFixAttemptQueuedEvent
 	bus.Subscribe(domain.EventSpecForgeFixAttemptQueued, func(ctx context.Context, event infraevents.Event) error {
@@ -375,7 +505,7 @@ func TestHandlerQueuesNextFixAttemptWhenFixTaskFails(t *testing.T) {
 func TestHandlerStopsQueuingFixAttemptsAtBudgetLimit(t *testing.T) {
 	repo := &memoryRepo{}
 	bus := infraevents.NewEventBus()
-	handler := NewHandler(NewService(repo, nil, bus))
+	handler := NewHandler(NewService(repo, nil, nil, bus))
 	handler.RegisterEvents(bus)
 	queuedCount := 0
 	var decision domain.SpecForgePRNodeNeedsDecisionEvent
@@ -422,7 +552,7 @@ func TestHandlerStopsQueuingFixAttemptsAtBudgetLimit(t *testing.T) {
 
 func TestCreateFixAttemptFromCIRejectsMissingReader(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil, nil)
+	svc := NewService(repo, nil, nil, nil)
 
 	_, err := svc.CreateFixAttemptFromCI(context.Background(), 7, 42, &CreateFixAttemptFromCIRequest{
 		RepositoryID: "github_agicto__codingcto",
@@ -433,7 +563,7 @@ func TestCreateFixAttemptFromCIRejectsMissingReader(t *testing.T) {
 
 func TestGetEscalationSummaryAllowsAutoFixBeforeLimit(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil, nil)
+	svc := NewService(repo, nil, nil, nil)
 	_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
 		FailureType:       "type_error",
 		LikelyCause:       "GitHub Actions job failed at typecheck.",
@@ -457,7 +587,7 @@ func TestGetEscalationSummaryAllowsAutoFixBeforeLimit(t *testing.T) {
 
 func TestGetEscalationSummaryRequiresDecisionForNonAutoFixableLatestAttempt(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil, nil)
+	svc := NewService(repo, nil, nil, nil)
 	_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
 		FailureType:       "ci_log_unavailable",
 		Status:            domain.FixAttemptStatusFailed,
@@ -478,7 +608,7 @@ func TestGetEscalationSummaryRequiresDecisionForNonAutoFixableLatestAttempt(t *t
 
 func TestGetEscalationSummaryRequiresDecisionAfterLimit(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil, nil)
+	svc := NewService(repo, nil, nil, nil)
 	for i := 0; i < maxFixAttemptsPerPRNode; i++ {
 		_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
 			FailureType:       []string{"unit_test_failure", "lint_failure", "unit_test_failure"}[i],
@@ -501,7 +631,7 @@ func TestGetEscalationSummaryRequiresDecisionAfterLimit(t *testing.T) {
 
 func TestGetEscalationSummaryRequiresDecisionAfterRepeatedFailureType(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, nil, nil)
+	svc := NewService(repo, nil, nil, nil)
 	for i := 0; i < maxConsecutiveFixAttemptsPerFailureType; i++ {
 		_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
 			FailureType:       "type_error",
@@ -535,6 +665,19 @@ func (r *fakeFailureReader) ReadPRNodeFailureLog(ctx context.Context, req *githu
 		r.request = *req
 	}
 	return r.failure, r.err
+}
+
+type fakeCIRefresher struct {
+	request githubintegration.RefreshPRNodeCIRequest
+	node    *domain.SpecForgePRNode
+	err     error
+}
+
+func (r *fakeCIRefresher) RefreshPRNodeCI(ctx context.Context, req *githubintegration.RefreshPRNodeCIRequest) (*domain.SpecForgePRNode, error) {
+	if req != nil {
+		r.request = *req
+	}
+	return r.node, r.err
 }
 
 type memoryRepo struct {

@@ -10,7 +10,7 @@ describe('buildPromptPreview', () => {
     expect(prompt).toContain('你正在实现 PR-001');
     expect(prompt).toContain('目标：');
     expect(prompt).toContain('非目标：');
-    expect(prompt).toContain('不构建 UI。');
+    expect(prompt).toContain('Do not build UI.');
     expect(prompt).toContain('测试命令：');
     expect(prompt).toContain('go test ./...');
     expect(prompt).toContain('实现后：');

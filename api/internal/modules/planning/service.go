@@ -4,6 +4,7 @@ import (
 	"context"
 	"crypto/sha256"
 	"encoding/hex"
+	"encoding/json"
 	"errors"
 	"fmt"
 	"regexp"
@@ -16,21 +17,35 @@ import (
 
 type Service interface {
 	CreateIdea(ctx context.Context, userID uint, repoID string, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error)
+	CreateProjectIdea(ctx context.Context, userID, projectID uint, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error)
+	CreateProjectRequirement(ctx context.Context, userID, projectID uint, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error)
+	GenerateRequirementPlan(ctx context.Context, userID, requirementID uint, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error)
 	GetPlanForIdea(ctx context.Context, ideaID uint) (*domain.SpecForgePlanBundle, error)
+	GetPlanForRequirement(ctx context.Context, requirementID uint) (*domain.SpecForgePlanBundle, error)
 	ApprovePlan(ctx context.Context, userID, planID uint, req *ApprovePlanRequest) (*domain.SpecForgePlanBundle, error)
 	UpsertSkill(ctx context.Context, userID uint, repoID string, req *UpsertSkillRequest) (*domain.SpecForgeSkill, error)
 	ListSkills(ctx context.Context, repoID string) ([]*domain.SpecForgeSkill, error)
+	UpsertProjectSkill(ctx context.Context, userID, projectID uint, req *UpsertProjectSkillRequest) (*domain.SpecForgeProjectSkill, error)
+	ListProjectSkills(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectSkill, error)
+	ListSkillRunsForRequirement(ctx context.Context, requirementID uint) ([]*domain.SpecForgeSkillRun, error)
+	ListSkillRunsForPlan(ctx context.Context, planID uint) ([]*domain.SpecForgeSkillRun, error)
 	CompilePrompt(ctx context.Context, userID, prNodeID uint, req *CompilePromptRequest) (*domain.SpecForgeCompiledPrompt, error)
 }
 
 type service struct {
-	repo        domain.SpecForgePlanningRepository
-	profileRepo domain.SpecForgeRepoProfileRepository
-	skillRepo   domain.SpecForgeSkillRepository
+	repo         domain.SpecForgePlanningRepository
+	profileRepo  domain.SpecForgeRepoProfileRepository
+	skillRepo    domain.SpecForgeSkillRepository
+	pipelineRepo domain.SpecForgeSkillPipelineRepository
+	projectRepo  domain.SpecForgeProjectRepositoryStore
 }
 
-func NewService(repo domain.SpecForgePlanningRepository, profileRepo domain.SpecForgeRepoProfileRepository, skillRepo domain.SpecForgeSkillRepository) *service {
-	return &service{repo: repo, profileRepo: profileRepo, skillRepo: skillRepo}
+func NewService(repo domain.SpecForgePlanningRepository, profileRepo domain.SpecForgeRepoProfileRepository, skillRepo domain.SpecForgeSkillRepository, projectRepo domain.SpecForgeProjectRepositoryStore) *service {
+	var pipelineRepo domain.SpecForgeSkillPipelineRepository
+	if repo, ok := skillRepo.(domain.SpecForgeSkillPipelineRepository); ok {
+		pipelineRepo = repo
+	}
+	return &service{repo: repo, profileRepo: profileRepo, skillRepo: skillRepo, pipelineRepo: pipelineRepo, projectRepo: projectRepo}
 }
 
 func (s *service) CreateIdea(ctx context.Context, userID uint, repoID string, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error) {
@@ -49,8 +64,116 @@ func (s *service) CreateIdea(ctx context.Context, userID uint, repoID string, re
 	}
 
 	bundle := compileInitialPlan(userID, repoID, strings.TrimSpace(req.Input), ideaType, profile)
+	bundle.Plan.Version = 1
 	if err := s.repo.CreatePlanBundle(ctx, bundle); err != nil {
 		return nil, fmt.Errorf("create plan bundle: %w", err)
+	}
+	if err := s.recordPlanSkillRuns(ctx, userID, bundle); err != nil {
+		return nil, err
+	}
+	return bundle, nil
+}
+
+func (s *service) CreateProjectIdea(ctx context.Context, userID, projectID uint, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error) {
+	return s.CreateProjectRequirement(ctx, userID, projectID, req)
+}
+
+func (s *service) CreateProjectRequirement(ctx context.Context, userID, projectID uint, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error) {
+	if userID == 0 || projectID == 0 || req == nil || strings.TrimSpace(req.Input) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+
+	projectContext, err := s.projectContextFor(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	primaryRepoID := primaryRepositoryID(projectContext)
+	if primaryRepoID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+
+	ideaType := strings.TrimSpace(req.Type)
+	if ideaType == "" {
+		ideaType = "feature"
+	}
+
+	requirement := &domain.SpecForgeRequirement{
+		WorkspaceID: projectContext.Project.WorkspaceID,
+		ProjectID:   projectID,
+		CreatedBy:   userID,
+		RawInput:    strings.TrimSpace(req.Input),
+		Type:        ideaType,
+		Status:      domain.RequirementStatusAwaitingApproval,
+	}
+	profile := synthesizedProjectProfile(projectContext, primaryRepoID)
+	bundle := compileInitialPlan(userID, primaryRepoID, requirement.RawInput, ideaType, profile)
+	bundle.Requirement = requirement
+	bundle.Idea.ProjectID = &projectID
+	bundle.ProjectContext = projectContext
+	bundle.Plan.Version = 1
+	bundle.ProductSpec.Assumptions = append(bundle.ProductSpec.Assumptions, projectContextAssumption(projectContext))
+	if err := s.repo.CreatePlanBundle(ctx, bundle); err != nil {
+		return nil, fmt.Errorf("create project requirement plan bundle: %w", err)
+	}
+	if err := s.recordPlanSkillRuns(ctx, userID, bundle); err != nil {
+		return nil, err
+	}
+	return bundle, nil
+}
+
+func (s *service) GenerateRequirementPlan(ctx context.Context, userID, requirementID uint, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error) {
+	if userID == 0 || requirementID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	requirement, err := s.repo.FindRequirementByID(ctx, requirementID)
+	if err != nil {
+		return nil, err
+	}
+	if requirement.Status == domain.RequirementStatusExecuting {
+		return nil, domain.ErrConflict
+	}
+	projectContext, err := s.projectContextFor(ctx, requirement.ProjectID)
+	if err != nil {
+		return nil, err
+	}
+	primaryRepoID := primaryRepositoryID(projectContext)
+	if primaryRepoID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	input := strings.TrimSpace(requirement.RawInput)
+	ideaType := strings.TrimSpace(requirement.Type)
+	if req != nil {
+		if strings.TrimSpace(req.Input) != "" {
+			input = strings.TrimSpace(req.Input)
+		}
+		if strings.TrimSpace(req.Type) != "" {
+			ideaType = strings.TrimSpace(req.Type)
+		}
+	}
+	if input == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	if ideaType == "" {
+		ideaType = "feature"
+	}
+	version, err := s.repo.NextPlanVersionByRequirementID(ctx, requirementID)
+	if err != nil {
+		return nil, err
+	}
+	profile := synthesizedProjectProfile(projectContext, primaryRepoID)
+	bundle := compileInitialPlan(userID, primaryRepoID, input, ideaType, profile)
+	bundle.Requirement = requirement
+	bundle.Idea.RequirementID = &requirement.ID
+	bundle.Idea.ProjectID = &requirement.ProjectID
+	bundle.ProjectContext = projectContext
+	bundle.Plan.RequirementID = &requirement.ID
+	bundle.Plan.Version = version
+	bundle.ProductSpec.Assumptions = append(bundle.ProductSpec.Assumptions, projectContextAssumption(projectContext))
+	if err := s.repo.CreatePlanBundle(ctx, bundle); err != nil {
+		return nil, fmt.Errorf("generate requirement plan: %w", err)
+	}
+	if err := s.recordPlanSkillRuns(ctx, userID, bundle); err != nil {
+		return nil, err
 	}
 	return bundle, nil
 }
@@ -60,6 +183,17 @@ func (s *service) GetPlanForIdea(ctx context.Context, ideaID uint) (*domain.Spec
 		return nil, domain.ErrInvalidInput
 	}
 	bundle, err := s.repo.FindPlanBundleByIdeaID(ctx, ideaID)
+	if err != nil {
+		return nil, err
+	}
+	return s.withRepoProfile(ctx, bundle)
+}
+
+func (s *service) GetPlanForRequirement(ctx context.Context, requirementID uint) (*domain.SpecForgePlanBundle, error) {
+	if requirementID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	bundle, err := s.repo.FindLatestPlanBundleByRequirementID(ctx, requirementID)
 	if err != nil {
 		return nil, err
 	}
@@ -78,6 +212,15 @@ func (s *service) ApprovePlan(ctx context.Context, userID, planID uint, req *App
 	if bundle.Plan.Status == domain.PlanStatusApproved {
 		return nil, domain.ErrConflict
 	}
+	if bundle.Plan.RequirementID != nil {
+		latest, err := s.repo.FindLatestPlanBundleByRequirementID(ctx, *bundle.Plan.RequirementID)
+		if err != nil {
+			return nil, err
+		}
+		if latest == nil || latest.Plan == nil || latest.Plan.ID != bundle.Plan.ID || latest.Plan.Status != domain.PlanStatusDraft {
+			return nil, domain.ErrConflict
+		}
+	}
 	if !domain.ExecutableSpecForgePRDAG(bundle.PRNodes) {
 		return nil, domain.ErrConflict
 	}
@@ -86,6 +229,8 @@ func (s *service) ApprovePlan(ctx context.Context, userID, planID uint, req *App
 	bundle.Plan.Status = domain.PlanStatusApproved
 	bundle.Plan.ApprovedBy = &userID
 	bundle.Plan.ApprovedAt = &now
+	bundle.Plan.ApprovedSnapshotAt = &now
+	bundle.Plan.ApprovedSnapshotHash = approvedPlanSnapshotHash(bundle)
 	bundle.Plan.DecisionOverrides = decisionOverridesToStrings(req.DecisionOverrides)
 	if err := s.repo.UpdatePlan(ctx, bundle.Plan); err != nil {
 		return nil, fmt.Errorf("approve plan: %w", err)
@@ -127,6 +272,67 @@ func (s *service) ListSkills(ctx context.Context, repoID string) ([]*domain.Spec
 		return nil, domain.ErrInvalidInput
 	}
 	return s.skillRepo.ListSkillsByRepositoryID(ctx, strings.TrimSpace(repoID))
+}
+
+func (s *service) UpsertProjectSkill(ctx context.Context, userID, projectID uint, req *UpsertProjectSkillRequest) (*domain.SpecForgeProjectSkill, error) {
+	if userID == 0 || projectID == 0 || req == nil || s.skillRepo == nil || s.pipelineRepo == nil || s.projectRepo == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	project, err := s.projectRepo.FindProjectByID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	repositoryID := strings.TrimSpace(req.RepositoryID)
+	if _, err := s.projectRepo.FindProjectRepository(ctx, projectID, repositoryID); err != nil {
+		return nil, err
+	}
+	skill, err := s.UpsertSkill(ctx, userID, req.RepositoryID, &UpsertSkillRequest{
+		Name:        req.Name,
+		Description: req.Description,
+		Content:     req.Content,
+		Active:      req.Active,
+	})
+	if err != nil {
+		return nil, err
+	}
+	active := true
+	if req.Active != nil {
+		active = *req.Active
+	}
+	projectSkill := &domain.SpecForgeProjectSkill{
+		WorkspaceID:  project.WorkspaceID,
+		ProjectID:    projectID,
+		RepositoryID: skill.RepositoryID,
+		SkillID:      skill.ID,
+		Active:       active,
+		SortOrder:    req.SortOrder,
+		CreatedBy:    userID,
+	}
+	if err := s.pipelineRepo.UpsertProjectSkill(ctx, projectSkill); err != nil {
+		return nil, fmt.Errorf("upsert project skill: %w", err)
+	}
+	return projectSkill, nil
+}
+
+func (s *service) ListProjectSkills(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectSkill, error) {
+	if projectID == 0 || s.pipelineRepo == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.pipelineRepo.ListProjectSkillsByProjectID(ctx, projectID)
+}
+
+func (s *service) ListSkillRunsForRequirement(ctx context.Context, requirementID uint) ([]*domain.SpecForgeSkillRun, error) {
+	if requirementID == 0 || s.pipelineRepo == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.pipelineRepo.ListSkillRunsByRequirementID(ctx, requirementID)
+}
+
+func (s *service) ListSkillRunsForPlan(ctx context.Context, planID uint) ([]*domain.SpecForgeSkillRun, error) {
+	if planID == 0 || s.pipelineRepo == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.pipelineRepo.ListSkillRunsByPlanID(ctx, planID)
 }
 
 func (s *service) CompilePrompt(ctx context.Context, userID, prNodeID uint, req *CompilePromptRequest) (*domain.SpecForgeCompiledPrompt, error) {
@@ -174,6 +380,18 @@ func (s *service) CompilePrompt(ctx context.Context, userID, prNodeID uint, req 
 }
 
 func (s *service) activeSkillsFor(ctx context.Context, bundle *domain.SpecForgePlanBundle) ([]*domain.SpecForgeSkill, error) {
+	if bundle != nil && bundle.ProjectContext != nil {
+		if s.pipelineRepo != nil && bundle.ProjectContext.Project != nil {
+			projectSkills, err := s.pipelineRepo.ListActiveProjectSkillsByProjectID(ctx, bundle.ProjectContext.Project.ID)
+			if err != nil {
+				return nil, fmt.Errorf("load active project skills: %w", err)
+			}
+			if len(projectSkills) > 0 {
+				return skillsFromProjectSkills(projectSkills), nil
+			}
+		}
+		return activeProjectSkills(bundle.ProjectContext), nil
+	}
 	if s.skillRepo == nil || bundle == nil || bundle.Idea == nil || strings.TrimSpace(bundle.Idea.RepositoryID) == "" {
 		return []*domain.SpecForgeSkill{}, nil
 	}
@@ -184,8 +402,43 @@ func (s *service) activeSkillsFor(ctx context.Context, bundle *domain.SpecForgeP
 	return skills, nil
 }
 
+func (s *service) recordPlanSkillRuns(ctx context.Context, userID uint, bundle *domain.SpecForgePlanBundle) error {
+	if s.pipelineRepo == nil || bundle == nil || bundle.Plan == nil {
+		return nil
+	}
+	skills, err := s.activeSkillsFor(ctx, bundle)
+	if err != nil {
+		return err
+	}
+	now := time.Now()
+	requirementID := bundle.Plan.RequirementID
+	planID := &bundle.Plan.ID
+	var projectID *uint
+	if bundle.Requirement != nil && bundle.Requirement.ProjectID != 0 {
+		id := bundle.Requirement.ProjectID
+		projectID = &id
+	} else if bundle.Idea != nil && bundle.Idea.ProjectID != nil {
+		projectID = bundle.Idea.ProjectID
+	}
+	for _, run := range plannedSkillRuns(userID, requirementID, planID, projectID, bundle, skills, now) {
+		if err := s.pipelineRepo.CreateSkillRun(ctx, run); err != nil {
+			return fmt.Errorf("create skill run: %w", err)
+		}
+	}
+	return nil
+}
+
 func (s *service) withRepoProfile(ctx context.Context, bundle *domain.SpecForgePlanBundle) (*domain.SpecForgePlanBundle, error) {
 	if bundle == nil || bundle.Idea == nil {
+		return bundle, nil
+	}
+	if bundle.Idea.ProjectID != nil && *bundle.Idea.ProjectID != 0 {
+		projectContext, err := s.projectContextFor(ctx, *bundle.Idea.ProjectID)
+		if err != nil {
+			return nil, err
+		}
+		bundle.ProjectContext = projectContext
+		bundle.RepoProfile = synthesizedProjectProfile(projectContext, bundle.Idea.RepositoryID)
 		return bundle, nil
 	}
 	profile, err := s.repoProfileFor(ctx, bundle.Idea.RepositoryID)
@@ -210,11 +463,64 @@ func (s *service) repoProfileFor(ctx context.Context, repoID string) (*domain.Sp
 	return profile, nil
 }
 
+func (s *service) projectContextFor(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContext, error) {
+	if s.projectRepo == nil || projectID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	project, err := s.projectRepo.FindProjectByID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	repositories, err := s.projectRepo.ListProjectRepositories(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	contexts := make([]*domain.SpecForgeProjectRepositoryContext, 0, len(repositories))
+	for _, repository := range repositories {
+		if repository == nil || !repository.Active {
+			continue
+		}
+		context := &domain.SpecForgeProjectRepositoryContext{
+			Repository: repository,
+			Skills:     []*domain.SpecForgeSkill{},
+		}
+		if s.profileRepo != nil {
+			profile, err := s.profileRepo.FindProfileByRepositoryID(ctx, repository.RepositoryID)
+			if err != nil {
+				if !errors.Is(err, domain.ErrNotFound) {
+					return nil, fmt.Errorf("load project repo profile: %w", err)
+				}
+				context.Warnings = append(context.Warnings, "Repo profile has not been generated yet.")
+			} else {
+				context.Profile = profile
+			}
+		}
+		if s.skillRepo != nil {
+			skills, err := s.skillRepo.ListActiveSkillsByRepositoryID(ctx, repository.RepositoryID)
+			if err != nil {
+				return nil, fmt.Errorf("load project repo skills: %w", err)
+			}
+			context.Skills = skills
+		}
+		contexts = append(contexts, context)
+	}
+	context := &domain.SpecForgeProjectContext{
+		Project:            project,
+		Repositories:       repositories,
+		RepositoryContexts: contexts,
+	}
+	domain.ApplySpecForgeProjectContextGuardrails(context)
+	return context, nil
+}
+
 func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, skills []*domain.SpecForgeSkill) string {
 	var b strings.Builder
 	b.WriteString("You are implementing a SpecForge PR node.\n\n")
 	b.WriteString("Prompt type: " + promptType + "\n")
 	b.WriteString("PR node: " + node.NodeKey + " - " + node.Title + "\n")
+	if strings.TrimSpace(node.RepositoryID) != "" {
+		b.WriteString("Target repository: " + strings.TrimSpace(node.RepositoryID) + "\n")
+	}
 	b.WriteString("Goal:\n" + node.Goal + "\n\n")
 	writePromptTypeInstructions(&b, promptType)
 	b.WriteString("Product context:\n")
@@ -222,6 +528,7 @@ func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, no
 		b.WriteString("- " + goal + "\n")
 	}
 	b.WriteString("\nTechnical plan:\n" + bundle.Plan.TechnicalSummary + "\n\n")
+	writeProjectContext(&b, bundle.ProjectContext)
 	writeRepoProfile(&b, bundle.RepoProfile)
 	writeSkills(&b, skills)
 	writeList(&b, "Expected files", node.ExpectedFiles)
@@ -231,6 +538,7 @@ func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, no
 	writeList(&b, "Test commands", node.TestCommands)
 	b.WriteString("\nAfter implementation:\n")
 	b.WriteString("- Keep the diff within this PR node scope.\n")
+	b.WriteString("- Modify only the target repository for this PR node.\n")
 	b.WriteString("- Run the listed test commands.\n")
 	b.WriteString("- Prepare a PR description with summary, scope, non-goals, tests, risks, and dependencies.\n")
 	return b.String()
@@ -257,6 +565,51 @@ func writePromptTypeInstructions(b *strings.Builder, promptType string) {
 	b.WriteString("\n")
 }
 
+func writeProjectContext(b *strings.Builder, context *domain.SpecForgeProjectContext) {
+	if context == nil || context.Project == nil {
+		return
+	}
+	b.WriteString("Project context:\n")
+	b.WriteString("- Project: " + context.Project.Name + "\n")
+	if strings.TrimSpace(context.PrimaryRepositoryID) != "" {
+		b.WriteString("- Primary repository: " + strings.TrimSpace(context.PrimaryRepositoryID) + "\n")
+	}
+	if len(context.ReadOnlyRepositoryIDs) > 0 {
+		b.WriteString("- Read-only repositories: " + strings.Join(normalizePlanList(context.ReadOnlyRepositoryIDs), ", ") + "\n")
+	}
+	for _, guardrail := range context.ExecutionGuardrails {
+		if strings.TrimSpace(guardrail) != "" {
+			b.WriteString("- Guardrail: " + strings.TrimSpace(guardrail) + "\n")
+		}
+	}
+	if strings.TrimSpace(context.Project.Description) != "" {
+		b.WriteString("- Description: " + strings.TrimSpace(context.Project.Description) + "\n")
+	}
+	for _, repoContext := range context.RepositoryContexts {
+		if repoContext == nil || repoContext.Repository == nil {
+			continue
+		}
+		b.WriteString("- Repository " + repoContext.Repository.RepositoryID + " (" + repoContext.Repository.Role + ")\n")
+		if repoContext.Profile != nil {
+			if strings.TrimSpace(repoContext.Profile.Summary) != "" {
+				b.WriteString("  - Summary: " + strings.TrimSpace(repoContext.Profile.Summary) + "\n")
+			}
+			if len(repoContext.Profile.Stack) > 0 {
+				b.WriteString("  - Stack: " + strings.Join(normalizePlanList(repoContext.Profile.Stack), ", ") + "\n")
+			}
+			if len(repoContext.Profile.TestCommands) > 0 {
+				b.WriteString("  - Tests: " + strings.Join(normalizePlanList(repoContext.Profile.TestCommands), ", ") + "\n")
+			}
+		}
+		for _, warning := range repoContext.Warnings {
+			if strings.TrimSpace(warning) != "" {
+				b.WriteString("  - Warning: " + strings.TrimSpace(warning) + "\n")
+			}
+		}
+	}
+	b.WriteString("\n")
+}
+
 func writeSkills(b *strings.Builder, skills []*domain.SpecForgeSkill) {
 	b.WriteString("Repository skills:\n")
 	if len(skills) == 0 {
@@ -273,6 +626,234 @@ func writeSkills(b *strings.Builder, skills []*domain.SpecForgeSkill) {
 		}
 		b.WriteString(strings.TrimSpace(skill.Content) + "\n\n")
 	}
+}
+
+func primaryRepositoryID(context *domain.SpecForgeProjectContext) string {
+	if context == nil {
+		return ""
+	}
+	if strings.TrimSpace(context.PrimaryRepositoryID) != "" {
+		return strings.TrimSpace(context.PrimaryRepositoryID)
+	}
+	for _, repoContext := range context.RepositoryContexts {
+		if repoContext == nil || repoContext.Repository == nil || !repoContext.Repository.Active {
+			continue
+		}
+		repositoryID := strings.TrimSpace(repoContext.Repository.RepositoryID)
+		if repositoryID == "" {
+			continue
+		}
+		if repoContext.Repository.Role == domain.ProjectRepositoryRolePrimary {
+			return repositoryID
+		}
+	}
+	for _, repository := range context.Repositories {
+		if repository == nil || !repository.Active || strings.TrimSpace(repository.RepositoryID) == "" {
+			continue
+		}
+		if repository.Role == domain.ProjectRepositoryRolePrimary {
+			return strings.TrimSpace(repository.RepositoryID)
+		}
+	}
+	return ""
+}
+
+func synthesizedProjectProfile(context *domain.SpecForgeProjectContext, primaryRepoID string) *domain.SpecForgeRepoProfile {
+	if context == nil {
+		return nil
+	}
+	profile := &domain.SpecForgeRepoProfile{
+		RepositoryID:  strings.TrimSpace(primaryRepoID),
+		DefaultBranch: "main",
+		CIProvider:    "project_context",
+		Source:        "project_context",
+		Summary:       "Project context synthesized from bound repositories.",
+	}
+	if context.Project != nil {
+		profile.Summary = "Project " + context.Project.Name + " synthesized from bound repositories."
+	}
+	for _, repoContext := range context.RepositoryContexts {
+		if repoContext == nil || repoContext.Repository == nil {
+			continue
+		}
+		repositoryID := strings.TrimSpace(repoContext.Repository.RepositoryID)
+		role := strings.TrimSpace(repoContext.Repository.Role)
+		if repoContext.Profile == nil {
+			profile.Warnings = append(profile.Warnings, "Repository "+repositoryID+" has no repo profile yet.")
+			continue
+		}
+		if repositoryID == primaryRepoID {
+			profile.DefaultBranch = repoContext.Profile.DefaultBranch
+		}
+		prefix := repositoryID
+		if role != "" {
+			prefix += " (" + role + ")"
+		}
+		if strings.TrimSpace(repoContext.Profile.Summary) != "" {
+			profile.AppStructure = append(profile.AppStructure, prefix+": "+strings.TrimSpace(repoContext.Profile.Summary))
+		}
+		profile.Stack = append(profile.Stack, repoContext.Profile.Stack...)
+		profile.TestCommands = append(profile.TestCommands, repoContext.Profile.TestCommands...)
+		profile.AppStructure = append(profile.AppStructure, repoContext.Profile.AppStructure...)
+		profile.CodingConventions = append(profile.CodingConventions, repoContext.Profile.CodingConventions...)
+		profile.RiskAreas = append(profile.RiskAreas, repoContext.Profile.RiskAreas...)
+		profile.Warnings = append(profile.Warnings, repoContext.Profile.Warnings...)
+	}
+	profile.Stack = normalizePlanList(profile.Stack)
+	profile.TestCommands = normalizePlanList(profile.TestCommands)
+	profile.AppStructure = normalizePlanList(profile.AppStructure)
+	profile.CodingConventions = normalizePlanList(profile.CodingConventions)
+	profile.RiskAreas = normalizePlanList(profile.RiskAreas)
+	profile.Warnings = normalizePlanList(profile.Warnings)
+	return profile
+}
+
+func activeProjectSkills(context *domain.SpecForgeProjectContext) []*domain.SpecForgeSkill {
+	if context == nil {
+		return []*domain.SpecForgeSkill{}
+	}
+	skills := []*domain.SpecForgeSkill{}
+	seen := map[string]struct{}{}
+	for _, repoContext := range context.RepositoryContexts {
+		if repoContext == nil || repoContext.Repository == nil {
+			continue
+		}
+		for _, skill := range repoContext.Skills {
+			if skill == nil || !skill.Active {
+				continue
+			}
+			key := skill.RepositoryID + "\x00" + skill.Name
+			if _, ok := seen[key]; ok {
+				continue
+			}
+			seen[key] = struct{}{}
+			skills = append(skills, skill)
+		}
+	}
+	return skills
+}
+
+func skillsFromProjectSkills(projectSkills []*domain.SpecForgeProjectSkill) []*domain.SpecForgeSkill {
+	skills := make([]*domain.SpecForgeSkill, 0, len(projectSkills))
+	seen := map[uint]struct{}{}
+	for _, projectSkill := range projectSkills {
+		if projectSkill == nil || !projectSkill.Active || projectSkill.Skill == nil || !projectSkill.Skill.Active {
+			continue
+		}
+		if _, ok := seen[projectSkill.Skill.ID]; ok {
+			continue
+		}
+		seen[projectSkill.Skill.ID] = struct{}{}
+		skills = append(skills, projectSkill.Skill)
+	}
+	return skills
+}
+
+func plannedSkillRuns(userID uint, requirementID, planID, projectID *uint, bundle *domain.SpecForgePlanBundle, skills []*domain.SpecForgeSkill, now time.Time) []*domain.SpecForgeSkillRun {
+	stages := []struct {
+		stage  string
+		output string
+	}{
+		{stage: domain.SkillRunStageProductPlan, output: skillRunProductOutput(bundle)},
+		{stage: domain.SkillRunStageTechnicalPlan, output: skillRunTechnicalOutput(bundle)},
+		{stage: domain.SkillRunStagePRDAG, output: skillRunPRDAGOutput(bundle)},
+		{stage: domain.SkillRunStageSelfReview, output: strings.Join(reviewPRDAG(bundle.PRNodes), "\n")},
+	}
+	inputSummary := skillRunInputSummary(bundle, skills)
+	outputJSON := skillRunOutputJSON(bundle, skills)
+	runs := make([]*domain.SpecForgeSkillRun, 0, len(stages))
+	for _, stage := range stages {
+		started := now
+		completed := now
+		runs = append(runs, &domain.SpecForgeSkillRun{
+			RequirementID: requirementID,
+			PlanID:        planID,
+			ProjectID:     projectID,
+			Stage:         stage.stage,
+			Status:        domain.SkillRunStatusCompleted,
+			InputSummary:  inputSummary,
+			OutputSummary: strings.TrimSpace(stage.output),
+			OutputJSON:    outputJSON,
+			StartedAt:     &started,
+			CompletedAt:   &completed,
+			CreatedBy:     userID,
+		})
+	}
+	return runs
+}
+
+func skillRunInputSummary(bundle *domain.SpecForgePlanBundle, skills []*domain.SpecForgeSkill) string {
+	parts := []string{}
+	if bundle != nil && bundle.Idea != nil {
+		parts = append(parts, "Idea: "+strings.TrimSpace(bundle.Idea.RawInput))
+		parts = append(parts, "Repository: "+strings.TrimSpace(bundle.Idea.RepositoryID))
+	}
+	if bundle != nil && bundle.Requirement != nil {
+		parts = append(parts, fmt.Sprintf("Requirement: %d", bundle.Requirement.ID))
+	}
+	if bundle != nil && bundle.ProjectContext != nil && bundle.ProjectContext.Project != nil {
+		parts = append(parts, "Project: "+bundle.ProjectContext.Project.Name)
+	}
+	parts = append(parts, fmt.Sprintf("Active skills: %d", len(skills)))
+	return strings.Join(normalizePlanList(parts), "\n")
+}
+
+func skillRunProductOutput(bundle *domain.SpecForgePlanBundle) string {
+	if bundle == nil || bundle.ProductSpec == nil {
+		return ""
+	}
+	return strings.Join(normalizePlanList(append([]string{}, bundle.ProductSpec.Goals...)), "\n")
+}
+
+func skillRunTechnicalOutput(bundle *domain.SpecForgePlanBundle) string {
+	if bundle == nil || bundle.Plan == nil {
+		return ""
+	}
+	values := []string{bundle.Plan.TechnicalSummary}
+	values = append(values, bundle.Plan.AffectedAreas...)
+	values = append(values, bundle.Plan.TestStrategy...)
+	return strings.Join(normalizePlanList(values), "\n")
+}
+
+func skillRunPRDAGOutput(bundle *domain.SpecForgePlanBundle) string {
+	if bundle == nil {
+		return ""
+	}
+	values := []string{}
+	for _, node := range bundle.PRNodes {
+		if node == nil {
+			continue
+		}
+		values = append(values, fmt.Sprintf("%s: %s", node.NodeKey, node.Title))
+	}
+	return strings.Join(normalizePlanList(values), "\n")
+}
+
+func skillRunOutputJSON(bundle *domain.SpecForgePlanBundle, skills []*domain.SpecForgeSkill) string {
+	payload := struct {
+		SkillNames []string `json:"skill_names"`
+		PRNodes    []string `json:"pr_nodes"`
+	}{
+		SkillNames: []string{},
+		PRNodes:    []string{},
+	}
+	for _, skill := range skills {
+		if skill != nil && strings.TrimSpace(skill.Name) != "" {
+			payload.SkillNames = append(payload.SkillNames, strings.TrimSpace(skill.Name))
+		}
+	}
+	if bundle != nil {
+		for _, node := range bundle.PRNodes {
+			if node != nil {
+				payload.PRNodes = append(payload.PRNodes, node.NodeKey)
+			}
+		}
+	}
+	encoded, err := json.Marshal(payload)
+	if err != nil {
+		return "{}"
+	}
+	return string(encoded)
 }
 
 func writeRepoProfile(b *strings.Builder, profile *domain.SpecForgeRepoProfile) {
@@ -379,6 +960,7 @@ func compileInitialPlan(userID uint, repoID, input, ideaType string, profile *do
 		spec.NonGoals = append(spec.NonGoals, "Do not execute all high-risk surfaces in one MVP run; approve a milestone slice first.")
 	}
 	plan := &domain.SpecForgeImplementationPlan{
+		Version:          1,
 		TechnicalSummary: "Implement " + featureName + " using the existing repository architecture and conventions.",
 		AffectedAreas:    affectedAreas,
 		DataModelChanges: inferredDataModelChanges(input, profile),
@@ -397,6 +979,7 @@ func compileInitialPlan(userID uint, repoID, input, ideaType string, profile *do
 		plan.MigrationRisks = append(plan.MigrationRisks, complexity.MigrationRisk)
 	}
 	nodes := featurePRNodes(slug, featureName, input, profile)
+	assignPRNodeRepository(nodes, repoID)
 
 	bundle := &domain.SpecForgePlanBundle{
 		Idea:        idea,
@@ -407,6 +990,47 @@ func compileInitialPlan(userID uint, repoID, input, ideaType string, profile *do
 	}
 	bundle.ProductSpec.Assumptions = append(bundle.ProductSpec.Assumptions, reviewPRDAG(bundle.PRNodes, complexity)...)
 	return bundle
+}
+
+func assignPRNodeRepository(nodes []*domain.SpecForgePRNode, repositoryID string) {
+	repositoryID = strings.TrimSpace(repositoryID)
+	if repositoryID == "" {
+		return
+	}
+	for _, node := range nodes {
+		if node != nil && strings.TrimSpace(node.RepositoryID) == "" {
+			node.RepositoryID = repositoryID
+		}
+	}
+}
+
+func approvedPlanSnapshotHash(bundle *domain.SpecForgePlanBundle) string {
+	if bundle == nil {
+		return ""
+	}
+	snapshot := struct {
+		RequirementID *uint                               `json:"requirement_id,omitempty"`
+		Idea          *domain.SpecForgeIdea               `json:"idea"`
+		ProductSpec   *domain.SpecForgeProductSpec        `json:"product_spec"`
+		Plan          *domain.SpecForgeImplementationPlan `json:"implementation_plan"`
+		PRNodes       []*domain.SpecForgePRNode           `json:"pr_nodes"`
+	}{
+		Idea:        bundle.Idea,
+		ProductSpec: bundle.ProductSpec,
+		Plan:        bundle.Plan,
+		PRNodes:     bundle.PRNodes,
+	}
+	if bundle.Requirement != nil {
+		snapshot.RequirementID = &bundle.Requirement.ID
+	} else if bundle.Idea != nil {
+		snapshot.RequirementID = bundle.Idea.RequirementID
+	}
+	data, err := json.Marshal(snapshot)
+	if err != nil {
+		return ""
+	}
+	sum := sha256.Sum256(data)
+	return hex.EncodeToString(sum[:])
 }
 
 type ideaComplexity struct {
@@ -696,12 +1320,34 @@ func repoContextAssumption(profile *domain.SpecForgeRepoProfile) string {
 	return "Plan generation used the current repo profile for stack, test command, convention, and risk context."
 }
 
+func projectContextAssumption(context *domain.SpecForgeProjectContext) string {
+	if context == nil || context.Project == nil {
+		return "No project context was available when this plan was generated."
+	}
+	count := 0
+	for _, repoContext := range context.RepositoryContexts {
+		if repoContext != nil && repoContext.Repository != nil && repoContext.Repository.Active {
+			count++
+		}
+	}
+	primaryRepoID := primaryRepositoryID(context)
+	if primaryRepoID == "" {
+		return fmt.Sprintf("Plan generation used project context for %s across %d active repositories, but no active primary repository was available.", context.Project.Name, count)
+	}
+	return fmt.Sprintf("Plan generation used project context for %s across %d active repositories; execution is limited to primary repository %s.", context.Project.Name, count, primaryRepoID)
+}
+
 func prNode(slug, key string, order int, nodeType, title, goal string, dependsOn, expectedFiles []string, profile *domain.SpecForgeRepoProfile) *domain.SpecForgePRNode {
 	testCommands := []string{"Run the repository's relevant verification commands."}
+	repositoryID := ""
 	if profile != nil && len(profile.TestCommands) > 0 {
 		testCommands = append([]string(nil), profile.TestCommands...)
 	}
+	if profile != nil {
+		repositoryID = strings.TrimSpace(profile.RepositoryID)
+	}
 	return &domain.SpecForgePRNode{
+		RepositoryID:       repositoryID,
 		NodeKey:            key,
 		Order:              order,
 		Title:              title,
@@ -768,6 +1414,9 @@ func reviewPRDAG(nodes []*domain.SpecForgePRNode, complexity ...ideaComplexity) 
 			continue
 		}
 		label := nodeLabel(node)
+		if strings.TrimSpace(node.RepositoryID) == "" {
+			notes = append(notes, "PR DAG review: "+label+" is missing a target repository.")
+		}
 		if strings.TrimSpace(node.Title) == "" || strings.TrimSpace(node.Goal) == "" {
 			notes = append(notes, "PR DAG review: "+label+" must have both title and goal before execution.")
 		}

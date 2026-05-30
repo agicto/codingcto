@@ -1,7 +1,7 @@
 // Metadata translations - Simplified Chinese
 const messages = {
   title: 'CodingCTO',
-  description: '基于 Next.js、TypeScript 和 Tailwind CSS 构建的现代化 Web 应用脚手架',
+  description: '面向 AI 辅助工程团队的 GitHub 原生 PRD-to-PR 自动化系统',
 };
 
 export default messages;

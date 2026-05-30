@@ -98,6 +98,7 @@ type ClaimedAgentTask struct {
 
 type ClaimedTaskPRNode struct {
 	ID                 uint     `json:"id"`
+	RepositoryID       string   `json:"repository_id"`
 	NodeKey            string   `json:"node_key"`
 	Title              string   `json:"title"`
 	Type               string   `json:"type"`

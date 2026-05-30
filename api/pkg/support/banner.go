@@ -12,6 +12,6 @@ func PrintBanner(version string) {
 	secondaryColor := color.New(color.FgHiBlue)
 
 	bannerColor.Println("CodingCTO")
-	secondaryColor.Printf("Modular Go API Scaffold %s\n", version)
+	secondaryColor.Printf("GitHub-native PRD-to-PR API %s\n", version)
 	fmt.Println()
 }

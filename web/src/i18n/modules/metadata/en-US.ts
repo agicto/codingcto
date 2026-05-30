@@ -3,7 +3,7 @@ import type { MetadataMessages } from './zh-Hans';
 
 const messages: MetadataMessages = {
   title: 'CodingCTO',
-  description: 'Modern web application scaffold built with Next.js, TypeScript, and Tailwind CSS',
+  description: 'GitHub-native PRD-to-PR automation for AI-assisted engineering teams',
 };
 
 export default messages;

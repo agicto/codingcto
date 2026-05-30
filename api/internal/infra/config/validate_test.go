@@ -1,8 +1,11 @@
 package config
 
 import (
+	"os"
 	"strings"
 	"testing"
+
+	envpkg "github.com/zgiai/luas/api/pkg/env"
 )
 
 // baseValidConfig returns a config that passes validate() — tests then
@@ -31,6 +34,47 @@ func TestValidate_AcceptsValidConfig(t *testing.T) {
 	}
 	if err := validate(baseValidConfig("development")); err != nil {
 		t.Fatalf("validate() error = %v, want nil", err)
+	}
+}
+
+func TestLoadDefaultsPublicAppNameToCodingCTO(t *testing.T) {
+	oldWD, err := os.Getwd()
+	if err != nil {
+		t.Fatalf("get working directory: %v", err)
+	}
+	tempDir := t.TempDir()
+	if err := os.Chdir(tempDir); err != nil {
+		t.Fatalf("change working directory: %v", err)
+	}
+	t.Cleanup(func() {
+		_ = os.Chdir(oldWD)
+		envpkg.LoadFresh()
+		GlobalConfig = nil
+	})
+
+	oldAppName, hadAppName := os.LookupEnv("APP_NAME")
+	_ = os.Unsetenv("APP_NAME")
+	t.Cleanup(func() {
+		if hadAppName {
+			_ = os.Setenv("APP_NAME", oldAppName)
+		} else {
+			_ = os.Unsetenv("APP_NAME")
+		}
+	})
+
+	t.Setenv("APP_ENV", "development")
+	t.Setenv("DB_ENABLED", "false")
+	t.Setenv("DB_DRIVER", "sqlite")
+	t.Setenv("JWT_SECRET", strings.Repeat("a", 64))
+	envpkg.LoadFresh()
+	GlobalConfig = nil
+
+	cfg, err := Load()
+	if err != nil {
+		t.Fatalf("Load() error = %v, want nil", err)
+	}
+	if cfg.App.Name != "CodingCTO" {
+		t.Fatalf("default app name = %q, want CodingCTO", cfg.App.Name)
 	}
 }
 

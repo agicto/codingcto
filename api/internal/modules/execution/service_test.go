@@ -94,6 +94,7 @@ func TestStartRunIncludesRepoProfileInCompiledPrompt(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, planningRepo.prompts)
 	prompt := planningRepo.prompts[0].PromptText
+	require.Contains(t, prompt, "Target repository: repo_123")
 	require.Contains(t, prompt, "Repository context")
 	require.Contains(t, prompt, "Next.js app with a Go API backend.")
 	require.Contains(t, prompt, "GitHub Actions")
@@ -142,6 +143,65 @@ func TestStartRunIncludesActiveRepoSkillsInCompiledPrompt(t *testing.T) {
 	require.Contains(t, prompt, "Do not access GORM directly from HTTP handlers.")
 	require.NotContains(t, prompt, "inactive skill")
 	require.NotContains(t, prompt, "another repository")
+}
+
+func TestStartRunHydratesProjectContextInCompiledPrompt(t *testing.T) {
+	projectID := uint(9)
+	bundle := approvedPlanBundle()
+	bundle.Idea.ProjectID = &projectID
+	bundle.Idea.RepositoryID = "repo_api"
+	planningRepo := &memoryPlanningRepo{
+		bundle: bundle,
+		skills: []*domain.SpecForgeSkill{
+			{
+				RepositoryID: "repo_web",
+				Name:         "SpecForge planning SOP",
+				Description:  "Evidence-first planning workflow",
+				Content:      "Read repo evidence before planning and run a reverse trace.",
+				Active:       true,
+			},
+		},
+	}
+	profileRepo := &memoryExecutionProfileRepo{profiles: map[string]*domain.SpecForgeRepoProfile{
+		"repo_api": {
+			RepositoryID:  "repo_api",
+			DefaultBranch: "main",
+			Stack:         []string{"Go", "Gin"},
+			TestCommands:  []string{"go test ./..."},
+			Summary:       "API service",
+		},
+		"repo_web": {
+			RepositoryID:  "repo_web",
+			DefaultBranch: "main",
+			Stack:         []string{"Next.js", "React"},
+			TestCommands:  []string{"pnpm type-check"},
+			Summary:       "Web console",
+		},
+	}}
+	projectRepo := &memoryExecutionProjectRepo{
+		project: &domain.SpecForgeProject{ID: projectID, WorkspaceID: "ws_1", Name: "SpecForge", Slug: "specforge", Status: domain.ProjectStatusActive},
+		repositories: []*domain.SpecForgeProjectRepository{
+			{ID: 1, ProjectID: projectID, RepositoryID: "repo_api", Role: domain.ProjectRepositoryRolePrimary, Active: true},
+			{ID: 2, ProjectID: projectID, RepositoryID: "repo_web", Role: domain.ProjectRepositoryRoleDependency, Active: true},
+		},
+	}
+	svc := NewService(&memoryExecutionRepo{}, planningRepo, nil, nil, nil, nil, nil)
+	svc.profileRepo = profileRepo
+	svc.projectRepo = projectRepo
+
+	_, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+
+	require.NoError(t, err)
+	require.NotEmpty(t, planningRepo.prompts)
+	prompt := planningRepo.prompts[0].PromptText
+	require.Contains(t, prompt, "Project context")
+	require.Contains(t, prompt, "Project: SpecForge")
+	require.Contains(t, prompt, "Repository repo_api (primary)")
+	require.Contains(t, prompt, "Repository repo_web (dependency)")
+	require.Contains(t, prompt, "Web console")
+	require.Contains(t, prompt, "pnpm type-check")
+	require.Contains(t, prompt, "SpecForge planning SOP")
+	require.Contains(t, prompt, "Read repo evidence before planning")
 }
 
 func TestStartRunRejectsUnapprovedPlan(t *testing.T) {
@@ -487,6 +547,7 @@ func TestHandlerCancelsTasksBlockedByClosedPRNodeEvent(t *testing.T) {
 		AcceptanceCriteria: []string{"Tests cover the accepted flow."},
 		TestCommands:       []string{"go test ./..."},
 		BranchName:         "specforge/team-invite-03-tests",
+		RepositoryID:       "repo_123",
 		Status:             domain.PRNodeStatusPlanned,
 	})
 	planningRepo := &memoryPlanningRepo{bundle: bundle}
@@ -2451,8 +2512,40 @@ func (r *memoryPlanningRepo) CreatePlanBundle(ctx context.Context, bundle *domai
 	return nil
 }
 
+func (r *memoryPlanningRepo) CreateRequirement(ctx context.Context, requirement *domain.SpecForgeRequirement) error {
+	if requirement == nil {
+		return domain.ErrInvalidInput
+	}
+	requirement.ID = 1
+	return nil
+}
+
+func (r *memoryPlanningRepo) FindRequirementByID(ctx context.Context, requirementID uint) (*domain.SpecForgeRequirement, error) {
+	if r.bundle != nil && r.bundle.Requirement != nil && r.bundle.Requirement.ID == requirementID {
+		copied := *r.bundle.Requirement
+		return &copied, nil
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryPlanningRepo) UpdateRequirement(ctx context.Context, requirement *domain.SpecForgeRequirement) error {
+	if r.bundle == nil || requirement == nil {
+		return domain.ErrNotFound
+	}
+	copied := *requirement
+	r.bundle.Requirement = &copied
+	return nil
+}
+
 func (r *memoryPlanningRepo) FindPlanBundleByIdeaID(ctx context.Context, ideaID uint) (*domain.SpecForgePlanBundle, error) {
 	if r.bundle == nil || r.bundle.Idea.ID != ideaID {
+		return nil, domain.ErrNotFound
+	}
+	return clonePlanBundle(r.bundle), nil
+}
+
+func (r *memoryPlanningRepo) FindLatestPlanBundleByRequirementID(ctx context.Context, requirementID uint) (*domain.SpecForgePlanBundle, error) {
+	if r.bundle == nil || r.bundle.Requirement == nil || r.bundle.Requirement.ID != requirementID {
 		return nil, domain.ErrNotFound
 	}
 	return clonePlanBundle(r.bundle), nil
@@ -2463,6 +2556,13 @@ func (r *memoryPlanningRepo) FindPlanBundleByPlanID(ctx context.Context, planID 
 		return nil, domain.ErrNotFound
 	}
 	return clonePlanBundle(r.bundle), nil
+}
+
+func (r *memoryPlanningRepo) NextPlanVersionByRequirementID(ctx context.Context, requirementID uint) (int, error) {
+	if r.bundle != nil && r.bundle.Plan != nil && r.bundle.Plan.RequirementID != nil && *r.bundle.Plan.RequirementID == requirementID {
+		return r.bundle.Plan.Version + 1, nil
+	}
+	return 1, nil
 }
 
 func (r *memoryPlanningRepo) FindPRNodeByID(ctx context.Context, prNodeID uint) (*domain.SpecForgePRNode, error) {
@@ -2615,6 +2715,129 @@ func (r *memoryPlanningRepo) ListSkillsByRepositoryID(ctx context.Context, repos
 	return out, nil
 }
 
+type memoryExecutionProfileRepo struct {
+	profiles map[string]*domain.SpecForgeRepoProfile
+}
+
+func (r *memoryExecutionProfileRepo) UpsertProfile(ctx context.Context, profile *domain.SpecForgeRepoProfile) error {
+	if r.profiles == nil {
+		r.profiles = map[string]*domain.SpecForgeRepoProfile{}
+	}
+	copied := *profile
+	r.profiles[profile.RepositoryID] = &copied
+	return nil
+}
+
+func (r *memoryExecutionProfileRepo) FindProfileByRepositoryID(ctx context.Context, repositoryID string) (*domain.SpecForgeRepoProfile, error) {
+	if r.profiles == nil || r.profiles[repositoryID] == nil {
+		return nil, domain.ErrNotFound
+	}
+	copied := *r.profiles[repositoryID]
+	return &copied, nil
+}
+
+type memoryExecutionProjectRepo struct {
+	project      *domain.SpecForgeProject
+	repositories []*domain.SpecForgeProjectRepository
+}
+
+func (r *memoryExecutionProjectRepo) CreateProject(ctx context.Context, project *domain.SpecForgeProject) error {
+	copied := *project
+	r.project = &copied
+	return nil
+}
+
+func (r *memoryExecutionProjectRepo) UpdateProject(ctx context.Context, project *domain.SpecForgeProject) error {
+	if r.project == nil || r.project.ID != project.ID {
+		return domain.ErrNotFound
+	}
+	copied := *project
+	r.project = &copied
+	return nil
+}
+
+func (r *memoryExecutionProjectRepo) FindProjectByID(ctx context.Context, id uint) (*domain.SpecForgeProject, error) {
+	if r.project == nil || r.project.ID != id {
+		return nil, domain.ErrNotFound
+	}
+	copied := *r.project
+	return &copied, nil
+}
+
+func (r *memoryExecutionProjectRepo) FindProjectByWorkspaceAndSlug(ctx context.Context, workspaceID, slug string) (*domain.SpecForgeProject, error) {
+	if r.project == nil || r.project.WorkspaceID != workspaceID || r.project.Slug != slug {
+		return nil, domain.ErrNotFound
+	}
+	copied := *r.project
+	return &copied, nil
+}
+
+func (r *memoryExecutionProjectRepo) ListProjectsByWorkspace(ctx context.Context, workspaceID string) ([]*domain.SpecForgeProject, error) {
+	if r.project == nil || r.project.WorkspaceID != workspaceID {
+		return []*domain.SpecForgeProject{}, nil
+	}
+	copied := *r.project
+	return []*domain.SpecForgeProject{&copied}, nil
+}
+
+func (r *memoryExecutionProjectRepo) CreateProjectRepository(ctx context.Context, binding *domain.SpecForgeProjectRepository) error {
+	copied := *binding
+	r.repositories = append(r.repositories, &copied)
+	return nil
+}
+
+func (r *memoryExecutionProjectRepo) DeleteProjectRepository(ctx context.Context, projectID uint, repositoryID string) error {
+	for i, binding := range r.repositories {
+		if binding.ProjectID == projectID && binding.RepositoryID == repositoryID {
+			r.repositories = append(r.repositories[:i], r.repositories[i+1:]...)
+			return nil
+		}
+	}
+	return domain.ErrNotFound
+}
+
+func (r *memoryExecutionProjectRepo) FindProjectRepository(ctx context.Context, projectID uint, repositoryID string) (*domain.SpecForgeProjectRepository, error) {
+	for _, binding := range r.repositories {
+		if binding.ProjectID == projectID && binding.RepositoryID == repositoryID {
+			copied := *binding
+			return &copied, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryExecutionProjectRepo) ListProjectRepositories(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectRepository, error) {
+	out := []*domain.SpecForgeProjectRepository{}
+	for _, binding := range r.repositories {
+		if binding.ProjectID != projectID {
+			continue
+		}
+		copied := *binding
+		out = append(out, &copied)
+	}
+	return out, nil
+}
+
+func (r *memoryExecutionProjectRepo) CountActiveProjectRepositories(ctx context.Context, projectID uint) (int64, error) {
+	var count int64
+	for _, binding := range r.repositories {
+		if binding.ProjectID == projectID && binding.Active {
+			count++
+		}
+	}
+	return count, nil
+}
+
+func (r *memoryExecutionProjectRepo) FindActivePrimaryProjectRepository(ctx context.Context, projectID uint) (*domain.SpecForgeProjectRepository, error) {
+	for _, binding := range r.repositories {
+		if binding.ProjectID == projectID && binding.Active && binding.Role == domain.ProjectRepositoryRolePrimary {
+			copied := *binding
+			return &copied, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
 type fakeExecutor struct {
 	execContext ExecutionContext
 	prompt      CompiledExecutionPrompt
@@ -2713,6 +2936,7 @@ func approvedPlanBundle() *domain.SpecForgePlanBundle {
 			{
 				ID:                 4,
 				PlanID:             3,
+				RepositoryID:       "repo_123",
 				NodeKey:            "PR-001",
 				Order:              1,
 				Title:              "Foundation",
@@ -2727,6 +2951,7 @@ func approvedPlanBundle() *domain.SpecForgePlanBundle {
 			{
 				ID:                 5,
 				PlanID:             3,
+				RepositoryID:       "repo_123",
 				NodeKey:            "PR-002",
 				Order:              2,
 				Title:              "Implementation",
@@ -2778,6 +3003,10 @@ func clonePlanBundle(bundle *domain.SpecForgePlanBundle) *domain.SpecForgePlanBu
 	out.Idea = &idea
 	out.ProductSpec = &spec
 	out.Plan = &plan
+	if bundle.Requirement != nil {
+		requirement := *bundle.Requirement
+		out.Requirement = &requirement
+	}
 	if bundle.RepoProfile != nil {
 		profile := *bundle.RepoProfile
 		out.RepoProfile = &profile

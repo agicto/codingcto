@@ -85,14 +85,14 @@ export default function SiteLayout({ children }: PropsWithChildren) {
               </div>
               <span className="text-sm font-medium">CodingCTO</span>
               <span className="text-sm text-text-muted">
-                · AI-First Frontend Scaffold
+                · PRD-to-PR Automation
               </span>
             </div>
 
             {/* Links & Copyright */}
             <div className="flex items-center gap-6 text-sm text-text-muted">
               <a 
-                href="https://github.com/zgiai/luas"
+                href="https://github.com/agicto/codingcto"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="hover:text-primary transition-colors"
