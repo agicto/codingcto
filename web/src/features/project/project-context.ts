@@ -1,4 +1,4 @@
-import type { ProjectContextDTO, ProjectRepositoryContextDTO } from "./services/project-service";
+import type { ProjectContextDTO, ProjectRepositoryContextDTO } from './services/project-service';
 
 export function primaryRepositoryContext(
   context?: ProjectContextDTO
@@ -6,9 +6,11 @@ export function primaryRepositoryContext(
   if (!context?.repository_contexts?.length) {
     return undefined;
   }
-  return (
-    context.repository_contexts.find(
-      (item) => item.repository.active && item.repository.role === "primary"
-    ) ?? context.repository_contexts.find((item) => item.repository.active)
+  return context.repository_contexts.find(
+    item =>
+      item.repository.active &&
+      item.repository.role === 'primary' &&
+      (!context.primary_repository_id ||
+        item.repository.repository_id === context.primary_repository_id)
   );
 }

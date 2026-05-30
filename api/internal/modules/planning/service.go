@@ -390,11 +390,13 @@ func (s *service) projectContextFor(ctx context.Context, projectID uint) (*domai
 		}
 		contexts = append(contexts, context)
 	}
-	return &domain.SpecForgeProjectContext{
+	context := &domain.SpecForgeProjectContext{
 		Project:            project,
 		Repositories:       repositories,
 		RepositoryContexts: contexts,
-	}, nil
+	}
+	domain.ApplySpecForgeProjectContextGuardrails(context)
+	return context, nil
 }
 
 func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, skills []*domain.SpecForgeSkill) string {
@@ -455,6 +457,17 @@ func writeProjectContext(b *strings.Builder, context *domain.SpecForgeProjectCon
 	}
 	b.WriteString("Project context:\n")
 	b.WriteString("- Project: " + context.Project.Name + "\n")
+	if strings.TrimSpace(context.PrimaryRepositoryID) != "" {
+		b.WriteString("- Primary repository: " + strings.TrimSpace(context.PrimaryRepositoryID) + "\n")
+	}
+	if len(context.ReadOnlyRepositoryIDs) > 0 {
+		b.WriteString("- Read-only repositories: " + strings.Join(normalizePlanList(context.ReadOnlyRepositoryIDs), ", ") + "\n")
+	}
+	for _, guardrail := range context.ExecutionGuardrails {
+		if strings.TrimSpace(guardrail) != "" {
+			b.WriteString("- Guardrail: " + strings.TrimSpace(guardrail) + "\n")
+		}
+	}
 	if strings.TrimSpace(context.Project.Description) != "" {
 		b.WriteString("- Description: " + strings.TrimSpace(context.Project.Description) + "\n")
 	}
@@ -505,7 +518,9 @@ func primaryRepositoryID(context *domain.SpecForgeProjectContext) string {
 	if context == nil {
 		return ""
 	}
-	fallback := ""
+	if strings.TrimSpace(context.PrimaryRepositoryID) != "" {
+		return strings.TrimSpace(context.PrimaryRepositoryID)
+	}
 	for _, repoContext := range context.RepositoryContexts {
 		if repoContext == nil || repoContext.Repository == nil || !repoContext.Repository.Active {
 			continue
@@ -513,9 +528,6 @@ func primaryRepositoryID(context *domain.SpecForgeProjectContext) string {
 		repositoryID := strings.TrimSpace(repoContext.Repository.RepositoryID)
 		if repositoryID == "" {
 			continue
-		}
-		if fallback == "" {
-			fallback = repositoryID
 		}
 		if repoContext.Repository.Role == domain.ProjectRepositoryRolePrimary {
 			return repositoryID
@@ -525,14 +537,11 @@ func primaryRepositoryID(context *domain.SpecForgeProjectContext) string {
 		if repository == nil || !repository.Active || strings.TrimSpace(repository.RepositoryID) == "" {
 			continue
 		}
-		if fallback == "" {
-			fallback = strings.TrimSpace(repository.RepositoryID)
-		}
 		if repository.Role == domain.ProjectRepositoryRolePrimary {
 			return strings.TrimSpace(repository.RepositoryID)
 		}
 	}
-	return fallback
+	return ""
 }
 
 func synthesizedProjectProfile(context *domain.SpecForgeProjectContext, primaryRepoID string) *domain.SpecForgeRepoProfile {
@@ -1084,7 +1093,11 @@ func projectContextAssumption(context *domain.SpecForgeProjectContext) string {
 			count++
 		}
 	}
-	return fmt.Sprintf("Plan generation used project context for %s across %d active repositories.", context.Project.Name, count)
+	primaryRepoID := primaryRepositoryID(context)
+	if primaryRepoID == "" {
+		return fmt.Sprintf("Plan generation used project context for %s across %d active repositories, but no active primary repository was available.", context.Project.Name, count)
+	}
+	return fmt.Sprintf("Plan generation used project context for %s across %d active repositories; execution is limited to primary repository %s.", context.Project.Name, count, primaryRepoID)
 }
 
 func prNode(slug, key string, order int, nodeType, title, goal string, dependsOn, expectedFiles []string, profile *domain.SpecForgeRepoProfile) *domain.SpecForgePRNode {

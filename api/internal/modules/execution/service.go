@@ -1476,6 +1476,17 @@ func writeExecutionProjectContext(b *strings.Builder, bundle *domain.SpecForgePl
 	context := bundle.ProjectContext
 	b.WriteString("Project context:\n")
 	b.WriteString("- Project: " + strings.TrimSpace(context.Project.Name) + "\n")
+	if strings.TrimSpace(context.PrimaryRepositoryID) != "" {
+		b.WriteString("- Primary repository: " + strings.TrimSpace(context.PrimaryRepositoryID) + "\n")
+	}
+	if len(context.ReadOnlyRepositoryIDs) > 0 {
+		b.WriteString("- Read-only repositories: " + strings.Join(normalizeExecutionList(context.ReadOnlyRepositoryIDs), ", ") + "\n")
+	}
+	for _, guardrail := range context.ExecutionGuardrails {
+		if strings.TrimSpace(guardrail) != "" {
+			b.WriteString("- Guardrail: " + strings.TrimSpace(guardrail) + "\n")
+		}
+	}
 	for _, repoContext := range context.RepositoryContexts {
 		if repoContext == nil || repoContext.Repository == nil {
 			continue

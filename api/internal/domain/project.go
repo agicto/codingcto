@@ -2,6 +2,8 @@ package domain
 
 import (
 	"context"
+	"fmt"
+	"strings"
 	"time"
 )
 
@@ -13,6 +15,8 @@ const (
 	ProjectRepositoryRoleDependency = "dependency"
 	ProjectRepositoryRoleDocs       = "docs"
 	ProjectRepositoryRoleInfra      = "infra"
+
+	MaxSpecForgeProjectRepositories = 3
 )
 
 // SpecForgeProject groups repositories, requirements, plans, and execution runs.
@@ -43,9 +47,13 @@ type SpecForgeProjectRepository struct {
 
 // SpecForgeProjectContext is the project-scoped context shown before planning.
 type SpecForgeProjectContext struct {
-	Project            *SpecForgeProject                    `json:"project"`
-	Repositories       []*SpecForgeProjectRepository        `json:"repositories"`
-	RepositoryContexts []*SpecForgeProjectRepositoryContext `json:"repository_contexts"`
+	Project               *SpecForgeProject                    `json:"project"`
+	Repositories          []*SpecForgeProjectRepository        `json:"repositories"`
+	RepositoryContexts    []*SpecForgeProjectRepositoryContext `json:"repository_contexts"`
+	PrimaryRepositoryID   string                               `json:"primary_repository_id,omitempty"`
+	ExecutionRepositoryID string                               `json:"execution_repository_id,omitempty"`
+	ReadOnlyRepositoryIDs []string                             `json:"read_only_repository_ids,omitempty"`
+	ExecutionGuardrails   []string                             `json:"execution_guardrails,omitempty"`
 }
 
 // SpecForgeProjectRepositoryContext enriches a project repository binding with planner-ready repo intelligence.
@@ -54,6 +62,45 @@ type SpecForgeProjectRepositoryContext struct {
 	Profile    *SpecForgeRepoProfile       `json:"profile,omitempty"`
 	Skills     []*SpecForgeSkill           `json:"skills"`
 	Warnings   []string                    `json:"warnings,omitempty"`
+}
+
+func ApplySpecForgeProjectContextGuardrails(context *SpecForgeProjectContext) {
+	if context == nil {
+		return
+	}
+	context.PrimaryRepositoryID = ""
+	context.ExecutionRepositoryID = ""
+	context.ReadOnlyRepositoryIDs = nil
+	context.ExecutionGuardrails = nil
+
+	activeCount := 0
+	readOnly := []string{}
+	for _, repository := range context.Repositories {
+		if repository == nil || !repository.Active {
+			continue
+		}
+		activeCount++
+		repositoryID := strings.TrimSpace(repository.RepositoryID)
+		if repository.Role == ProjectRepositoryRolePrimary && context.PrimaryRepositoryID == "" {
+			context.PrimaryRepositoryID = repositoryID
+			context.ExecutionRepositoryID = repositoryID
+			continue
+		}
+		if repositoryID != "" {
+			readOnly = append(readOnly, repositoryID)
+		}
+	}
+	context.ReadOnlyRepositoryIDs = readOnly
+	if context.PrimaryRepositoryID == "" {
+		context.ExecutionGuardrails = append(context.ExecutionGuardrails, "Project must bind one active primary repository before planning or execution.")
+		return
+	}
+	context.ExecutionGuardrails = append(context.ExecutionGuardrails,
+		"MVP execution is primary-repository only.",
+		"Planner may read dependency, docs, and infra repositories as context.",
+		"Executor must modify only "+context.PrimaryRepositoryID+"; other bound repositories are read-only context.",
+		fmt.Sprintf("Project currently has %d active repositories bound; maximum supported is %d.", activeCount, MaxSpecForgeProjectRepositories),
+	)
 }
 
 // SpecForgeProjectRepositoryStore persists SpecForge project state.

@@ -1,5 +1,5 @@
-import { env } from "@/config/env";
-import { createRequest, type RequestConfig } from "@/http";
+import { env } from '@/config/env';
+import { createRequest, type RequestConfig } from '@/http';
 
 const request = createRequest({
   baseURL: env.NEXT_PUBLIC_SPECFORGE_API_URL,
@@ -11,7 +11,7 @@ export interface ProjectDTO {
   name: string;
   slug: string;
   description: string;
-  status: "active" | "archived" | string;
+  status: 'active' | 'archived' | string;
   created_by: number;
   created_at: string;
   updated_at: string;
@@ -22,7 +22,7 @@ export interface ProjectRepositoryDTO {
   workspace_id: string;
   project_id: number;
   repository_id: string;
-  role: "primary" | "dependency" | "docs" | "infra" | string;
+  role: 'primary' | 'dependency' | 'docs' | 'infra' | string;
   active: boolean;
   created_by: number;
   created_at: string;
@@ -71,6 +71,10 @@ export interface ProjectContextDTO {
   project: ProjectDTO;
   repositories: ProjectRepositoryDTO[];
   repository_contexts: ProjectRepositoryContextDTO[];
+  primary_repository_id?: string;
+  execution_repository_id?: string;
+  read_only_repository_ids?: string[];
+  execution_guardrails?: string[];
 }
 
 export interface CreateProjectPayload {
@@ -82,7 +86,7 @@ export interface CreateProjectPayload {
 
 export interface BindRepositoryPayload {
   repository_id: string;
-  role: "primary" | "dependency" | "docs" | "infra";
+  role: 'primary' | 'dependency' | 'docs' | 'infra';
 }
 
 export const projectService = {
@@ -93,7 +97,7 @@ export const projectService = {
     ),
 
   createProject: (payload: CreateProjectPayload, config?: RequestConfig) =>
-    request.post<{ project: ProjectDTO }, CreateProjectPayload>("/projects", payload, config),
+    request.post<{ project: ProjectDTO }, CreateProjectPayload>('/projects', payload, config),
 
   getProjectContext: (projectId: number, config?: RequestConfig) =>
     request.get<{ context: ProjectContextDTO }>(`/projects/${projectId}/context`, config),

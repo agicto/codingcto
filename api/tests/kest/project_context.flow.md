@@ -78,7 +78,7 @@ body.data.id exists
 
 ```step
 @id repository
-@name Save Repository
+@name Save Primary Repository
 
 POST /v1/github/repositories
 Content-Type: application/json
@@ -96,6 +96,32 @@ Authorization: Bearer {{token}}
 
 [Captures]
 repo_id = data.repository_id
+
+[Asserts]
+status == 200
+body.data.repository_id exists
+```
+
+```step
+@id dependency_repository
+@name Save Dependency Repository
+
+POST /v1/github/repositories
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "repository_id": "repo_docs_{{run_id}}",
+  "workspace_id": "workspace_{{run_id}}",
+  "github_installation_id": {{installation_id}},
+  "github_owner": "specforge-test",
+  "github_repo": "docs",
+  "default_branch": "main",
+  "is_private": true
+}
+
+[Captures]
+dependency_repo_id = data.repository_id
 
 [Asserts]
 status == 200
@@ -149,6 +175,31 @@ body.data.skill.id exists
 ```
 
 ```step
+@id dependency_profile
+@name Save Dependency Repo Profile
+
+POST /v1/repositories/{{dependency_repo_id}}/profile
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "default_branch": "main",
+  "stack": ["Markdown", "Product Docs"],
+  "test_commands": ["pnpm docs:check"],
+  "ci_provider": "github_actions",
+  "app_structure": ["docs"],
+  "coding_conventions": ["Docs are read-only context for MVP execution."],
+  "risk_areas": ["requirements drift"],
+  "summary": "Dependency documentation repository used as read-only project context.",
+  "source": "kest_flow"
+}
+
+[Asserts]
+status == 200
+body.data.summary exists
+```
+
+```step
 @id project
 @name Create Project
 
@@ -173,7 +224,7 @@ body.data.project.id exists
 
 ```step
 @id bind
-@name Bind Repository
+@name Bind Primary Repository
 
 POST /v1/projects/{{project_id}}/repositories
 Content-Type: application/json
@@ -190,6 +241,25 @@ body.data.repository.id exists
 ```
 
 ```step
+@id bind_dependency
+@name Bind Dependency Repository
+
+POST /v1/projects/{{project_id}}/repositories
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "repository_id": "{{dependency_repo_id}}",
+  "role": "dependency"
+}
+
+[Asserts]
+status == 201
+body.data.repository.id exists
+body.data.repository.role == "dependency"
+```
+
+```step
 @id context
 @name Fetch Project Context
 
@@ -202,7 +272,11 @@ body.data.context.project.id exists
 body.data.context.repositories.0.repository_id exists
 body.data.context.repository_contexts.0.repository.repository_id exists
 body.data.context.repository_contexts.0.profile.summary exists
-body.data.context.repository_contexts.0.skills.0.name exists
+body.data.context.primary_repository_id == "{{repo_id}}"
+body.data.context.execution_repository_id == "{{repo_id}}"
+body.data.context.read_only_repository_ids.0 == "{{dependency_repo_id}}"
+body.data.context.execution_guardrails.0 exists
+body.data.context.repository_contexts.1.profile.summary exists
 ```
 
 ```step
@@ -232,10 +306,13 @@ body.data.idea.requirement_id exists
 body.data.implementation_plan.requirement_id exists
 body.data.implementation_plan.version == 1
 body.data.project_context.project.name exists
+body.data.project_context.primary_repository_id == "{{repo_id}}"
+body.data.project_context.execution_repository_id == "{{repo_id}}"
+body.data.project_context.read_only_repository_ids.0 == "{{dependency_repo_id}}"
 body.data.repo_profile.stack.0 exists
 body.data.product_spec.assumptions.0 exists
 body.data.pr_nodes.0.id exists
-body.data.pr_nodes.0.repository_id exists
+body.data.pr_nodes.0.repository_id == "{{repo_id}}"
 ```
 
 ```step
@@ -496,6 +573,12 @@ body.data.latest_failure_type == "type_error"
 
 ```edge
 @from repository
+@to dependency_repository
+@on success
+```
+
+```edge
+@from dependency_repository
 @to profile
 @on success
 ```
@@ -508,6 +591,12 @@ body.data.latest_failure_type == "type_error"
 
 ```edge
 @from skill
+@to dependency_profile
+@on success
+```
+
+```edge
+@from dependency_profile
 @to project
 @on success
 ```
@@ -520,6 +609,12 @@ body.data.latest_failure_type == "type_error"
 
 ```edge
 @from bind
+@to bind_dependency
+@on success
+```
+
+```edge
+@from bind_dependency
 @to context
 @on success
 ```

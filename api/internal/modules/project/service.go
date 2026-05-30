@@ -9,8 +9,6 @@ import (
 	"github.com/zgiai/luas/api/internal/domain"
 )
 
-const maxProjectRepositories = 3
-
 type Service interface {
 	CreateProject(ctx context.Context, userID uint, req *CreateProjectRequest) (*domain.SpecForgeProject, error)
 	UpdateProject(ctx context.Context, projectID uint, req *UpdateProjectRequest) (*domain.SpecForgeProject, error)
@@ -144,7 +142,7 @@ func (s *service) BindRepository(ctx context.Context, userID, projectID uint, re
 	if err != nil {
 		return nil, err
 	}
-	if count >= maxProjectRepositories {
+	if count >= domain.MaxSpecForgeProjectRepositories {
 		return nil, fmt.Errorf("%w: project repository limit reached", domain.ErrInvalidInput)
 	}
 
@@ -213,11 +211,13 @@ func (s *service) GetProjectContext(ctx context.Context, projectID uint) (*domai
 	if err != nil {
 		return nil, err
 	}
-	return &domain.SpecForgeProjectContext{
+	context := &domain.SpecForgeProjectContext{
 		Project:            project,
 		Repositories:       repositories,
 		RepositoryContexts: repositoryContexts,
-	}, nil
+	}
+	domain.ApplySpecForgeProjectContextGuardrails(context)
+	return context, nil
 }
 
 func (s *service) repositoryContexts(ctx context.Context, repositories []*domain.SpecForgeProjectRepository) ([]*domain.SpecForgeProjectRepositoryContext, error) {
