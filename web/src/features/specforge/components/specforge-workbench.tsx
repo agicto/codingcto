@@ -1073,9 +1073,6 @@ function PlanReview({
   onApprove: () => void;
 }) {
   const { productSpec, implementationPlan } = plan;
-  const dagReviewNotes = productSpec.assumptions.filter((item) =>
-    item.startsWith("PR DAG review:")
-  );
   const planAssumptions = productSpec.assumptions.filter(
     (item) => !item.startsWith("PR DAG review:")
   );
@@ -1102,7 +1099,7 @@ function PlanReview({
         </CardHeader>
         <CardContent className="space-y-5">
           <ListBlock title="Affected areas" items={implementationPlan.affectedAreas} />
-          <ListBlock title="PR DAG review" items={dagReviewNotes} />
+          <ListBlock title="PR DAG review" items={plan.prDagReview} />
           <ListBlock title="Security risks" items={implementationPlan.securityRisks} icon="risk" />
           <ListBlock title="Migration risks" items={implementationPlan.migrationRisks} />
           <Button

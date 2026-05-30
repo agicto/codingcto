@@ -233,6 +233,7 @@ export interface SpecForgePlanBundleDTO {
     updated_at: string;
   };
   pr_nodes: SpecForgePRNodeDTO[];
+  pr_dag_review?: string[];
 }
 
 export interface SpecForgePRNodeDTO {

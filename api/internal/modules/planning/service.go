@@ -725,9 +725,16 @@ func reviewPRDAG(nodes []*domain.SpecForgePRNode) []string {
 	}
 
 	if len(notes) == 0 {
-		return []string{fmt.Sprintf("PR DAG review: validation passed for %d reviewable PR nodes; dependencies resolve within the generated plan.", len(nodes))}
+		return []string{fmt.Sprintf("PR DAG review: validation passed for %d reviewable %s; dependencies resolve within the generated plan.", len(nodes), pluralize("PR node", len(nodes)))}
 	}
 	return notes
+}
+
+func pluralize(label string, count int) string {
+	if count == 1 {
+		return label
+	}
+	return label + "s"
 }
 
 func nodeLabel(node *domain.SpecForgePRNode) string {

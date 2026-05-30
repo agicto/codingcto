@@ -80,6 +80,9 @@ export const demoPlan: PlanBundle = {
     migrationRisks: ["No database migration in this web slice."],
     status: "draft",
   },
+  prDagReview: [
+    "PR DAG review: validation passed for 5 reviewable PR nodes; dependencies resolve within the generated plan.",
+  ],
   prNodes: [
     {
       id: "prnode_001",
