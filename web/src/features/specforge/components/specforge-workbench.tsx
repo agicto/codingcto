@@ -1772,6 +1772,9 @@ function ExecutionStatus({
   const taskEventsQuery = useSpecForgeTaskEvents(selectedTaskId);
   const taskEvents = taskEventsQuery.data?.events ?? [];
   const isTaskActionPending = retryTask.isPending || completeTask.isPending;
+  const blockedRecoverableTasks = run.tasks.filter(
+    (task) => task.status === "failed" || task.status === "cancelled"
+  );
 
   async function retryExecutionTask(task: PRNode) {
     if (!task.taskId) {
@@ -1788,7 +1791,9 @@ function ExecutionStatus({
       });
       onExecutionBundle(bundle);
     } catch {
-      setTaskActionError("Retry requires a failed or cancelled task and the SpecForge backend.");
+      setTaskActionError(
+        "Retry requires a failed or cancelled task. Dependency-closed tasks need a revised plan."
+      );
     } finally {
       setTaskActionId(undefined);
     }
@@ -1833,6 +1838,18 @@ function ExecutionStatus({
         </div>
       </CardHeader>
       <CardContent className="space-y-3">
+        {run.status === "blocked" && (
+          <div className="rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm leading-6 text-warning">
+            This run is waiting for a decision. Retry a failed or cancelled task with a
+            fresh session, or cancel the run if the PR DAG needs to be replanned.
+            {blockedRecoverableTasks.length > 0 && (
+              <span className="ml-1 font-medium text-text-main">
+                {blockedRecoverableTasks.length} task
+                {blockedRecoverableTasks.length === 1 ? "" : "s"} can be retried.
+              </span>
+            )}
+          </div>
+        )}
         {taskActionError && (
           <div className="rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm text-warning">
             {taskActionError}
