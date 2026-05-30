@@ -1521,6 +1521,28 @@ func TestCompleteTaskWaitsForPRReadinessBeforeCompletingRun(t *testing.T) {
 	require.Nil(t, updated.Run.CompletedAt)
 }
 
+func TestCompleteTaskIgnoresUnselectedPRNodeDeliveryState(t *testing.T) {
+	bundle := approvedPlanBundle()
+	bundle.PRNodes[1].Status = domain.PRNodeStatusPROpened
+	bundle.PRNodes[1].GitHubPRURL = "https://github.com/agicto/codingcto/pull/43"
+	planningRepo := &memoryPlanningRepo{bundle: bundle}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{
+		PRNodeIDs: []uint{planningRepo.bundle.PRNodes[0].ID},
+	})
+	require.NoError(t, err)
+	require.Equal(t, []uint{planningRepo.bundle.PRNodes[0].ID}, created.SelectedPRNodeIDs)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{})
+	require.NoError(t, err)
+
+	completed, err := svc.CompleteTask(context.Background(), dispatched.Tasks[0].ID)
+
+	require.NoError(t, err)
+	require.Equal(t, domain.ExecutionRunStatusCompleted, completed.Run.Status)
+	require.NotNil(t, completed.Run.CompletedAt)
+}
+
 func TestUnlockReadyTasksForPRNodeCompletesRunWhenAllPRNodesReady(t *testing.T) {
 	bundle := approvedPlanBundle()
 	bundle.PRNodes = bundle.PRNodes[:1]

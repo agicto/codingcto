@@ -1429,7 +1429,20 @@ func runDeliveryComplete(bundle *domain.SpecForgeExecutionBundle) bool {
 	if bundle.Plan == nil {
 		return true
 	}
+	selectedNodeIDs := make(map[uint]struct{}, len(bundle.Tasks))
+	for _, task := range bundle.Tasks {
+		if task == nil || task.PRNodeID == 0 {
+			continue
+		}
+		selectedNodeIDs[task.PRNodeID] = struct{}{}
+	}
 	for _, node := range bundle.Plan.PRNodes {
+		if node == nil {
+			continue
+		}
+		if _, ok := selectedNodeIDs[node.ID]; !ok {
+			continue
+		}
 		if prNodeRequiresStatusGate(node) && !prNodeStatusSatisfiesDependency(node.Status) {
 			return false
 		}
