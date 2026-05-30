@@ -27,6 +27,19 @@ export function primaryRepositoryContext(
 }
 
 export function projectContextReadiness(context?: ProjectContextDTO): ProjectContextReadiness {
+  if (context?.readiness) {
+    return {
+      hasPrimaryRepository: context.readiness.has_primary_repository,
+      activeRepositoryCount: context.readiness.active_repository_count,
+      readOnlyRepositoryCount: context.readiness.read_only_repository_count,
+      skillCount: context.readiness.skill_count,
+      warningCount: context.readiness.warning_count,
+      guardrails: context.readiness.guardrails ?? context.execution_guardrails ?? [],
+      summary: context.readiness.summary,
+      nextAction: context.readiness.next_action,
+    };
+  }
+
   const repositories = context?.repository_contexts ?? [];
   const activeRepositories = repositories.filter(item => item.repository.active);
   const primaryRepository = primaryRepositoryContext(context);

@@ -67,6 +67,17 @@ export interface ProjectRepositoryContextDTO {
   warnings?: string[];
 }
 
+export interface ProjectContextReadinessDTO {
+  has_primary_repository: boolean;
+  active_repository_count: number;
+  read_only_repository_count: number;
+  skill_count: number;
+  warning_count: number;
+  guardrails?: string[];
+  summary: string;
+  next_action: string;
+}
+
 export interface ProjectContextDTO {
   project: ProjectDTO;
   repositories: ProjectRepositoryDTO[];
@@ -75,6 +86,7 @@ export interface ProjectContextDTO {
   execution_repository_id?: string;
   read_only_repository_ids?: string[];
   execution_guardrails?: string[];
+  readiness?: ProjectContextReadinessDTO;
 }
 
 export interface CreateProjectPayload {

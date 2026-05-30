@@ -79,6 +79,31 @@ describe('project context', () => {
     expect(readiness.summary).toContain('repo_app');
   });
 
+  it('prefers server-provided readiness when present', () => {
+    const context = projectContext([
+      ['dependency', true, 'repo_sdk'],
+      ['primary', true, 'repo_app'],
+    ]);
+    context.readiness = {
+      has_primary_repository: true,
+      active_repository_count: 2,
+      read_only_repository_count: 1,
+      skill_count: 3,
+      warning_count: 2,
+      guardrails: ['Executor must modify only repo_app.'],
+      summary: 'Server summary.',
+      next_action: 'Server next action.',
+    };
+
+    const readiness = projectContextReadiness(context);
+
+    expect(readiness.skillCount).toBe(3);
+    expect(readiness.warningCount).toBe(2);
+    expect(readiness.guardrails).toEqual(['Executor must modify only repo_app.']);
+    expect(readiness.summary).toBe('Server summary.');
+    expect(readiness.nextAction).toBe('Server next action.');
+  });
+
   it('asks for a primary repo before planning when none is active', () => {
     const readiness = projectContextReadiness(projectContext([['dependency', true, 'repo_docs']]));
 
