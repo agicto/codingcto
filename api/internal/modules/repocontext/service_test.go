@@ -2,6 +2,7 @@ package repocontext
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -145,6 +146,7 @@ func TestInferProfileUsesRepositoryTreeWhenFileHintsAreAbsent(t *testing.T) {
 			Truncated: true,
 			Paths: []string{
 				"go.mod",
+				"AGENTS.md",
 				"web/package.json",
 				"web/next.config.ts",
 				".github/workflows/ci.yml",
@@ -155,6 +157,13 @@ func TestInferProfileUsesRepositoryTreeWhenFileHintsAreAbsent(t *testing.T) {
 			"web/package.json": {
 				Path:    "web/package.json",
 				Content: `{"scripts":{"lint":"eslint .","type-check":"tsc --noEmit","test":"vitest"}}`,
+			},
+			"AGENTS.md": {
+				Path: "AGENTS.md",
+				Content: `# Instructions
+Use DDD module boundaries.
+Do not expose API keys or secrets in prompts.
+Run the narrowest relevant tests.`,
 			},
 		},
 	}
@@ -171,8 +180,59 @@ func TestInferProfileUsesRepositoryTreeWhenFileHintsAreAbsent(t *testing.T) {
 	require.Subset(t, profile.Stack, []string{"Go", "Node.js", "Next.js"})
 	require.Subset(t, profile.TestCommands, []string{"pnpm lint", "pnpm type-check", "pnpm test"})
 	require.Contains(t, profile.AppStructure, "api/internal/modules")
+	require.Contains(t, profile.CodingConventions, "Instruction excerpt from AGENTS.md: # Instructions Use DDD module boundaries. Run the narrowest relevant tests.")
 	require.Equal(t, "github_tree", profile.Source)
 	require.Contains(t, profile.Warnings, "GitHub tree response was truncated; inferred profile may miss files.")
+	require.NotContains(t, strings.Join(profile.CodingConventions, " "), "API keys")
+	require.NotContains(t, strings.Join(profile.CodingConventions, " "), "secrets")
+}
+
+func TestInferProfileReadsOnlySafeInstructionFiles(t *testing.T) {
+	repo := &memoryRepo{}
+	treeSource := &fakeTreeSource{
+		snapshot: &RepositoryTreeSnapshot{
+			Ref: "main",
+			Paths: []string{
+				"AGENTS.md",
+				"api/AGENTS.md",
+				".github/copilot-instructions.md",
+				"docs/random.md",
+				"secrets/AGENTS.md",
+			},
+		},
+		files: map[string]*RepositoryFileSnapshot{
+			"AGENTS.md": {
+				Path:    "AGENTS.md",
+				Content: "Root rule.",
+			},
+			"api/AGENTS.md": {
+				Path:    "api/AGENTS.md",
+				Content: "API rule.",
+			},
+			".github/copilot-instructions.md": {
+				Path:    ".github/copilot-instructions.md",
+				Content: "Copilot rule.",
+			},
+			"docs/random.md": {
+				Path:    "docs/random.md",
+				Content: "Should not be read.",
+			},
+			"secrets/AGENTS.md": {
+				Path:    "secrets/AGENTS.md",
+				Content: "Should not be read.",
+			},
+		},
+	}
+	svc := NewService(repo, treeSource)
+
+	profile, err := svc.InferProfile(context.Background(), 12, "repo_123", &InferRepoProfileRequest{})
+
+	require.NoError(t, err)
+	require.ElementsMatch(t, []string{"AGENTS.md", "api/AGENTS.md", ".github/copilot-instructions.md"}, treeSource.readPaths)
+	require.Contains(t, profile.CodingConventions, "Instruction excerpt from AGENTS.md: Root rule.")
+	require.Contains(t, profile.CodingConventions, "Instruction excerpt from api/AGENTS.md: API rule.")
+	require.Contains(t, profile.CodingConventions, "Instruction excerpt from .github/copilot-instructions.md: Copilot rule.")
+	require.Contains(t, profile.Warnings, "SpecForge filtered 1 sensitive repository paths from the inferred profile.")
 }
 
 func TestInferProfileFiltersSensitiveRepositoryPaths(t *testing.T) {
