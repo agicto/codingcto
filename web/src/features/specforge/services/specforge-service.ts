@@ -410,6 +410,7 @@ export interface SpecForgeExecutionBundleDTO {
     updated_at: string;
   };
   plan?: SpecForgePlanBundleDTO;
+  selected_pr_node_ids?: number[];
   tasks: Array<{
     id: number;
     run_id: number;
