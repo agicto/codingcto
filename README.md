@@ -1,28 +1,28 @@
-# Luas / SpecForge
+# CodingCTO
 
-> **Luas** is the open-source full-stack foundation for **SpecForge**, a GitHub-native PRD-to-PR automation system.
+> **CodingCTO** is an open-source, GitHub-native PRD-to-PR automation system for AI-assisted engineering teams.
 
-SpecForge turns a product idea into a product plan, technical plan, PR dependency graph, versioned coding prompts, execution tasks, CI feedback, and review-ready pull requests. Luas provides the Go API and Next.js console that make that workflow shippable.
+CodingCTO turns a product idea into a product plan, technical plan, PR dependency graph, versioned coding prompts, execution tasks, CI feedback, and review-ready pull requests. The repository contains the Go API and Next.js console that make that workflow shippable.
 
 ```
-luas/
+codingcto/
 ├── api/   # Go backend — Gin + Wire + GORM, DDD modules, AI-capability ready
 ├── web/   # Next.js 16 + React 19 + Tailwind 4 + shadcn, AI-agent friendly
 └── ...
 ```
 
-## Why Luas
+## Why CodingCTO
 
 | | |
 |---|---|
-| **Speed** | "Luas" literally means *speed* in Irish. Sensible defaults, no boilerplate ceremony, opinionated wiring. |
+| **From idea to PR** | Product intent becomes product specs, technical plans, scoped prompts, and pull requests. |
 | **Stable rails** | Both halves are battle-tested and conservative: no exotic dependencies, no half-finished abstractions. |
 | **Great patterns** | DDD-flavored modules on the API side, feature-first folders on the web side, AGENTS.md on both. |
 | **Architecture-first** | The two services share contracts, not code. Cleanly deployable as separate units. |
 
-## What SpecForge is building
+## What CodingCTO is building
 
-SpecForge is an AI engineering planner and executor:
+CodingCTO is an AI engineering planner and executor:
 
 1. Connect one GitHub repository or a small project of repositories.
 2. Analyze repository context, test commands, CI, conventions, risk areas, and reusable skills.
@@ -51,7 +51,7 @@ make wire     # generate DI
 make run      # start server on :8025
 ```
 
-See [api/README.md](api/README.md) for the full Go backend guide.
+See [api/README.md](api/README.md) for the full Go backend guide. Some internal module names still use `luas` for compatibility with the original scaffold history.
 
 ### Web (`web/`)
 
@@ -105,10 +105,12 @@ This repo merges two previous projects, with full commit history preserved:
 - `api/` — formerly [`zgiai/zgo`](https://github.com/zgiai/zgo)
 - `web/` — formerly [`zgiai/zweb`](https://github.com/zgiai/zweb) (previously branded *LlamaFront* / *Hypership Web Console*)
 
-Module / package identifiers have been renamed to match the new brand:
+Historical module / package identifiers were renamed during the earlier scaffold consolidation:
 
 - Go module: `github.com/zgiai/zgo` → `github.com/zgiai/luas/api`
 - Web package: `llamafront-ai-scaffold` → `luas-web`
+
+The current public project name is **CodingCTO**. The `luas` identifiers above are retained as compatibility details until a dedicated package/module rename is planned.
 
 ## License
 
