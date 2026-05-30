@@ -109,14 +109,16 @@ type ClaimedTaskPRNode struct {
 	AcceptanceCriteria []string `json:"acceptance_criteria"`
 	TestCommands       []string `json:"test_commands"`
 	BranchName         string   `json:"branch_name"`
+	EvidenceRefs       []string `json:"evidence_refs,omitempty"`
 }
 
 type ClaimedTaskPrompt struct {
-	ID         uint   `json:"id"`
-	Version    string `json:"version"`
-	Type       string `json:"type"`
-	PromptText string `json:"prompt_text"`
-	PromptHash string `json:"prompt_hash"`
+	ID           uint     `json:"id"`
+	Version      string   `json:"version"`
+	Type         string   `json:"type"`
+	PromptText   string   `json:"prompt_text"`
+	PromptHash   string   `json:"prompt_hash"`
+	EvidenceRefs []string `json:"evidence_refs,omitempty"`
 }
 
 type ClaimedTaskExecutionContext struct {
