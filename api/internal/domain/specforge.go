@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -325,6 +326,22 @@ type SpecForgeRepoArchitectureSnapshot struct {
 	CreatedBy    uint      `json:"created_by"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+func SpecForgeRepoArchitectureSnapshotStaleness(snapshot *SpecForgeRepoArchitectureSnapshot, now time.Time) (bool, []string) {
+	if snapshot == nil {
+		return true, []string{"No architecture snapshot has been generated yet."}
+	}
+	reasons := []string{}
+	if strings.TrimSpace(snapshot.CommitSHA) == "" {
+		reasons = append(reasons, "Architecture snapshot has no commit or ref recorded.")
+	}
+	if snapshot.CreatedAt.IsZero() {
+		reasons = append(reasons, "Architecture snapshot has no creation timestamp.")
+	} else if now.Sub(snapshot.CreatedAt) > 24*time.Hour {
+		reasons = append(reasons, "Architecture snapshot is older than 24 hours.")
+	}
+	return len(reasons) > 0, reasons
 }
 
 // SpecForgePlanBundle is the aggregate returned to plan review screens.

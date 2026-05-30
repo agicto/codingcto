@@ -59,10 +59,13 @@ type SpecForgeProjectContext struct {
 
 // SpecForgeProjectRepositoryContext enriches a project repository binding with planner-ready repo intelligence.
 type SpecForgeProjectRepositoryContext struct {
-	Repository *SpecForgeProjectRepository `json:"repository"`
-	Profile    *SpecForgeRepoProfile       `json:"profile,omitempty"`
-	Skills     []*SpecForgeSkill           `json:"skills"`
-	Warnings   []string                    `json:"warnings,omitempty"`
+	Repository           *SpecForgeProjectRepository        `json:"repository"`
+	Profile              *SpecForgeRepoProfile              `json:"profile,omitempty"`
+	ArchitectureSnapshot *SpecForgeRepoArchitectureSnapshot `json:"architecture_snapshot,omitempty"`
+	ArchitectureStale    bool                               `json:"architecture_stale"`
+	ArchitectureWarnings []string                           `json:"architecture_warnings,omitempty"`
+	Skills               []*SpecForgeSkill                  `json:"skills"`
+	Warnings             []string                           `json:"warnings,omitempty"`
 }
 
 // SpecForgeProjectContextReadiness summarizes whether a project is ready to generate an execution plan.
@@ -135,6 +138,7 @@ func buildSpecForgeProjectContextReadiness(context *SpecForgeProjectContext, act
 			}
 		}
 		warningCount += len(repositoryContext.Warnings)
+		warningCount += len(repositoryContext.ArchitectureWarnings)
 		if repositoryContext.Profile != nil {
 			warningCount += len(repositoryContext.Profile.Warnings)
 		}
