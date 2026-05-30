@@ -262,8 +262,12 @@ func (s *service) CancelRun(ctx context.Context, runID uint) (*domain.SpecForgeE
 	if bundle.Run.Status == domain.ExecutionRunStatusCompleted || bundle.Run.Status == domain.ExecutionRunStatusCancelled {
 		return nil, domain.ErrConflict
 	}
-	if _, err := s.repo.CancelActiveTasksByRunID(ctx, runID); err != nil {
+	tasks, err := s.repo.CancelActiveTasksByRunID(ctx, runID)
+	if err != nil {
 		return nil, fmt.Errorf("cancel active agent tasks: %w", err)
+	}
+	if err := s.publishFixTasksFinished(ctx, tasks); err != nil {
+		return nil, err
 	}
 	now := time.Now()
 	bundle.Run.Status = domain.ExecutionRunStatusCancelled
@@ -316,6 +320,9 @@ func (s *service) DeregisterRuntimes(ctx context.Context, req *RuntimeDeregister
 	if err != nil {
 		return nil, fmt.Errorf("fail tasks for deregistered runtimes: %w", err)
 	}
+	if err := s.publishFixTasksFinished(ctx, tasks); err != nil {
+		return nil, err
+	}
 	return &domain.SpecForgeRuntimeSweepResult{
 		OfflineRuntimes: runtimes,
 		FailedTasks:     tasks,
@@ -364,6 +371,9 @@ func (s *service) SweepStaleRuntimes(ctx context.Context, req *RuntimeSweepReque
 	if err != nil {
 		return nil, fmt.Errorf("fail tasks for offline runtimes: %w", err)
 	}
+	if err := s.publishFixTasksFinished(ctx, tasks); err != nil {
+		return nil, err
+	}
 	return &domain.SpecForgeRuntimeSweepResult{
 		OfflineRuntimes: runtimes,
 		FailedTasks:     tasks,
@@ -389,6 +399,9 @@ func (s *service) SweepStaleTasks(ctx context.Context, req *StaleTaskSweepReques
 	)
 	if err != nil {
 		return nil, fmt.Errorf("fail stale agent tasks: %w", err)
+	}
+	if err := s.publishFixTasksFinished(ctx, tasks); err != nil {
+		return nil, err
 	}
 	return &domain.SpecForgeTaskSweepResult{FailedTasks: tasks}, nil
 }
@@ -982,6 +995,15 @@ func (s *service) publishFixTaskFinished(ctx context.Context, task *domain.SpecF
 	default:
 		return nil
 	}
+}
+
+func (s *service) publishFixTasksFinished(ctx context.Context, tasks []*domain.SpecForgeAgentTask) error {
+	for _, task := range tasks {
+		if err := s.publishFixTaskFinished(ctx, task); err != nil {
+			return err
+		}
+	}
+	return nil
 }
 
 func (s *service) completeRunIfDeliveryReady(ctx context.Context, bundle *domain.SpecForgeExecutionBundle, completedAt time.Time) error {
