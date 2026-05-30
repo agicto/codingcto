@@ -30,7 +30,7 @@ export default async function ConsoleHomePage() {
   const quickLinks = [
     {
       title: "API docs",
-      description: "Read the Luas Go backend OpenAPI spec.",
+      description: "Read the CodingCTO Go backend OpenAPI spec.",
       href: ROUTES.CONSOLE.SETTINGS,
       icon: BookOpen,
     },
@@ -54,7 +54,7 @@ export default async function ConsoleHomePage() {
         <div>
           <GreetingClock name={user?.name ?? user?.email ?? "there"} />
           <p className="mt-1 text-sm text-text-muted">
-            Welcome to your Luas console. This page is an example — replace it with your dashboard.
+            Welcome to your CodingCTO console. This page is an example — replace it with your dashboard.
           </p>
         </div>
         <Button asChild>
@@ -98,7 +98,7 @@ export default async function ConsoleHomePage() {
             <h2 className="text-base font-semibold">Next steps</h2>
             <ul className="mt-2 space-y-1 text-sm text-text-muted">
               <li>
-                Wire <code className="font-mono text-xs">NEXT_PUBLIC_API_URL</code> to your Luas
+                Wire <code className="font-mono text-xs">NEXT_PUBLIC_API_URL</code> to your CodingCTO
                 Go backend (or your own API).
               </li>
               <li>

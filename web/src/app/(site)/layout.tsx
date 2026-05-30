@@ -30,7 +30,7 @@ export default function SiteLayout({ children }: PropsWithChildren) {
                   <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
                 </svg>
               </div>
-              <span className="text-xl font-bold tracking-tight">Luas</span>
+              <span className="text-xl font-bold tracking-tight">CodingCTO</span>
             </Link>
 
             {/* Navigation links - only valid ones */}
@@ -83,16 +83,16 @@ export default function SiteLayout({ children }: PropsWithChildren) {
                   <path d="M12 22s8-4 8-10V5l-8-3-8 3v7c0 6 8 10 8 10" />
                 </svg>
               </div>
-              <span className="text-sm font-medium">Luas</span>
+              <span className="text-sm font-medium">CodingCTO</span>
               <span className="text-sm text-text-muted">
-                · AI-First Frontend Scaffold
+                · PRD-to-PR Automation
               </span>
             </div>
 
             {/* Links & Copyright */}
             <div className="flex items-center gap-6 text-sm text-text-muted">
               <a 
-                href="https://github.com/zgiai/luas"
+                href="https://github.com/agicto/codingcto"
                 target="_blank"
                 rel="noopener noreferrer"
                 className="hover:text-primary transition-colors"
@@ -100,7 +100,7 @@ export default function SiteLayout({ children }: PropsWithChildren) {
                 GitHub
               </a>
               <span>
-                © {new Date().getFullYear()} Luas. All rights reserved.
+                © {new Date().getFullYear()} CodingCTO. All rights reserved.
               </span>
             </div>
           </div>

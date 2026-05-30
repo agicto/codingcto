@@ -6,7 +6,7 @@ import { z } from 'zod';
  * Defaults are hardcoded as fallback.
  */
 const envSchema = z.object({
-  // API entry point — point this at your Luas Go backend (or any backend)
+  // API entry point — point this at your CodingCTO Go backend (or any backend)
   NEXT_PUBLIC_API_URL: z.string().min(1).default('/api'),
   NEXT_PUBLIC_SPECFORGE_API_URL: z.string().min(1).default('/v1'),
 

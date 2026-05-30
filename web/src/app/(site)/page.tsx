@@ -15,7 +15,7 @@ import {
 } from 'lucide-react';
 
 /**
- * Luas Homepage
+ * CodingCTO homepage
  * Unified design language with Auth and Console sections
  */
 export default function HomePage() {
@@ -50,21 +50,21 @@ export default function HomePage() {
             {/* Badge */}
             <Badge variant="secondary" className="mb-6 px-4 py-1.5 text-sm font-medium">
               <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-              AI-First Frontend Scaffold
+              GitHub-native PRD-to-PR Automation
             </Badge>
 
             {/* Title */}
             <h1 className="text-4xl font-bold tracking-tight md:text-5xl lg:text-6xl">
-              Build Modern Web Apps{' '}
+              Turn Product Ideas{' '}
               <span className="bg-linear-to-r from-primary to-primary-deeper bg-clip-text text-transparent">
-                with AI Power
+                into Pull Requests
               </span>
             </h1>
 
             {/* Description */}
             <p className="mt-6 text-lg text-text-muted md:text-xl max-w-2xl mx-auto">
-              A production-ready Next.js 16 scaffold with TypeScript, Tailwind CSS 4, 
-              premium UI components, and everything you need for AI-assisted development.
+              CodingCTO analyzes repositories, generates plans and PR DAGs, compiles scoped
+              prompts, and drives review-ready GitHub pull requests.
             </p>
 
             {/* CTA Buttons */}
@@ -93,7 +93,7 @@ export default function HomePage() {
               Everything You Need
             </h2>
             <p className="mt-4 text-text-muted max-w-2xl mx-auto">
-              A complete scaffold with authentication, dashboard, i18n, and premium UI components.
+              A focused product-engineering workflow for planning, execution, verification, and review.
             </p>
           </div>
 
@@ -157,8 +157,7 @@ export default function HomePage() {
             Ready to Build?
           </h2>
           <p className="mt-4 text-white/80 max-w-xl mx-auto md:text-lg">
-            Start building your next project with Luas. 
-            Authentication, dashboard, and premium components included.
+            Describe a feature, review the plan, and let CodingCTO prepare the pull requests.
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
             <Link href="/register">
@@ -168,7 +167,7 @@ export default function HomePage() {
               </Button>
             </Link>
             <a 
-              href="https://github.com/zgiai/luas" 
+              href="https://github.com/agicto/codingcto"
               target="_blank" 
               rel="noopener noreferrer"
             >
@@ -191,22 +190,22 @@ export default function HomePage() {
 const featuresData = [
   {
     title: 'Authentication',
-    description: 'Complete auth flow with login, registration, and protected routes.',
+    description: 'Workspace access for project, repository, and execution workflows.',
     icon: Shield,
   },
   {
     title: 'Admin Console',
-    description: 'Beautiful dashboard with charts, tables, and data visualization.',
+    description: 'A delivery console for projects, plans, execution runs, and pull requests.',
     icon: Terminal,
   },
   {
     title: 'Internationalization',
-    description: 'Built-in i18n support with type-safe translations.',
+    description: 'Repository context, skill instructions, and evidence-backed prompt inputs.',
     icon: Globe,
   },
   {
     title: 'Premium UI',
-    description: 'Elegant components with glassmorphism and micro-animations.',
+    description: 'Bounded CI repair attempts, escalation summaries, and review loops.',
     icon: Palette,
   },
 ];
