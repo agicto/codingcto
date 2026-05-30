@@ -24,6 +24,7 @@ Each half has its own `AGENTS.md` with the detailed rules. Read those before edi
 2. **Preserve original module identity inside each half.** Inside `api/`, imports look like `github.com/zgiai/luas/api/internal/...`. Inside `web/`, imports look like `@/...`. Don't try to unify these.
 3. **Brand strings.** The user-facing brand is **Luas** (capitalized). Lower-case `luas` only in identifiers (package names, binary names, env keys). Never re-introduce `LlamaFront`, `Hypership`, or `ZGO` into new code — those were the old names and have been deliberately cleaned up.
 4. **History matters.** This repo was built by `git subtree add` from two upstreams; commits before the merge live under their original prefixes. Don't rewrite that history.
+5. **English-first open source.** Commit messages, pull request titles/descriptions, code comments, and repository documentation must be written in English unless the task explicitly requires localized product copy.
 
 ## Commands you might run
 
