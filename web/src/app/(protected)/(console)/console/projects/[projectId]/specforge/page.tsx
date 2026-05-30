@@ -1,5 +1,5 @@
-import { SpecForgeWorkbench } from "@/features/specforge";
+import { ProjectSpecForgeConsole } from "@/features/project";
 
 export default function ProjectSpecForgePage() {
-  return <SpecForgeWorkbench />;
+  return <ProjectSpecForgeConsole />;
 }

@@ -1,4 +1,5 @@
 export { ProjectConsole } from "./components/project-console";
+export { ProjectSpecForgeConsole } from "./components/project-specforge-console";
 export {
   useBindProjectRepository,
   useCreateProject,
@@ -16,3 +17,4 @@ export {
   type ProjectRepositoryDTO,
   type ProjectSkillDTO,
 } from "./services/project-service";
+export { primaryRepositoryContext } from "./project-context";
