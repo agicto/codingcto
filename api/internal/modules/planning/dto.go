@@ -32,6 +32,7 @@ type PlanReviewResponse struct {
 	ProductSpec        *domain.SpecForgeProductSpec        `json:"product_spec"`
 	ImplementationPlan *domain.SpecForgeImplementationPlan `json:"implementation_plan"`
 	PRNodes            []*domain.SpecForgePRNode           `json:"pr_nodes"`
+	PRDAGReview        []string                            `json:"pr_dag_review"`
 }
 
 type CompiledPromptResponse struct {
@@ -55,6 +56,7 @@ func toPlanReviewResponse(bundle *domain.SpecForgePlanBundle) *PlanReviewRespons
 		ProductSpec:        bundle.ProductSpec,
 		ImplementationPlan: bundle.Plan,
 		PRNodes:            bundle.PRNodes,
+		PRDAGReview:        reviewPRDAG(bundle.PRNodes),
 	}
 }
 

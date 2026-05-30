@@ -112,6 +112,15 @@ function implementationStatus(status: string): ImplementationPlan['status'] {
   return status === 'approved' ? 'approved' : 'draft';
 }
 
+function prDAGReviewFromDTO(bundle: SpecForgePlanBundleDTO): string[] {
+  if (bundle.pr_dag_review && bundle.pr_dag_review.length > 0) {
+    return bundle.pr_dag_review;
+  }
+  return (bundle.product_spec.assumptions ?? []).filter((item) =>
+    item.startsWith('PR DAG review:')
+  );
+}
+
 export function prNodeFromDTO(node: SpecForgePRNodeDTO): PRNode {
   return {
     id: String(node.id),
@@ -155,6 +164,7 @@ export function planBundleFromDTO(bundle: SpecForgePlanBundleDTO): PlanBundle {
       status: implementationStatus(bundle.implementation_plan.status),
     },
     prNodes: (bundle.pr_nodes ?? []).map(prNodeFromDTO),
+    prDagReview: prDAGReviewFromDTO(bundle),
   };
 }
 

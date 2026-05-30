@@ -68,6 +68,9 @@ const baseBundle: SpecForgePlanBundleDTO = {
     created_at: '2026-05-29T12:00:00Z',
     updated_at: '2026-05-29T12:00:00Z',
   },
+  pr_dag_review: [
+    'PR DAG review: validation passed for 1 reviewable PR node; dependencies resolve within the generated plan.',
+  ],
   pr_nodes: [
     {
       id: 1,
@@ -119,6 +122,9 @@ describe('planBundleFromDTO', () => {
         affectedAreas: ['api/internal/modules/invitation'],
         status: 'draft',
       },
+      prDagReview: [
+        'PR DAG review: validation passed for 1 reviewable PR node; dependencies resolve within the generated plan.',
+      ],
       prNodes: [
         {
           id: '1',
@@ -146,6 +152,24 @@ describe('planBundleFromDTO', () => {
       source: 'unknown',
       warnings: [],
     });
+  });
+
+  it('falls back to legacy assumption-backed PR DAG review notes', () => {
+    const bundle: SpecForgePlanBundleDTO = {
+      ...baseBundle,
+      pr_dag_review: undefined,
+      product_spec: {
+        ...baseBundle.product_spec,
+        assumptions: [
+          'Repo profile was available.',
+          'PR DAG review: PR-001 has no expected file scope.',
+        ],
+      },
+    };
+
+    expect(planBundleFromDTO(bundle).prDagReview).toEqual([
+      'PR DAG review: PR-001 has no expected file scope.',
+    ]);
   });
 
   it('normalizes unknown enum values to safe workbench defaults', () => {

@@ -119,6 +119,20 @@ func TestApprovePlanRejectsInvalidPRDAG(t *testing.T) {
 	require.Equal(t, domain.PlanStatusDraft, repo.bundle.Plan.Status)
 }
 
+func TestPlanReviewResponseExposesPRDAGReview(t *testing.T) {
+	repo := &memoryRepo{}
+	svc := NewService(repo, &memoryProfileRepo{}, repo)
+	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
+		Input: "Add team invite feature for workspace admins",
+	})
+	require.NoError(t, err)
+	created.PRNodes[0].ExpectedFiles = nil
+
+	response := toPlanReviewResponse(created)
+
+	require.Contains(t, response.PRDAGReview, "PR DAG review: PR-001 has no expected file scope.")
+}
+
 func TestCompilePromptPersistsVersionedPromptForPRNode(t *testing.T) {
 	repo := &memoryRepo{}
 	profileRepo := &memoryProfileRepo{profile: &domain.SpecForgeRepoProfile{

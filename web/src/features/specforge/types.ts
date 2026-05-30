@@ -77,6 +77,7 @@ export interface PlanBundle {
   productSpec: ProductSpec;
   implementationPlan: ImplementationPlan;
   prNodes: PRNode[];
+  prDagReview: string[];
 }
 
 export interface ExecutionRun {
