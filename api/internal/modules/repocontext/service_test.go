@@ -54,11 +54,15 @@ func TestInferProfileDetectsStackCommandsAndRisks(t *testing.T) {
 		FilePaths: []string{
 			"go.mod",
 			"web/package.json",
+			"pnpm-lock.yaml",
 			"web/tsconfig.json",
 			"web/next.config.ts",
 			"web/tailwind.config.ts",
 			"prisma/schema.prisma",
 			".github/workflows/ci.yml",
+			"AGENTS.md",
+			"CONTRIBUTING.md",
+			".github/copilot-instructions.md",
 			"api/internal/modules/auth/service.go",
 			"web/src/features/billing/page.tsx",
 		},
@@ -75,9 +79,62 @@ func TestInferProfileDetectsStackCommandsAndRisks(t *testing.T) {
 	require.Subset(t, profile.Stack, []string{"Go", "Node.js", "Next.js", "TypeScript", "Tailwind", "Prisma"})
 	require.Subset(t, profile.TestCommands, []string{"go test ./...", "go vet ./...", "pnpm lint", "pnpm type-check", "pnpm test"})
 	require.Subset(t, profile.RiskAreas, []string{"database migrations", "auth", "billing"})
+	require.Subset(t, profile.CodingConventions, []string{
+		"Follow repository instructions in AGENTS.md before planning or editing.",
+		"Follow repository contribution guidelines in CONTRIBUTING.md.",
+		"Follow GitHub Copilot repository instructions in .github/copilot-instructions.md.",
+	})
 	require.Contains(t, profile.Summary, "SpecForge inferred")
 	require.Equal(t, "request_hints", profile.Source)
 	require.Equal(t, uint(12), profile.CreatedBy)
+}
+
+func TestInferProfileUsesDetectedPackageManagerForScriptCommands(t *testing.T) {
+	cases := []struct {
+		name     string
+		paths    []string
+		expected []string
+	}{
+		{
+			name:     "pnpm lockfile",
+			paths:    []string{"package.json", "pnpm-lock.yaml"},
+			expected: []string{"pnpm lint", "pnpm type-check", "pnpm test"},
+		},
+		{
+			name:     "yarn lockfile",
+			paths:    []string{"package.json", "yarn.lock"},
+			expected: []string{"yarn lint", "yarn type-check", "yarn test"},
+		},
+		{
+			name:     "npm lockfile",
+			paths:    []string{"package.json", "package-lock.json"},
+			expected: []string{"npm run lint", "npm run type-check", "npm run test"},
+		},
+		{
+			name:     "bun lockfile",
+			paths:    []string{"package.json", "bun.lockb"},
+			expected: []string{"bun lint", "bun type-check", "bun test"},
+		},
+	}
+
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &memoryRepo{}
+			svc := NewService(repo, nil)
+
+			profile, err := svc.InferProfile(context.Background(), 12, "repo_123", &InferRepoProfileRequest{
+				FilePaths: tc.paths,
+				PackageScripts: map[string]string{
+					"lint":       "eslint .",
+					"type-check": "tsc --noEmit",
+					"test":       "vitest",
+				},
+			})
+
+			require.NoError(t, err)
+			require.Subset(t, profile.TestCommands, tc.expected)
+		})
+	}
 }
 
 func TestInferProfileUsesRepositoryTreeWhenFileHintsAreAbsent(t *testing.T) {
