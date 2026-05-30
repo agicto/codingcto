@@ -60,6 +60,7 @@ func validSpecForgePRDAG() []*SpecForgePRNode {
 	return []*SpecForgePRNode{
 		{
 			NodeKey:            "PR-001",
+			RepositoryID:       "repo_123",
 			Order:              1,
 			Title:              "Foundation",
 			Goal:               "Prepare the implementation boundary.",
@@ -71,6 +72,7 @@ func validSpecForgePRDAG() []*SpecForgePRNode {
 		},
 		{
 			NodeKey:            "PR-002",
+			RepositoryID:       "repo_123",
 			Order:              2,
 			Title:              "Implementation",
 			Goal:               "Implement the feature slice.",

@@ -203,6 +203,9 @@ func (s *service) PreparePRNodeBranch(ctx context.Context, req *PreparePRNodeBra
 	if err != nil {
 		return nil, err
 	}
+	if err := validatePRNodeTargetRepository(repository.RepositoryID, node); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(node.BranchName) == "" {
 		return nil, domain.ErrInvalidInput
 	}
@@ -242,6 +245,9 @@ func (s *service) DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) 
 	}
 	node, err := s.planningRepo.FindPRNodeByID(ctx, req.PRNodeID)
 	if err != nil {
+		return nil, err
+	}
+	if err := validatePRNodeTargetRepository(repository.RepositoryID, node); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(node.BranchName) == "" {
@@ -308,6 +314,9 @@ func (s *service) RefreshPRNodeCI(ctx context.Context, req *RefreshPRNodeCIReque
 	if err != nil {
 		return nil, err
 	}
+	if err := validatePRNodeTargetRepository(repository.RepositoryID, node); err != nil {
+		return nil, err
+	}
 	if strings.TrimSpace(node.BranchName) == "" {
 		return nil, domain.ErrInvalidInput
 	}
@@ -349,6 +358,9 @@ func (s *service) ReadPRNodeFailureLog(ctx context.Context, req *ReadPRNodeFailu
 	}
 	node, err := s.planningRepo.FindPRNodeByID(ctx, req.PRNodeID)
 	if err != nil {
+		return nil, err
+	}
+	if err := validatePRNodeTargetRepository(repository.RepositoryID, node); err != nil {
 		return nil, err
 	}
 	if strings.TrimSpace(node.BranchName) == "" {
@@ -896,6 +908,20 @@ func isUnsuccessfulCompletedWorkflowRun(status, conclusion string) bool {
 	status = strings.TrimSpace(status)
 	conclusion = strings.TrimSpace(conclusion)
 	return status == "completed" && conclusion != "" && conclusion != "success"
+}
+
+func validatePRNodeTargetRepository(requestRepositoryID string, node *domain.SpecForgePRNode) error {
+	if node == nil {
+		return domain.ErrInvalidInput
+	}
+	targetRepositoryID := strings.TrimSpace(node.RepositoryID)
+	if targetRepositoryID == "" {
+		return nil
+	}
+	if targetRepositoryID != strings.TrimSpace(requestRepositoryID) {
+		return domain.ErrConflict
+	}
+	return nil
 }
 
 func normalizePermissions(permissions map[string]string) map[string]string {

@@ -206,10 +206,10 @@ body.data.context.repository_contexts.0.skills.0.name exists
 ```
 
 ```step
-@id project_idea
-@name Create Project Idea
+@id project_requirement
+@name Create Project Requirement
 
-POST /v1/projects/{{project_id}}/ideas
+POST /v1/projects/{{project_id}}/requirements
 Content-Type: application/json
 Authorization: Bearer {{token}}
 
@@ -219,17 +219,23 @@ Authorization: Bearer {{token}}
 }
 
 [Captures]
+requirement_id = data.requirement.id
 idea_id = data.idea.id
 plan_id = data.implementation_plan.id
 pr_node_id = data.pr_nodes.0.id
 
 [Asserts]
 status == 201
+body.data.requirement.id exists
 body.data.idea.project_id exists
+body.data.idea.requirement_id exists
+body.data.implementation_plan.requirement_id exists
+body.data.implementation_plan.version == 1
 body.data.project_context.project.name exists
 body.data.repo_profile.stack.0 exists
 body.data.product_spec.assumptions.0 exists
 body.data.pr_nodes.0.id exists
+body.data.pr_nodes.0.repository_id exists
 ```
 
 ```step

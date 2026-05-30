@@ -19,6 +19,20 @@ func NewRepository(db *gorm.DB) *repository {
 
 func (r *repository) CreatePlanBundle(ctx context.Context, bundle *domain.SpecForgePlanBundle) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if bundle.Requirement != nil && bundle.Requirement.ID == 0 {
+			requirementPO := newRequirementPO(bundle.Requirement)
+			if err := tx.Create(requirementPO).Error; err != nil {
+				return err
+			}
+			bundle.Requirement.ID = requirementPO.ID
+			bundle.Requirement.CreatedAt = requirementPO.CreatedAt
+			bundle.Requirement.UpdatedAt = requirementPO.UpdatedAt
+		}
+		if bundle.Requirement != nil && bundle.Requirement.ID != 0 {
+			bundle.Idea.RequirementID = &bundle.Requirement.ID
+			bundle.Idea.ProjectID = &bundle.Requirement.ProjectID
+			bundle.Plan.RequirementID = &bundle.Requirement.ID
+		}
 		ideaPO := newIdeaPO(bundle.Idea)
 		if err := tx.Create(ideaPO).Error; err != nil {
 			return err
@@ -60,6 +74,43 @@ func (r *repository) CreatePlanBundle(ctx context.Context, bundle *domain.SpecFo
 	})
 }
 
+func (r *repository) CreateRequirement(ctx context.Context, requirement *domain.SpecForgeRequirement) error {
+	if requirement == nil || strings.TrimSpace(requirement.RawInput) == "" || requirement.ProjectID == 0 {
+		return domain.ErrInvalidInput
+	}
+	po := newRequirementPO(requirement)
+	if err := r.db.WithContext(ctx).Create(po).Error; err != nil {
+		return err
+	}
+	requirement.ID = po.ID
+	requirement.CreatedAt = po.CreatedAt
+	requirement.UpdatedAt = po.UpdatedAt
+	return nil
+}
+
+func (r *repository) FindRequirementByID(ctx context.Context, requirementID uint) (*domain.SpecForgeRequirement, error) {
+	if requirementID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	var po RequirementPO
+	if err := r.db.WithContext(ctx).First(&po, requirementID).Error; err != nil {
+		return nil, err
+	}
+	return po.toDomain(), nil
+}
+
+func (r *repository) UpdateRequirement(ctx context.Context, requirement *domain.SpecForgeRequirement) error {
+	if requirement == nil || requirement.ID == 0 {
+		return domain.ErrInvalidInput
+	}
+	po := newRequirementPO(requirement)
+	if err := r.db.WithContext(ctx).Save(po).Error; err != nil {
+		return err
+	}
+	requirement.UpdatedAt = po.UpdatedAt
+	return nil
+}
+
 func (r *repository) FindPlanBundleByIdeaID(ctx context.Context, ideaID uint) (*domain.SpecForgePlanBundle, error) {
 	var idea IdeaPO
 	if err := r.db.WithContext(ctx).First(&idea, ideaID).Error; err != nil {
@@ -68,12 +119,41 @@ func (r *repository) FindPlanBundleByIdeaID(ctx context.Context, ideaID uint) (*
 	return r.findBundle(ctx, "idea_id = ?", idea.ID)
 }
 
+func (r *repository) FindLatestPlanBundleByRequirementID(ctx context.Context, requirementID uint) (*domain.SpecForgePlanBundle, error) {
+	if requirementID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	var plan ImplementationPlanPO
+	if err := r.db.WithContext(ctx).Where("requirement_id = ?", requirementID).Order("version DESC, id DESC").First(&plan).Error; err != nil {
+		return nil, err
+	}
+	return r.findBundle(ctx, "id = ?", plan.ID)
+}
+
 func (r *repository) FindPlanBundleByPlanID(ctx context.Context, planID uint) (*domain.SpecForgePlanBundle, error) {
 	var plan ImplementationPlanPO
 	if err := r.db.WithContext(ctx).First(&plan, planID).Error; err != nil {
 		return nil, err
 	}
-	return r.findBundle(ctx, "idea_id = ?", plan.IdeaID)
+	return r.findBundle(ctx, "id = ?", plan.ID)
+}
+
+func (r *repository) NextPlanVersionByRequirementID(ctx context.Context, requirementID uint) (int, error) {
+	if requirementID == 0 {
+		return 0, domain.ErrInvalidInput
+	}
+	var latest ImplementationPlanPO
+	err := r.db.WithContext(ctx).Where("requirement_id = ?", requirementID).Order("version DESC, id DESC").First(&latest).Error
+	if err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return 1, nil
+		}
+		return 0, err
+	}
+	if latest.Version <= 0 {
+		return 1, nil
+	}
+	return latest.Version + 1, nil
 }
 
 func (r *repository) UpdatePlan(ctx context.Context, plan *domain.SpecForgeImplementationPlan) error {
@@ -228,6 +308,15 @@ func (r *repository) findBundle(ctx context.Context, query string, args ...any) 
 		return nil, err
 	}
 
+	var requirement *domain.SpecForgeRequirement
+	if idea.RequirementID != nil && *idea.RequirementID != 0 {
+		var requirementPO RequirementPO
+		if err := r.db.WithContext(ctx).First(&requirementPO, *idea.RequirementID).Error; err != nil {
+			return nil, err
+		}
+		requirement = requirementPO.toDomain()
+	}
+
 	var spec ProductSpecPO
 	if err := r.db.WithContext(ctx).First(&spec, plan.ProductSpecID).Error; err != nil {
 		return nil, err
@@ -244,6 +333,7 @@ func (r *repository) findBundle(ctx context.Context, query string, args ...any) 
 	}
 
 	return &domain.SpecForgePlanBundle{
+		Requirement: requirement,
 		Idea:        idea.toDomain(),
 		ProductSpec: spec.toDomain(),
 		Plan:        plan.toDomain(),
