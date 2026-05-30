@@ -166,6 +166,7 @@ func NewRoleRevokedEvent(userID, roleID uint, roleName string) RoleRevokedEvent 
 const EventSpecForgeReviewFeedbackReceived = "specforge.review_feedback.received"
 const EventSpecForgeFixAttemptQueued = "specforge.fix_attempt.queued"
 const EventSpecForgeFixTaskFinished = "specforge.fix_task.finished"
+const EventSpecForgePRNodeNeedsDecision = "specforge.pr_node.needs_decision"
 const EventSpecForgePRNodeCIFailed = "specforge.pr_node.ci_failed"
 const EventSpecForgePRNodeDependencySatisfied = "specforge.pr_node.dependency_satisfied"
 const EventSpecForgePRNodeClosed = "specforge.pr_node.closed"
@@ -268,6 +269,29 @@ func NewSpecForgeFixTaskFinishedEvent(task *SpecForgeAgentTask) SpecForgeFixTask
 		event.FixAttemptStatus = FixAttemptStatusQueued
 	}
 	return event
+}
+
+// SpecForgePRNodeNeedsDecisionEvent is fired when a PR node cannot continue automatically.
+type SpecForgePRNodeNeedsDecisionEvent struct {
+	BaseEvent
+	PRNodeID          uint
+	FailureType       string
+	Reason            string
+	RecommendedAction string
+}
+
+func (e SpecForgePRNodeNeedsDecisionEvent) EventName() string {
+	return EventSpecForgePRNodeNeedsDecision
+}
+
+func NewSpecForgePRNodeNeedsDecisionEvent(prNodeID uint, failureType, reason, recommendedAction string) SpecForgePRNodeNeedsDecisionEvent {
+	return SpecForgePRNodeNeedsDecisionEvent{
+		BaseEvent:         NewBaseEvent(),
+		PRNodeID:          prNodeID,
+		FailureType:       failureType,
+		Reason:            reason,
+		RecommendedAction: recommendedAction,
+	}
 }
 
 // SpecForgePRNodeCIFailedEvent is fired when a GitHub workflow failure maps to a SpecForge PR node.

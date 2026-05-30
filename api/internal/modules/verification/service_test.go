@@ -173,7 +173,19 @@ func TestCreateFixAttemptFromCIDedupesWorkflowRun(t *testing.T) {
 func TestCreateFixAttemptFromCIRecordsEscalationWhenLogsAreUnavailable(t *testing.T) {
 	repo := &memoryRepo{}
 	reader := &fakeFailureReader{err: domain.ErrNotFound}
-	svc := NewService(repo, reader, nil)
+	bus := infraevents.NewEventBus()
+	var decision domain.SpecForgePRNodeNeedsDecisionEvent
+	bus.Subscribe(domain.EventSpecForgePRNodeNeedsDecision, func(ctx context.Context, event infraevents.Event) error {
+		var underlying any = event
+		if wrapped, ok := event.(infraevents.WrappedEvent); ok {
+			underlying = wrapped.Event
+		}
+		typed, ok := underlying.(domain.SpecForgePRNodeNeedsDecisionEvent)
+		require.True(t, ok)
+		decision = typed
+		return nil
+	})
+	svc := NewService(repo, reader, bus)
 
 	attempt, err := svc.CreateFixAttemptFromCI(context.Background(), 7, 42, &CreateFixAttemptFromCIRequest{
 		RepositoryID:   "github_agicto__codingcto",
@@ -195,6 +207,9 @@ func TestCreateFixAttemptFromCIRecordsEscalationWhenLogsAreUnavailable(t *testin
 	require.Contains(t, attempt.CILogExcerpt, "Conclusion: timed_out")
 	require.Contains(t, attempt.LikelyCause, "could not read a failed job log")
 	require.Contains(t, attempt.RecommendedAction, "Open the workflow run in GitHub")
+	require.Equal(t, uint(42), decision.PRNodeID)
+	require.Equal(t, "ci_log_unavailable", decision.FailureType)
+	require.Contains(t, decision.Reason, "could not read a failed job log")
 }
 
 func TestCreateFixAttemptFromCIPublishesQueuedAutoFixEvent(t *testing.T) {
@@ -363,8 +378,19 @@ func TestHandlerStopsQueuingFixAttemptsAtBudgetLimit(t *testing.T) {
 	handler := NewHandler(NewService(repo, nil, bus))
 	handler.RegisterEvents(bus)
 	queuedCount := 0
+	var decision domain.SpecForgePRNodeNeedsDecisionEvent
 	bus.Subscribe(domain.EventSpecForgeFixAttemptQueued, func(ctx context.Context, event infraevents.Event) error {
 		queuedCount++
+		return nil
+	})
+	bus.Subscribe(domain.EventSpecForgePRNodeNeedsDecision, func(ctx context.Context, event infraevents.Event) error {
+		var underlying any = event
+		if wrapped, ok := event.(infraevents.WrappedEvent); ok {
+			underlying = wrapped.Event
+		}
+		typed, ok := underlying.(domain.SpecForgePRNodeNeedsDecisionEvent)
+		require.True(t, ok)
+		decision = typed
 		return nil
 	})
 	failureTypes := []string{"type_error", "lint_failure", "unit_test_failure"}
@@ -389,6 +415,9 @@ func TestHandlerStopsQueuingFixAttemptsAtBudgetLimit(t *testing.T) {
 	require.NoError(t, err)
 	require.Len(t, repo.attempts, maxFixAttemptsPerPRNode)
 	require.Equal(t, 0, queuedCount)
+	require.Equal(t, uint(42), decision.PRNodeID)
+	require.Equal(t, "executor_failed", decision.FailureType)
+	require.Contains(t, decision.Reason, "automatic fix limit")
 }
 
 func TestCreateFixAttemptFromCIRejectsMissingReader(t *testing.T) {

@@ -90,6 +90,9 @@ func (s *service) CreateFixAttempt(ctx context.Context, userID, prNodeID uint, r
 	if err := s.publishFixAttemptQueued(ctx, attempt); err != nil {
 		return nil, err
 	}
+	if err := s.publishPRNodeNeedsDecision(ctx, attempt); err != nil {
+		return nil, err
+	}
 	return attempt, nil
 }
 
@@ -98,6 +101,18 @@ func (s *service) publishFixAttemptQueued(ctx context.Context, attempt *domain.S
 		return nil
 	}
 	return s.eventBus.Publish(ctx, domain.NewSpecForgeFixAttemptQueuedEvent(attempt))
+}
+
+func (s *service) publishPRNodeNeedsDecision(ctx context.Context, attempt *domain.SpecForgeFixAttempt) error {
+	if s.eventBus == nil || attempt == nil || attempt.CanAutoFix {
+		return nil
+	}
+	return s.eventBus.Publish(ctx, domain.NewSpecForgePRNodeNeedsDecisionEvent(
+		attempt.PRNodeID,
+		attempt.FailureType,
+		strings.TrimSpace(attempt.LikelyCause),
+		strings.TrimSpace(attempt.RecommendedAction),
+	))
 }
 
 func (s *service) UpdateFixAttemptStatus(ctx context.Context, fixAttemptID uint, status string) error {
@@ -135,9 +150,21 @@ func (s *service) RecordFixTaskFinished(ctx context.Context, event domain.SpecFo
 		return nil
 	}
 	if errors.Is(err, domain.ErrConflict) {
-		return nil
+		return s.publishPRNodeAutoFixBudgetExhausted(ctx, event)
 	}
 	return err
+}
+
+func (s *service) publishPRNodeAutoFixBudgetExhausted(ctx context.Context, event domain.SpecForgeFixTaskFinishedEvent) error {
+	if s.eventBus == nil || event.PRNodeID == 0 {
+		return nil
+	}
+	return s.eventBus.Publish(ctx, domain.NewSpecForgePRNodeNeedsDecisionEvent(
+		event.PRNodeID,
+		fixTaskFailureType(event),
+		"The PR node reached the automatic fix limit or repeated the same failure type.",
+		"Review the latest fix task output, then choose whether to continue with a narrower patch, replan this PR node, pause it, or cancel the execution run.",
+	))
 }
 
 func fixTaskFailureType(event domain.SpecForgeFixTaskFinishedEvent) string {
