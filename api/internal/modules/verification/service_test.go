@@ -134,6 +134,30 @@ func TestCreateFixAttemptFromCIClassifiesFailedLogs(t *testing.T) {
 	require.True(t, attempt.CanAutoFix)
 }
 
+func TestCreateFixAttemptFromCIRecordsEscalationWhenLogsAreUnavailable(t *testing.T) {
+	repo := &memoryRepo{}
+	reader := &fakeFailureReader{err: domain.ErrNotFound}
+	svc := NewService(repo, reader, nil)
+
+	attempt, err := svc.CreateFixAttemptFromCI(context.Background(), 7, 42, &CreateFixAttemptFromCIRequest{
+		RepositoryID:   "github_agicto__codingcto",
+		WorkflowRunID:  987,
+		WorkflowRunURL: "https://github.com/agicto/codingcto/actions/runs/987",
+		Conclusion:     "timed_out",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "github_agicto__codingcto", reader.request.RepositoryID)
+	require.Equal(t, uint(42), reader.request.PRNodeID)
+	require.Equal(t, "ci_log_unavailable", attempt.FailureType)
+	require.Equal(t, domain.FixAttemptStatusFailed, attempt.Status)
+	require.False(t, attempt.CanAutoFix)
+	require.Contains(t, attempt.CILogExcerpt, "Workflow run ID: 987")
+	require.Contains(t, attempt.CILogExcerpt, "Conclusion: timed_out")
+	require.Contains(t, attempt.LikelyCause, "could not read a failed job log")
+	require.Contains(t, attempt.RecommendedAction, "Open the workflow run in GitHub")
+}
+
 func TestCreateFixAttemptFromCIPublishesQueuedAutoFixEvent(t *testing.T) {
 	repo := &memoryRepo{}
 	reader := &fakeFailureReader{
@@ -201,6 +225,31 @@ func TestHandlerCreatesFixAttemptFromPRNodeCIFailedEvent(t *testing.T) {
 	require.Equal(t, "unit_test_failure", repo.attempts[0].FailureType)
 	require.Equal(t, uint(0), repo.attempts[0].CreatedBy)
 	require.Equal(t, "github_agicto__codingcto", reader.request.RepositoryID)
+}
+
+func TestHandlerCreatesEscalationAttemptWhenCILogsAreUnavailable(t *testing.T) {
+	repo := &memoryRepo{}
+	reader := &fakeFailureReader{err: domain.ErrNotFound}
+	handler := NewHandler(NewService(repo, reader, nil))
+	bus := infraevents.NewEventBus()
+	handler.RegisterEvents(bus)
+
+	err := bus.Publish(context.Background(), domain.NewSpecForgePRNodeCIFailedEvent(
+		42,
+		"github_agicto__codingcto",
+		"agicto/codingcto",
+		987,
+		"https://github.com/agicto/codingcto/actions/runs/987",
+		"abc123",
+		"timed_out",
+	))
+
+	require.NoError(t, err)
+	require.Len(t, repo.attempts, 1)
+	require.Equal(t, "ci_log_unavailable", repo.attempts[0].FailureType)
+	require.Equal(t, domain.FixAttemptStatusFailed, repo.attempts[0].Status)
+	require.False(t, repo.attempts[0].CanAutoFix)
+	require.Contains(t, repo.attempts[0].CILogExcerpt, "Workflow run URL: https://github.com/agicto/codingcto/actions/runs/987")
 }
 
 func TestHandlerUpdatesFixAttemptFromFinishedFixTaskEvent(t *testing.T) {
@@ -336,6 +385,27 @@ func TestGetEscalationSummaryAllowsAutoFixBeforeLimit(t *testing.T) {
 	require.True(t, summary.CanContinueAutoFix)
 	require.Contains(t, summary.RecommendedOption, "Continue auto-fix")
 	require.Equal(t, "Patch the type guard.", summary.LatestAction)
+}
+
+func TestGetEscalationSummaryRequiresDecisionForNonAutoFixableLatestAttempt(t *testing.T) {
+	repo := &memoryRepo{}
+	svc := NewService(repo, nil, nil)
+	_, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
+		FailureType:       "ci_log_unavailable",
+		Status:            domain.FixAttemptStatusFailed,
+		LikelyCause:       "GitHub Actions timed out, but the failed job log was unavailable.",
+		RecommendedAction: "Open the workflow run in GitHub.",
+		CanAutoFix:        false,
+	})
+	require.NoError(t, err)
+
+	summary, err := svc.GetEscalationSummary(context.Background(), 42)
+
+	require.NoError(t, err)
+	require.Equal(t, "needs_user_decision", summary.Status)
+	require.False(t, summary.CanContinueAutoFix)
+	require.Contains(t, summary.Reason, "cannot be fixed automatically")
+	require.Contains(t, summary.DecisionOptions, "Replan this PR node")
 }
 
 func TestGetEscalationSummaryRequiresDecisionAfterLimit(t *testing.T) {

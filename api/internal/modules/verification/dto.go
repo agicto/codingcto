@@ -11,7 +11,10 @@ type CreateFixAttemptRequest struct {
 }
 
 type CreateFixAttemptFromCIRequest struct {
-	RepositoryID string `json:"repository_id" binding:"required,max=255"`
+	RepositoryID   string `json:"repository_id" binding:"required,max=255"`
+	WorkflowRunID  int64  `json:"workflow_run_id" binding:"omitempty"`
+	WorkflowRunURL string `json:"workflow_run_url" binding:"omitempty,max=500"`
+	Conclusion     string `json:"conclusion" binding:"omitempty,max=100"`
 }
 
 type EscalationSummary struct {

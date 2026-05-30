@@ -186,9 +186,15 @@ func (s *service) CreateFixAttemptFromCI(ctx context.Context, userID, prNodeID u
 		PRNodeID:     prNodeID,
 	})
 	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) && hasCIEventContext(req) {
+			return s.createMissingCILogAttempt(ctx, userID, prNodeID, req)
+		}
 		return nil, err
 	}
 	if failure == nil {
+		if hasCIEventContext(req) {
+			return s.createMissingCILogAttempt(ctx, userID, prNodeID, req)
+		}
 		return nil, domain.ErrNotFound
 	}
 	return s.CreateFixAttempt(ctx, userID, prNodeID, &CreateFixAttemptRequest{
@@ -199,6 +205,46 @@ func (s *service) CreateFixAttemptFromCI(ctx context.Context, userID, prNodeID u
 		RecommendedAction: recommendedAction(failure),
 		CanAutoFix:        canAutoFix(failure),
 	})
+}
+
+func hasCIEventContext(req *CreateFixAttemptFromCIRequest) bool {
+	if req == nil {
+		return false
+	}
+	return req.WorkflowRunID > 0 || strings.TrimSpace(req.WorkflowRunURL) != "" || strings.TrimSpace(req.Conclusion) != ""
+}
+
+func (s *service) createMissingCILogAttempt(ctx context.Context, userID, prNodeID uint, req *CreateFixAttemptFromCIRequest) (*domain.SpecForgeFixAttempt, error) {
+	conclusion := strings.TrimSpace(req.Conclusion)
+	if conclusion == "" {
+		conclusion = "unknown"
+	}
+	return s.CreateFixAttempt(ctx, userID, prNodeID, &CreateFixAttemptRequest{
+		FailureType:       "ci_log_unavailable",
+		CILogExcerpt:      missingCILogExcerpt(req),
+		Status:            domain.FixAttemptStatusFailed,
+		Confidence:        0.35,
+		LikelyCause:       fmt.Sprintf("GitHub Actions completed with %s, but SpecForge could not read a failed job log.", conclusion),
+		RecommendedAction: "Open the workflow run in GitHub, inspect the failed or incomplete job, then decide whether to retry auto-fix with a narrower prompt or replan this PR node.",
+		CanAutoFix:        false,
+	})
+}
+
+func missingCILogExcerpt(req *CreateFixAttemptFromCIRequest) string {
+	if req == nil {
+		return "CI failed, but no workflow metadata was available."
+	}
+	lines := []string{"CI failed, but SpecForge could not read failed job logs."}
+	if req.WorkflowRunID > 0 {
+		lines = append(lines, fmt.Sprintf("Workflow run ID: %d", req.WorkflowRunID))
+	}
+	if value := strings.TrimSpace(req.WorkflowRunURL); value != "" {
+		lines = append(lines, "Workflow run URL: "+value)
+	}
+	if value := strings.TrimSpace(req.Conclusion); value != "" {
+		lines = append(lines, "Conclusion: "+value)
+	}
+	return strings.Join(lines, "\n")
 }
 
 func (s *service) ListFixAttempts(ctx context.Context, prNodeID uint) ([]*domain.SpecForgeFixAttempt, error) {
@@ -252,6 +298,13 @@ func buildEscalationSummary(prNodeID uint, attempts []*domain.SpecForgeFixAttemp
 		summary.LatestFailureType = strings.TrimSpace(latest.FailureType)
 		summary.LatestLikelyCause = strings.TrimSpace(latest.LikelyCause)
 		summary.LatestAction = strings.TrimSpace(latest.RecommendedAction)
+	}
+	if latest != nil && !latest.CanAutoFix {
+		summary.Status = "needs_user_decision"
+		summary.Reason = "The latest CI diagnosis cannot be fixed automatically with enough confidence."
+		summary.RecommendedOption = "Inspect the failure in GitHub, then choose whether to continue with a narrower patch, replan this PR node, or pause the run."
+		summary.DecisionOptions = []string{"Continue with a narrower patch", "Replan this PR node", "Pause this PR node", "Cancel the execution run"}
+		summary.CanContinueAutoFix = false
 	}
 	if summary.LatestFailureType != "" && consecutiveFailureTypeCount(attempts, summary.LatestFailureType) >= maxConsecutiveFixAttemptsPerFailureType {
 		summary.Status = "needs_user_decision"
