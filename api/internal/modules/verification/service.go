@@ -2,6 +2,7 @@ package verification
 
 import (
 	"context"
+	"errors"
 	"fmt"
 	"strings"
 
@@ -17,6 +18,7 @@ type Service interface {
 	CreateFixAttempt(ctx context.Context, userID, prNodeID uint, req *CreateFixAttemptRequest) (*domain.SpecForgeFixAttempt, error)
 	CreateFixAttemptFromCI(ctx context.Context, userID, prNodeID uint, req *CreateFixAttemptFromCIRequest) (*domain.SpecForgeFixAttempt, error)
 	UpdateFixAttemptStatus(ctx context.Context, fixAttemptID uint, status string) error
+	RecordFixTaskFinished(ctx context.Context, event domain.SpecForgeFixTaskFinishedEvent) error
 	ListFixAttempts(ctx context.Context, prNodeID uint) ([]*domain.SpecForgeFixAttempt, error)
 	GetEscalationSummary(ctx context.Context, prNodeID uint) (*EscalationSummary, error)
 }
@@ -97,6 +99,66 @@ func (s *service) UpdateFixAttemptStatus(ctx context.Context, fixAttemptID uint,
 		return fmt.Errorf("update fix attempt status: %w", err)
 	}
 	return nil
+}
+
+func (s *service) RecordFixTaskFinished(ctx context.Context, event domain.SpecForgeFixTaskFinishedEvent) error {
+	if event.FixAttemptID == 0 || event.FixAttemptStatus == "" {
+		return nil
+	}
+	if err := s.UpdateFixAttemptStatus(ctx, event.FixAttemptID, event.FixAttemptStatus); err != nil {
+		return err
+	}
+	if event.FixAttemptStatus != domain.FixAttemptStatusFailed {
+		return nil
+	}
+	_, err := s.CreateFixAttempt(ctx, 0, event.PRNodeID, &CreateFixAttemptRequest{
+		FailureType:       fixTaskFailureType(event),
+		CILogExcerpt:      fixTaskLogExcerpt(event),
+		Confidence:        0.55,
+		LikelyCause:       fixTaskLikelyCause(event),
+		RecommendedAction: "Inspect the failed fix task output, patch the smallest remaining cause, and rerun the affected local command before pushing.",
+		CanAutoFix:        true,
+	})
+	if err == nil {
+		return nil
+	}
+	if errors.Is(err, domain.ErrConflict) {
+		return nil
+	}
+	return err
+}
+
+func fixTaskFailureType(event domain.SpecForgeFixTaskFinishedEvent) string {
+	reason := strings.TrimSpace(event.FailureReason)
+	if reason != "" {
+		return reason
+	}
+	return "fix_task_failed"
+}
+
+func fixTaskLogExcerpt(event domain.SpecForgeFixTaskFinishedEvent) string {
+	logs := strings.TrimSpace(event.ErrorLog)
+	if output := strings.TrimSpace(event.OutputLog); output != "" {
+		if logs != "" {
+			logs += "\n\n"
+		}
+		logs += output
+	}
+	if logs == "" {
+		logs = fmt.Sprintf("Fix task %d failed without captured logs.", event.TaskID)
+	}
+	if len(logs) > 20000 {
+		return logs[len(logs)-20000:]
+	}
+	return logs
+}
+
+func fixTaskLikelyCause(event domain.SpecForgeFixTaskFinishedEvent) string {
+	reason := strings.TrimSpace(event.FailureReason)
+	if reason == "" {
+		reason = "unknown failure"
+	}
+	return fmt.Sprintf("Automatic fix task %d failed with %s.", event.TaskID, reason)
 }
 
 func consecutiveFailureTypeCount(attempts []*domain.SpecForgeFixAttempt, failureType string) int {

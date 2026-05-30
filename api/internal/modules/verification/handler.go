@@ -66,8 +66,8 @@ func (h *Handler) handleFixTaskFinished(ctx context.Context, e events.Event) err
 	if !ok || event.FixAttemptID == 0 || event.FixAttemptStatus == "" {
 		return nil
 	}
-	err := h.service.UpdateFixAttemptStatus(ctx, event.FixAttemptID, event.FixAttemptStatus)
-	if errors.Is(err, domain.ErrNotFound) {
+	err := h.service.RecordFixTaskFinished(ctx, event)
+	if errors.Is(err, domain.ErrNotFound) || errors.Is(err, domain.ErrConflict) {
 		return nil
 	}
 	return err
