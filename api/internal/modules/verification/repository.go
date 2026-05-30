@@ -2,6 +2,7 @@ package verification
 
 import (
 	"context"
+	"errors"
 	"strings"
 
 	"github.com/zgiai/luas/api/internal/domain"
@@ -43,6 +44,23 @@ func (r *repository) UpdateFixAttemptStatus(ctx context.Context, fixAttemptID ui
 		return domain.ErrNotFound
 	}
 	return nil
+}
+
+func (r *repository) FindFixAttemptByPRNodeIDAndWorkflowRunID(ctx context.Context, prNodeID uint, workflowRunID int64) (*domain.SpecForgeFixAttempt, error) {
+	if prNodeID == 0 || workflowRunID <= 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	var po FixAttemptPO
+	if err := r.db.WithContext(ctx).
+		Where("pr_node_id = ? AND workflow_run_id = ?", prNodeID, workflowRunID).
+		Order("id ASC").
+		First(&po).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return po.toDomain(), nil
 }
 
 func (r *repository) ListFixAttemptsByPRNodeID(ctx context.Context, prNodeID uint) ([]*domain.SpecForgeFixAttempt, error) {

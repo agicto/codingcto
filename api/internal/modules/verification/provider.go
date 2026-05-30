@@ -25,5 +25,6 @@ func NewStarterManifest(handler *Handler) contracts.StarterManifest {
 		"verification",
 		contracts.WithStarterModule(handler),
 		contracts.WithStarterMigrationNames("2026_05_25_000005_create_specforge_fix_attempts_table"),
+		contracts.WithStarterMigrationNames("2026_05_25_000017_add_ci_metadata_to_specforge_fix_attempts"),
 	)
 }

@@ -8,6 +8,9 @@ type CreateFixAttemptRequest struct {
 	LikelyCause       string  `json:"likely_cause" binding:"omitempty,max=5000"`
 	RecommendedAction string  `json:"recommended_action" binding:"omitempty,max=5000"`
 	CanAutoFix        bool    `json:"can_auto_fix"`
+	WorkflowRunID     int64   `json:"workflow_run_id" binding:"omitempty"`
+	WorkflowRunURL    string  `json:"workflow_run_url" binding:"omitempty,max=500"`
+	Conclusion        string  `json:"conclusion" binding:"omitempty,max=100"`
 }
 
 type CreateFixAttemptFromCIRequest struct {

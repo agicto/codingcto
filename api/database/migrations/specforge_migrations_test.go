@@ -100,6 +100,9 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 			"likely_cause",
 			"recommended_action",
 			"can_auto_fix",
+			"workflow_run_id",
+			"workflow_run_url",
+			"conclusion",
 		},
 		"specforge_task_events": {
 			"task_id",

@@ -121,17 +121,53 @@ func TestCreateFixAttemptFromCIClassifiesFailedLogs(t *testing.T) {
 	svc := NewService(repo, reader, nil)
 
 	attempt, err := svc.CreateFixAttemptFromCI(context.Background(), 7, 42, &CreateFixAttemptFromCIRequest{
-		RepositoryID: "github_agicto__codingcto",
+		RepositoryID:   "github_agicto__codingcto",
+		WorkflowRunID:  987,
+		WorkflowRunURL: "https://github.com/agicto/codingcto/actions/runs/987",
+		Conclusion:     "failure",
 	})
 
 	require.NoError(t, err)
 	require.Equal(t, "github_agicto__codingcto", reader.request.RepositoryID)
 	require.Equal(t, uint(42), reader.request.PRNodeID)
 	require.Equal(t, 1, attempt.AttemptNumber)
+	require.Equal(t, int64(987), attempt.WorkflowRunID)
+	require.Equal(t, "https://github.com/agicto/codingcto/actions/runs/987", attempt.WorkflowRunURL)
+	require.Equal(t, "failure", attempt.Conclusion)
 	require.Equal(t, "unit_test_failure", attempt.FailureType)
 	require.Contains(t, attempt.CILogExcerpt, "TestInvite")
 	require.Contains(t, attempt.LikelyCause, "go test")
 	require.True(t, attempt.CanAutoFix)
+}
+
+func TestCreateFixAttemptFromCIDedupesWorkflowRun(t *testing.T) {
+	repo := &memoryRepo{}
+	reader := &fakeFailureReader{
+		failure: &githubintegration.PRNodeFailureLog{
+			PRNodeID:    42,
+			JobName:     "API",
+			LogExcerpt:  "go test ./...\n--- FAIL: TestInvite\n",
+			FailedSteps: []string{"go test"},
+		},
+	}
+	svc := NewService(repo, reader, nil)
+
+	first, err := svc.CreateFixAttemptFromCI(context.Background(), 7, 42, &CreateFixAttemptFromCIRequest{
+		RepositoryID:  "github_agicto__codingcto",
+		WorkflowRunID: 987,
+		Conclusion:    "failure",
+	})
+	require.NoError(t, err)
+	second, err := svc.CreateFixAttemptFromCI(context.Background(), 7, 42, &CreateFixAttemptFromCIRequest{
+		RepositoryID:  "github_agicto__codingcto",
+		WorkflowRunID: 987,
+		Conclusion:    "failure",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, first.ID, second.ID)
+	require.Equal(t, first.AttemptNumber, second.AttemptNumber)
+	require.Len(t, repo.attempts, 1)
 }
 
 func TestCreateFixAttemptFromCIRecordsEscalationWhenLogsAreUnavailable(t *testing.T) {
@@ -151,6 +187,9 @@ func TestCreateFixAttemptFromCIRecordsEscalationWhenLogsAreUnavailable(t *testin
 	require.Equal(t, uint(42), reader.request.PRNodeID)
 	require.Equal(t, "ci_log_unavailable", attempt.FailureType)
 	require.Equal(t, domain.FixAttemptStatusFailed, attempt.Status)
+	require.Equal(t, int64(987), attempt.WorkflowRunID)
+	require.Equal(t, "https://github.com/agicto/codingcto/actions/runs/987", attempt.WorkflowRunURL)
+	require.Equal(t, "timed_out", attempt.Conclusion)
 	require.False(t, attempt.CanAutoFix)
 	require.Contains(t, attempt.CILogExcerpt, "Workflow run ID: 987")
 	require.Contains(t, attempt.CILogExcerpt, "Conclusion: timed_out")
@@ -490,6 +529,16 @@ func (r *memoryRepo) UpdateFixAttemptStatus(ctx context.Context, fixAttemptID ui
 		}
 	}
 	return domain.ErrNotFound
+}
+
+func (r *memoryRepo) FindFixAttemptByPRNodeIDAndWorkflowRunID(ctx context.Context, prNodeID uint, workflowRunID int64) (*domain.SpecForgeFixAttempt, error) {
+	for _, attempt := range r.attempts {
+		if attempt.PRNodeID == prNodeID && attempt.WorkflowRunID == workflowRunID {
+			copied := *attempt
+			return &copied, nil
+		}
+	}
+	return nil, domain.ErrNotFound
 }
 
 func (r *memoryRepo) ListFixAttemptsByPRNodeID(ctx context.Context, prNodeID uint) ([]*domain.SpecForgeFixAttempt, error) {
