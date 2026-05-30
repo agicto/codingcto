@@ -23,6 +23,12 @@ export interface InferRepoProfilePayload {
   package_scripts?: Record<string, string>;
 }
 
+export interface ReindexRepoArchitecturePayload {
+  default_branch?: string;
+  file_paths?: string[];
+  package_scripts?: Record<string, string>;
+}
+
 export interface CreateIdeaPayload {
   input: string;
   type?: 'feature' | 'bugfix' | 'refactor' | 'docs' | 'test';
@@ -199,6 +205,30 @@ export interface SpecForgeRepoProfileDTO {
   last_indexed_at: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface SpecForgeRepoArchitectureSnapshotDTO {
+  id: number;
+  repository_id: string;
+  commit_sha: string;
+  stack: string[];
+  modules: string[];
+  entrypoints: string[];
+  test_commands: string[];
+  ci_workflows: string[];
+  risk_areas: string[];
+  summary: string;
+  generated_by: string;
+  warnings: string[];
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SpecForgeRepoArchitectureStatusDTO {
+  snapshot?: SpecForgeRepoArchitectureSnapshotDTO;
+  stale: boolean;
+  stale_reasons?: string[];
 }
 
 export interface SpecForgePlanBundleDTO {
@@ -493,6 +523,15 @@ export const specForgeService = {
   inferRepoProfile: (repoId: string, payload: InferRepoProfilePayload) =>
     request.post<SpecForgeRepoProfileDTO, InferRepoProfilePayload>(
       `/repositories/${repoId}/profile/infer`,
+      payload
+    ),
+
+  getRepoArchitectureStatus: (repoId: string, config?: RequestConfig) =>
+    request.get<SpecForgeRepoArchitectureStatusDTO>(`/repositories/${repoId}/architecture`, config),
+
+  reindexRepoArchitecture: (repoId: string, payload: ReindexRepoArchitecturePayload) =>
+    request.post<SpecForgeRepoArchitectureStatusDTO, ReindexRepoArchitecturePayload>(
+      `/repositories/${repoId}/architecture/reindex`,
       payload
     ),
 

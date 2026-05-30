@@ -47,3 +47,26 @@ func (r *repository) FindProfileByRepositoryID(ctx context.Context, repositoryID
 	}
 	return po.toDomain(), nil
 }
+
+func (r *repository) CreateArchitectureSnapshot(ctx context.Context, snapshot *domain.SpecForgeRepoArchitectureSnapshot) error {
+	po := newRepoArchitectureSnapshotPO(snapshot)
+	if err := r.db.WithContext(ctx).Create(po).Error; err != nil {
+		return err
+	}
+	*snapshot = *po.toDomain()
+	return nil
+}
+
+func (r *repository) FindLatestArchitectureSnapshotByRepositoryID(ctx context.Context, repositoryID string) (*domain.SpecForgeRepoArchitectureSnapshot, error) {
+	var po RepoArchitectureSnapshotPO
+	if err := r.db.WithContext(ctx).
+		Where("repository_id = ?", repositoryID).
+		Order("created_at DESC, id DESC").
+		First(&po).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return po.toDomain(), nil
+}

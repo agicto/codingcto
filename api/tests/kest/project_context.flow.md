@@ -155,6 +155,55 @@ body.data.summary exists
 ```
 
 ```step
+@id architecture_reindex
+@name Reindex Repo Architecture
+
+POST /v1/repositories/{{repo_id}}/architecture/reindex
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "default_branch": "main",
+  "file_paths": [
+    "go.mod",
+    "cmd/server/main.go",
+    "api/internal/modules/project/service.go",
+    "web/package.json",
+    "web/src/features/specforge/components/specforge-workbench.tsx",
+    ".github/workflows/ci.yml",
+    ".env"
+  ],
+  "package_scripts": {
+    "lint": "eslint .",
+    "type-check": "tsc --noEmit",
+    "test": "vitest"
+  }
+}
+
+[Asserts]
+status == 200
+body.data.snapshot.id exists
+body.data.snapshot.repository_id == "{{repo_id}}"
+body.data.snapshot.modules.0 exists
+body.data.snapshot.ci_workflows.0 == ".github/workflows/ci.yml"
+body.data.snapshot.warnings.0 exists
+body.data.stale == false
+```
+
+```step
+@id architecture_status
+@name Fetch Repo Architecture Status
+
+GET /v1/repositories/{{repo_id}}/architecture
+Authorization: Bearer {{token}}
+
+[Asserts]
+status == 200
+body.data.snapshot.id exists
+body.data.stale == false
+```
+
+```step
 @id skill
 @name Save Repo Skill
 
@@ -585,6 +634,18 @@ body.data.latest_failure_type == "type_error"
 
 ```edge
 @from profile
+@to architecture_reindex
+@on success
+```
+
+```edge
+@from architecture_reindex
+@to architecture_status
+@on success
+```
+
+```edge
+@from architecture_status
 @to skill
 @on success
 ```

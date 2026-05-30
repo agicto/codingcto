@@ -4,6 +4,7 @@ import (
 	"context"
 	"strings"
 	"testing"
+	"time"
 
 	"github.com/stretchr/testify/require"
 	"github.com/zgiai/luas/api/internal/domain"
@@ -187,6 +188,76 @@ Run the narrowest relevant tests.`,
 	require.NotContains(t, strings.Join(profile.CodingConventions, " "), "secrets")
 }
 
+func TestReindexArchitectureCreatesSnapshotAndUpdatesProfile(t *testing.T) {
+	repo := &memoryRepo{}
+	treeSource := &fakeTreeSource{
+		snapshot: &RepositoryTreeSnapshot{
+			Ref:       "abc123",
+			Truncated: true,
+			Paths: []string{
+				"go.mod",
+				"cmd/server/main.go",
+				"api/internal/modules/user/service.go",
+				"web/src/features/specforge/components/workbench.tsx",
+				"web/package.json",
+				"web/next.config.ts",
+				".github/workflows/ci.yml",
+				".env",
+			},
+		},
+		files: map[string]*RepositoryFileSnapshot{
+			"web/package.json": {
+				Path:    "web/package.json",
+				Content: `{"scripts":{"lint":"eslint .","type-check":"tsc --noEmit","test":"vitest"}}`,
+			},
+		},
+	}
+	svc := NewService(repo, treeSource)
+
+	status, err := svc.ReindexArchitecture(context.Background(), 12, "repo_123", &ReindexRepoArchitectureRequest{
+		DefaultBranch: "main",
+	})
+
+	require.NoError(t, err)
+	require.False(t, status.Stale)
+	require.NotNil(t, status.Snapshot)
+	require.Equal(t, "repo_123", status.Snapshot.RepositoryID)
+	require.Equal(t, "abc123", status.Snapshot.CommitSHA)
+	require.Contains(t, status.Snapshot.Stack, "Go")
+	require.Contains(t, status.Snapshot.Modules, "api/internal/modules/user")
+	require.Contains(t, status.Snapshot.Modules, "web/src/features/specforge")
+	require.Contains(t, status.Snapshot.Entrypoints, "cmd/server/main.go")
+	require.Contains(t, status.Snapshot.CIWorkflows, ".github/workflows/ci.yml")
+	require.Contains(t, status.Snapshot.Warnings, "GitHub tree response was truncated; architecture snapshot may miss files.")
+	require.Contains(t, status.Snapshot.Warnings, "SpecForge filtered 1 sensitive repository paths from the architecture snapshot.")
+	require.NotContains(t, strings.Join(status.Snapshot.Modules, " "), ".env")
+	require.NotNil(t, repo.profile)
+	require.Equal(t, "architecture_snapshot", repo.profile.Source)
+	require.Equal(t, "abc123", repo.profile.DefaultBranch)
+	require.NotNil(t, repo.snapshot)
+}
+
+func TestGetArchitectureStatusReportsMissingAndStaleSnapshots(t *testing.T) {
+	repo := &memoryRepo{}
+	svc := NewService(repo, nil)
+
+	missing, err := svc.GetArchitectureStatus(context.Background(), "repo_123")
+	require.NoError(t, err)
+	require.True(t, missing.Stale)
+	require.Contains(t, missing.StaleReasons, "No architecture snapshot has been generated yet.")
+
+	repo.snapshot = &domain.SpecForgeRepoArchitectureSnapshot{
+		ID:           1,
+		RepositoryID: "repo_123",
+		CommitSHA:    "abc123",
+		CreatedAt:    time.Now().Add(-25 * time.Hour),
+	}
+	stale, err := svc.GetArchitectureStatus(context.Background(), "repo_123")
+	require.NoError(t, err)
+	require.True(t, stale.Stale)
+	require.Contains(t, stale.StaleReasons, "Architecture snapshot is older than 24 hours.")
+}
+
 func TestInferProfileReadsOnlySafeInstructionFiles(t *testing.T) {
 	repo := &memoryRepo{}
 	treeSource := &fakeTreeSource{
@@ -291,8 +362,9 @@ func TestInferProfileDoesNotReadSensitivePackageJSONPaths(t *testing.T) {
 }
 
 type memoryRepo struct {
-	nextID  uint
-	profile *domain.SpecForgeRepoProfile
+	nextID   uint
+	profile  *domain.SpecForgeRepoProfile
+	snapshot *domain.SpecForgeRepoArchitectureSnapshot
 }
 
 func (r *memoryRepo) UpsertProfile(ctx context.Context, profile *domain.SpecForgeRepoProfile) error {
@@ -310,6 +382,28 @@ func (r *memoryRepo) FindProfileByRepositoryID(ctx context.Context, repositoryID
 		return nil, domain.ErrNotFound
 	}
 	copied := *r.profile
+	return &copied, nil
+}
+
+func (r *memoryRepo) CreateArchitectureSnapshot(ctx context.Context, snapshot *domain.SpecForgeRepoArchitectureSnapshot) error {
+	r.nextID++
+	snapshot.ID = r.nextID
+	if snapshot.CreatedAt.IsZero() {
+		snapshot.CreatedAt = time.Now()
+	}
+	if snapshot.UpdatedAt.IsZero() {
+		snapshot.UpdatedAt = snapshot.CreatedAt
+	}
+	copied := *snapshot
+	r.snapshot = &copied
+	return nil
+}
+
+func (r *memoryRepo) FindLatestArchitectureSnapshotByRepositoryID(ctx context.Context, repositoryID string) (*domain.SpecForgeRepoArchitectureSnapshot, error) {
+	if r.snapshot == nil || r.snapshot.RepositoryID != repositoryID {
+		return nil, domain.ErrNotFound
+	}
+	copied := *r.snapshot
 	return &copied, nil
 }
 

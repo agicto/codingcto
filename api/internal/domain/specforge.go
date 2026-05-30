@@ -263,6 +263,25 @@ type SpecForgeRepoProfile struct {
 	UpdatedAt         time.Time `json:"updated_at"`
 }
 
+// SpecForgeRepoArchitectureSnapshot records the evidence behind an inferred repo profile.
+type SpecForgeRepoArchitectureSnapshot struct {
+	ID           uint      `json:"id"`
+	RepositoryID string    `json:"repository_id"`
+	CommitSHA    string    `json:"commit_sha"`
+	Stack        []string  `json:"stack"`
+	Modules      []string  `json:"modules"`
+	Entrypoints  []string  `json:"entrypoints"`
+	TestCommands []string  `json:"test_commands"`
+	CIWorkflows  []string  `json:"ci_workflows"`
+	RiskAreas    []string  `json:"risk_areas"`
+	Summary      string    `json:"summary"`
+	GeneratedBy  string    `json:"generated_by"`
+	Warnings     []string  `json:"warnings"`
+	CreatedBy    uint      `json:"created_by"`
+	CreatedAt    time.Time `json:"created_at"`
+	UpdatedAt    time.Time `json:"updated_at"`
+}
+
 // SpecForgePlanBundle is the aggregate returned to plan review screens.
 type SpecForgePlanBundle struct {
 	Requirement    *SpecForgeRequirement        `json:"requirement,omitempty"`

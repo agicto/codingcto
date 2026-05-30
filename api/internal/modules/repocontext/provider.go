@@ -11,6 +11,7 @@ import (
 
 var ProviderSet = wire.NewSet(
 	NewRepository,
+	wire.Bind(new(store), new(*repository)),
 	wire.Bind(new(domain.SpecForgeRepoProfileRepository), new(*repository)),
 	NewGitHubRepositoryTreeSource,
 	NewService,
@@ -71,5 +72,6 @@ func NewStarterManifest(handler *Handler) contracts.StarterManifest {
 		contracts.WithStarterMigrationNames("2026_05_25_000002_create_specforge_repo_profiles_table"),
 		contracts.WithStarterMigrationNames("2026_05_25_000014_add_source_to_specforge_repo_profiles"),
 		contracts.WithStarterMigrationNames("2026_05_25_000019_normalize_repo_profile_ci_provider_column"),
+		contracts.WithStarterMigrationNames("2026_05_25_000022_create_specforge_repo_architecture_snapshots_table"),
 	)
 }
