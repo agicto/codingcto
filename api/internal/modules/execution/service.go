@@ -539,11 +539,14 @@ func (s *service) RetryTask(ctx context.Context, taskID uint, req *RetryAgentTas
 	if parent.Status != domain.AgentTaskStatusFailed && parent.Status != domain.AgentTaskStatusCancelled {
 		return nil, domain.ErrConflict
 	}
+	if strings.TrimSpace(parent.FailureReason) == "dependency_closed" {
+		return nil, domain.ErrConflict
+	}
 	bundle, err := s.GetRun(ctx, parent.RunID)
 	if err != nil {
 		return nil, err
 	}
-	if executionRunStatusBlocksTaskExecution(bundle.Run.Status) {
+	if executionRunStatusFinished(bundle.Run.Status) {
 		return nil, domain.ErrConflict
 	}
 	status := domain.AgentTaskStatusWaiting
@@ -560,6 +563,12 @@ func (s *service) RetryTask(ctx context.Context, taskID uint, req *RetryAgentTas
 	}
 	if _, err := s.repo.CreateRetryAgentTask(ctx, parent, status, req.ForceFreshSession); err != nil {
 		return nil, fmt.Errorf("create retry agent task: %w", err)
+	}
+	if bundle.Run.Status == domain.ExecutionRunStatusBlocked {
+		bundle.Run.Status = domain.ExecutionRunStatusRunning
+		if err := s.repo.UpdateExecutionRun(ctx, bundle.Run); err != nil {
+			return nil, fmt.Errorf("resume blocked run for retry: %w", err)
+		}
 	}
 	return s.GetRun(ctx, parent.RunID)
 }
