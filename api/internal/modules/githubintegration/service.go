@@ -608,7 +608,7 @@ func (s *service) applyWebhookToPRNode(ctx context.Context, eventType string, bo
 	}
 	switch {
 	case event.PullRequest != nil:
-		node, err := s.updatePRNodeFromPullRequest(ctx, event.PullRequest)
+		node, err := s.updatePRNodeFromPullRequestWebhook(ctx, event.EventType, event.PullRequest)
 		if err != nil {
 			return err
 		}
@@ -630,6 +630,13 @@ func (s *service) applyWebhookToPRNode(ctx context.Context, eventType string, bo
 	}
 }
 
+func (s *service) updatePRNodeFromPullRequestWebhook(ctx context.Context, eventType string, pr *WebhookPullRequest) (*domain.SpecForgePRNode, error) {
+	if eventType == GitHubWebhookEventPullRequest {
+		return s.updatePRNodeFromPullRequest(ctx, pr)
+	}
+	return s.touchPRNodeFromFeedbackPullRequest(ctx, pr)
+}
+
 func (s *service) updatePRNodeFromPullRequest(ctx context.Context, pr *WebhookPullRequest) (*domain.SpecForgePRNode, error) {
 	if strings.TrimSpace(pr.HeadBranch) == "" && pr.Number <= 0 {
 		return nil, nil
@@ -647,6 +654,38 @@ func (s *service) updatePRNodeFromPullRequest(ctx context.Context, pr *WebhookPu
 	node.Status = prNodeStatusFromPullRequest(pr)
 	if err := s.planningRepo.UpdatePRNode(ctx, node); err != nil {
 		return nil, err
+	}
+	return node, nil
+}
+
+func (s *service) touchPRNodeFromFeedbackPullRequest(ctx context.Context, pr *WebhookPullRequest) (*domain.SpecForgePRNode, error) {
+	if strings.TrimSpace(pr.HeadBranch) == "" && pr.Number <= 0 {
+		return nil, nil
+	}
+	node, err := s.findPRNodeForWebhookPullRequest(ctx, pr)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	changed := false
+	if pr.Number > 0 && node.GitHubPRNumber == nil {
+		node.GitHubPRNumber = &pr.Number
+		changed = true
+	}
+	if strings.TrimSpace(pr.HTMLURL) != "" && strings.TrimSpace(node.GitHubPRURL) == "" {
+		node.GitHubPRURL = pr.HTMLURL
+		changed = true
+	}
+	if strings.TrimSpace(pr.HeadSHA) != "" && strings.TrimSpace(node.GitHubHeadSHA) == "" {
+		node.GitHubHeadSHA = pr.HeadSHA
+		changed = true
+	}
+	if changed {
+		if err := s.planningRepo.UpdatePRNode(ctx, node); err != nil {
+			return nil, err
+		}
 	}
 	return node, nil
 }

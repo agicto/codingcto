@@ -370,6 +370,83 @@ func TestRecordWebhookPublishesReviewFeedbackEvent(t *testing.T) {
 	require.Equal(t, "https://github.com/agicto/codingcto/pull/42#issuecomment-1", published.HTMLURL)
 }
 
+func TestRecordWebhookDoesNotDowngradeReadyPRNodeOnIssueComment(t *testing.T) {
+	repo := &memoryRepo{}
+	prNumber := 42
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, BranchName: "specforge/team-invite-02-api", GitHubPRNumber: &prNumber, Status: domain.PRNodeStatusReadyForReview},
+		},
+	}
+	svc := NewService(repo, planningRepo, nil, nil, nil)
+	body := []byte(`{
+		"action": "created",
+		"installation": {"id": 123},
+		"repository": {"full_name": "agicto/codingcto"},
+		"issue": {
+			"number": 42,
+			"state": "open",
+			"pull_request": {"html_url": "https://github.com/agicto/codingcto/pull/42"}
+		},
+		"comment": {
+			"body": "Please preserve the existing API response shape.",
+			"html_url": "https://github.com/agicto/codingcto/pull/42#issuecomment-1",
+			"user": {"login": "reviewer"}
+		}
+	}`)
+
+	_, err := svc.RecordWebhook(context.Background(), &GitHubWebhookRequest{
+		EventType:  GitHubWebhookEventIssueComment,
+		DeliveryID: "delivery-ready-pr-comment",
+		Signature:  "sha256=abc",
+		Body:       body,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, domain.PRNodeStatusReadyForReview, planningRepo.nodes[0].Status)
+}
+
+func TestRecordWebhookDoesNotDowngradeBlockedPRNodeOnReviewComment(t *testing.T) {
+	repo := &memoryRepo{}
+	prNumber := 42
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, BranchName: "specforge/team-invite-02-api", GitHubPRNumber: &prNumber, Status: domain.PRNodeStatusBlocked},
+		},
+	}
+	svc := NewService(repo, planningRepo, nil, nil, nil)
+	body := []byte(`{
+		"action": "created",
+		"installation": {"id": 123},
+		"repository": {"full_name": "agicto/codingcto"},
+		"pull_request": {
+			"number": 42,
+			"state": "open",
+			"html_url": "https://github.com/agicto/codingcto/pull/42",
+			"head": {"ref": "specforge/team-invite-02-api", "sha": "abc123"},
+			"base": {"ref": "main"}
+		},
+		"comment": {
+			"body": "Please handle nil workspace roles.",
+			"html_url": "https://github.com/agicto/codingcto/pull/42#discussion_r1",
+			"path": "api/internal/modules/invite/service.go",
+			"commit_id": "abc123",
+			"user": {"login": "reviewer"}
+		}
+	}`)
+
+	_, err := svc.RecordWebhook(context.Background(), &GitHubWebhookRequest{
+		EventType:  GitHubWebhookEventPullRequestReviewComment,
+		DeliveryID: "delivery-blocked-review-comment",
+		Signature:  "sha256=abc",
+		Body:       body,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, domain.PRNodeStatusBlocked, planningRepo.nodes[0].Status)
+	require.Equal(t, "abc123", planningRepo.nodes[0].GitHubHeadSHA)
+}
+
 func TestRecordWebhookUpdatesPRNodeFromWorkflowRun(t *testing.T) {
 	repo := &memoryRepo{}
 	planningRepo := &memoryPlanningRepo{
