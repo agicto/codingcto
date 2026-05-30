@@ -1,6 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import { primaryRepositoryContext } from './project-context';
+import { primaryRepositoryContext, projectContextReadiness } from './project-context';
 import type { ProjectContextDTO } from './services/project-service';
 
 function projectContext(
@@ -63,5 +63,26 @@ describe('project context', () => {
     );
 
     expect(selected).toBeUndefined();
+  });
+
+  it('summarizes primary and read-only repository readiness', () => {
+    const readiness = projectContextReadiness(
+      projectContext([
+        ['dependency', true, 'repo_sdk'],
+        ['primary', true, 'repo_app'],
+      ])
+    );
+
+    expect(readiness.hasPrimaryRepository).toBe(true);
+    expect(readiness.activeRepositoryCount).toBe(2);
+    expect(readiness.readOnlyRepositoryCount).toBe(1);
+    expect(readiness.summary).toContain('repo_app');
+  });
+
+  it('asks for a primary repo before planning when none is active', () => {
+    const readiness = projectContextReadiness(projectContext([['dependency', true, 'repo_docs']]));
+
+    expect(readiness.hasPrimaryRepository).toBe(false);
+    expect(readiness.nextAction).toBe('Bind one active primary repository before generating a plan.');
   });
 });
