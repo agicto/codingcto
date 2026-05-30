@@ -140,6 +140,89 @@ func TestCreateFixAttemptFromCIClassifiesFailedLogs(t *testing.T) {
 	require.True(t, attempt.CanAutoFix)
 }
 
+func TestCreateFixAttemptFromCIClassifiesHighRiskFailureTypes(t *testing.T) {
+	cases := []struct {
+		name               string
+		log                string
+		step               string
+		wantType           string
+		wantAutoFix        bool
+		wantActionContains string
+	}{
+		{
+			name:               "missing dependency",
+			log:                "Error: Cannot find module '@workspace/invite-client'",
+			step:               "pnpm test",
+			wantType:           "missing_dependency",
+			wantAutoFix:        true,
+			wantActionContains: "dependency",
+		},
+		{
+			name:               "migration failure",
+			log:                "prisma migrate deploy failed: schema drift detected",
+			step:               "migration",
+			wantType:           "migration_failure",
+			wantAutoFix:        false,
+			wantActionContains: "Pause auto-fix",
+		},
+		{
+			name:               "auth permission failure",
+			log:                "expected 200 got 403 Forbidden when member creates invite",
+			step:               "go test",
+			wantType:           "auth_permission_failure",
+			wantAutoFix:        false,
+			wantActionContains: "auth and permission",
+		},
+		{
+			name:               "flaky timeout",
+			log:                "Playwright test timed out after 30000ms",
+			step:               "e2e",
+			wantType:           "flaky_test",
+			wantAutoFix:        false,
+			wantActionContains: "Rerun the workflow once",
+		},
+		{
+			name:               "product mismatch",
+			log:                "Spec mismatch: acceptance criteria says owner only",
+			step:               "spec compliance",
+			wantType:           "product_mismatch",
+			wantAutoFix:        false,
+			wantActionContains: "approved plan",
+		},
+	}
+	for _, tc := range cases {
+		t.Run(tc.name, func(t *testing.T) {
+			repo := &memoryRepo{}
+			reader := &fakeFailureReader{
+				failure: &githubintegration.PRNodeFailureLog{
+					PRNodeID:    42,
+					JobName:     "CI",
+					LogExcerpt:  tc.log,
+					FailedSteps: []string{tc.step},
+				},
+			}
+			svc := NewService(repo, nil, reader, nil)
+
+			attempt, err := svc.CreateFixAttemptFromCI(context.Background(), 7, 42, &CreateFixAttemptFromCIRequest{
+				RepositoryID: "github_agicto__codingcto",
+			})
+
+			require.NoError(t, err)
+			require.Equal(t, tc.wantType, attempt.FailureType)
+			require.Equal(t, tc.wantAutoFix, attempt.CanAutoFix)
+			require.Contains(t, attempt.RecommendedAction, tc.wantActionContains)
+			require.Contains(t, attempt.LikelyCause, "GitHub Actions job")
+		})
+	}
+}
+
+func TestFailureClassifierHandlesMissingLogObject(t *testing.T) {
+	require.Equal(t, "ci_failure", classifyFailureType(nil))
+	require.False(t, canAutoFix(nil))
+	require.Contains(t, likelyCause(nil), "No GitHub Actions failure log was available")
+	require.Contains(t, recommendedAction(nil), "smallest reproducible failure")
+}
+
 func TestCreateFixAttemptFromCIDedupesWorkflowRun(t *testing.T) {
 	repo := &memoryRepo{}
 	reader := &fakeFailureReader{
