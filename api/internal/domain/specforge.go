@@ -39,6 +39,12 @@ const (
 	PromptTypeImplementation          = "implementation"
 	PromptTypeFix                     = "fix"
 	PromptTypeReviewPatch             = "review_patch"
+	SkillRunStageProductPlan          = "product_plan"
+	SkillRunStageTechnicalPlan        = "technical_plan"
+	SkillRunStagePRDAG                = "pr_dag"
+	SkillRunStageSelfReview           = "self_review"
+	SkillRunStatusCompleted           = "completed"
+	SkillRunStatusFailed              = "failed"
 )
 
 // SpecForgeIdea captures the original product intent submitted for a repository.
@@ -171,6 +177,41 @@ type SpecForgeSkill struct {
 	CreatedBy    uint      `json:"created_by"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
+}
+
+// SpecForgeProjectSkill pins a repository skill into a project planning pipeline.
+type SpecForgeProjectSkill struct {
+	ID           uint            `json:"id"`
+	WorkspaceID  string          `json:"workspace_id"`
+	ProjectID    uint            `json:"project_id"`
+	RepositoryID string          `json:"repository_id"`
+	SkillID      uint            `json:"skill_id"`
+	Active       bool            `json:"active"`
+	SortOrder    int             `json:"sort_order"`
+	CreatedBy    uint            `json:"created_by"`
+	CreatedAt    time.Time       `json:"created_at"`
+	UpdatedAt    time.Time       `json:"updated_at"`
+	Skill        *SpecForgeSkill `json:"skill,omitempty"`
+}
+
+// SpecForgeSkillRun records one grounded planning skill execution.
+type SpecForgeSkillRun struct {
+	ID            uint       `json:"id"`
+	RequirementID *uint      `json:"requirement_id,omitempty"`
+	PlanID        *uint      `json:"plan_id,omitempty"`
+	ProjectID     *uint      `json:"project_id,omitempty"`
+	SkillID       *uint      `json:"skill_id,omitempty"`
+	Stage         string     `json:"stage"`
+	Status        string     `json:"status"`
+	InputSummary  string     `json:"input_summary"`
+	OutputSummary string     `json:"output_summary"`
+	OutputJSON    string     `json:"output_json,omitempty"`
+	ErrorMessage  string     `json:"error_message,omitempty"`
+	StartedAt     *time.Time `json:"started_at,omitempty"`
+	CompletedAt   *time.Time `json:"completed_at,omitempty"`
+	CreatedBy     uint       `json:"created_by"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
 }
 
 // SpecForgeExecutionRun is one approved plan execution attempt.
@@ -324,6 +365,16 @@ type SpecForgeSkillRepository interface {
 	UpsertSkill(ctx context.Context, skill *SpecForgeSkill) error
 	ListActiveSkillsByRepositoryID(ctx context.Context, repositoryID string) ([]*SpecForgeSkill, error)
 	ListSkillsByRepositoryID(ctx context.Context, repositoryID string) ([]*SpecForgeSkill, error)
+}
+
+// SpecForgeSkillPipelineRepository persists project skill selections and planning pipeline history.
+type SpecForgeSkillPipelineRepository interface {
+	UpsertProjectSkill(ctx context.Context, projectSkill *SpecForgeProjectSkill) error
+	ListProjectSkillsByProjectID(ctx context.Context, projectID uint) ([]*SpecForgeProjectSkill, error)
+	ListActiveProjectSkillsByProjectID(ctx context.Context, projectID uint) ([]*SpecForgeProjectSkill, error)
+	CreateSkillRun(ctx context.Context, run *SpecForgeSkillRun) error
+	ListSkillRunsByRequirementID(ctx context.Context, requirementID uint) ([]*SpecForgeSkillRun, error)
+	ListSkillRunsByPlanID(ctx context.Context, planID uint) ([]*SpecForgeSkillRun, error)
 }
 
 // SpecForgeExecutionRepository persists execution run state.

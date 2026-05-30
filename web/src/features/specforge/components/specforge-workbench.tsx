@@ -70,6 +70,8 @@ import {
   useRetryExecutionTask,
   useSpecForgeEscalationSummary,
   useSpecForgeFixAttempts,
+  useSpecForgePlanSkillRuns,
+  useSpecForgeProjectSkills,
   useSpecForgeSkills,
   useSpecForgeTaskEvents,
   useSpecForgeRuntimes,
@@ -77,6 +79,7 @@ import {
   useSweepSpecForgeTasks,
   useStartExecutionRun,
   useUpsertRepoProfile,
+  useUpsertSpecForgeProjectSkill,
   useUpsertSpecForgeSkill,
   useVerifySpecForgePRNodeCI,
 } from '@/features/specforge/hooks/use-specforge';
@@ -98,6 +101,7 @@ import type {
   SpecForgeRepoArchitectureStatusDTO,
   SpecForgeRepoProfileDTO,
   SpecForgeSkillDTO,
+  SpecForgeSkillRunDTO,
   SpecForgeTaskEventDTO,
 } from '@/features/specforge/services/specforge-service';
 import {
@@ -142,11 +146,12 @@ const promptModeLabel: Record<PromptMode, string> = {
   review_patch: 'Review',
 };
 
-function statusClassName(status: PRNode['status']) {
-  if (isPRNodeDelivered(status)) {
+function statusClassName(status: PRNode['status'] | string) {
+  const nodeStatus = status as PRNode['status'];
+  if (isPRNodeDelivered(nodeStatus)) {
     return 'border-success/30 bg-success-subtle text-success';
   }
-  if (isPRNodeActive(status)) {
+  if (isPRNodeActive(nodeStatus)) {
     return 'border-info/30 bg-info-subtle text-info';
   }
   if (status === 'waiting_on_dependencies' || status === 'pr_opened') {
@@ -560,7 +565,7 @@ export function SpecForgeWorkbench({
                 }));
               }}
             />
-            <RepoSkillsPanel repoId={repoId.trim()} />
+            <RepoSkillsPanel repoId={repoId.trim()} projectId={projectId} />
             <GitHubWebhookEventsPanel />
           </CardContent>
         </Card>
@@ -1057,7 +1062,7 @@ function RepoArchitectureStatus({
   );
 }
 
-function RepoSkillsPanel({ repoId }: { repoId: string }) {
+function RepoSkillsPanel({ repoId, projectId }: { repoId: string; projectId?: number }) {
   const [name, setName] = useState('Repo coding guidelines');
   const [description, setDescription] = useState('Instructions injected into CodingCTO prompts.');
   const [content, setContent] = useState('');
@@ -1065,14 +1070,34 @@ function RepoSkillsPanel({ repoId }: { repoId: string }) {
   const [savedSkill, setSavedSkill] = useState<SpecForgeSkillDTO>();
 
   const skillsQuery = useSpecForgeSkills(repoId);
+  const projectSkillsQuery = useSpecForgeProjectSkills(projectId);
   const upsertSkill = useUpsertSpecForgeSkill(repoId);
+  const upsertProjectSkill = useUpsertSpecForgeProjectSkill(projectId);
   const skills = skillsQuery.data?.skills ?? [];
-  const latestSkill = savedSkill ?? skills[0];
+  const projectSkills = projectSkillsQuery.data?.project_skills ?? [];
+  const latestProjectSkill = projectSkills[0]?.skill;
+  const latestSkill = savedSkill ?? latestProjectSkill ?? skills[0];
+  const savedCount = projectId ? projectSkills.length : skills.length;
+  const isSaving = upsertSkill.isPending || upsertProjectSkill.isPending;
 
   async function saveSkill() {
     const trimmedName = name.trim();
     const trimmedContent = content.trim();
     if (!repoId || !trimmedName || !trimmedContent) {
+      return;
+    }
+
+    if (projectId) {
+      const response = await upsertProjectSkill.mutateAsync({
+        repository_id: repoId,
+        name: trimmedName,
+        description: description.trim(),
+        content: trimmedContent,
+        active,
+      });
+      if (response.project_skill.skill) {
+        setSavedSkill(response.project_skill.skill);
+      }
       return;
     }
 
@@ -1101,17 +1126,17 @@ function RepoSkillsPanel({ repoId }: { repoId: string }) {
             Repo skills
           </div>
           <p className="mt-1 text-sm leading-6 text-text-muted">
-            Store repository instructions for planning and prompt compilation.
+            Store repository instructions for planning, prompt compilation, and project skill runs.
           </p>
         </div>
         <Badge
           variant="outline"
-          className={skills.length > 0 || savedSkill ? statusClassName('completed') : ''}
+          className={savedCount > 0 || savedSkill ? statusClassName('completed') : ''}
         >
-          {skillsQuery.isLoading
+          {skillsQuery.isLoading || projectSkillsQuery.isLoading
             ? 'Checking'
-            : skills.length > 0
-              ? `${skills.length} saved`
+            : savedCount > 0
+              ? `${savedCount} saved`
               : savedSkill
                 ? 'Saved'
                 : 'No skills'}
@@ -1158,12 +1183,12 @@ function RepoSkillsPanel({ repoId }: { repoId: string }) {
           </Label>
           <Button
             onClick={saveSkill}
-            disabled={!repoId || !name.trim() || !content.trim() || upsertSkill.isPending}
+            disabled={!repoId || !name.trim() || !content.trim() || isSaving}
           >
-            {upsertSkill.isPending ? 'Saving' : 'Save skill'}
+            {isSaving ? 'Saving' : projectId ? 'Save project skill' : 'Save skill'}
           </Button>
         </div>
-        {skillsQuery.isError && (
+        {(skillsQuery.isError || projectSkillsQuery.isError) && (
           <p className="text-xs leading-5 text-text-muted">
             Skills will save when the CodingCTO backend is available.
           </p>
@@ -1292,6 +1317,8 @@ function PlanReview({
   const planAssumptions = productSpec.assumptions.filter(
     item => !item.startsWith('PR DAG review:')
   );
+  const skillRunsQuery = useSpecForgePlanSkillRuns(plan.planId);
+  const skillRuns = skillRunsQuery.data?.skill_runs ?? [];
 
   return (
     <div className="grid gap-4 xl:grid-cols-2">
@@ -1311,6 +1338,11 @@ function PlanReview({
           />
           <ListBlock title="Acceptance criteria" items={productSpec.acceptanceCriteria} />
           <ListBlock title="Plan assumptions" items={planAssumptions} />
+          <SkillPipelinePanel
+            skillRuns={skillRuns}
+            isLoading={skillRunsQuery.isLoading}
+            isOffline={skillRunsQuery.isError}
+          />
         </CardContent>
       </Card>
 
@@ -1359,6 +1391,103 @@ function PlanReview({
       </Card>
     </div>
   );
+}
+
+function SkillPipelinePanel({
+  skillRuns,
+  isLoading,
+  isOffline,
+}: {
+  skillRuns: SpecForgeSkillRunDTO[];
+  isLoading: boolean;
+  isOffline: boolean;
+}) {
+  const stages = skillRuns.length
+    ? skillRuns
+    : [
+        {
+          id: 0,
+          stage: 'product_plan',
+          status: 'pending',
+          input_summary: '',
+          output_summary: 'Product understanding will be recorded when the API generates a plan.',
+          created_by: 0,
+          created_at: '',
+          updated_at: '',
+        },
+        {
+          id: 1,
+          stage: 'technical_plan',
+          status: 'pending',
+          input_summary: '',
+          output_summary: 'Technical planning history will appear here for API-generated plans.',
+          created_by: 0,
+          created_at: '',
+          updated_at: '',
+        },
+        {
+          id: 2,
+          stage: 'pr_dag',
+          status: 'pending',
+          input_summary: '',
+          output_summary: 'PR DAG generation will be tracked as a skill run.',
+          created_by: 0,
+          created_at: '',
+          updated_at: '',
+        },
+      ];
+
+  return (
+    <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="flex items-center gap-2 text-sm font-medium">
+          <ScrollText className="h-4 w-4 text-primary" />
+          Skill pipeline
+        </div>
+        <Badge
+          variant="outline"
+          className={skillRuns.length > 0 ? statusClassName('completed') : ''}
+        >
+          {isLoading ? 'Checking' : skillRuns.length > 0 ? `${skillRuns.length} runs` : 'Pending'}
+        </Badge>
+      </div>
+      {isOffline ? (
+        <p className="mt-2 text-xs leading-5 text-text-muted">
+          Skill run history will load when the CodingCTO backend is available.
+        </p>
+      ) : null}
+      <div className="mt-3 space-y-2">
+        {stages.map(run => (
+          <div
+            key={`${run.stage}-${run.id}`}
+            className="rounded-md border border-border-subtle bg-bg-surface px-3 py-2"
+          >
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <span className="text-xs font-medium uppercase text-text-subtle">
+                {skillRunStageLabel(run.stage)}
+              </span>
+              <Badge variant="outline" className={statusClassName(run.status)}>
+                {run.status}
+              </Badge>
+            </div>
+            <p className="mt-1 line-clamp-2 text-xs leading-5 text-text-muted">
+              {run.output_summary || 'No output recorded yet.'}
+            </p>
+          </div>
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function skillRunStageLabel(stage: string) {
+  const labels: Record<string, string> = {
+    product_plan: 'Product plan',
+    technical_plan: 'Technical plan',
+    pr_dag: 'PR DAG',
+    self_review: 'Self review',
+  };
+  return labels[stage] ?? stage.replaceAll('_', ' ');
 }
 
 function ExecutionRangeSelector({

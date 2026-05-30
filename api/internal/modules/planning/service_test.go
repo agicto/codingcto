@@ -225,6 +225,110 @@ func TestUpsertSkillPersistsRepoInstruction(t *testing.T) {
 	require.Equal(t, "API handlers must delegate business logic to services.", skills[0].Content)
 }
 
+func TestUpsertProjectSkillBindsSkillToProject(t *testing.T) {
+	repo := &memoryRepo{}
+	projectRepo := &memoryProjectRepo{
+		project: &domain.SpecForgeProject{
+			ID:          77,
+			WorkspaceID: "workspace_1",
+			Name:        "CodingCTO",
+			Slug:        "codingcto",
+			Status:      domain.ProjectStatusActive,
+		},
+		repositories: []*domain.SpecForgeProjectRepository{
+			{
+				WorkspaceID:  "workspace_1",
+				ProjectID:    77,
+				RepositoryID: "repo_primary",
+				Role:         domain.ProjectRepositoryRolePrimary,
+				Active:       true,
+			},
+		},
+	}
+	svc := NewService(repo, &memoryProfileRepo{}, repo, projectRepo)
+
+	projectSkill, err := svc.UpsertProjectSkill(context.Background(), 42, 77, &UpsertProjectSkillRequest{
+		RepositoryID: "repo_primary",
+		Name:         "Planning SOP",
+		Description:  "Grounded planning workflow",
+		Content:      "Map every acceptance criterion to PR nodes before execution.",
+		Active:       boolPtr(true),
+		SortOrder:    5,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, uint(77), projectSkill.ProjectID)
+	require.Equal(t, "repo_primary", projectSkill.RepositoryID)
+	require.NotZero(t, projectSkill.SkillID)
+	require.NotNil(t, projectSkill.Skill)
+	require.Equal(t, "Planning SOP", projectSkill.Skill.Name)
+	require.Equal(t, 5, projectSkill.SortOrder)
+
+	projectSkills, err := svc.ListProjectSkills(context.Background(), 77)
+	require.NoError(t, err)
+	require.Len(t, projectSkills, 1)
+	require.Equal(t, "Planning SOP", projectSkills[0].Skill.Name)
+}
+
+func TestCreateProjectRequirementRecordsSkillRunPipeline(t *testing.T) {
+	repo := &memoryRepo{}
+	profileRepo := &memoryProfileRepo{
+		profiles: map[string]*domain.SpecForgeRepoProfile{
+			"repo_web": {
+				RepositoryID: "repo_web",
+				Stack:        []string{"Next.js", "TypeScript"},
+				TestCommands: []string{"pnpm type-check"},
+			},
+		},
+	}
+	projectRepo := &memoryProjectRepo{
+		project: &domain.SpecForgeProject{
+			ID:          77,
+			WorkspaceID: "workspace_1",
+			Name:        "CodingCTO",
+			Slug:        "codingcto",
+			Status:      domain.ProjectStatusActive,
+		},
+		repositories: []*domain.SpecForgeProjectRepository{
+			{
+				WorkspaceID:  "workspace_1",
+				ProjectID:    77,
+				RepositoryID: "repo_web",
+				Role:         domain.ProjectRepositoryRolePrimary,
+				Active:       true,
+			},
+		},
+	}
+	svc := NewService(repo, profileRepo, repo, projectRepo)
+	_, err := svc.UpsertProjectSkill(context.Background(), 42, 77, &UpsertProjectSkillRequest{
+		RepositoryID: "repo_web",
+		Name:         "Planning SOP",
+		Content:      "Use evidence-backed planning.",
+		Active:       boolPtr(true),
+	})
+	require.NoError(t, err)
+
+	bundle, err := svc.CreateProjectRequirement(context.Background(), 42, 77, &CreateIdeaRequest{
+		Input: "Add project skill pipeline history to the planning console",
+		Type:  "feature",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, bundle.Requirement)
+	runs, err := svc.ListSkillRunsForRequirement(context.Background(), bundle.Requirement.ID)
+	require.NoError(t, err)
+	require.Len(t, runs, 4)
+	require.Equal(t, domain.SkillRunStageProductPlan, runs[0].Stage)
+	require.Equal(t, domain.SkillRunStageTechnicalPlan, runs[1].Stage)
+	require.Equal(t, domain.SkillRunStagePRDAG, runs[2].Stage)
+	require.Equal(t, domain.SkillRunStageSelfReview, runs[3].Stage)
+	require.Contains(t, runs[0].InputSummary, "Active skills: 1")
+	require.Contains(t, runs[2].OutputSummary, "PR-001")
+	planRuns, err := svc.ListSkillRunsForPlan(context.Background(), bundle.Plan.ID)
+	require.NoError(t, err)
+	require.Len(t, planRuns, 4)
+}
+
 func TestCompilePromptInjectsActiveRepoSkills(t *testing.T) {
 	repo := &memoryRepo{}
 	svc := NewService(repo, &memoryProfileRepo{}, repo, nil)
@@ -527,12 +631,18 @@ func TestReviewPRDAGReportsCyclesAndOutOfOrderDependencies(t *testing.T) {
 	require.Contains(t, notes, "PR DAG review: dependency cycle detected involving PR-001.")
 }
 
+func boolPtr(value bool) *bool {
+	return &value
+}
+
 type memoryRepo struct {
-	nextID  uint
-	bundle  *domain.SpecForgePlanBundle
-	bundles []*domain.SpecForgePlanBundle
-	prompt  *domain.SpecForgeCompiledPrompt
-	skills  []*domain.SpecForgeSkill
+	nextID        uint
+	bundle        *domain.SpecForgePlanBundle
+	bundles       []*domain.SpecForgePlanBundle
+	prompt        *domain.SpecForgeCompiledPrompt
+	skills        []*domain.SpecForgeSkill
+	projectSkills []*domain.SpecForgeProjectSkill
+	skillRuns     []*domain.SpecForgeSkillRun
 }
 
 type memoryProfileRepo struct {
@@ -805,6 +915,94 @@ func (r *memoryRepo) ListSkillsByRepositoryID(ctx context.Context, repositoryID 
 		out = append(out, &copied)
 	}
 	return out, nil
+}
+
+func (r *memoryRepo) UpsertProjectSkill(ctx context.Context, projectSkill *domain.SpecForgeProjectSkill) error {
+	r.nextID++
+	copied := *projectSkill
+	for i, existing := range r.projectSkills {
+		if existing.ProjectID == projectSkill.ProjectID && existing.SkillID == projectSkill.SkillID {
+			copied.ID = existing.ID
+			copied.Skill = r.skillByID(projectSkill.SkillID)
+			r.projectSkills[i] = &copied
+			*projectSkill = copied
+			return nil
+		}
+	}
+	copied.ID = r.nextID
+	copied.Skill = r.skillByID(projectSkill.SkillID)
+	r.projectSkills = append(r.projectSkills, &copied)
+	*projectSkill = copied
+	return nil
+}
+
+func (r *memoryRepo) ListProjectSkillsByProjectID(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectSkill, error) {
+	out := make([]*domain.SpecForgeProjectSkill, 0, len(r.projectSkills))
+	for _, projectSkill := range r.projectSkills {
+		if projectSkill.ProjectID != projectID {
+			continue
+		}
+		copied := *projectSkill
+		copied.Skill = r.skillByID(projectSkill.SkillID)
+		out = append(out, &copied)
+	}
+	return out, nil
+}
+
+func (r *memoryRepo) ListActiveProjectSkillsByProjectID(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectSkill, error) {
+	all, err := r.ListProjectSkillsByProjectID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*domain.SpecForgeProjectSkill, 0, len(all))
+	for _, projectSkill := range all {
+		if projectSkill.Active {
+			out = append(out, projectSkill)
+		}
+	}
+	return out, nil
+}
+
+func (r *memoryRepo) CreateSkillRun(ctx context.Context, run *domain.SpecForgeSkillRun) error {
+	r.nextID++
+	run.ID = r.nextID
+	copied := *run
+	r.skillRuns = append(r.skillRuns, &copied)
+	return nil
+}
+
+func (r *memoryRepo) ListSkillRunsByRequirementID(ctx context.Context, requirementID uint) ([]*domain.SpecForgeSkillRun, error) {
+	out := make([]*domain.SpecForgeSkillRun, 0, len(r.skillRuns))
+	for _, run := range r.skillRuns {
+		if run.RequirementID == nil || *run.RequirementID != requirementID {
+			continue
+		}
+		copied := *run
+		out = append(out, &copied)
+	}
+	return out, nil
+}
+
+func (r *memoryRepo) ListSkillRunsByPlanID(ctx context.Context, planID uint) ([]*domain.SpecForgeSkillRun, error) {
+	out := make([]*domain.SpecForgeSkillRun, 0, len(r.skillRuns))
+	for _, run := range r.skillRuns {
+		if run.PlanID == nil || *run.PlanID != planID {
+			continue
+		}
+		copied := *run
+		out = append(out, &copied)
+	}
+	return out, nil
+}
+
+func (r *memoryRepo) skillByID(skillID uint) *domain.SpecForgeSkill {
+	for _, skill := range r.skills {
+		if skill.ID == skillID {
+			copied := *skill
+			return &copied
+		}
+	}
+	return nil
 }
 
 type memoryProjectRepo struct {

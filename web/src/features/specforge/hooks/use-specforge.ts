@@ -28,6 +28,7 @@ import {
   type StartRunPayload,
   type StaleTaskSweepPayload,
   type SubmitTaskResultPayload,
+  type UpsertProjectSkillPayload,
   type UpsertSkillPayload,
   type VerifyPRNodeCIPayload,
   specForgeService,
@@ -42,6 +43,8 @@ export const specForgeKeys = {
   repoArchitecture: (repoId: string) =>
     [...specForgeKeys.all, 'repo-architecture', repoId] as const,
   skills: (repoId: string) => [...specForgeKeys.all, 'skills', repoId] as const,
+  projectSkills: (projectId: number) => [...specForgeKeys.all, 'project-skills', projectId] as const,
+  planSkillRuns: (planId: number) => [...specForgeKeys.all, 'plan-skill-runs', planId] as const,
   ideaPlan: (ideaId: number) => [...specForgeKeys.all, 'idea-plan', ideaId] as const,
   run: (runId: number) => [...specForgeKeys.all, 'run', runId] as const,
   taskEvents: (taskId: number, afterSeq?: number) =>
@@ -117,6 +120,24 @@ export function useSpecForgeSkills(repoId: string) {
     queryKey: specForgeKeys.skills(repoId),
     queryFn: () => specForgeService.listSkills(repoId, silentQueryConfig),
     enabled: Boolean(repoId),
+    meta: silentQueryMeta,
+  });
+}
+
+export function useSpecForgeProjectSkills(projectId?: number) {
+  return useQuery({
+    queryKey: specForgeKeys.projectSkills(projectId ?? 0),
+    queryFn: () => specForgeService.listProjectSkills(projectId ?? 0, silentQueryConfig),
+    enabled: Boolean(projectId),
+    meta: silentQueryMeta,
+  });
+}
+
+export function useSpecForgePlanSkillRuns(planId?: number) {
+  return useQuery({
+    queryKey: specForgeKeys.planSkillRuns(planId ?? 0),
+    queryFn: () => specForgeService.listPlanSkillRuns(planId ?? 0, silentQueryConfig),
+    enabled: Boolean(planId),
     meta: silentQueryMeta,
   });
 }
@@ -211,6 +232,24 @@ export function useUpsertSpecForgeSkill(repoId: string) {
     mutationFn: (payload: UpsertSkillPayload) => specForgeService.upsertSkill(repoId, payload),
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: specForgeKeys.skills(repoId) });
+    },
+  });
+}
+
+export function useUpsertSpecForgeProjectSkill(projectId?: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: UpsertProjectSkillPayload) => {
+      if (!projectId) {
+        throw new Error('Project ID is required to save a project skill.');
+      }
+      return specForgeService.upsertProjectSkill(projectId, payload);
+    },
+    onSuccess: () => {
+      if (projectId) {
+        queryClient.invalidateQueries({ queryKey: specForgeKeys.projectSkills(projectId) });
+      }
     },
   });
 }

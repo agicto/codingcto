@@ -309,6 +309,44 @@ body.data.repository.role == "dependency"
 ```
 
 ```step
+@id project_skill
+@name Save Project Skill
+
+POST /v1/projects/{{project_id}}/skills
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "repository_id": "{{repo_id}}",
+  "name": "planning-sop",
+  "description": "Project-level planning skill",
+  "content": "Map every acceptance criterion to at least one PR node before execution.",
+  "active": true,
+  "sort_order": 1
+}
+
+[Asserts]
+status == 201
+body.data.project_skill.id exists
+body.data.project_skill.project_id == {{project_id}}
+body.data.project_skill.repository_id == "{{repo_id}}"
+body.data.project_skill.skill.name == "planning-sop"
+```
+
+```step
+@id project_skills
+@name List Project Skills
+
+GET /v1/projects/{{project_id}}/skills
+Authorization: Bearer {{token}}
+
+[Asserts]
+status == 200
+body.data.project_skills.0.id exists
+body.data.project_skills.0.skill.name == "planning-sop"
+```
+
+```step
 @id context
 @name Fetch Project Context
 
@@ -362,6 +400,23 @@ body.data.repo_profile.stack.0 exists
 body.data.product_spec.assumptions.0 exists
 body.data.pr_nodes.0.id exists
 body.data.pr_nodes.0.repository_id == "{{repo_id}}"
+```
+
+```step
+@id skill_runs
+@name List Plan Skill Runs
+
+GET /v1/plans/{{plan_id}}/skill-runs
+Authorization: Bearer {{token}}
+
+[Asserts]
+status == 200
+body.data.skill_runs.0.stage == "product_plan"
+body.data.skill_runs.1.stage == "technical_plan"
+body.data.skill_runs.2.stage == "pr_dag"
+body.data.skill_runs.3.stage == "self_review"
+body.data.skill_runs.0.input_summary exists
+body.data.skill_runs.0.output_summary exists
 ```
 
 ```step
@@ -676,6 +731,18 @@ body.data.latest_failure_type == "type_error"
 
 ```edge
 @from bind_dependency
+@to project_skill
+@on success
+```
+
+```edge
+@from project_skill
+@to project_skills
+@on success
+```
+
+```edge
+@from project_skills
 @to context
 @on success
 ```
@@ -688,6 +755,12 @@ body.data.latest_failure_type == "type_error"
 
 ```edge
 @from project_requirement
+@to skill_runs
+@on success
+```
+
+```edge
+@from skill_runs
 @to prompt
 @on success
 ```

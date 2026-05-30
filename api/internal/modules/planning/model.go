@@ -147,6 +147,48 @@ func (SkillPO) TableName() string {
 	return "specforge_skills"
 }
 
+type ProjectSkillPO struct {
+	ID           uint   `gorm:"primaryKey"`
+	WorkspaceID  string `gorm:"size:255;not null;index"`
+	ProjectID    uint   `gorm:"not null;uniqueIndex:idx_specforge_project_skill"`
+	RepositoryID string `gorm:"size:255;not null;index"`
+	SkillID      uint   `gorm:"not null;uniqueIndex:idx_specforge_project_skill"`
+	Active       bool   `gorm:"not null;default:true;index"`
+	SortOrder    int    `gorm:"not null;default:0;index"`
+	CreatedBy    uint   `gorm:"not null;index"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+	Skill        *SkillPO `gorm:"foreignKey:SkillID"`
+}
+
+func (ProjectSkillPO) TableName() string {
+	return "specforge_project_skills"
+}
+
+type SkillRunPO struct {
+	ID            uint   `gorm:"primaryKey"`
+	RequirementID *uint  `gorm:"index"`
+	PlanID        *uint  `gorm:"index"`
+	ProjectID     *uint  `gorm:"index"`
+	SkillID       *uint  `gorm:"index"`
+	Stage         string `gorm:"size:80;not null;index"`
+	Status        string `gorm:"size:50;not null;index"`
+	InputSummary  string `gorm:"type:text"`
+	OutputSummary string `gorm:"type:text"`
+	OutputJSON    string `gorm:"type:text"`
+	ErrorMessage  string `gorm:"type:text"`
+	StartedAt     *time.Time
+	CompletedAt   *time.Time
+	CreatedBy     uint `gorm:"not null;index"`
+	CreatedAt     time.Time
+	UpdatedAt     time.Time
+	Skill         *SkillPO `gorm:"foreignKey:SkillID"`
+}
+
+func (SkillRunPO) TableName() string {
+	return "specforge_skill_runs"
+}
+
 func newIdeaPO(idea *domain.SpecForgeIdea) *IdeaPO {
 	return &IdeaPO{
 		ID: idea.ID, RequirementID: idea.RequirementID, ProjectID: idea.ProjectID, RepositoryID: idea.RepositoryID, CreatedBy: idea.CreatedBy,
@@ -316,6 +358,83 @@ func (po *SkillPO) toDomain() *domain.SpecForgeSkill {
 		CreatedBy:    po.CreatedBy,
 		CreatedAt:    po.CreatedAt,
 		UpdatedAt:    po.UpdatedAt,
+	}
+}
+
+func newProjectSkillPO(projectSkill *domain.SpecForgeProjectSkill) *ProjectSkillPO {
+	return &ProjectSkillPO{
+		ID:           projectSkill.ID,
+		WorkspaceID:  projectSkill.WorkspaceID,
+		ProjectID:    projectSkill.ProjectID,
+		RepositoryID: projectSkill.RepositoryID,
+		SkillID:      projectSkill.SkillID,
+		Active:       projectSkill.Active,
+		SortOrder:    projectSkill.SortOrder,
+		CreatedBy:    projectSkill.CreatedBy,
+		CreatedAt:    projectSkill.CreatedAt,
+		UpdatedAt:    projectSkill.UpdatedAt,
+	}
+}
+
+func (po *ProjectSkillPO) toDomain() *domain.SpecForgeProjectSkill {
+	var skill *domain.SpecForgeSkill
+	if po.Skill != nil {
+		skill = po.Skill.toDomain()
+	}
+	return &domain.SpecForgeProjectSkill{
+		ID:           po.ID,
+		WorkspaceID:  po.WorkspaceID,
+		ProjectID:    po.ProjectID,
+		RepositoryID: po.RepositoryID,
+		SkillID:      po.SkillID,
+		Active:       po.Active,
+		SortOrder:    po.SortOrder,
+		CreatedBy:    po.CreatedBy,
+		CreatedAt:    po.CreatedAt,
+		UpdatedAt:    po.UpdatedAt,
+		Skill:        skill,
+	}
+}
+
+func newSkillRunPO(run *domain.SpecForgeSkillRun) *SkillRunPO {
+	return &SkillRunPO{
+		ID:            run.ID,
+		RequirementID: run.RequirementID,
+		PlanID:        run.PlanID,
+		ProjectID:     run.ProjectID,
+		SkillID:       run.SkillID,
+		Stage:         run.Stage,
+		Status:        run.Status,
+		InputSummary:  run.InputSummary,
+		OutputSummary: run.OutputSummary,
+		OutputJSON:    run.OutputJSON,
+		ErrorMessage:  run.ErrorMessage,
+		StartedAt:     run.StartedAt,
+		CompletedAt:   run.CompletedAt,
+		CreatedBy:     run.CreatedBy,
+		CreatedAt:     run.CreatedAt,
+		UpdatedAt:     run.UpdatedAt,
+	}
+}
+
+func (po *SkillRunPO) toDomain() *domain.SpecForgeSkillRun {
+	return &domain.SpecForgeSkillRun{
+		ID:            po.ID,
+		RequirementID: po.RequirementID,
+		PlanID:        po.PlanID,
+		ProjectID:     po.ProjectID,
+		SkillID:       po.SkillID,
+		Stage:         po.Stage,
+		Status:        po.Status,
+		InputSummary:  po.InputSummary,
+		OutputSummary: po.OutputSummary,
+		OutputJSON:    po.OutputJSON,
+		ErrorMessage:  po.ErrorMessage,
+		StartedAt:     po.StartedAt,
+		CompletedAt:   po.CompletedAt,
+		CreatedBy:     po.CreatedBy,
+		CreatedAt:     po.CreatedAt,
+		UpdatedAt:     po.UpdatedAt,
 	}
 }
 
