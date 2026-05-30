@@ -425,6 +425,59 @@ func TestRecordWebhookUpdatesPRNodeFromWorkflowRun(t *testing.T) {
 	require.Equal(t, "failure", published.Conclusion)
 }
 
+func TestRecordWebhookPublishesCIFailedForUnsuccessfulWorkflowConclusion(t *testing.T) {
+	repo := &memoryRepo{}
+	planningRepo := &memoryPlanningRepo{
+		bundle: &domain.SpecForgePlanBundle{
+			Idea: &domain.SpecForgeIdea{RepositoryID: "github_agicto__codingcto"},
+		},
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, PlanID: 20, BranchName: "specforge/team-invite-02-api", Status: domain.PRNodeStatusCIRunning},
+		},
+	}
+	bus := infraevents.NewEventBus()
+	var published domain.SpecForgePRNodeCIFailedEvent
+	bus.Subscribe(domain.EventSpecForgePRNodeCIFailed, func(ctx context.Context, event infraevents.Event) error {
+		var underlying any = event
+		if wrapped, ok := event.(infraevents.WrappedEvent); ok {
+			underlying = wrapped.Event
+		}
+		typed, ok := underlying.(domain.SpecForgePRNodeCIFailedEvent)
+		require.True(t, ok)
+		published = typed
+		return nil
+	})
+	svc := NewService(repo, planningRepo, nil, nil, bus)
+	body := []byte(`{
+		"action": "completed",
+		"installation": {"id": 123},
+		"repository": {"full_name": "agicto/codingcto"},
+		"workflow_run": {
+			"id": 988,
+			"name": "API",
+			"head_branch": "specforge/team-invite-02-api",
+			"head_sha": "timeout-sha",
+			"status": "completed",
+			"conclusion": "timed_out",
+			"html_url": "https://github.com/agicto/codingcto/actions/runs/988"
+		}
+	}`)
+
+	_, err := svc.RecordWebhook(context.Background(), &GitHubWebhookRequest{
+		EventType:  GitHubWebhookEventWorkflowRun,
+		DeliveryID: "delivery-workflow-timeout",
+		Signature:  "sha256=abc",
+		Body:       body,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "timeout-sha", planningRepo.nodes[0].GitHubHeadSHA)
+	require.Equal(t, domain.PRNodeStatusBlocked, planningRepo.nodes[0].Status)
+	require.Equal(t, uint(10), published.PRNodeID)
+	require.Equal(t, "timed_out", published.Conclusion)
+	require.Equal(t, int64(988), published.WorkflowRunID)
+}
+
 func TestRecordWebhookPublishesDependencySatisfiedForSuccessfulWorkflowRun(t *testing.T) {
 	repo := &memoryRepo{}
 	planningRepo := &memoryPlanningRepo{
@@ -858,6 +911,57 @@ func TestRefreshPRNodeCIMarksFailedRunBlocked(t *testing.T) {
 	require.Equal(t, "agicto/codingcto", published.RepositoryFullName)
 	require.Equal(t, int64(789), published.WorkflowRunID)
 	require.Equal(t, "failure", published.Conclusion)
+}
+
+func TestRefreshPRNodeCIPublishesFailedEventForUnsuccessfulConclusion(t *testing.T) {
+	repo := &memoryRepo{
+		installation: &domain.GitHubInstallation{
+			ID:             3,
+			InstallationID: 98765,
+		},
+		repository: &domain.Repository{
+			ID:                   1,
+			RepositoryID:         "github_agicto__codingcto",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto",
+			DefaultBranch:        "main",
+		},
+	}
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{ID: 10, BranchName: "specforge/team-invite-01-api", Status: domain.PRNodeStatusCIRunning},
+		},
+	}
+	client := &fakeRepositoryClient{
+		workflowRuns: []WorkflowRun{{ID: 790, HeadSHA: "timeout", Status: "completed", Conclusion: "timed_out", HTMLURL: "https://github.com/agicto/codingcto/actions/runs/790", CreatedAt: time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC)}},
+	}
+	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
+	bus := infraevents.NewEventBus()
+	var published domain.SpecForgePRNodeCIFailedEvent
+	bus.Subscribe(domain.EventSpecForgePRNodeCIFailed, func(ctx context.Context, event infraevents.Event) error {
+		var underlying any = event
+		if wrapped, ok := event.(infraevents.WrappedEvent); ok {
+			underlying = wrapped.Event
+		}
+		typed, ok := underlying.(domain.SpecForgePRNodeCIFailedEvent)
+		require.True(t, ok)
+		published = typed
+		return nil
+	})
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider, bus)
+
+	node, err := svc.RefreshPRNodeCI(context.Background(), &RefreshPRNodeCIRequest{
+		RepositoryID: "github_agicto__codingcto",
+		PRNodeID:     10,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "timeout", node.GitHubHeadSHA)
+	require.Equal(t, domain.PRNodeStatusBlocked, node.Status)
+	require.Equal(t, uint(10), published.PRNodeID)
+	require.Equal(t, int64(790), published.WorkflowRunID)
+	require.Equal(t, "timed_out", published.Conclusion)
 }
 
 func TestReadPRNodeFailureLogReturnsLatestFailedJobLogs(t *testing.T) {

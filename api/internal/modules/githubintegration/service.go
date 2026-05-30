@@ -692,7 +692,7 @@ func (s *service) publishPRNodeCIFailed(ctx context.Context, event *StructuredGi
 		return nil
 	}
 	run := event.WorkflowRun
-	if run.Status != "completed" || run.Conclusion != "failure" {
+	if !isUnsuccessfulCompletedWorkflowRun(run.Status, run.Conclusion) {
 		return nil
 	}
 	bundle, err := s.planningRepo.FindPlanBundleByPlanID(ctx, node.PlanID)
@@ -724,7 +724,7 @@ func (s *service) publishPRNodeCIFailedFromWorkflowRun(ctx context.Context, repo
 	if s.eventBus == nil || repository == nil || node == nil {
 		return nil
 	}
-	if run.Status != "completed" || run.Conclusion != "failure" {
+	if !isUnsuccessfulCompletedWorkflowRun(run.Status, run.Conclusion) {
 		return nil
 	}
 	repositoryFullName := strings.TrimSpace(repository.GitHubOwner + "/" + repository.GitHubRepo)
@@ -740,6 +740,12 @@ func (s *service) publishPRNodeCIFailedFromWorkflowRun(ctx context.Context, repo
 		run.HeadSHA,
 		run.Conclusion,
 	))
+}
+
+func isUnsuccessfulCompletedWorkflowRun(status, conclusion string) bool {
+	status = strings.TrimSpace(status)
+	conclusion = strings.TrimSpace(conclusion)
+	return status == "completed" && conclusion != "" && conclusion != "success"
 }
 
 func normalizePermissions(permissions map[string]string) map[string]string {
