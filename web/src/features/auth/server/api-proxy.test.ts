@@ -1,10 +1,18 @@
-import { describe, expect, it } from 'vitest';
+import { afterEach, describe, expect, it, vi } from 'vitest';
 import type { NextRequest } from 'next/server';
 
-import { buildAPIRequestHeaders, buildAPIURL } from '@/features/auth/server/api-proxy';
+import {
+  buildAPIRequestHeaders,
+  buildAPIURL,
+  proxyAPIRequest,
+} from '@/features/auth/server/api-proxy';
 import { signSession } from '@/lib/session-signing';
 
 describe('SpecForge API proxy', () => {
+  afterEach(() => {
+    vi.restoreAllMocks();
+  });
+
   it('builds a backend v1 URL with query params', () => {
     process.env.LUAS_API_PROXY_TARGET = 'http://127.0.0.1:8025';
     const request = new Request(
@@ -48,5 +56,27 @@ describe('SpecForge API proxy', () => {
     expect(headers.get('authorization')).toBe('Bearer backend-jwt');
     expect(headers.has('host')).toBe(false);
     expect(headers.has('cookie')).toBe(false);
+  });
+
+  it('returns a structured 503 when the upstream API is unavailable', async () => {
+    vi.spyOn(globalThis, 'fetch').mockRejectedValue(new Error('connect ECONNREFUSED'));
+
+    const request = {
+      method: 'GET',
+      url: 'http://localhost:3000/v1/projects',
+      headers: new Headers(),
+      cookies: {
+        get: () => undefined,
+      },
+    } as unknown as NextRequest;
+
+    const response = await proxyAPIRequest(request, ['projects']);
+    const body = await response.json();
+
+    expect(response.status).toBe(503);
+    expect(body).toEqual({
+      code: 'UPSTREAM_UNAVAILABLE',
+      message: 'API upstream is unavailable',
+    });
   });
 });
