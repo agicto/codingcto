@@ -74,37 +74,37 @@ export default function ConsoleLayout({
   ];
 
   return (
-    <div className="flex h-screen overflow-hidden bg-[#f7f7f6] text-[#18181b]">
-      <aside className="hidden w-[256px] shrink-0 flex-col border-r border-[#e6e6e4] bg-[#f4f4f3] px-3 py-3 md:flex">
-        <button className="flex h-9 w-full items-center justify-between rounded-md px-2 text-left text-sm font-medium hover:bg-[#ececea]">
+    <div className="flex h-screen overflow-hidden bg-bg-canvas text-text-main">
+      <aside className="hidden w-[256px] shrink-0 flex-col border-r border-border-subtle bg-bg-subtle px-3 py-3 md:flex">
+        <button className="flex h-9 w-full items-center justify-between rounded-md px-2 text-left text-sm font-medium hover:bg-muted">
           <span className="flex min-w-0 items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-md border border-[#ddddda] bg-white text-xs font-semibold text-[#6b6b70]">
+            <span className="flex h-6 w-6 items-center justify-center rounded-md border border-border-main bg-bg-surface text-xs font-semibold text-text-subtle">
               A
             </span>
             <span className="truncate">agicto</span>
           </span>
-          <ChevronDown className="h-4 w-4 text-[#6f6f76]" />
+          <ChevronDown className="h-4 w-4 text-text-muted" />
         </button>
 
         <div className="mt-4 space-y-1">
-          <button className="flex h-9 w-full items-center justify-between rounded-lg bg-[#ececea] px-2 text-sm text-[#202024]">
+          <button className="flex h-9 w-full items-center justify-between rounded-lg bg-muted px-2 text-sm text-text-main">
             <span className="flex items-center gap-2">
               <Search className="h-4 w-4" />
               Search...
             </span>
-            <kbd className="rounded border border-[#d8d8d5] bg-[#f8f8f7] px-1.5 py-0.5 text-[11px] text-[#73737a]">
+            <kbd className="rounded border border-border-main bg-bg-surface px-1.5 py-0.5 text-[11px] text-text-muted">
               ⌘ K
             </kbd>
           </button>
           <Link
             href={ROUTES.CONSOLE.SPECFORGE}
-            className="flex h-9 items-center justify-between rounded-lg px-2 text-sm text-[#6f6f76] hover:bg-[#ececea] hover:text-[#202024]"
+            className="flex h-9 items-center justify-between rounded-lg px-2 text-sm text-text-subtle hover:bg-muted hover:text-text-main"
           >
             <span className="flex items-center gap-2">
               <SquarePen className="h-4 w-4" />
               New Requirement
             </span>
-            <kbd className="rounded border border-[#d8d8d5] bg-[#f8f8f7] px-1.5 py-0.5 text-[11px]">
+            <kbd className="rounded border border-border-main bg-bg-surface px-1.5 py-0.5 text-[11px] text-text-muted">
               C
             </kbd>
           </Link>
@@ -126,26 +126,26 @@ export default function ConsoleLayout({
         <div className="mt-auto flex items-center justify-between px-2">
           <Link
             href={ROUTES.DEVTOOLS.STYLEGUIDE}
-            className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-[#6f6f76] hover:bg-[#ececea] hover:text-[#202024]"
+            className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-text-subtle hover:bg-muted hover:text-text-main"
           >
             <Palette className="h-4 w-4" />
             Styleguide
           </Link>
-          <HelpCircle className="h-4 w-4 text-[#7b7b82]" />
+          <HelpCircle className="h-4 w-4 text-text-muted" />
         </div>
       </aside>
 
       <section className="flex min-w-0 flex-1 flex-col">
-        <header className="flex h-12 shrink-0 items-center justify-between border-b border-[#e6e6e4] bg-white px-4">
+        <header className="flex h-12 shrink-0 items-center justify-between border-b border-border-subtle bg-bg-surface px-4">
           <div className="flex items-center gap-2 text-sm font-semibold">
-            <GitPullRequest className="h-4 w-4 text-[#6f6f76]" />
+            <GitPullRequest className="h-4 w-4 text-primary" />
             CodingCTO
           </div>
           <div className="flex items-center gap-1.5">
             <LanguageSwitcher />
             <ThemeToggle />
             <Button variant="ghost" isIcon className="h-8 w-8 rounded-md">
-              <Bell className="h-4 w-4 text-[#6f6f76]" />
+              <Bell className="h-4 w-4 text-text-subtle" />
               <span className="sr-only">Notifications</span>
             </Button>
             <DropdownMenu>
@@ -153,7 +153,7 @@ export default function ConsoleLayout({
                 <Button variant="ghost" isIcon noScale className="h-8 w-8 overflow-hidden rounded-full">
                   <Avatar className="h-full w-full">
                     <AvatarImage src="https://github.com/shadcn.png" />
-                    <AvatarFallback className="bg-[#ececea] text-xs text-[#202024]">
+                    <AvatarFallback className="bg-muted text-xs text-text-main">
                       {user?.name
                         ?.split(' ')
                         .map((part) => part[0])
@@ -204,7 +204,7 @@ function SidebarSection({
 }) {
   return (
     <div className="mt-8">
-      <div className="px-2 pb-2 text-xs font-medium text-[#66666d]">{title}</div>
+      <div className="px-2 pb-2 text-xs font-medium text-text-muted">{title}</div>
       <nav className="space-y-1 text-sm">
         {items.map(item => (
           <SidebarLink key={`${title}-${item.title}`} {...item} pathname={pathname} />
@@ -231,23 +231,25 @@ function SidebarLink({
 }) {
   const text = label ?? title ?? '';
   const active =
-    pathname === href ||
-    (href !== ROUTES.CONSOLE.HOME && pathname.startsWith(`${href}/`)) ||
-    (text === 'Command Center' && pathname.includes('/specforge'));
+    text === 'Command Center'
+      ? pathname.includes('/specforge')
+      : href === ROUTES.CONSOLE.SPECFORGE
+        ? false
+        : pathname === href || (href !== ROUTES.CONSOLE.HOME && pathname.startsWith(`${href}/`));
 
   return (
     <Link
       href={href}
       className={cn(
-        'flex h-9 items-center justify-between rounded-lg px-2 text-[#66666d] hover:bg-[#ececea] hover:text-[#202024]',
-        active && 'bg-[#e9e9e7] text-[#18181b]'
+        'flex h-9 items-center justify-between rounded-lg px-2 text-text-subtle hover:bg-muted hover:text-text-main',
+        active && 'bg-primary-subtle text-primary'
       )}
     >
       <span className="flex min-w-0 items-center gap-2">
         <Icon className="h-4 w-4 shrink-0" />
         <span className="truncate">{text}</span>
       </span>
-      {badge ? <span className="text-xs text-[#7b7b82]">{badge}</span> : null}
+      {badge ? <span className="text-xs text-text-muted">{badge}</span> : null}
     </Link>
   );
 }
