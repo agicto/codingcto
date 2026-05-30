@@ -52,7 +52,14 @@ func TestCodexCLIExecutorBuildsNonInteractiveCommand(t *testing.T) {
 }
 
 func TestCodexCLIExecutorChecksOutBranchBeforeRunningPrompt(t *testing.T) {
-	runner := &captureRunner{result: CommandResult{Stdout: `{"type":"message"}`, ExitCode: 0}}
+	runner := &captureRunner{results: []CommandResult{
+		{ExitCode: 0},
+		{ExitCode: 0},
+		{Stdout: `{"type":"message"}`, ExitCode: 0},
+		{ExitCode: 0},
+		{Stdout: "1\n", ExitCode: 0},
+		{ExitCode: 0},
+	}}
 	executor := NewCodexCLIExecutor(CodexCLIExecutorConfig{
 		ExecutablePath: "codex-test",
 		Timeout:        time.Minute,
@@ -65,12 +72,82 @@ func TestCodexCLIExecutorChecksOutBranchBeforeRunningPrompt(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, "completed", result.Status)
-	require.Len(t, runner.specs, 3)
+	require.Len(t, runner.specs, 6)
 	require.Equal(t, "git", runner.specs[0].Executable)
 	require.Equal(t, []string{"fetch", "origin", "specforge/pr-001"}, runner.specs[0].Args)
 	require.Equal(t, "git", runner.specs[1].Executable)
 	require.Equal(t, []string{"checkout", "-B", "specforge/pr-001", "origin/specforge/pr-001"}, runner.specs[1].Args)
 	require.Equal(t, "codex-test", runner.specs[2].Executable)
+	require.Equal(t, []string{"status", "--porcelain"}, runner.specs[3].Args)
+	require.Equal(t, []string{"rev-list", "--count", "origin/specforge/pr-001..HEAD"}, runner.specs[4].Args)
+	require.Equal(t, []string{"push", "origin", "HEAD:specforge/pr-001"}, runner.specs[5].Args)
+}
+
+func TestCodexCLIExecutorCommitsDirtyWorktreeBeforePush(t *testing.T) {
+	runner := &captureRunner{results: []CommandResult{
+		{ExitCode: 0},
+		{ExitCode: 0},
+		{Stdout: `{"type":"message"}`, ExitCode: 0},
+		{Stdout: " M api/file.go\n", ExitCode: 0},
+		{ExitCode: 0},
+		{ExitCode: 1},
+		{ExitCode: 0},
+		{Stdout: "1\n", ExitCode: 0},
+		{ExitCode: 0},
+	}, errs: []error{
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+		errors.New("exit status 1"),
+		nil,
+		nil,
+		nil,
+	}}
+	executor := NewCodexCLIExecutor(CodexCLIExecutorConfig{ExecutablePath: "codex-test"}, runner)
+
+	result, err := executor.Run(context.Background(), ExecutionContext{
+		Workdir:    "/tmp/repo",
+		BranchName: "specforge/pr-001",
+	}, CompiledExecutionPrompt{
+		PRNodeID:   42,
+		Type:       "implementation",
+		PromptText: "Implement PR-001",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "completed", result.Status)
+	require.Len(t, runner.specs, 9)
+	require.Equal(t, []string{"add", "-A"}, runner.specs[4].Args)
+	require.Equal(t, []string{"diff", "--cached", "--quiet"}, runner.specs[5].Args)
+	require.Equal(t, []string{
+		"-c", "user.name=CodingCTO",
+		"-c", "user.email=codingcto@users.noreply.github.com",
+		"commit", "-m", "Implement implementation task for PR node 42",
+	}, runner.specs[6].Args)
+	require.Equal(t, []string{"push", "origin", "HEAD:specforge/pr-001"}, runner.specs[8].Args)
+}
+
+func TestCodexCLIExecutorFailsWhenExecutorProducesNoCommits(t *testing.T) {
+	runner := &captureRunner{results: []CommandResult{
+		{ExitCode: 0},
+		{ExitCode: 0},
+		{Stdout: `{"type":"message"}`, ExitCode: 0},
+		{ExitCode: 0},
+		{Stdout: "0\n", ExitCode: 0},
+	}}
+	executor := NewCodexCLIExecutor(CodexCLIExecutorConfig{ExecutablePath: "codex-test"}, runner)
+
+	result, err := executor.Run(context.Background(), ExecutionContext{
+		Workdir:    "/tmp/repo",
+		BranchName: "specforge/pr-001",
+	}, CompiledExecutionPrompt{PromptText: "Implement PR-001"})
+
+	require.ErrorContains(t, err, "executor produced no commits")
+	require.Equal(t, "failed", result.Status)
+	require.Equal(t, -1, result.ExitCode)
+	require.Len(t, runner.specs, 5)
 }
 
 func TestCodexCLIExecutorFailsWhenBranchCheckoutFails(t *testing.T) {
