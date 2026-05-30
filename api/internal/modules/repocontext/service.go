@@ -115,7 +115,11 @@ func (s *service) InferProfile(ctx context.Context, userID uint, repoID string, 
 	if len(scripts) == 0 && len(paths) > 0 && s.treeSource != nil {
 		scripts = normalizeScripts(s.packageScriptsFromRepository(ctx, strings.TrimSpace(repoID), treeRef, paths))
 	}
-	inferred := inferRepoProfile(paths, scripts)
+	instructionConventions := []string{}
+	if len(paths) > 0 && s.treeSource != nil {
+		instructionConventions = s.instructionConventionsFromRepository(ctx, strings.TrimSpace(repoID), treeRef, paths)
+	}
+	inferred := inferRepoProfile(paths, scripts, instructionConventions)
 	inferred.DefaultBranch = strings.TrimSpace(req.DefaultBranch)
 	inferred.Source = source
 	inferred.Warnings = normalizeList(warnings)
@@ -146,6 +150,22 @@ func (s *service) packageScriptsFromRepository(ctx context.Context, repoID, ref 
 	return scripts
 }
 
+func (s *service) instructionConventionsFromRepository(ctx context.Context, repoID, ref string, paths []string) []string {
+	conventions := []string{}
+	for _, path := range instructionFilePaths(paths, 5) {
+		file, err := s.treeSource.ReadRepositoryFile(ctx, repoID, path, ref)
+		if err != nil || file == nil {
+			continue
+		}
+		excerpt := instructionExcerpt(file.Content, 700)
+		if excerpt == "" {
+			continue
+		}
+		conventions = append(conventions, fmt.Sprintf("Instruction excerpt from %s: %s", path, excerpt))
+	}
+	return normalizeList(conventions)
+}
+
 func packageJSONPaths(paths []string, limit int) []string {
 	out := []string{}
 	for _, path := range paths {
@@ -161,6 +181,63 @@ func packageJSONPaths(paths []string, limit int) []string {
 		}
 	}
 	return out
+}
+
+func instructionFilePaths(paths []string, limit int) []string {
+	out := []string{}
+	for _, path := range paths {
+		trimmed := strings.TrimSpace(path)
+		if trimmed == "" || isSensitiveRepoPath(trimmed) {
+			continue
+		}
+		lower := strings.ToLower(trimmed)
+		if isInstructionFilePath(lower) {
+			out = append(out, trimmed)
+			if limit > 0 && len(out) >= limit {
+				return out
+			}
+		}
+	}
+	return normalizeList(out)
+}
+
+func isInstructionFilePath(lowerPath string) bool {
+	base := lowerPath
+	if idx := strings.LastIndex(base, "/"); idx >= 0 {
+		base = base[idx+1:]
+	}
+	return base == "agents.md" ||
+		base == "contributing.md" ||
+		base == "claude.md" ||
+		lowerPath == ".github/copilot-instructions.md"
+}
+
+func instructionExcerpt(content string, limit int) string {
+	content = strings.ToValidUTF8(strings.ReplaceAll(content, "\x00", ""), "")
+	lines := strings.Split(content, "\n")
+	kept := make([]string, 0, len(lines))
+	for _, line := range lines {
+		line = strings.Join(strings.Fields(strings.TrimSpace(line)), " ")
+		if line == "" || likelySensitiveInstructionLine(line) {
+			continue
+		}
+		kept = append(kept, line)
+	}
+	excerpt := strings.TrimSpace(strings.Join(kept, " "))
+	if limit > 0 && len(excerpt) > limit {
+		excerpt = strings.TrimSpace(excerpt[:limit]) + "..."
+	}
+	return excerpt
+}
+
+func likelySensitiveInstructionLine(line string) bool {
+	lower := strings.ToLower(line)
+	return strings.Contains(lower, "secret") ||
+		strings.Contains(lower, "token") ||
+		strings.Contains(lower, "password") ||
+		strings.Contains(lower, "credential") ||
+		strings.Contains(lower, "private key") ||
+		strings.Contains(lower, "api key")
 }
 
 func filterSensitivePaths(paths []string) ([]string, int) {
@@ -238,7 +315,7 @@ func normalizeScripts(scripts map[string]string) map[string]string {
 	return out
 }
 
-func inferRepoProfile(paths []string, scripts map[string]string) *UpsertRepoProfileRequest {
+func inferRepoProfile(paths []string, scripts map[string]string, instructionConventions []string) *UpsertRepoProfileRequest {
 	lowerPaths := make([]string, 0, len(paths))
 	for _, path := range paths {
 		lowerPaths = append(lowerPaths, strings.ToLower(strings.TrimSpace(path)))
@@ -303,6 +380,7 @@ func inferRepoProfile(paths []string, scripts map[string]string) *UpsertRepoProf
 	if hasPath(lowerPaths, ".github/copilot-instructions.md") {
 		conventions = append(conventions, "Follow GitHub Copilot repository instructions in .github/copilot-instructions.md.")
 	}
+	conventions = append(conventions, instructionConventions...)
 	if hasAnyPath(lowerPaths, "auth", "permission", "rbac") {
 		riskAreas = append(riskAreas, "auth")
 	}
