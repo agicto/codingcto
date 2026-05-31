@@ -130,6 +130,24 @@ func (r *repository) FindLatestPlanBundleByRequirementID(ctx context.Context, re
 	return r.findBundle(ctx, "id = ?", plan.ID)
 }
 
+func (r *repository) FindLatestPlanBundleByProjectID(ctx context.Context, projectID uint) (*domain.SpecForgePlanBundle, error) {
+	if projectID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	var plan ImplementationPlanPO
+	if err := r.db.WithContext(ctx).
+		Joins("JOIN specforge_ideas ON specforge_ideas.id = specforge_implementation_plans.idea_id").
+		Where("specforge_ideas.project_id = ?", projectID).
+		Order("specforge_implementation_plans.created_at DESC, specforge_implementation_plans.id DESC").
+		First(&plan).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return r.findBundle(ctx, "id = ?", plan.ID)
+}
+
 func (r *repository) FindPlanBundleByPlanID(ctx context.Context, planID uint) (*domain.SpecForgePlanBundle, error) {
 	var plan ImplementationPlanPO
 	if err := r.db.WithContext(ctx).First(&plan, planID).Error; err != nil {

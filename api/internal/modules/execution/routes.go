@@ -7,6 +7,7 @@ func (h *Handler) RegisterRoutes(r *router.Router) {
 		auth.WithMiddleware("auth")
 
 		auth.POST("/plans/:id/run", h.StartRun).Name("specforge.plans.runs.store").WhereNumber("id")
+		auth.GET("/plans/:id/run/latest", h.GetLatestPlanRun).Name("specforge.plans.runs.latest").WhereNumber("id")
 		auth.GET("/runs/:id", h.GetRun).Name("specforge.runs.show").WhereNumber("id")
 		auth.POST("/runs/:id/dispatch", h.DispatchRun).Name("specforge.runs.dispatch").WhereNumber("id")
 		auth.POST("/runs/:id/cancel", h.CancelRun).Name("specforge.runs.cancel").WhereNumber("id")

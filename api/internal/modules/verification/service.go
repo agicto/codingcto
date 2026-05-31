@@ -377,7 +377,7 @@ func (s *service) createMissingCILogAttempt(ctx context.Context, userID, prNodeI
 		CILogExcerpt:      missingCILogExcerpt(req),
 		Status:            domain.FixAttemptStatusFailed,
 		Confidence:        0.35,
-		LikelyCause:       fmt.Sprintf("GitHub Actions completed with %s, but SpecForge could not read a failed job log.", conclusion),
+		LikelyCause:       fmt.Sprintf("GitHub Actions completed with %s, but CodingCTO could not read a failed job log.", conclusion),
 		RecommendedAction: "Open the workflow run in GitHub, inspect the failed or incomplete job, then decide whether to retry auto-fix with a narrower prompt or replan this PR node.",
 		CanAutoFix:        false,
 		WorkflowRunID:     req.WorkflowRunID,
@@ -390,7 +390,7 @@ func missingCILogExcerpt(req *CreateFixAttemptFromCIRequest) string {
 	if req == nil {
 		return "CI failed, but no workflow metadata was available."
 	}
-	lines := []string{"CI failed, but SpecForge could not read failed job logs."}
+	lines := []string{"CI failed, but CodingCTO could not read failed job logs."}
 	if req.WorkflowRunID > 0 {
 		lines = append(lines, fmt.Sprintf("Workflow run ID: %d", req.WorkflowRunID))
 	}

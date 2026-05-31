@@ -51,7 +51,10 @@ export const specForgeKeys = {
     [...specForgeKeys.all, 'project-skills', projectId] as const,
   planSkillRuns: (planId: number) => [...specForgeKeys.all, 'plan-skill-runs', planId] as const,
   ideaPlan: (ideaId: number) => [...specForgeKeys.all, 'idea-plan', ideaId] as const,
+  latestProjectPlan: (projectId: number) =>
+    [...specForgeKeys.all, 'latest-project-plan', projectId] as const,
   run: (runId: number) => [...specForgeKeys.all, 'run', runId] as const,
+  latestPlanRun: (planId: number) => [...specForgeKeys.all, 'latest-plan-run', planId] as const,
   taskEvents: (taskId: number, afterSeq?: number) =>
     [...specForgeKeys.all, 'task-events', taskId, afterSeq ?? 0] as const,
   fixAttempts: (prNodeId: number) => [...specForgeKeys.all, 'fix-attempts', prNodeId] as const,
@@ -159,6 +162,15 @@ export function usePlanForIdea(ideaId?: number) {
   });
 }
 
+export function useLatestProjectPlan(projectId?: number) {
+  return useQuery({
+    queryKey: specForgeKeys.latestProjectPlan(projectId ?? 0),
+    queryFn: () => specForgeService.getLatestProjectPlan(projectId ?? 0, silentQueryConfig),
+    enabled: Boolean(projectId),
+    meta: silentQueryMeta,
+  });
+}
+
 export function useExecutionRun(
   runId?: number,
   options?: { enabled?: boolean; refetchInterval?: number | false }
@@ -168,6 +180,19 @@ export function useExecutionRun(
     queryFn: () => specForgeService.getRun(runId ?? 0),
     enabled: Boolean(runId) && (options?.enabled ?? true),
     refetchInterval: options?.refetchInterval,
+  });
+}
+
+export function useLatestPlanRun(
+  planId?: number,
+  options?: { enabled?: boolean; refetchInterval?: number | false }
+) {
+  return useQuery({
+    queryKey: specForgeKeys.latestPlanRun(planId ?? 0),
+    queryFn: () => specForgeService.getLatestPlanRun(planId ?? 0, silentQueryConfig),
+    enabled: Boolean(planId) && (options?.enabled ?? true),
+    refetchInterval: options?.refetchInterval,
+    meta: silentQueryMeta,
   });
 }
 
@@ -333,12 +358,19 @@ export function useCreateSpecForgeIdea(repoId: string) {
 }
 
 export function useCreateSpecForgeProjectIdea(projectId?: number) {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: (payload: CreateIdeaPayload) => {
       if (!projectId) {
         throw new Error('Project ID is required to create a project-scoped CodingCTO requirement.');
       }
       return specForgeService.createProjectRequirement(projectId, payload);
+    },
+    onSuccess: () => {
+      if (projectId) {
+        queryClient.invalidateQueries({ queryKey: specForgeKeys.latestProjectPlan(projectId) });
+      }
     },
   });
 }
@@ -351,6 +383,11 @@ export function useApproveSpecForgePlan() {
       specForgeService.approvePlan(planId, payload),
     onSuccess: bundle => {
       queryClient.invalidateQueries({ queryKey: specForgeKeys.ideaPlan(bundle.idea.id) });
+      if (bundle.idea.project_id) {
+        queryClient.invalidateQueries({
+          queryKey: specForgeKeys.latestProjectPlan(bundle.idea.project_id),
+        });
+      }
     },
   });
 }
@@ -431,6 +468,7 @@ export function useStartExecutionRun() {
       specForgeService.startRun(planId, payload),
     onSuccess: bundle => {
       queryClient.setQueryData(specForgeKeys.run(bundle.run.id), bundle);
+      queryClient.setQueryData(specForgeKeys.latestPlanRun(bundle.run.plan_id), bundle);
     },
   });
 }
@@ -443,6 +481,7 @@ export function useDispatchExecutionRun() {
       specForgeService.dispatchRun(runId, payload),
     onSuccess: bundle => {
       queryClient.setQueryData(specForgeKeys.run(bundle.run.id), bundle);
+      queryClient.setQueryData(specForgeKeys.latestPlanRun(bundle.run.plan_id), bundle);
     },
   });
 }
@@ -454,6 +493,7 @@ export function useCancelExecutionRun() {
     mutationFn: (runId: number) => specForgeService.cancelRun(runId),
     onSuccess: bundle => {
       queryClient.setQueryData(specForgeKeys.run(bundle.run.id), bundle);
+      queryClient.setQueryData(specForgeKeys.latestPlanRun(bundle.run.plan_id), bundle);
     },
   });
 }

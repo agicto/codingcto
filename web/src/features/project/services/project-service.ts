@@ -17,6 +17,18 @@ export interface ProjectDTO {
   updated_at: string;
 }
 
+export interface WorkspaceDTO {
+  id: number;
+  workspace_id: string;
+  name: string;
+  slug: string;
+  description: string;
+  status: 'active' | 'archived' | string;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ProjectRepositoryDTO {
   id: number;
   workspace_id: string;
@@ -117,12 +129,25 @@ export interface CreateProjectPayload {
   description?: string;
 }
 
+export interface CreateWorkspacePayload {
+  workspace_id?: string;
+  name: string;
+  slug?: string;
+  description?: string;
+}
+
 export interface BindRepositoryPayload {
   repository_id: string;
   role: 'primary' | 'dependency' | 'docs' | 'infra';
 }
 
 export const projectService = {
+  listWorkspaces: (config?: RequestConfig) =>
+    request.get<{ workspaces: WorkspaceDTO[] }>('/workspaces', config),
+
+  createWorkspace: (payload: CreateWorkspacePayload, config?: RequestConfig) =>
+    request.post<{ workspace: WorkspaceDTO }, CreateWorkspacePayload>('/workspaces', payload, config),
+
   listProjects: (workspaceId: string, config?: RequestConfig) =>
     request.get<{ projects: ProjectDTO[] }>(
       `/projects?workspace_id=${encodeURIComponent(workspaceId)}`,

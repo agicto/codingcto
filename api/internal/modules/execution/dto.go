@@ -12,10 +12,14 @@ type DispatchExecutionRunRequest struct {
 }
 
 type RuntimeHeartbeatRequest struct {
-	RuntimeID string `json:"runtime_id" binding:"required,max=100"`
-	Executor  string `json:"executor" binding:"omitempty,max=100"`
-	Hostname  string `json:"hostname" binding:"omitempty,max=255"`
-	Version   string `json:"version" binding:"omitempty,max=100"`
+	RuntimeID       string                             `json:"runtime_id" binding:"required,max=100"`
+	Executor        string                             `json:"executor" binding:"omitempty,max=100"`
+	Hostname        string                             `json:"hostname" binding:"omitempty,max=255"`
+	Version         string                             `json:"version" binding:"omitempty,max=100"`
+	AvailableCLIs   []domain.SpecForgeRuntimeCLI       `json:"available_clis" binding:"omitempty,max=20,dive"`
+	Sandbox         *domain.SpecForgeRuntimeSandbox    `json:"sandbox" binding:"omitempty"`
+	SkillRoots      []domain.SpecForgeRuntimeSkillRoot `json:"skill_roots" binding:"omitempty,max=20,dive"`
+	LocalSkillCount int                                `json:"local_skill_count" binding:"omitempty,min=0,max=10000"`
 }
 
 type RuntimeSweepRequest struct {

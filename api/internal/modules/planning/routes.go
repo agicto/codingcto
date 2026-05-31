@@ -8,6 +8,7 @@ func (h *Handler) RegisterRoutes(r *router.Router) {
 
 		auth.POST("/projects/:id/requirements", h.CreateProjectRequirement).Name("specforge.projects.requirements.store").WhereNumber("id")
 		auth.POST("/projects/:id/ideas", h.CreateProjectIdea).Name("specforge.projects.ideas.store").WhereNumber("id")
+		auth.GET("/projects/:id/specforge/latest-plan", h.GetLatestProjectPlan).Name("specforge.projects.latest_plan").WhereNumber("id")
 		auth.GET("/projects/:id/skills", h.ListProjectSkills).Name("specforge.projects.skills.index").WhereNumber("id")
 		auth.POST("/projects/:id/skills", h.UpsertProjectSkill).Name("specforge.projects.skills.store").WhereNumber("id")
 		auth.POST("/repositories/:repo_id/ideas", h.CreateIdea).Name("specforge.ideas.store")
