@@ -118,7 +118,7 @@ func (s *service) InferProfile(ctx context.Context, userID uint, repoID string, 
 	}
 	paths, filteredCount := filterSensitivePaths(rawPaths)
 	if filteredCount > 0 {
-		warnings = append(warnings, fmt.Sprintf("SpecForge filtered %d sensitive repository paths from the inferred profile.", filteredCount))
+		warnings = append(warnings, fmt.Sprintf("CodingCTO filtered %d sensitive repository paths from the inferred profile.", filteredCount))
 	}
 	scripts := normalizeScripts(req.PackageScripts)
 	if len(scripts) == 0 && len(paths) > 0 && s.treeSource != nil {
@@ -174,7 +174,7 @@ func (s *service) ReindexArchitecture(ctx context.Context, userID uint, repoID s
 	}
 	paths, filteredCount := filterSensitivePaths(rawPaths)
 	if filteredCount > 0 {
-		warnings = append(warnings, fmt.Sprintf("SpecForge filtered %d sensitive repository paths from the architecture snapshot.", filteredCount))
+		warnings = append(warnings, fmt.Sprintf("CodingCTO filtered %d sensitive repository paths from the architecture snapshot.", filteredCount))
 	}
 	if ref == "" {
 		ref = "main"
@@ -687,7 +687,7 @@ func hasExtension(paths []string, extensions ...string) bool {
 }
 
 func inferredSummary(stack []string, ciProvider string, appStructure []string) string {
-	parts := []string{"SpecForge inferred this repository profile from repository file paths"}
+	parts := []string{"CodingCTO inferred this repository profile from repository file paths"}
 	if len(stack) > 0 {
 		parts = append(parts, "stack: "+strings.Join(normalizeList(stack), ", "))
 	}

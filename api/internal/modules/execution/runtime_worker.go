@@ -11,15 +11,19 @@ import (
 )
 
 type RuntimeWorkerConfig struct {
-	RuntimeID    string
-	Executor     string
-	Hostname     string
-	Version      string
-	RepositoryID string
-	RepoDir      string
-	SessionID    string
-	PollInterval time.Duration
-	Env          map[string]string
+	RuntimeID       string
+	Executor        string
+	Hostname        string
+	Version         string
+	RepositoryID    string
+	RepoDir         string
+	SessionID       string
+	PollInterval    time.Duration
+	Env             map[string]string
+	AvailableCLIs   []domain.SpecForgeRuntimeCLI
+	Sandbox         *domain.SpecForgeRuntimeSandbox
+	SkillRoots      []domain.SpecForgeRuntimeSkillRoot
+	LocalSkillCount int
 }
 
 type RuntimeWorker struct {
@@ -54,10 +58,14 @@ func (w *RuntimeWorker) RunOnce(ctx context.Context) (*RuntimeWorkerResult, erro
 		return nil, domain.ErrInvalidInput
 	}
 	heartbeat, err := w.client.Heartbeat(ctx, &RuntimeHeartbeatRequest{
-		RuntimeID: w.cfg.RuntimeID,
-		Executor:  w.cfg.Executor,
-		Hostname:  w.cfg.Hostname,
-		Version:   w.cfg.Version,
+		RuntimeID:       w.cfg.RuntimeID,
+		Executor:        w.cfg.Executor,
+		Hostname:        w.cfg.Hostname,
+		Version:         w.cfg.Version,
+		AvailableCLIs:   w.cfg.AvailableCLIs,
+		Sandbox:         w.cfg.Sandbox,
+		SkillRoots:      w.cfg.SkillRoots,
+		LocalSkillCount: w.cfg.LocalSkillCount,
 	})
 	if err != nil {
 		return nil, err

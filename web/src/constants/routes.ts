@@ -20,8 +20,8 @@ export const ROUTES = {
     HOME: '/console',
     PROJECTS: '/console/projects',
     PROJECT: '/console/projects/:projectId',
-    PROJECT_SPECFORGE: '/console/projects/:projectId/specforge',
-    SPECFORGE: '/console/specforge',
+    PROJECT_SPECFORGE: '/console/projects/:projectId/codingcto',
+    SPECFORGE: '/console/codingcto',
     SETTINGS: '/console/settings',
   },
 
@@ -45,18 +45,15 @@ export type ConsoleRoute = (typeof ROUTES.CONSOLE)[ConsoleRoutes];
 export type DevtoolsRoute = (typeof ROUTES.DEVTOOLS)[DevtoolsRoutes];
 
 // Dynamic route builder with type checking
-export function buildRoute(
-  basePath: string,
-  params?: Record<string, string | number>
-): string {
+export function buildRoute(basePath: string, params?: Record<string, string | number>): string {
   let route = basePath;
-  
+
   if (params) {
     Object.entries(params).forEach(([key, value]) => {
       route = route.replace(`:${key}`, String(value));
     });
   }
-  
+
   return route;
 }
 

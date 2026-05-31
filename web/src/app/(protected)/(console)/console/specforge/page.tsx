@@ -1,5 +1,5 @@
-import { SpecForgeWorkbench } from "@/features/specforge";
+import { redirect } from 'next/navigation';
 
 export default function SpecForgePage() {
-  return <SpecForgeWorkbench />;
+  redirect('/console/codingcto');
 }

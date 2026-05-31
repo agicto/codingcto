@@ -1,9 +1,12 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
+import { startTransition, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   ArrowRight,
+  Boxes,
+  Building2,
   CheckCircle2,
   CircleDot,
   CircleX,
@@ -26,10 +29,24 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/utils';
+import { projectSpecForgeHref, slugFromProjectName } from '@/features/project/project-utils';
+import {
+  useCreateProject,
+  useCreateWorkspace,
+  useProjects,
+} from '@/features/project/hooks/use-projects';
+import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
 import {
   executionRunFromDTO,
   planBundleFromDTO,
@@ -60,6 +77,8 @@ import {
   useExecutionRun,
   useGitHubRepositories,
   useGitHubWebhookEvents,
+  useLatestPlanRun,
+  useLatestProjectPlan,
   useInferRepoProfile,
   usePrepareSpecForgePRNodeBranch,
   useRepoProfile,
@@ -97,6 +116,10 @@ import {
   executionRangeReview,
   selectExecutionNode,
 } from '@/features/specforge/execution-range';
+import {
+  executionReadinessForExecutor,
+  type ExecutionReadiness,
+} from '@/features/specforge/execution-readiness';
 import type {
   CompilePromptPayload,
   SpecForgeFixAttemptDTO,
@@ -136,50 +159,27 @@ import type {
 } from '@/features/specforge/types';
 
 const statusLabel: Record<PRNode['status'], string> = {
-  planned: '已计划',
-  queued: '排队中',
-  running: '执行中',
-  waiting_on_dependencies: '等待依赖',
-  pr_opened: 'PR 已创建',
-  ci_running: 'CI 运行中',
-  ready_for_review: '可评审',
-  blocked: '阻塞',
-  merged: '已合并',
-  closed: '已关闭',
-  completed: '已完成',
-  failed: '失败',
-  cancelled: '已取消',
-};
-const runStatusLabel: Partial<Record<ExecutionRun['status'], string>> = {
-  idle: '尚未开始',
-  queued: '排队中',
-  running: '执行中',
-  blocked: '阻塞',
-  completed: '已完成',
-  cancelled: '已取消',
-};
-const genericStatusLabel: Record<string, string> = {
-  pending: '待运行',
-  online: '在线',
-  offline: '离线',
-  unstable: '不稳定',
-  success: '成功',
-  succeeded: '成功',
-  failure: '失败',
-  failed: '失败',
-  queued: '排队中',
-  running: '执行中',
-  completed: '已完成',
-  cancelled: '已取消',
-  blocked: '阻塞',
+  planned: 'Planned',
+  queued: 'Queued',
+  running: 'Running',
+  waiting_on_dependencies: 'Waiting',
+  pr_opened: 'PR opened',
+  ci_running: 'CI running',
+  ready_for_review: 'Ready',
+  blocked: 'Blocked',
+  merged: 'Merged',
+  closed: 'Closed',
+  completed: 'Completed',
+  failed: 'Failed',
+  cancelled: 'Cancelled',
 };
 const maxFixAttemptsPerNode = 3;
 type PromptMode = NonNullable<CompilePromptPayload['type']>;
 const promptModes: PromptMode[] = ['implementation', 'fix', 'review_patch'];
 const promptModeLabel: Record<PromptMode, string> = {
-  implementation: '实现',
-  fix: '修复',
-  review_patch: '评审修订',
+  implementation: 'Implement',
+  fix: 'Fix',
+  review_patch: 'Review',
 };
 
 function statusClassName(status: PRNode['status'] | string) {
@@ -204,27 +204,18 @@ function statusClassName(status: PRNode['status'] | string) {
   return 'border-border bg-bg-surface text-text-subtle';
 }
 
-function displayStatus(status: string) {
-  return (
-    statusLabel[status as PRNode['status']] ??
-    runStatusLabel[status as ExecutionRun['status']] ??
-    genericStatusLabel[status] ??
-    status.replaceAll('_', ' ')
-  );
-}
-
 function repoProfileSourceLabel(source: string) {
   switch (source) {
     case 'github_tree':
-      return 'GitHub 目录';
+      return 'GitHub tree';
     case 'request_hints':
-      return '需求线索';
+      return 'Request hints';
     case 'manual':
-      return '手动画像';
+      return 'Manual profile';
     case 'demo':
-      return '演示画像';
+      return 'Demo profile';
     default:
-      return '未知来源';
+      return 'Unknown source';
   }
 }
 
@@ -271,12 +262,14 @@ export function SpecForgeWorkbench({
   repositoryLocked = false,
 }: SpecForgeWorkbenchProps = {}) {
   const searchParams = useSearchParams();
-  const initialRepoId = initialRepositoryId?.trim() || demoPlan.repoProfile.repositoryId;
   const repoIdFromURL = searchParams.get('repo_id')?.trim();
-  const [idea, setIdea] = useState(defaultIdea);
-  const [repoIdOverride, setRepoIdOverride] = useState<string | null>(null);
+  const initialRepoId =
+    initialRepositoryId?.trim() || repoIdFromURL || demoPlan.repoProfile.repositoryId;
+  const initialIdea = projectId ? '' : defaultIdea;
+  const [idea, setIdea] = useState(initialIdea);
+  const [repoId, setRepoId] = useState(initialRepoId);
   const [activePlan, setActivePlan] = useState<PlanBundle>(() =>
-    demoPlanForInput(defaultIdea, initialRepoId)
+    demoPlanForInput(initialIdea || defaultIdea, initialRepoId)
   );
   const activePlanRef = useRef(activePlan);
   const [decisionOverrides, setDecisionOverrides] = useState<Record<string, string>>(() =>
@@ -285,8 +278,10 @@ export function SpecForgeWorkbench({
   const [selectedExecutionNodeIds, setSelectedExecutionNodeIds] = useState<string[]>(() =>
     demoPlan.prNodes.map(node => node.id)
   );
-  const [planSource, setPlanSource] = useState<'api' | 'demo'>('demo');
-  const [hasPlan, setHasPlan] = useState(true);
+  const [planSource, setPlanSource] = useState<'api' | 'demo' | 'empty'>(
+    projectId ? 'empty' : 'demo'
+  );
+  const [hasPlan, setHasPlan] = useState(!projectId);
   const [approved, setApproved] = useState(false);
   const [run, setRun] = useState<ExecutionRun>({
     status: 'idle',
@@ -297,22 +292,28 @@ export function SpecForgeWorkbench({
     'intake' | 'plan' | 'dag' | 'run' | 'context'
   >('intake');
   const [currentRuntimeNow] = useState(() => Date.now());
-  const connectedRepositoriesQuery = useGitHubRepositories({ workspace_id: 'default' });
+  const { selectedWorkspaceId } = useSelectedWorkspace();
+  const connectedRepositoriesQuery = useGitHubRepositories(
+    selectedWorkspaceId ? { workspace_id: selectedWorkspaceId } : undefined
+  );
   const connectedRepositories = useMemo(
     () => connectedRepositoriesQuery.data?.repositories ?? [],
     [connectedRepositoriesQuery.data?.repositories]
   );
-  const repoId =
-    repoIdOverride ||
-    initialRepositoryId?.trim() ||
-    repoIdFromURL ||
-    connectedRepositories[0]?.repository_id ||
-    demoPlan.repoProfile.repositoryId;
+  const defaultConnectedRepository = connectedRepositories[0];
+  const effectiveRepoId =
+    !initialRepositoryId?.trim() &&
+    !repoIdFromURL &&
+    !repositoryLocked &&
+    repoId === demoPlan.repoProfile.repositoryId &&
+    defaultConnectedRepository
+      ? defaultConnectedRepository.repository_id
+      : repoId;
   const selectedGitHubRepository = connectedRepositories.find(
-    repository => repository.repository_id === repoId.trim()
+    repository => repository.repository_id === effectiveRepoId.trim()
   );
 
-  const createIdea = useCreateSpecForgeIdea(repoId.trim());
+  const createIdea = useCreateSpecForgeIdea(effectiveRepoId.trim());
   const createProjectIdea = useCreateSpecForgeProjectIdea(projectId);
   const approvePlan = useApproveSpecForgePlan();
   const startRun = useStartExecutionRun();
@@ -324,30 +325,48 @@ export function SpecForgeWorkbench({
     enabled: Boolean(run.runId),
     refetchInterval: run.status === 'queued' || run.status === 'running' ? 5000 : false,
   });
+  const latestProjectPlanQuery = useLatestProjectPlan(projectId);
+  const latestPlanRunQuery = useLatestPlanRun(activePlan.planId, {
+    enabled: Boolean(projectId && activePlan.planId && planSource === 'api' && !run.runId),
+    refetchInterval: false,
+  });
   const readyCount = run.tasks.filter(task => isPRNodeDelivered(task.status)).length;
   const runningCount = run.tasks.filter(task => isPRNodeActive(task.status)).length;
   const runtimesQuery = useSpecForgeRuntimes({ limit: 20 });
   const runtimeDTOs = runtimesQuery.data?.runtimes;
+  const useRuntimeFallback = !projectId && Boolean(runtimesQuery.isError || !runtimeDTOs?.length);
   const runtimes = useMemo(() => {
     if (runtimeDTOs?.length) {
       return runtimeDTOs.map(runtimeFromDTO);
     }
-    return demoRuntimes;
-  }, [runtimeDTOs]);
-  const runtimeNow = runtimeDTOs?.length ? currentRuntimeNow : demoRuntimeNow;
+    return useRuntimeFallback ? demoRuntimes : [];
+  }, [runtimeDTOs, useRuntimeFallback]);
+  const runtimeNow = runtimeDTOs?.length
+    ? currentRuntimeNow
+    : useRuntimeFallback
+      ? demoRuntimeNow
+      : currentRuntimeNow;
   const runtimeSummary = useMemo(
     () => summarizeRuntimeHealth(runtimes, runtimeNow),
     [runtimes, runtimeNow]
   );
+  const executionReadiness = useMemo(
+    () =>
+      executionReadinessForExecutor({
+        runtimes,
+        executor: 'codex_cli',
+        now: runtimeNow,
+        allowFallback: useRuntimeFallback,
+      }),
+    [runtimeNow, runtimes, useRuntimeFallback]
+  );
 
   const progressText = useMemo(() => {
     if (run.status === 'idle') {
-      return runtimeSummary.online > 0
-        ? '等待方案审批；已有健康执行器可用'
-        : '等待方案审批；暂无健康执行器在线';
+      return `Awaiting plan approval; ${executionReadiness.reason}`;
     }
-    return `${readyCount} / ${run.tasks.length} 个 PR 节点已就绪或已合并`;
-  }, [readyCount, run.status, run.tasks.length, runtimeSummary.online]);
+    return `${readyCount} / ${run.tasks.length} PR nodes ready or merged`;
+  }, [executionReadiness.reason, readyCount, run.status, run.tasks.length]);
 
   useEffect(() => {
     activePlanRef.current = activePlan;
@@ -366,9 +385,43 @@ export function SpecForgeWorkbench({
     setApproved(true);
   }, [runQuery.data]);
 
+  useEffect(() => {
+    if (!projectId || !latestProjectPlanQuery.data) {
+      return;
+    }
+
+    startTransition(() => {
+      const nextPlan = planBundleFromDTO(latestProjectPlanQuery.data);
+      setActivePlan(nextPlan);
+      setDecisionOverrides(defaultDecisionOverrides(nextPlan));
+      setSelectedExecutionNodeIds(nextPlan.prNodes.map(node => node.id));
+      setIdea(nextPlan.idea);
+      setRepoId(nextPlan.repoProfile.repositoryId);
+      setPlanSource('api');
+      setHasPlan(true);
+      setApproved(nextPlan.implementationPlan.status === 'approved');
+      setRun({ status: 'idle', selectedPRNodeIds: [], tasks: nextPlan.prNodes });
+    });
+  }, [latestProjectPlanQuery.data, projectId]);
+
+  useEffect(() => {
+    if (!projectId || !latestPlanRunQuery.data) {
+      return;
+    }
+
+    startTransition(() => {
+      const next = executionRunFromDTO(latestPlanRunQuery.data, activePlanRef.current);
+      if (next.plan) {
+        setActivePlan(next.plan);
+      }
+      setRun(next.run);
+      setApproved(true);
+    });
+  }, [latestPlanRunQuery.data, projectId]);
+
   async function generatePlan() {
     const trimmedIdea = idea.trim();
-    const trimmedRepoId = repoId.trim();
+    const trimmedRepoId = effectiveRepoId.trim();
     if (!trimmedIdea || !trimmedRepoId) {
       return;
     }
@@ -391,6 +444,12 @@ export function SpecForgeWorkbench({
       setHasPlan(true);
       setRun({ status: 'idle', selectedPRNodeIds: [], tasks: nextPlan.prNodes });
     } catch {
+      if (projectId) {
+        setPlanSource('empty');
+        setHasPlan(false);
+        setRun({ status: 'idle', selectedPRNodeIds: [], tasks: [] });
+        return;
+      }
       const fallbackPlan = demoPlanForInput(trimmedIdea, trimmedRepoId);
       setActivePlan(fallbackPlan);
       setDecisionOverrides(defaultDecisionOverrides(fallbackPlan));
@@ -408,18 +467,19 @@ export function SpecForgeWorkbench({
       repoIdFromURL ||
       defaultRepository?.repository_id ||
       demoPlan.repoProfile.repositoryId;
-    setIdea(defaultIdea);
-    setRepoIdOverride(resetRepoId);
-    const resetPlan = demoPlanForInput(defaultIdea, resetRepoId);
+    const resetInput = projectId ? '' : defaultIdea;
+    setIdea(resetInput);
+    setRepoId(resetRepoId);
+    const resetPlan = demoPlanForInput(resetInput || defaultIdea, resetRepoId);
     resetPlan.repoProfile.defaultBranch =
       defaultRepository?.default_branch ?? resetPlan.repoProfile.defaultBranch;
     setActivePlan(resetPlan);
     setDecisionOverrides(defaultDecisionOverrides(resetPlan));
-    setSelectedExecutionNodeIds(resetPlan.prNodes.map(node => node.id));
-    setPlanSource('demo');
-    setHasPlan(true);
+    setSelectedExecutionNodeIds(projectId ? [] : resetPlan.prNodes.map(node => node.id));
+    setPlanSource(projectId ? 'empty' : 'demo');
+    setHasPlan(!projectId);
     setApproved(false);
-    setRun({ status: 'idle', selectedPRNodeIds: [], tasks: resetPlan.prNodes });
+    setRun({ status: 'idle', selectedPRNodeIds: [], tasks: projectId ? [] : resetPlan.prNodes });
   }
 
   async function approveAndStart() {
@@ -454,6 +514,9 @@ export function SpecForgeWorkbench({
         });
         const dispatched = await dispatchRun.mutateAsync({
           runId: started.run.id,
+          payload: {
+            require_runtime_ready: true,
+          },
         });
         const next = executionRunFromDTO(dispatched, approvedPlan);
         if (next.plan) {
@@ -465,6 +528,10 @@ export function SpecForgeWorkbench({
       } catch {
         // Keep the workbench usable when the API is unavailable in local web-only dev.
       }
+    }
+
+    if (projectId) {
+      return;
     }
 
     const startedAt = new Date().toISOString();
@@ -567,88 +634,95 @@ export function SpecForgeWorkbench({
   const deliveryStages = [
     {
       id: 'intake',
-      title: '需求录入',
+      title: 'Idea intake',
       tone: 'bg-bg-surface',
-      emptyLabel: '等待需求',
+      emptyLabel: 'Waiting for idea',
       items: [
         {
           id: 'intake' as const,
           key: 'IDEA',
-          title: '录入产品意图',
-          description: '描述功能目标、约束条件和验收边界。',
-          status: idea.trim() ? '可生成方案' : '需要输入',
+          title: 'Capture product intent',
+          description: 'Describe the feature outcome, constraints, and acceptance boundaries.',
+          status: idea.trim() ? 'Ready for planning' : 'Needs input',
           icon: Sparkles,
         },
       ],
     },
     {
       id: 'context',
-      title: '仓库上下文',
+      title: 'Repo intelligence',
       tone: 'bg-bg-subtle/70',
-      emptyLabel: '未选择仓库',
+      emptyLabel: 'No repo selected',
       items: [
         {
           id: 'context' as const,
           key: 'CTX',
-          title: '分析仓库和技能',
-          description: `${activePlan.repoProfile.stack.slice(0, 3).join(', ')} · ${repoId}`,
-          status: planSource === 'api' ? 'API 上下文' : '演示兜底',
+          title: 'Analyze repos and skills',
+          description: `${activePlan.repoProfile.stack.slice(0, 3).join(', ')} · ${effectiveRepoId}`,
+          status:
+            planSource === 'api'
+              ? 'API context'
+              : planSource === 'empty'
+                ? 'Awaiting plan'
+                : 'Demo fallback',
           icon: GitBranch,
         },
       ],
     },
     {
       id: 'planning',
-      title: '方案规划',
+      title: 'Planning',
       tone: 'bg-warning-subtle',
-      emptyLabel: '尚未生成方案',
+      emptyLabel: 'Plan not generated',
       items: [
         {
           id: 'plan' as const,
           key: 'PLAN',
-          title: '审批产品和技术方案',
-          description: `${activePlan.prNodes.length} 个 PR 节点 · 一次审批检查点`,
-          status: approved ? '已审批' : '待评审',
+          title: 'Approve product and tech plan',
+          description: hasPlan
+            ? `${activePlan.prNodes.length} PR nodes · one approval checkpoint`
+            : 'Generate a project-scoped plan to continue',
+          status: hasPlan ? (approved ? 'Approved' : 'Needs review') : 'No plan',
           icon: ScrollText,
         },
         {
           id: 'dag' as const,
           key: 'PROMPT',
-          title: '编译 PR DAG 和提示词',
-          description: '检查依赖、文件范围、测试和提示词契约。',
-          status: `${activePlan.prNodes.length} 个节点`,
+          title: 'Compile PR DAG and prompts',
+          description: 'Check dependencies, file scope, tests, and prompt contracts.',
+          status: hasPlan ? `${activePlan.prNodes.length} nodes` : 'No plan',
           icon: GitMerge,
         },
       ],
     },
     {
       id: 'execution',
-      title: '执行',
+      title: 'Execution',
       tone: 'bg-success-subtle',
-      emptyLabel: '尚未开始执行',
+      emptyLabel: 'No run started',
       items: [
         {
           id: 'run' as const,
           key: 'RUN',
-          title: '运行 Codex 并交付 PR',
+          title: 'Run Codex and deliver PRs',
           description: progressText,
-          status: displayStatus(run.status),
+          status: hasPlan ? (run.status === 'idle' ? 'Not started' : run.status) : 'No plan',
           icon: Play,
         },
       ],
     },
     {
       id: 'delivery',
-      title: 'PR 交付',
+      title: 'PR delivery',
       tone: 'bg-info-subtle',
-      emptyLabel: '执行后 PR 会出现在这里',
+      emptyLabel: 'PRs appear here after execution',
       items: [],
     },
     {
       id: 'blocked',
-      title: '需要决策',
+      title: 'Decision needed',
       tone: 'bg-error-subtle',
-      emptyLabel: '暂无升级事项',
+      emptyLabel: 'No escalation',
       items: [],
     },
   ];
@@ -659,47 +733,56 @@ export function SpecForgeWorkbench({
         <div className="flex items-center gap-3">
           <ListChecks className="h-4 w-4 text-primary" />
           <div>
-            <h1 className="text-base font-semibold">项目指挥中心</h1>
+            <h1 className="text-base font-semibold">Project command center</h1>
             <p className="text-xs text-text-muted">
-              {projectLabel ? `${projectLabel} · ` : ''}从需求到方案、提示词、Codex 执行和 PR 交付
+              {projectLabel ? `${projectLabel} · ` : ''}Idea to plan, prompts, Codex run, and PR
+              delivery
             </p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{runningCount} 个运行中任务</Badge>
+          <Badge variant="outline">{runningCount} active runs</Badge>
           <Button variant="outline" size="sm" onClick={() => setSelectedWorkItem('context')}>
-            分析仓库
+            Analyze repo
           </Button>
           <Button variant="outline" size="sm" onClick={() => setSelectedWorkItem('plan')}>
-            手动方案
+            Manual plan
           </Button>
           <Button variant="outline" size="sm" onClick={() => setSelectedWorkItem('dag')}>
-            流水线
+            Pipeline
           </Button>
         </div>
       </header>
 
+      {!projectId && <WorkspaceProjectLaunchPanel />}
+
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle px-4">
         <Button
-          variant={selectedWorkItem === 'intake' || selectedWorkItem === 'context' ? 'secondary' : 'outline'}
+          variant={
+            selectedWorkItem === 'intake' || selectedWorkItem === 'context'
+              ? 'secondary'
+              : 'outline'
+          }
           size="sm"
           onClick={() => setSelectedWorkItem('intake')}
         >
-          全部工作
+          All work
         </Button>
         <Button
-          variant={selectedWorkItem === 'plan' || selectedWorkItem === 'dag' ? 'secondary' : 'outline'}
+          variant={
+            selectedWorkItem === 'plan' || selectedWorkItem === 'dag' ? 'secondary' : 'outline'
+          }
           size="sm"
           onClick={() => setSelectedWorkItem('plan')}
         >
-          方案
+          Plans
         </Button>
         <Button
           variant={selectedWorkItem === 'run' ? 'secondary' : 'outline'}
           size="sm"
           onClick={() => setSelectedWorkItem('run')}
         >
-          执行
+          Runs
         </Button>
       </div>
 
@@ -707,7 +790,10 @@ export function SpecForgeWorkbench({
         <div className="min-w-0 overflow-x-auto p-3">
           <div className="grid h-full min-w-[1320px] grid-cols-6 gap-3">
             {deliveryStages.map(column => (
-              <div key={column.id} className={cn('flex min-h-0 flex-col rounded-xl p-3', column.tone)}>
+              <div
+                key={column.id}
+                className={cn('flex min-h-0 flex-col rounded-xl p-3', column.tone)}
+              >
                 <div className="flex h-8 items-center justify-between text-sm">
                   <div className="flex items-center gap-2 font-medium">
                     <CircleDot className="h-3.5 w-3.5 text-text-muted" />
@@ -747,7 +833,7 @@ export function SpecForgeWorkbench({
                             <span className="rounded-full bg-muted px-2 py-1 text-text-subtle">
                               {item.status}
                             </span>
-                            <span className="text-text-muted">当前</span>
+                            <span className="text-text-muted">Current</span>
                           </div>
                         </button>
                       );
@@ -761,39 +847,39 @@ export function SpecForgeWorkbench({
 
         <aside className="min-h-0 overflow-y-auto border-t border-border-subtle bg-bg-subtle/60 p-4 xl:border-l xl:border-t-0">
           {selectedWorkItem === 'intake' && (
-            <DetailPanel title="IDEA" heading="录入产品意图">
+            <DetailPanel title="IDEA" heading="Capture product intent">
               <div className="space-y-4">
                 <Textarea
                   value={idea}
                   onChange={event => setIdea(event.target.value)}
                   className="min-h-40 bg-bg-surface"
-                  aria-label="描述要让 CodingCTO 拆成可评审 PR 的功能"
-                  placeholder="描述产品目标、约束条件和实现边界..."
+                  aria-label="Describe the feature CodingCTO should turn into reviewable PRs"
+                  placeholder="Describe the product outcome, constraints, and implementation boundaries..."
                 />
                 <div className="space-y-2">
                   <div className="flex items-center justify-between gap-3">
-                    <Label htmlFor="specforge-repository">目标仓库</Label>
+                    <Label htmlFor="specforge-repository">Target repository</Label>
                     {selectedGitHubRepository ? (
                       <Badge
                         variant="outline"
                         className="border-success/30 bg-success-subtle text-success"
                       >
-                        GitHub 已连接
+                        GitHub connected
                       </Badge>
                     ) : (
                       <Badge
                         variant="outline"
                         className="border-warning/30 bg-warning-subtle text-warning"
                       >
-                        未验证
+                        Unverified
                       </Badge>
                     )}
                   </div>
                   {connectedRepositories.length > 0 && !repositoryLocked ? (
                     <select
                       id="specforge-repository"
-                      value={repoId}
-                      onChange={event => setRepoIdOverride(event.target.value)}
+                      value={effectiveRepoId}
+                      onChange={event => setRepoId(event.target.value)}
                       className="h-10 w-full rounded-md border border-border bg-bg-surface px-3 text-sm text-text-main outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/20"
                     >
                       {connectedRepositories.map(repository => (
@@ -802,27 +888,29 @@ export function SpecForgeWorkbench({
                           {repository.default_branch}
                         </option>
                       ))}
-                      {!selectedGitHubRepository && repoId.trim() ? (
-                        <option value={repoId.trim()}>{repoId.trim()} · 手动输入</option>
+                      {!selectedGitHubRepository && effectiveRepoId.trim() ? (
+                        <option value={effectiveRepoId.trim()}>
+                          {effectiveRepoId.trim()} · Manual entry
+                        </option>
                       ) : null}
                     </select>
                   ) : (
                     <Input
                       id="specforge-repository"
-                      value={repoId}
-                      onChange={event => setRepoIdOverride(event.target.value)}
-                      aria-label="仓库 ID"
-                      placeholder="先在设置中连接 GitHub 仓库"
+                      value={effectiveRepoId}
+                      onChange={event => setRepoId(event.target.value)}
+                      aria-label="Repository ID"
+                      placeholder="Repository ID"
                       disabled={repositoryLocked}
                       className="bg-bg-surface"
                     />
                   )}
                   <p className="text-xs leading-5 text-text-muted">
                     {selectedGitHubRepository
-                      ? `后续拆分、分支、提交和 PR 都会在 ${selectedGitHubRepository.github_owner}/${selectedGitHubRepository.github_repo} 下执行。`
+                      ? `Plans, branches, commits, and PRs will target ${selectedGitHubRepository.github_owner}/${selectedGitHubRepository.github_repo}.`
                       : connectedRepositoriesQuery.isLoading
-                        ? '正在读取已连接仓库...'
-                        : '还没有已连接仓库时，可以先去设置页安装 GitHub App 并保存仓库。'}
+                        ? 'Loading connected repositories...'
+                        : 'Connect a GitHub repository in settings to use a verified repository here.'}
                   </p>
                 </div>
                 <div className="flex flex-wrap gap-2">
@@ -830,18 +918,18 @@ export function SpecForgeWorkbench({
                     onClick={generatePlan}
                     disabled={
                       !idea.trim() ||
-                      !repoId.trim() ||
+                      !effectiveRepoId.trim() ||
                       createIdea.isPending ||
                       createProjectIdea.isPending
                     }
                   >
                     {createIdea.isPending || createProjectIdea.isPending
-                      ? '正在生成方案'
-                      : '生成实现方案'}
+                      ? 'Generating'
+                      : 'Generate plan'}
                     <ArrowRight className="ml-1.5 h-4 w-4" />
                   </Button>
                   <Button variant="outline" onClick={resetIdea}>
-                    重置
+                    Reset
                   </Button>
                 </div>
               </div>
@@ -849,10 +937,10 @@ export function SpecForgeWorkbench({
           )}
 
           {selectedWorkItem === 'context' && (
-            <DetailPanel title="仓库上下文" heading="仓库分析和技能">
+            <DetailPanel title="CTX" heading="Repo intelligence and skills">
               <div className="space-y-4">
                 <RepoProfileSummary
-                  repoId={repoId.trim()}
+                  repoId={effectiveRepoId.trim()}
                   repoProfile={activePlan.repoProfile}
                   planSource={planSource}
                   onProfileSaved={profile => {
@@ -862,20 +950,21 @@ export function SpecForgeWorkbench({
                     }));
                   }}
                 />
-                <RepoSkillsPanel repoId={repoId.trim()} projectId={projectId} />
+                <RepoSkillsPanel repoId={effectiveRepoId.trim()} projectId={projectId} />
                 <GitHubWebhookEventsPanel />
               </div>
             </DetailPanel>
           )}
 
           {selectedWorkItem === 'plan' && hasPlan && (
-            <DetailPanel title="方案" heading="评审并批准方案">
+            <DetailPanel title="PLAN" heading="Review and approve plan">
               <PlanReview
                 plan={activePlan}
                 decisionOverrides={decisionOverrides}
                 selectedExecutionNodeIds={selectedExecutionNodeIds}
                 approved={approved}
                 isStarting={isStartingRun}
+                executionReadiness={executionReadiness}
                 onDecisionOverrideChange={(key, value) =>
                   setDecisionOverrides(current => ({ ...current, [key]: value }))
                 }
@@ -885,8 +974,17 @@ export function SpecForgeWorkbench({
             </DetailPanel>
           )}
 
+          {selectedWorkItem === 'plan' && !hasPlan && (
+            <DetailPanel title="PLAN" heading="No project plan yet">
+              <EmptyProjectPlanPanel
+                isLoading={latestProjectPlanQuery.isLoading}
+                onCreate={() => setSelectedWorkItem('intake')}
+              />
+            </DetailPanel>
+          )}
+
           {selectedWorkItem === 'dag' && hasPlan && (
-            <DetailPanel title="提示词" heading="PR DAG 和提示词契约">
+            <DetailPanel title="PROMPT" heading="PR DAG and prompt contracts">
               <PRDag
                 nodes={activePlan.prNodes}
                 repositoryId={activePlan.repoProfile.repositoryId}
@@ -896,8 +994,17 @@ export function SpecForgeWorkbench({
             </DetailPanel>
           )}
 
+          {selectedWorkItem === 'dag' && !hasPlan && (
+            <DetailPanel title="PROMPT" heading="No prompt contract yet">
+              <EmptyProjectPlanPanel
+                isLoading={latestProjectPlanQuery.isLoading}
+                onCreate={() => setSelectedWorkItem('intake')}
+              />
+            </DetailPanel>
+          )}
+
           {selectedWorkItem === 'run' && (
-            <DetailPanel title="执行" heading="执行和 PR 交付">
+            <DetailPanel title="RUN" heading="Execution and PR delivery">
               <div className="space-y-4">
                 <RunSummary progressText={progressText} approved={approved} run={run} />
                 <RuntimeReadiness
@@ -905,7 +1012,8 @@ export function SpecForgeWorkbench({
                   recentlyLostCount={runtimeSummary.recently_lost}
                   runtimes={runtimes}
                   isLoading={runtimesQuery.isLoading}
-                  isFallback={Boolean(runtimesQuery.isError || !runtimeDTOs?.length)}
+                  isFallback={useRuntimeFallback}
+                  readinessReason={executionReadiness.reason}
                 />
                 <ExecutionStatus
                   run={run}
@@ -943,18 +1051,49 @@ function DetailPanel({
   );
 }
 
+function EmptyProjectPlanPanel({
+  isLoading,
+  onCreate,
+}: {
+  isLoading: boolean;
+  onCreate: () => void;
+}) {
+  return (
+    <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
+      <div className="flex items-start gap-3">
+        <Info className="mt-0.5 h-4 w-4 text-primary" />
+        <div>
+          <div className="text-sm font-medium">
+            {isLoading ? 'Checking for existing project plans' : 'Create a real project plan'}
+          </div>
+          <p className="mt-1 text-sm leading-6 text-text-muted">
+            Project-scoped CodingCTO no longer falls back to demo work. Generate a requirement to
+            create the first backend-backed plan, prompt contract, and execution run for this
+            project.
+          </p>
+          <Button className="mt-3" size="sm" onClick={onCreate}>
+            Open idea intake
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RuntimeReadiness({
   onlineCount,
   recentlyLostCount,
   runtimes,
   isLoading,
   isFallback,
+  readinessReason,
 }: {
   onlineCount: number;
   recentlyLostCount: number;
   runtimes: ExecutorRuntime[];
   isLoading: boolean;
   isFallback: boolean;
+  readinessReason: string;
 }) {
   const sweepRuntimes = useSweepSpecForgeRuntimes();
   const sweepTasks = useSweepSpecForgeTasks();
@@ -965,10 +1104,10 @@ function RuntimeReadiness({
     try {
       const result = await sweepRuntimes.mutateAsync({ stale_seconds: 300 });
       setMaintenanceMessage(
-        `已将 ${result.offline_runtimes.length} 个执行器标记为离线，并将 ${result.failed_tasks.length} 个任务标记为失败。`
+        `Marked ${result.offline_runtimes.length} runtimes offline and failed ${result.failed_tasks.length} tasks.`
       );
     } catch {
-      setMaintenanceMessage('清理执行器需要 CodingCTO 后端在线。');
+      setMaintenanceMessage('Runtime sweep requires the CodingCTO backend.');
     }
   }
 
@@ -979,9 +1118,9 @@ function RuntimeReadiness({
         dispatch_timeout_seconds: 900,
         running_timeout_seconds: 3600,
       });
-      setMaintenanceMessage(`已将 ${result.failed_tasks.length} 个超时任务标记为失败。`);
+      setMaintenanceMessage(`Failed ${result.failed_tasks.length} stale tasks.`);
     } catch {
-      setMaintenanceMessage('清理任务需要 CodingCTO 后端在线。');
+      setMaintenanceMessage('Task sweep requires the CodingCTO backend.');
     }
   }
 
@@ -993,29 +1132,25 @@ function RuntimeReadiness({
             <Terminal className="h-4 w-4 text-primary" />
           </div>
           <div>
-            <div className="text-sm font-medium">执行器就绪状态</div>
+            <div className="text-sm font-medium">Executor readiness</div>
             <div className="mt-1 text-sm text-text-muted">
-              {isLoading
-                ? '正在检查本地执行器心跳。'
-                : onlineCount > 0
-                  ? '方案批准后可以派发给健康的本地执行器。'
-                  : '需要等到本地执行器上线后才能开始执行。'}
+              {isLoading ? 'Checking executor runtime heartbeats.' : readinessReason}
             </div>
           </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant="outline" className={onlineCount > 0 ? statusClassName('completed') : ''}>
-            {onlineCount} 个在线
+            {onlineCount} online
           </Badge>
           <Badge
             variant="outline"
             className={recentlyLostCount > 0 ? statusClassName('waiting_on_dependencies') : ''}
           >
-            {recentlyLostCount} 个不稳定
+            {recentlyLostCount} unstable
           </Badge>
           {isFallback && (
             <Badge variant="outline" className="border-border bg-bg-surface text-text-subtle">
-              演示兜底
+              demo fallback
             </Badge>
           )}
         </div>
@@ -1025,7 +1160,7 @@ function RuntimeReadiness({
           {runtimes.slice(0, 3).map(runtime => (
             <div
               key={runtime.runtimeId}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border-subtle bg-bg-subtle px-3 py-2"
+              className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-border-subtle bg-bg-subtle px-3 py-2"
             >
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium">{runtime.runtimeId}</div>
@@ -1033,8 +1168,22 @@ function RuntimeReadiness({
                   {runtime.executor}
                   {runtime.hostname ? ` · ${runtime.hostname}` : ''}
                 </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {runtime.availableClis
+                    .filter(cli => cli.available)
+                    .slice(0, 3)
+                    .map(cli => (
+                      <Badge key={`${cli.command}-${cli.path ?? 'path'}`} variant="outline">
+                        {runtimeCLILabel(cli.name, cli.version)}
+                      </Badge>
+                    ))}
+                  {runtime.sandbox?.mode ? (
+                    <Badge variant="outline">sandbox: {runtime.sandbox.mode}</Badge>
+                  ) : null}
+                  <Badge variant="outline">{runtime.localSkillCount} skills</Badge>
+                </div>
               </div>
-              <Badge variant="outline">{displayStatus(runtime.status)}</Badge>
+              <Badge variant="outline">{runtime.status}</Badge>
             </div>
           ))}
         </div>
@@ -1045,7 +1194,7 @@ function RuntimeReadiness({
             onClick={sweepRuntimeHeartbeats}
             disabled={sweepRuntimes.isPending || sweepTasks.isPending}
           >
-            {sweepRuntimes.isPending ? '清理中' : '清理执行器'}
+            {sweepRuntimes.isPending ? 'Sweeping' : 'Sweep runtimes'}
           </Button>
           <Button
             variant="outline"
@@ -1053,7 +1202,7 @@ function RuntimeReadiness({
             onClick={sweepStaleExecutionTasks}
             disabled={sweepRuntimes.isPending || sweepTasks.isPending}
           >
-            {sweepTasks.isPending ? '清理中' : '清理任务'}
+            {sweepTasks.isPending ? 'Sweeping' : 'Sweep tasks'}
           </Button>
         </div>
       </div>
@@ -1066,6 +1215,257 @@ function RuntimeReadiness({
   );
 }
 
+function runtimeCLILabel(name: string, version?: string): string {
+  const cleanName = name.trim() || 'CLI';
+  const cleanVersion = version?.trim();
+  if (!cleanVersion) {
+    return cleanName;
+  }
+  return `${cleanName}: ${cleanVersion.replace(cleanName, '').trim() || cleanVersion}`;
+}
+
+function WorkspaceProjectLaunchPanel() {
+  const [workspaceName, setWorkspaceName] = useState('');
+  const [workspaceSlug, setWorkspaceSlug] = useState('');
+  const [workspaceDescription, setWorkspaceDescription] = useState('');
+  const [projectName, setProjectName] = useState('');
+  const [projectSlug, setProjectSlug] = useState('');
+  const [projectDescription, setProjectDescription] = useState('');
+  const [message, setMessage] = useState('');
+
+  const {
+    workspacesQuery,
+    workspaces,
+    selectedWorkspaceId: effectiveWorkspaceId,
+    selectedWorkspace,
+    setSelectedWorkspaceId,
+  } = useSelectedWorkspace();
+  const projectsQuery = useProjects(effectiveWorkspaceId);
+  const projects = projectsQuery.data?.projects ?? [];
+  const createWorkspace = useCreateWorkspace();
+  const createProject = useCreateProject(effectiveWorkspaceId);
+
+  function updateWorkspaceName(value: string) {
+    setWorkspaceName(value);
+    setWorkspaceSlug(current => current || slugFromProjectName(value));
+  }
+
+  function updateProjectName(value: string) {
+    setProjectName(value);
+    setProjectSlug(current => current || slugFromProjectName(value));
+  }
+
+  async function createNewWorkspace(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = workspaceName.trim();
+    const slug = slugFromProjectName(workspaceSlug || workspaceName);
+    if (!name || !slug) {
+      setMessage('Workspace name and slug are required.');
+      return;
+    }
+    setMessage('');
+    try {
+      const response = await createWorkspace.mutateAsync({
+        name,
+        slug,
+        description: workspaceDescription.trim(),
+      });
+      setSelectedWorkspaceId(response.workspace.workspace_id);
+      setWorkspaceName('');
+      setWorkspaceSlug('');
+      setWorkspaceDescription('');
+      setMessage(`Workspace "${response.workspace.name}" created. Create or open a project next.`);
+    } catch {
+      setMessage('Workspace could not be created. Try another slug or check backend auth.');
+    }
+  }
+
+  async function createNewProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = projectName.trim();
+    const slug = slugFromProjectName(projectSlug || projectName);
+    if (!effectiveWorkspaceId) {
+      setMessage('Create or select a workspace before creating a project.');
+      return;
+    }
+    if (!name || !slug) {
+      setMessage('Project name and slug are required.');
+      return;
+    }
+    setMessage('');
+    try {
+      const response = await createProject.mutateAsync({
+        workspace_id: effectiveWorkspaceId,
+        name,
+        slug,
+        description: projectDescription.trim(),
+      });
+      setProjectName('');
+      setProjectSlug('');
+      setProjectDescription('');
+      setMessage(
+        `Project "${response.project.name}" created. Open it to continue with Git binding.`
+      );
+    } catch {
+      setMessage('Project could not be created. Try another slug or check the selected workspace.');
+    }
+  }
+
+  return (
+    <div className="border-b border-border-subtle bg-bg-canvas px-4 py-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+        <Card className="border-primary/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Building2 className="h-4 w-4 text-primary" />
+              Workspace setup
+            </CardTitle>
+            <CardDescription>
+              Global CodingCTO is for experiments. Enterprise work should start from a workspace and
+              project so GitHub bindings, skills, and execution history stay scoped.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-3">
+              <Label>Select workspace</Label>
+              {workspaces.length > 0 ? (
+                <Select value={effectiveWorkspaceId} onValueChange={setSelectedWorkspaceId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select workspace" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {workspaces.map(workspace => (
+                      <SelectItem key={workspace.workspace_id} value={workspace.workspace_id}>
+                        {workspace.name} ({workspace.slug})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
+                  No workspace yet. Create one here to unlock project flows.
+                </div>
+              )}
+              {selectedWorkspace && (
+                <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm leading-6 text-text-muted">
+                  <div className="font-medium text-text-main">{selectedWorkspace.name}</div>
+                  <div>{selectedWorkspace.description || 'No workspace description yet.'}</div>
+                  <div className="mt-1 text-xs">ID: {selectedWorkspace.workspace_id}</div>
+                </div>
+              )}
+              {projects.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs font-medium uppercase tracking-wide text-text-muted">
+                    Projects
+                  </div>
+                  {projects.slice(0, 4).map(project => (
+                    <div
+                      key={project.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-border-subtle bg-bg-surface px-3 py-2 text-sm"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{project.name}</div>
+                        <div className="text-xs text-text-muted">{project.slug}</div>
+                      </div>
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={projectSpecForgeHref(project.id)}>Open</Link>
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <form className="space-y-3" onSubmit={createNewWorkspace}>
+              <div className="text-sm font-medium">Create workspace</div>
+              <Input
+                value={workspaceName}
+                onChange={event => updateWorkspaceName(event.target.value)}
+                placeholder="Acme Platform"
+                aria-label="Workspace name"
+              />
+              <Input
+                value={workspaceSlug}
+                onChange={event => setWorkspaceSlug(slugFromProjectName(event.target.value))}
+                placeholder="acme-platform"
+                aria-label="Workspace slug"
+              />
+              <Textarea
+                value={workspaceDescription}
+                onChange={event => setWorkspaceDescription(event.target.value)}
+                placeholder="Who owns this product portfolio?"
+                aria-label="Workspace description"
+                rows={3}
+              />
+              <Button type="submit" disabled={createWorkspace.isPending} className="w-full">
+                {createWorkspace.isPending ? 'Creating workspace' : 'Create workspace'}
+                <ArrowRight className="ml-1.5 h-4 w-4" />
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Boxes className="h-4 w-4 text-primary" />
+              Project setup
+            </CardTitle>
+            <CardDescription>
+              Create the project boundary, then open it for repository binding and enterprise
+              CodingCTO runs.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="space-y-3" onSubmit={createNewProject}>
+              <Input
+                value={projectName}
+                onChange={event => updateProjectName(event.target.value)}
+                placeholder="CodingCTO"
+                aria-label="Project name"
+                disabled={!effectiveWorkspaceId}
+              />
+              <Input
+                value={projectSlug}
+                onChange={event => setProjectSlug(slugFromProjectName(event.target.value))}
+                placeholder="codingcto"
+                aria-label="Project slug"
+                disabled={!effectiveWorkspaceId}
+              />
+              <Textarea
+                value={projectDescription}
+                onChange={event => setProjectDescription(event.target.value)}
+                placeholder="What product or system does this project represent?"
+                aria-label="Project description"
+                rows={3}
+                disabled={!effectiveWorkspaceId}
+              />
+              <Button
+                type="submit"
+                disabled={!effectiveWorkspaceId || createProject.isPending}
+                className="w-full"
+              >
+                {createProject.isPending ? 'Creating project' : 'Create project'}
+                <ArrowRight className="ml-1.5 h-4 w-4" />
+              </Button>
+            </form>
+            {message && (
+              <div className="mt-3 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm leading-5 text-text-muted">
+                {message}
+              </div>
+            )}
+            {workspacesQuery.isError && (
+              <div className="mt-3 rounded-lg border border-error/30 bg-error-subtle p-3 text-sm text-error">
+                Workspace API unavailable. Sign in with backend auth and confirm the API is running.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 function RepoProfileSummary({
   repoId,
   repoProfile,
@@ -1074,7 +1474,7 @@ function RepoProfileSummary({
 }: {
   repoId: string;
   repoProfile: RepoProfile;
-  planSource: 'api' | 'demo';
+  planSource: 'api' | 'demo' | 'empty';
   onProfileSaved: (profile: RepoProfile) => void;
 }) {
   const profileQuery = useRepoProfile(repoId);
@@ -1098,21 +1498,25 @@ function RepoProfileSummary({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-medium">
           <GitBranch className="h-4 w-4 text-primary" />
-          仓库画像
+          Repo profile
         </div>
         <Badge
           variant="outline"
           className={planSource === 'api' ? statusClassName('completed') : ''}
         >
-          {planSource === 'api' ? 'API 方案' : '演示兜底'}
+          {planSource === 'api'
+            ? 'API plan'
+            : planSource === 'empty'
+              ? 'Awaiting plan'
+              : 'Demo fallback'}
         </Badge>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-text-muted">
         <Badge variant="outline">{repoProfileSourceLabel(effectiveProfile.source)}</Badge>
         {effectiveProfile.lastIndexedAt ? (
-          <span>已索引 {formatTimestamp(effectiveProfile.lastIndexedAt)}</span>
+          <span>Indexed {formatTimestamp(effectiveProfile.lastIndexedAt)}</span>
         ) : (
-          <span>尚未索引</span>
+          <span>Not indexed yet</span>
         )}
       </div>
       {effectiveProfile.warnings.length > 0 ? (
@@ -1226,52 +1630,52 @@ function RepoProfileEditor({
         <Input
           value={defaultBranch}
           onChange={event => setDefaultBranch(event.target.value)}
-          aria-label="默认分支"
-          placeholder="默认分支"
+          aria-label="Default branch"
+          placeholder="Default branch"
         />
         <Input
           value={ciProvider}
           onChange={event => setCIProvider(event.target.value)}
-          aria-label="CI 提供方"
-          placeholder="CI 提供方"
+          aria-label="CI provider"
+          placeholder="CI provider"
         />
       </div>
       <Input
         value={stack}
         onChange={event => setStack(event.target.value)}
-        aria-label="仓库技术栈"
-        placeholder="技术栈：Go, Next.js, TypeScript"
+        aria-label="Repository stack"
+        placeholder="Stack: Go, Next.js, TypeScript"
       />
       <Input
         value={testCommands}
         onChange={event => setTestCommands(event.target.value)}
-        aria-label="测试命令"
-        placeholder="测试命令：go test ./..., pnpm lint"
+        aria-label="Test commands"
+        placeholder="Test commands: go test ./..., pnpm lint"
       />
       <Input
         value={codingConventions}
         onChange={event => setCodingConventions(event.target.value)}
-        aria-label="代码规范"
-        placeholder="代码规范"
+        aria-label="Coding conventions"
+        placeholder="Coding conventions"
       />
       <Input
         value={riskAreas}
         onChange={event => setRiskAreas(event.target.value)}
-        aria-label="风险区域"
-        placeholder="风险区域：auth, migrations"
+        aria-label="Risk areas"
+        placeholder="Risk areas: auth, migrations"
       />
       <Textarea
         value={summary}
         onChange={event => setSummary(event.target.value)}
         className="min-h-24"
-        aria-label="仓库画像摘要"
-        placeholder="总结仓库结构和实现约定。"
+        aria-label="Repo profile summary"
+        placeholder="Summarize the repository structure and implementation conventions."
       />
       <div className="flex flex-wrap items-center justify-between gap-3">
         <p className="text-xs leading-5 text-text-muted">
           {isOffline
-            ? '需要启动 CodingCTO 后端才能保存仓库画像。'
-            : '仓库画像会用于方案规划、PR DAG 和提示词编译。'}
+            ? 'Start the CodingCTO backend to save profile changes.'
+            : 'Profile context feeds planning, PR DAG, and prompt compilation.'}
         </p>
         <div className="flex flex-wrap gap-2">
           <Button
@@ -1279,10 +1683,10 @@ function RepoProfileEditor({
             onClick={inferFromRepositoryHints}
             disabled={!repoId || isOffline || inferProfile.isPending}
           >
-            {inferProfile.isPending ? '推断中' : '推断画像'}
+            {inferProfile.isPending ? 'Inferring' : 'Infer profile'}
           </Button>
           <Button onClick={saveProfile} disabled={!repoId || isOffline || upsertProfile.isPending}>
-            {upsertProfile.isPending ? '保存中' : '保存画像'}
+            {upsertProfile.isPending ? 'Saving' : 'Save profile'}
           </Button>
         </div>
       </div>
@@ -1304,19 +1708,19 @@ function RepoArchitectureStatus({
   const snapshot = status?.snapshot;
   const staleReasons = status?.stale_reasons ?? [];
   const badgeLabel = isOffline
-    ? '离线'
+    ? 'Offline'
     : status?.stale
-      ? '需要重新索引'
+      ? 'Reindex needed'
       : snapshot
-        ? '架构快照最新'
-        : '暂无快照';
+        ? 'Architecture fresh'
+        : 'No snapshot';
 
   return (
     <div className="rounded-md border border-border-subtle bg-bg-surface px-3 py-3">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-medium">
           <ListChecks className="h-4 w-4 text-primary" />
-          架构快照
+          Architecture snapshot
         </div>
         <Badge
           variant="outline"
@@ -1328,14 +1732,14 @@ function RepoArchitectureStatus({
       <div className="mt-2 text-xs leading-5 text-text-muted">
         {snapshot ? (
           <>
-            <span>{snapshot.commit_sha || '未知引用'}</span>
+            <span>{snapshot.commit_sha || 'unknown ref'}</span>
             <span className="mx-2">·</span>
-            <span>{snapshot.modules.length} 个模块</span>
+            <span>{snapshot.modules.length} modules</span>
             <span className="mx-2">·</span>
-            <span>{snapshot.ci_workflows.length} 个 CI 工作流</span>
+            <span>{snapshot.ci_workflows.length} CI workflows</span>
           </>
         ) : (
-          <span>生成快照后，方案规划前的仓库分析会更可追溯。</span>
+          <span>Generate a snapshot to make repo analysis traceable before planning.</span>
         )}
       </div>
       {staleReasons.length > 0 ? (
@@ -1363,7 +1767,7 @@ function RepoArchitectureStatus({
           onClick={onReindex}
           disabled={isOffline || isReindexing}
         >
-          {isReindexing ? '重新索引中' : '重新索引'}
+          {isReindexing ? 'Reindexing' : 'Reindex'}
         </Button>
       </div>
     </div>
@@ -1371,8 +1775,8 @@ function RepoArchitectureStatus({
 }
 
 function RepoSkillsPanel({ repoId, projectId }: { repoId: string; projectId?: number }) {
-  const [name, setName] = useState('仓库编码指南');
-  const [description, setDescription] = useState('注入 CodingCTO 提示词的仓库级说明。');
+  const [name, setName] = useState('Repo coding guidelines');
+  const [description, setDescription] = useState('Instructions injected into CodingCTO prompts.');
   const [content, setContent] = useState('');
   const [active, setActive] = useState(true);
   const [savedSkill, setSavedSkill] = useState<SpecForgeSkillDTO>();
@@ -1431,10 +1835,10 @@ function RepoSkillsPanel({ repoId, projectId }: { repoId: string; projectId?: nu
         <div>
           <div className="flex items-center gap-2 text-sm font-medium">
             <ListChecks className="h-4 w-4 text-primary" />
-            仓库技能
+            Repo skills
           </div>
           <p className="mt-1 text-sm leading-6 text-text-muted">
-            保存仓库说明，用于方案规划、提示词编译和项目技能运行。
+            Store repository instructions for planning, prompt compilation, and project skill runs.
           </p>
         </div>
         <Badge
@@ -1442,12 +1846,12 @@ function RepoSkillsPanel({ repoId, projectId }: { repoId: string; projectId?: nu
           className={savedCount > 0 || savedSkill ? statusClassName('completed') : ''}
         >
           {skillsQuery.isLoading || projectSkillsQuery.isLoading
-            ? '检查中'
+            ? 'Checking'
             : savedCount > 0
-              ? `已保存 ${savedCount} 个`
+              ? `${savedCount} saved`
               : savedSkill
-                ? '已保存'
-                : '暂无技能'}
+                ? 'Saved'
+                : 'No skills'}
         </Badge>
       </div>
 
@@ -1468,42 +1872,42 @@ function RepoSkillsPanel({ repoId, projectId }: { repoId: string; projectId?: nu
         <Input
           value={name}
           onChange={event => setName(event.target.value)}
-          aria-label="技能名称"
-          placeholder="技能名称"
+          aria-label="Skill name"
+          placeholder="Skill name"
         />
         <Input
           value={description}
           onChange={event => setDescription(event.target.value)}
-          aria-label="技能描述"
-          placeholder="技能描述"
+          aria-label="Skill description"
+          placeholder="Skill description"
         />
         <Textarea
           value={content}
           onChange={event => setContent(event.target.value)}
           className="min-h-24"
-          aria-label="技能内容"
-          placeholder="例如：数据访问走 service 层，API route 保持轻量，UI PR 前运行 pnpm type-check。"
+          aria-label="Skill content"
+          placeholder="Use service layer for data access. Keep API routes thin. Run pnpm type-check before UI PRs."
         />
         <div className="flex flex-wrap items-center justify-between gap-3">
           <Label className="flex items-center gap-2">
             <Switch checked={active} onCheckedChange={setActive} />
-            启用
+            Active
           </Label>
           <Button
             onClick={saveSkill}
             disabled={!repoId || !name.trim() || !content.trim() || isSaving}
           >
-            {isSaving ? '保存中' : projectId ? '保存项目技能' : '保存技能'}
+            {isSaving ? 'Saving' : projectId ? 'Save project skill' : 'Save skill'}
           </Button>
         </div>
         {(skillsQuery.isError || projectSkillsQuery.isError) && (
           <p className="text-xs leading-5 text-text-muted">
-            CodingCTO 后端可用后即可保存技能。
+            Skills will save when the CodingCTO backend is available.
           </p>
         )}
         {latestSkill && (
           <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-xs leading-5 text-text-muted">
-            最新：{latestSkill.name}
+            Latest: {latestSkill.name}
           </div>
         )}
       </div>
@@ -1520,24 +1924,24 @@ function GitHubWebhookEventsPanel() {
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-medium">
           <GitPullRequest className="h-4 w-4 text-primary" />
-          GitHub Webhook
+          GitHub webhooks
         </div>
-        <Badge variant="outline">最近 {events.length} 条</Badge>
+        <Badge variant="outline">{events.length} recent</Badge>
       </div>
       <div className="mt-3 space-y-2">
         {eventsQuery.isLoading && (
           <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
-            正在加载 Webhook 事件。
+            Loading webhook events.
           </div>
         )}
         {eventsQuery.isError && (
           <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
-            CodingCTO 后端可用后会加载 Webhook 事件。
+            Webhook events will load when the CodingCTO backend is available.
           </div>
         )}
         {!eventsQuery.isLoading && !eventsQuery.isError && events.length === 0 && (
           <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
-            还没有记录 Webhook 事件。
+            No webhook events recorded yet.
           </div>
         )}
         {events.map(event => (
@@ -1587,7 +1991,7 @@ function GitHubWebhookEventRow({ event }: { event: GitHubWebhookEventDTO }) {
         <span>{event.delivery_id}</span>
         {sourceUrl && (
           <a href={sourceUrl} target="_blank" rel="noreferrer" className="text-primary">
-            打开来源
+            Open source
           </a>
         )}
       </div>
@@ -1612,13 +2016,13 @@ function RunSummary({
     <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
       <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
         <div className="min-w-0">
-          <div className="text-sm font-medium">PR 交付</div>
+          <div className="text-sm font-medium">PR delivery</div>
           <div className="mt-1 text-sm text-text-muted">{summary.headline}</div>
           <div className="mt-1 text-xs text-text-muted">{progressText}</div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant="outline" className={approved ? statusClassName('completed') : ''}>
-            {approved ? '方案已批准' : '需要批准方案'}
+            {approved ? 'Plan approved' : 'Plan approval required'}
           </Badge>
           <Badge
             variant="outline"
@@ -1628,10 +2032,10 @@ function RunSummary({
                 : ''
             }
           >
-            {run.status === 'idle' ? '尚未开始执行' : displayStatus(run.status)}
+            {run.status === 'idle' ? 'No run started' : run.status}
           </Badge>
           {run.status !== 'idle' && (
-            <Badge variant="outline">已选择 {run.selectedPRNodeIds.length} 个 PR 节点</Badge>
+            <Badge variant="outline">{run.selectedPRNodeIds.length} PR nodes selected</Badge>
           )}
         </div>
       </div>
@@ -1639,27 +2043,27 @@ function RunSummary({
         <div className="h-full bg-primary" style={{ width: `${summary.progressPercent}%` }} />
       </div>
       <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
-        <DeliveryMetric label="可评审" value={summary.ready} status="ready_for_review" />
-        <DeliveryMetric label="执行中" value={summary.active} status="ci_running" />
-        <DeliveryMetric label="等待中" value={summary.waiting} status="waiting_on_dependencies" />
-        <DeliveryMetric label="阻塞" value={summary.blocked} status="blocked" />
-        <DeliveryMetric label="失败" value={summary.failed} status="failed" />
-        <DeliveryMetric label="已合并" value={summary.merged} status="merged" />
+        <DeliveryMetric label="Ready" value={summary.ready} status="ready_for_review" />
+        <DeliveryMetric label="Active" value={summary.active} status="ci_running" />
+        <DeliveryMetric label="Waiting" value={summary.waiting} status="waiting_on_dependencies" />
+        <DeliveryMetric label="Blocked" value={summary.blocked} status="blocked" />
+        <DeliveryMetric label="Failed" value={summary.failed} status="failed" />
+        <DeliveryMetric label="Merged" value={summary.merged} status="merged" />
       </div>
       <div className="mt-4 flex flex-col gap-2 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm md:flex-row md:items-center md:justify-between">
         <div>
-          <div className="font-medium text-text-main">下一步</div>
+          <div className="font-medium text-text-main">Next action</div>
           <div className="mt-1 text-text-muted">{summary.nextAction}</div>
         </div>
         <div className="flex flex-wrap gap-2">
           {blockedNode && (
             <Badge variant="outline" className={statusClassName('blocked')}>
-              {blockedNode.nodeKey} 阻塞
+              {blockedNode.nodeKey} blocked
             </Badge>
           )}
           {reviewableNode && (
             <Badge variant="outline" className={statusClassName('ready_for_review')}>
-              {reviewableNode.nodeKey} 待评审
+              {reviewableNode.nodeKey} review
             </Badge>
           )}
         </div>
@@ -1695,6 +2099,7 @@ function PlanReview({
   selectedExecutionNodeIds,
   approved,
   isStarting,
+  executionReadiness,
   onDecisionOverrideChange,
   onExecutionNodeSelectionChange,
   onApprove,
@@ -1704,6 +2109,7 @@ function PlanReview({
   selectedExecutionNodeIds: string[];
   approved: boolean;
   isStarting: boolean;
+  executionReadiness: ExecutionReadiness;
   onDecisionOverrideChange: (key: string, value: string) => void;
   onExecutionNodeSelectionChange: (nodeIds: string[]) => void;
   onApprove: () => void;
@@ -1723,20 +2129,20 @@ function PlanReview({
     <div className="grid gap-4 xl:grid-cols-2">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">产品理解</CardTitle>
-          <CardDescription>执行前确认默认规则和验收标准。</CardDescription>
+          <CardTitle className="text-base">Product understanding</CardTitle>
+          <CardDescription>Defaults and acceptance criteria before execution.</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          <ListBlock title="目标" items={productSpec.goals} />
-          <ListBlock title="业务规则" items={productSpec.businessRules} />
+          <ListBlock title="Goals" items={productSpec.goals} />
+          <ListBlock title="Business rules" items={productSpec.businessRules} />
           <DecisionOverrideFields
             fields={decisionFields}
             values={decisionOverrides}
             disabled={approved || isStarting}
             onChange={onDecisionOverrideChange}
           />
-          <ListBlock title="验收标准" items={productSpec.acceptanceCriteria} />
-          <ListBlock title="方案假设" items={planAssumptions} />
+          <ListBlock title="Acceptance criteria" items={productSpec.acceptanceCriteria} />
+          <ListBlock title="Plan assumptions" items={planAssumptions} />
           <SkillPipelinePanel
             skillRuns={skillRuns}
             isLoading={skillRunsQuery.isLoading}
@@ -1747,21 +2153,21 @@ function PlanReview({
 
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">技术方案</CardTitle>
+          <CardTitle className="text-base">Technical plan</CardTitle>
           <CardDescription>{implementationPlan.technicalSummary}</CardDescription>
         </CardHeader>
         <CardContent className="space-y-5">
-          <ListBlock title="影响范围" items={implementationPlan.affectedAreas} />
-          <ListBlock title="PR DAG 评审" items={plan.prDagReview} />
+          <ListBlock title="Affected areas" items={implementationPlan.affectedAreas} />
+          <ListBlock title="PR DAG review" items={plan.prDagReview} />
           <ExecutionRangeSelector
             nodes={plan.prNodes}
             selectedNodeIds={selectedExecutionNodeIds}
             disabled={approved || isStarting}
             onChange={onExecutionNodeSelectionChange}
           />
-          <ListBlock title="执行范围评审" items={executionRangeNotes} />
-          <ListBlock title="安全风险" items={implementationPlan.securityRisks} icon="risk" />
-          <ListBlock title="迁移风险" items={implementationPlan.migrationRisks} />
+          <ListBlock title="Execution range review" items={executionRangeNotes} />
+          <ListBlock title="Security risks" items={implementationPlan.securityRisks} icon="risk" />
+          <ListBlock title="Migration risks" items={implementationPlan.migrationRisks} />
           {!approvalReadiness.canApprove && (
             <p className="rounded-md border border-warning/30 bg-warning-subtle px-3 py-2 text-sm text-warning">
               {approvalReadiness.reason}
@@ -1769,17 +2175,26 @@ function PlanReview({
           )}
           {!canStartSelectedRange && (
             <p className="rounded-md border border-warning/30 bg-warning-subtle px-3 py-2 text-sm text-warning">
-              开始执行前请至少选择一个 PR 节点。
+              Select at least one PR node before starting execution.
+            </p>
+          )}
+          {!executionReadiness.canDispatch && (
+            <p className="rounded-md border border-warning/30 bg-warning-subtle px-3 py-2 text-sm text-warning">
+              {executionReadiness.reason}
             </p>
           )}
           <Button
             onClick={onApprove}
             disabled={
-              approved || isStarting || !approvalReadiness.canApprove || !canStartSelectedRange
+              approved ||
+              isStarting ||
+              !approvalReadiness.canApprove ||
+              !canStartSelectedRange ||
+              !executionReadiness.canDispatch
             }
             className="w-full justify-center"
           >
-            {approved ? '已批准' : isStarting ? '正在启动' : '批准并启动'}
+            {approved ? 'Approved' : isStarting ? 'Starting run' : 'Approve & Start'}
             {approved ? (
               <CheckCircle2 className="ml-1.5 h-4 w-4" />
             ) : (
@@ -1809,7 +2224,7 @@ function SkillPipelinePanel({
           stage: 'product_plan',
           status: 'pending',
           input_summary: '',
-          output_summary: 'API 生成方案后会记录产品理解。',
+          output_summary: 'Product understanding will be recorded when the API generates a plan.',
           created_by: 0,
           created_at: '',
           updated_at: '',
@@ -1819,7 +2234,7 @@ function SkillPipelinePanel({
           stage: 'technical_plan',
           status: 'pending',
           input_summary: '',
-          output_summary: 'API 生成方案后会在这里展示技术规划记录。',
+          output_summary: 'Technical planning history will appear here for API-generated plans.',
           created_by: 0,
           created_at: '',
           updated_at: '',
@@ -1829,7 +2244,7 @@ function SkillPipelinePanel({
           stage: 'pr_dag',
           status: 'pending',
           input_summary: '',
-          output_summary: 'PR DAG 生成过程会作为技能运行记录。',
+          output_summary: 'PR DAG generation will be tracked as a skill run.',
           created_by: 0,
           created_at: '',
           updated_at: '',
@@ -1841,18 +2256,18 @@ function SkillPipelinePanel({
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="flex items-center gap-2 text-sm font-medium">
           <ScrollText className="h-4 w-4 text-primary" />
-          技能流水线
+          Skill pipeline
         </div>
         <Badge
           variant="outline"
           className={skillRuns.length > 0 ? statusClassName('completed') : ''}
         >
-          {isLoading ? '检查中' : skillRuns.length > 0 ? `${skillRuns.length} 次运行` : '待运行'}
+          {isLoading ? 'Checking' : skillRuns.length > 0 ? `${skillRuns.length} runs` : 'Pending'}
         </Badge>
       </div>
       {isOffline ? (
         <p className="mt-2 text-xs leading-5 text-text-muted">
-          CodingCTO 后端可用后会加载技能运行历史。
+          Skill run history will load when the CodingCTO backend is available.
         </p>
       ) : null}
       <div className="mt-3 space-y-2">
@@ -1866,11 +2281,11 @@ function SkillPipelinePanel({
                 {skillRunStageLabel(run.stage)}
               </span>
               <Badge variant="outline" className={statusClassName(run.status)}>
-              {displayStatus(run.status)}
+                {run.status}
               </Badge>
             </div>
             <p className="mt-1 line-clamp-2 text-xs leading-5 text-text-muted">
-              {run.output_summary || '尚未记录输出。'}
+              {run.output_summary || 'No output recorded yet.'}
             </p>
           </div>
         ))}
@@ -1881,10 +2296,10 @@ function SkillPipelinePanel({
 
 function skillRunStageLabel(stage: string) {
   const labels: Record<string, string> = {
-    product_plan: '产品方案',
-    technical_plan: '技术方案',
+    product_plan: 'Product plan',
+    technical_plan: 'Technical plan',
     pr_dag: 'PR DAG',
-    self_review: '自检评审',
+    self_review: 'Self review',
   };
   return labels[stage] ?? stage.replaceAll('_', ' ');
 }
@@ -1908,7 +2323,7 @@ function ExecutionRangeSelector({
 
   return (
     <div>
-      <h3 className="text-sm font-medium">执行范围</h3>
+      <h3 className="text-sm font-medium">Execution range</h3>
       <div className="mt-3 space-y-3">
         {nodes.map(node => (
           <div
@@ -1920,7 +2335,7 @@ function ExecutionRangeSelector({
                 {node.nodeKey}: {node.title}
               </div>
               <div className="mt-1 text-xs text-text-muted">
-                依赖 {node.dependsOn.length > 0 ? node.dependsOn.join(', ') : '无'}
+                Depends on {node.dependsOn.length > 0 ? node.dependsOn.join(', ') : 'none'}
               </div>
             </div>
             <Switch
@@ -1948,7 +2363,7 @@ function DecisionOverrideFields({
 }) {
   return (
     <div>
-      <h3 className="text-sm font-medium">关键决策</h3>
+      <h3 className="text-sm font-medium">Key decisions</h3>
       <div className="mt-3 grid gap-3 md:grid-cols-2">
         {fields.map(field => (
           <div key={field.key} className="space-y-1.5">
@@ -1978,7 +2393,7 @@ function ListBlock({ title, items, icon }: { title: string; items: string[]; ico
         {items.length === 0 && (
           <li className="flex gap-2">
             <CircleDot className="mt-1.5 h-3 w-3 shrink-0 text-text-muted" />
-            <span>暂无记录。</span>
+            <span>None recorded.</span>
           </li>
         )}
         {items.map(item => (
@@ -2049,7 +2464,7 @@ function PRDag({
   async function runDeliveryAction(node: PRNode, action: 'prepare' | 'deliver' | 'refresh') {
     const prNodeId = Number(node.id);
     if (!repositoryId || !Number.isFinite(prNodeId) || prNodeId <= 0) {
-      setDeliveryError('GitHub 交付需要已保存的仓库和 PR 节点。');
+      setDeliveryError('Live GitHub delivery requires a persisted repository and PR node.');
       return;
     }
 
@@ -2066,7 +2481,7 @@ function PRDag({
       rememberDeliveredNode(prNodeFromDTO(updated));
     } catch {
       setDeliveryError(
-        'GitHub 交付操作需要 CodingCTO 后端在线，并完成 GitHub App 配置。'
+        'GitHub delivery controls require the CodingCTO backend and GitHub App setup.'
       );
     } finally {
       setDeliveryActionNodeId(undefined);
@@ -2103,12 +2518,12 @@ function PRDag({
         id: 0,
         pr_node_id: Number.isFinite(prNodeId) ? prNodeId : 0,
         failure_type: 'ci_failure',
-        ci_log_excerpt: '演示模式下没有实时 CI 日志。',
+        ci_log_excerpt: 'No live CI log is available in demo mode.',
         attempt_number: 1,
         status: 'queued',
         confidence: 0.7,
-        likely_cause: 'CI 诊断需要这个 PR 节点存在 GitHub workflow run。',
-        recommended_action: '先为分支运行 CI，再查看失败任务日志。',
+        likely_cause: 'CI diagnostics require a GitHub workflow run for this PR node.',
+        recommended_action: 'Run CI for the branch, then inspect the failed job logs.',
         can_auto_fix: false,
         created_by: 0,
         created_at: new Date().toISOString(),
@@ -2119,13 +2534,13 @@ function PRDag({
 
   async function readSelectedFailureLog() {
     if (!selectedFixNode || !repositoryId) {
-      setFailureLogError('读取失败日志需要先选择 PR 节点和仓库。');
+      setFailureLogError('Failure logs require a selected PR node and repository.');
       return;
     }
 
     const prNodeId = Number(selectedFixNode.id);
     if (!Number.isFinite(prNodeId) || prNodeId <= 0) {
-      setFailureLogError('读取失败日志需要已保存的 PR 节点。');
+      setFailureLogError('Failure logs require a persisted PR node.');
       return;
     }
 
@@ -2138,7 +2553,7 @@ function PRDag({
       setFailureLog(log);
     } catch {
       setFailureLogError(
-        '读取失败日志需要失败的 GitHub workflow run，以及 GitHub App 访问权限。'
+        'Failure logs require a failed GitHub workflow run and GitHub App access.'
       );
     }
   }
@@ -2147,9 +2562,9 @@ function PRDag({
     <div className="space-y-3">
       <div className="flex flex-col gap-2 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm md:flex-row md:items-center md:justify-between">
         <div>
-          <div className="font-medium text-text-main">提示词模式</div>
+          <div className="font-medium text-text-main">Prompt mode</div>
           <div className="mt-1 text-text-muted">
-            为选中的 PR 节点编译实现、CI 修复或评审修订提示词。
+            Compile implementation, CI fix, or review feedback prompts for the selected PR node.
           </div>
         </div>
         <ToggleGroup
@@ -2165,7 +2580,7 @@ function PRDag({
           className="w-full md:w-auto"
         >
           {promptModes.map(mode => (
-            <ToggleGroupItem key={mode} value={mode} aria-label={`${promptModeLabel[mode]}提示词`}>
+            <ToggleGroupItem key={mode} value={mode} aria-label={`${promptModeLabel[mode]} prompt`}>
               {promptModeLabel[mode]}
             </ToggleGroupItem>
           ))}
@@ -2173,12 +2588,13 @@ function PRDag({
       </div>
       <div className="flex flex-col gap-2 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm md:flex-row md:items-center md:justify-between">
         <div>
-          <div className="font-medium text-text-main">自动修复护栏</div>
+          <div className="font-medium text-text-main">Auto-fix guardrail</div>
           <div className="mt-1 text-text-muted">
-            每个 PR 节点最多自动修复 {maxFixAttemptsPerNode} 次；超过后 CodingCTO 会生成决策摘要并升级处理。
+            Each PR node can use up to {maxFixAttemptsPerNode} automatic fix attempts before
+            CodingCTO escalates with a decision summary.
           </div>
         </div>
-        <Badge variant="outline">最多 3 次</Badge>
+        <Badge variant="outline">3 attempts max</Badge>
       </div>
       {deliveryError && (
         <div className="rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm text-warning">
@@ -2203,16 +2619,12 @@ function PRDag({
                 <div className="flex flex-wrap gap-2">
                   <Badge variant="outline">{node.nodeKey}</Badge>
                   <Badge variant="outline" className={riskClassName(node.estimatedRisk)}>
-                    {node.estimatedRisk === 'high'
-                      ? '高风险'
-                      : node.estimatedRisk === 'medium'
-                        ? '中风险'
-                        : '低风险'}
+                    {node.estimatedRisk} risk
                   </Badge>
                   {node.githubPrUrl && (
                     <Button variant="outline" size="sm" asChild>
                       <a href={node.githubPrUrl} target="_blank" rel="noreferrer">
-                        PR #{node.githubPrNumber ?? '已创建'}
+                        PR #{node.githubPrNumber ?? 'open'}
                         <GitPullRequest className="ml-1.5 h-4 w-4" />
                       </a>
                     </Button>
@@ -2223,7 +2635,7 @@ function PRDag({
                     onClick={() => runDeliveryAction(node, 'prepare')}
                     disabled={isDeliveryActionPending && deliveryActionNodeId === node.id}
                   >
-                    分支
+                    Branch
                     <GitBranch className="ml-1.5 h-4 w-4" />
                   </Button>
                   <Button
@@ -2251,7 +2663,7 @@ function PRDag({
                     disabled={isCompilingPrompt && selectedNodeId === node.id}
                   >
                     {isCompilingPrompt && selectedNodeId === node.id
-                      ? '编译中'
+                      ? 'Compiling'
                       : promptModeLabel[promptMode]}
                     <ScrollText className="ml-1.5 h-4 w-4" />
                   </Button>
@@ -2261,7 +2673,7 @@ function PRDag({
                     onClick={() => inspectFailure(node)}
                     disabled={verifyCI.isPending && selectedFixNode?.id === node.id}
                   >
-                    {verifyCI.isPending && selectedFixNode?.id === node.id ? '检查中' : '修复'}
+                    {verifyCI.isPending && selectedFixNode?.id === node.id ? 'Checking' : 'Fixes'}
                     <ShieldAlert className="ml-1.5 h-4 w-4" />
                   </Button>
                 </div>
@@ -2269,11 +2681,11 @@ function PRDag({
             </CardHeader>
             <CardContent className="grid gap-4 md:grid-cols-3">
               <CompactList
-                title="依赖"
-                items={node.dependsOn.length ? node.dependsOn : ['无']}
+                title="Depends on"
+                items={node.dependsOn.length ? node.dependsOn : ['None']}
               />
-              <CompactList title="预期文件" items={node.expectedFiles} />
-              <CompactList title="测试" items={node.testCommands} />
+              <CompactList title="Expected files" items={node.expectedFiles} />
+              <CompactList title="Tests" items={node.testCommands} />
             </CardContent>
           </Card>
         </div>
@@ -2283,7 +2695,7 @@ function PRDag({
           <CardHeader>
             <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
               <div>
-                <CardTitle className="text-base">修复尝试</CardTitle>
+                <CardTitle className="text-base">Fix attempts</CardTitle>
                 <CardDescription>{selectedFixNode.title}</CardDescription>
               </div>
               <Button
@@ -2292,7 +2704,7 @@ function PRDag({
                 onClick={readSelectedFailureLog}
                 disabled={readFailureLog.isPending}
               >
-                {readFailureLog.isPending ? '读取中' : '读取失败日志'}
+                {readFailureLog.isPending ? 'Reading' : 'Read failure log'}
                 <ScrollText className="ml-1.5 h-4 w-4" />
               </Button>
             </div>
@@ -2308,12 +2720,12 @@ function PRDag({
             )}
             <div className="flex flex-col gap-2 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm md:flex-row md:items-center md:justify-between">
               <div>
-                <div className="font-medium text-text-main">自动修复次数</div>
+                <div className="font-medium text-text-main">Auto-fix retry budget</div>
                 <div className="mt-1 text-text-muted">
-                  已使用 {highestFixAttempt} / {maxFixAttemptsPerNode} 次
+                  {highestFixAttempt} / {maxFixAttemptsPerNode} attempts used
                   {fixBudgetExhausted
-                    ? '；继续重试前需要先生成决策摘要。'
-                    : `；还剩 ${remainingFixAttempts} 次自动重试。`}
+                    ? '; escalate with a decision summary before retrying.'
+                    : `; ${remainingFixAttempts} automatic ${remainingFixAttempts === 1 ? 'retry' : 'retries'} remaining.`}
                 </div>
               </div>
               <Badge
@@ -2322,13 +2734,13 @@ function PRDag({
                   fixBudgetExhausted ? statusClassName('blocked') : statusClassName('running')
                 }
               >
-                {fixBudgetExhausted ? '需要升级处理' : '可自动修复'}
+                {fixBudgetExhausted ? 'Escalation needed' : 'Auto-fix available'}
               </Badge>
             </div>
             {failureLog && <FailureLogSummary failureLog={failureLog} />}
             {fixAttempts.length === 0 && (
               <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
-                {fixAttemptsQuery.isLoading ? '正在检查 CI 诊断。' : '还没有修复尝试。'}
+                {fixAttemptsQuery.isLoading ? 'Checking CI diagnostics.' : 'No fix attempts yet.'}
               </div>
             )}
             {fixAttempts.map(attempt => (
@@ -2338,21 +2750,21 @@ function PRDag({
               >
                 <div className="flex flex-wrap items-center justify-between gap-2">
                   <div className="text-sm font-medium">
-                    第 {attempt.attempt_number} 次：{attempt.failure_type}
+                    Attempt {attempt.attempt_number}: {attempt.failure_type}
                   </div>
                   <div className="flex flex-wrap items-center gap-2">
                     {attempt.workflow_run_url ? (
                       <Button variant="outline" size="sm" asChild>
                         <a href={attempt.workflow_run_url} target="_blank" rel="noreferrer">
-                          运行 {attempt.workflow_run_id || 'CI'}
+                          Run {attempt.workflow_run_id || 'CI'}
                           <ExternalLink className="ml-1.5 h-4 w-4" />
                         </a>
                       </Button>
                     ) : attempt.workflow_run_id ? (
-                      <Badge variant="outline">运行 {attempt.workflow_run_id}</Badge>
+                      <Badge variant="outline">run {attempt.workflow_run_id}</Badge>
                     ) : null}
                     {attempt.conclusion && <Badge variant="outline">{attempt.conclusion}</Badge>}
-                    <Badge variant="outline">{displayStatus(attempt.status)}</Badge>
+                    <Badge variant="outline">{attempt.status}</Badge>
                   </div>
                 </div>
                 <p className="mt-2 text-sm leading-6 text-text-muted">{attempt.likely_cause}</p>
@@ -2363,12 +2775,12 @@ function PRDag({
             ))}
             {fixAttemptsQuery.isError && (
               <p className="text-xs leading-5 text-text-muted">
-                CodingCTO 后端可用后会加载实时修复尝试。
+                Live fix attempts will load when the CodingCTO backend is available.
               </p>
             )}
             {escalationSummaryQuery.isError && (
               <p className="text-xs leading-5 text-text-muted">
-                升级摘要需要 CodingCTO 后端在线。
+                Escalation summaries require the CodingCTO backend.
               </p>
             )}
           </CardContent>
@@ -2377,8 +2789,8 @@ function PRDag({
       {promptText && (
         <Card>
           <CardHeader>
-            <CardTitle className="text-base">已编译提示词</CardTitle>
-            <CardDescription>选中 PR 节点的实现提示词。</CardDescription>
+            <CardTitle className="text-base">Compiled prompt</CardTitle>
+            <CardDescription>Implementation prompt for the selected PR node.</CardDescription>
           </CardHeader>
           <CardContent>
             <pre className="max-h-96 overflow-auto rounded-lg border border-border-subtle bg-bg-subtle p-4 text-xs leading-5 text-text-main">
@@ -2404,18 +2816,18 @@ function EscalationSummary({ summary }: { summary: SpecForgeEscalationSummaryDTO
       )}
     >
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="font-medium text-text-main">升级摘要</div>
+        <div className="font-medium text-text-main">Escalation summary</div>
         <Badge
           variant="outline"
           className={needsDecision ? statusClassName('blocked') : statusClassName('running')}
         >
-          {needsDecision ? '需要决策' : '可继续自动修复'}
+          {needsDecision ? 'Needs decision' : 'Auto-fix can continue'}
         </Badge>
       </div>
       <p className="mt-2 leading-6">{summary.reason}</p>
       <p className="mt-2 leading-6 text-text-main">{summary.recommended_option}</p>
       {summary.latest_likely_cause && (
-        <p className="mt-2 leading-6">最新原因：{summary.latest_likely_cause}</p>
+        <p className="mt-2 leading-6">Latest cause: {summary.latest_likely_cause}</p>
       )}
       {summary.decision_options.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
@@ -2462,7 +2874,7 @@ function ExecutionStatus({
 
   async function retryExecutionTask(task: PRNode) {
     if (!task.taskId) {
-      setTaskActionError('重试需要已保存的后端任务。');
+      setTaskActionError('Retry requires a persisted backend task.');
       return;
     }
 
@@ -2476,7 +2888,7 @@ function ExecutionStatus({
       onExecutionBundle(bundle);
     } catch {
       setTaskActionError(
-        '只有失败或取消的任务可以重试；因依赖关闭的任务需要重新调整方案。'
+        'Retry requires a failed or cancelled task. Dependency-closed tasks need a revised plan.'
       );
     } finally {
       setTaskActionId(undefined);
@@ -2485,7 +2897,7 @@ function ExecutionStatus({
 
   async function completeExecutionTask(task: PRNode) {
     if (!task.taskId) {
-      setTaskActionError('完成任务需要已保存的后端任务。');
+      setTaskActionError('Complete requires a persisted backend task.');
       return;
     }
 
@@ -2496,7 +2908,7 @@ function ExecutionStatus({
       onExecutionBundle(bundle);
     } catch {
       setTaskActionError(
-        '只有已派发或执行中的任务可以完成，并且需要 CodingCTO 后端在线。'
+        'Complete requires a dispatched or running task and the CodingCTO backend.'
       );
     } finally {
       setTaskActionId(undefined);
@@ -2507,18 +2919,18 @@ function ExecutionStatus({
     <Card>
       <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
         <div>
-          <CardTitle className="text-base">执行运行</CardTitle>
+          <CardTitle className="text-base">Execution run</CardTitle>
           <CardDescription>
-            交付状态按 PR 节点组织，而不是按单个智能体工作进程组织。
+            Delivery state is organized by PR node, not by individual agent workers.
           </CardDescription>
         </div>
         <div className="flex flex-wrap gap-2">
           <Button onClick={onCancel} disabled={!canCancel || isCancelling} variant="outline">
-            {isCancelling ? '取消中' : '取消运行'}
+            {isCancelling ? 'Cancelling' : 'Cancel run'}
             <CircleX className="ml-1.5 h-4 w-4" />
           </Button>
           <Button onClick={onAdvance} disabled={!canAdvance} variant="outline">
-            推进演示运行
+            Advance demo run
             <ArrowRight className="ml-1.5 h-4 w-4" />
           </Button>
         </div>
@@ -2527,10 +2939,12 @@ function ExecutionStatus({
         <PRDeliveryOverview tasks={run.tasks} />
         {run.status === 'blocked' && (
           <div className="rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm leading-6 text-warning">
-            这次运行正在等待决策。可以用新会话重试失败或取消的任务；如果 PR DAG 需要重新规划，也可以取消运行。
+            This run is waiting for a decision. Retry a failed or cancelled task with a fresh
+            session, or cancel the run if the PR DAG needs to be replanned.
             {blockedRecoverableTasks.length > 0 && (
               <span className="ml-1 font-medium text-text-main">
-                {blockedRecoverableTasks.length} 个任务可以重试。
+                {blockedRecoverableTasks.length} task
+                {blockedRecoverableTasks.length === 1 ? '' : 's'} can be retried.
               </span>
             )}
           </div>
@@ -2558,7 +2972,7 @@ function ExecutionStatus({
                 <div className="mt-2 flex flex-wrap gap-2">
                   {task.executor && <Badge variant="outline">{task.executor}</Badge>}
                   {task.attemptNumber && (
-                    <Badge variant="outline">第 {task.attemptNumber} 次</Badge>
+                    <Badge variant="outline">attempt {task.attemptNumber}</Badge>
                   )}
                   {task.taskId && <Badge variant="outline">task #{task.taskId}</Badge>}
                 </div>
@@ -2568,7 +2982,7 @@ function ExecutionStatus({
                   {statusLabel[task.status]}
                 </Badge>
                 <Button variant="outline" size="sm" onClick={() => setSelectedTask(task)}>
-                  事件
+                  Events
                   <Terminal className="ml-1.5 h-4 w-4" />
                 </Button>
                 <Button
@@ -2580,7 +2994,7 @@ function ExecutionStatus({
                     !(task.status === 'failed' || task.status === 'cancelled')
                   }
                 >
-                  {retryTask.isPending && taskActionId === task.taskId ? '重试中' : '重试'}
+                  {retryTask.isPending && taskActionId === task.taskId ? 'Retrying' : 'Retry'}
                   <RotateCcw className="ml-1.5 h-4 w-4" />
                 </Button>
                 <Button
@@ -2590,8 +3004,8 @@ function ExecutionStatus({
                   disabled={isTaskActionPending || task.status !== 'running'}
                 >
                   {completeTask.isPending && taskActionId === task.taskId
-                    ? '完成中'
-                    : '完成'}
+                    ? 'Completing'
+                    : 'Complete'}
                   <CheckCircle2 className="ml-1.5 h-4 w-4" />
                 </Button>
               </div>
@@ -2614,7 +3028,7 @@ function ExecutionStatus({
             }
             onCreateReviewPatch={async feedback => {
               if (!selectedTask.taskId) {
-                setTaskActionError('评审修订需要已保存的后端任务。');
+                setTaskActionError('Review patches require a persisted backend task.');
                 return;
               }
               setTaskActionError('');
@@ -2627,7 +3041,7 @@ function ExecutionStatus({
                 onExecutionBundle(bundle);
               } catch {
                 setTaskActionError(
-                  '评审修订需要任务处于已完成、失败或已取消状态，并且 CodingCTO 后端在线。'
+                  'Review patches require a completed, failed, or cancelled task and the CodingCTO backend.'
                 );
               } finally {
                 setTaskActionId(undefined);
@@ -2644,7 +3058,7 @@ function PRDeliveryOverview({ tasks }: { tasks: PRNode[] }) {
   if (tasks.length === 0) {
     return (
       <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
-        还没有选择要执行的 PR 节点。
+        No PR nodes have been selected for execution yet.
       </div>
     );
   }
@@ -2653,7 +3067,7 @@ function PRDeliveryOverview({ tasks }: { tasks: PRNode[] }) {
     <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3">
       <div className="flex items-center gap-2 text-sm font-medium text-text-main">
         <GitMerge className="h-4 w-4 text-primary" />
-        交付图
+        Delivery graph
       </div>
       <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
         {tasks
@@ -2677,7 +3091,7 @@ function PRDeliveryOverview({ tasks }: { tasks: PRNode[] }) {
               </div>
               {task.dependsOn.length > 0 && (
                 <div className="mt-2 text-xs text-text-muted">
-                  依赖 {task.dependsOn.join(', ')}
+                  Depends on {task.dependsOn.join(', ')}
                 </div>
               )}
               {task.githubPrUrl && (
@@ -2687,7 +3101,7 @@ function PRDeliveryOverview({ tasks }: { tasks: PRNode[] }) {
                   rel="noreferrer"
                   className="mt-2 inline-flex items-center text-xs text-primary"
                 >
-                  打开 GitHub PR
+                  Open GitHub PR
                   <ExternalLink className="ml-1 h-3 w-3" />
                 </a>
               )}
@@ -2701,10 +3115,10 @@ function PRDeliveryOverview({ tasks }: { tasks: PRNode[] }) {
 function TaskDiagnostics({ task }: { task: PRNode }) {
   return (
     <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-xs leading-5 text-text-muted">
-      {task.fixAttemptId && <div>修复尝试：#{task.fixAttemptId}</div>}
-      {task.failureReason && <div>失败原因：{task.failureReason}</div>}
-      {task.outputLog && <div className="mt-1 truncate">输出：{task.outputLog}</div>}
-      {task.errorLog && <div className="mt-1 truncate">错误：{task.errorLog}</div>}
+      {task.fixAttemptId && <div>Fix attempt: #{task.fixAttemptId}</div>}
+      {task.failureReason && <div>Failure: {task.failureReason}</div>}
+      {task.outputLog && <div className="mt-1 truncate">Output: {task.outputLog}</div>}
+      {task.errorLog && <div className="mt-1 truncate">Error: {task.errorLog}</div>}
       {task.logsUrl && (
         <a
           href={task.logsUrl}
@@ -2712,7 +3126,7 @@ function TaskDiagnostics({ task }: { task: PRNode }) {
           rel="noreferrer"
           className="mt-1 inline-flex text-primary hover:underline"
         >
-          打开日志
+          Open logs
         </a>
       )}
     </div>
@@ -2724,7 +3138,7 @@ function FailureLogSummary({ failureLog }: { failureLog: SpecForgePRNodeFailureL
     <div className="rounded-lg border border-border-subtle bg-bg-subtle p-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <div className="text-sm font-medium">{failureLog.job_name}</div>
-        <Badge variant="outline">运行 {failureLog.workflow_run_id}</Badge>
+        <Badge variant="outline">run {failureLog.workflow_run_id}</Badge>
       </div>
       {failureLog.failed_steps.length > 0 && (
         <div className="mt-2 flex flex-wrap gap-2">
@@ -2736,7 +3150,7 @@ function FailureLogSummary({ failureLog }: { failureLog: SpecForgePRNodeFailureL
         </div>
       )}
       <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-border-subtle bg-bg-surface p-3 font-mono text-xs leading-5 text-text-main">
-        {failureLog.log_excerpt || '没有返回日志摘录。'}
+        {failureLog.log_excerpt || 'No log excerpt returned.'}
       </pre>
     </div>
   );
@@ -2778,50 +3192,51 @@ function TaskEventPanel({
         <div>
           <div className="flex items-center gap-2 text-sm font-medium">
             <Terminal className="h-4 w-4 text-primary" />
-            任务事件
+            Task events
           </div>
           <div className="mt-1 text-xs text-text-muted">
             {task.title} {task.taskId ? `#${task.taskId}` : ''}
           </div>
         </div>
-        <Badge variant="outline">{events.length} 条事件</Badge>
+        <Badge variant="outline">{events.length} events</Badge>
       </div>
       <div className="mt-3 max-h-72 space-y-2 overflow-auto rounded-lg border border-border-subtle bg-bg-subtle p-3">
-        {isLoading && <div className="text-sm text-text-muted">正在加载任务事件。</div>}
+        {isLoading && <div className="text-sm text-text-muted">Loading task events.</div>}
         {isError && (
           <div className="text-sm text-text-muted">
-            CodingCTO 后端可用后会加载实时任务事件。
+            Live task events will load when the CodingCTO backend is available.
           </div>
         )}
         {!task.taskId && (
           <div className="text-sm text-text-muted">
-            实时任务事件需要已派发的后端任务。
+            Live task events require a dispatched backend task.
           </div>
         )}
         {task.taskId && !isLoading && !isError && events.length === 0 && (
-          <div className="text-sm text-text-muted">还没有记录任务事件。</div>
+          <div className="text-sm text-text-muted">No task events recorded yet.</div>
         )}
         {events.map(event => (
           <TaskEventRow key={event.id} event={event} />
         ))}
       </div>
       <div className="mt-3 rounded-lg border border-border-subtle bg-bg-subtle p-3">
-        <div className="text-sm font-medium text-text-main">评审反馈修订</div>
+        <div className="text-sm font-medium text-text-main">Review feedback patch</div>
         <div className="mt-1 text-xs leading-5 text-text-muted">
-          任务结束后，可以根据人工 PR 评审反馈创建一个范围明确的修订任务。
+          Queue a scoped patch task from human PR review feedback after this task reaches a terminal
+          state.
         </div>
         <Textarea
           value={reviewFeedback}
           onChange={event => setReviewFeedback(event.target.value)}
           className="mt-3 min-h-24 bg-bg-surface"
-          aria-label="人工评审反馈"
-          placeholder="粘贴这项任务可执行的 PR 评审反馈..."
+          aria-label="Human review feedback"
+          placeholder="Paste actionable PR review feedback for this task..."
         />
         <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
           <Badge variant="outline">
             {task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'
-              ? '可修订'
-              : '等待任务结束'}
+              ? 'Patchable'
+              : 'Wait for terminal task'}
           </Badge>
           <Button
             variant="outline"
@@ -2829,7 +3244,7 @@ function TaskEventPanel({
             onClick={submitReviewPatch}
             disabled={!canSubmitReviewPatch || isSubmittingReviewPatch}
           >
-            {isSubmittingReviewPatch ? '排队中' : '创建评审修订'}
+            {isSubmittingReviewPatch ? 'Queuing' : 'Queue review patch'}
             <ScrollText className="ml-1.5 h-4 w-4" />
           </Button>
         </div>
@@ -2849,7 +3264,7 @@ function TaskEventRow({ event }: { event: SpecForgeTaskEventDTO }) {
         {event.tool && <div>{event.tool}</div>}
       </div>
       <pre className="whitespace-pre-wrap break-words font-mono text-text-main">
-        {eventText || '没有事件内容。'}
+        {eventText || 'No event content.'}
       </pre>
     </div>
   );

@@ -236,6 +236,22 @@ func (h *Handler) GetRun(c *gin.Context) {
 	response.Success(c, run)
 }
 
+func (h *Handler) GetLatestPlanRun(c *gin.Context) {
+	planID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || planID == 0 {
+		response.HandleError(c, "Invalid plan id", err)
+		return
+	}
+
+	run, err := h.service.GetLatestRunForPlan(c.Request.Context(), uint(planID))
+	if err != nil {
+		response.HandleError(c, "Failed to get latest execution run", err)
+		return
+	}
+
+	response.Success(c, run)
+}
+
 func (h *Handler) DispatchRun(c *gin.Context) {
 	runID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || runID == 0 {

@@ -98,6 +98,7 @@ export interface StartRunPayload {
 
 export interface DispatchRunPayload {
   max_tasks?: number;
+  require_runtime_ready?: boolean;
 }
 
 export interface RuntimeHeartbeatPayload {
@@ -105,6 +106,10 @@ export interface RuntimeHeartbeatPayload {
   executor?: string;
   hostname?: string;
   version?: string;
+  available_clis?: SpecForgeRuntimeCLIDTO[];
+  sandbox?: SpecForgeRuntimeSandboxDTO;
+  skill_roots?: SpecForgeRuntimeSkillRootDTO[];
+  local_skill_count?: number;
 }
 
 export interface RuntimeSweepPayload {
@@ -534,9 +539,37 @@ export interface SpecForgeRuntimeDTO {
   status: string;
   hostname?: string;
   version?: string;
+  available_clis?: SpecForgeRuntimeCLIDTO[];
+  sandbox?: SpecForgeRuntimeSandboxDTO;
+  skill_roots?: SpecForgeRuntimeSkillRootDTO[];
+  local_skill_count?: number;
+  capabilities_hash?: string;
   last_seen_at: string;
   created_at: string;
   updated_at: string;
+}
+
+export interface SpecForgeRuntimeCLIDTO {
+  name: string;
+  command: string;
+  path?: string;
+  version?: string;
+  available: boolean;
+}
+
+export interface SpecForgeRuntimeSandboxDTO {
+  provider?: string;
+  mode?: string;
+  network_access: boolean;
+  writable: boolean;
+  approval_policy?: string;
+  reason?: string;
+}
+
+export interface SpecForgeRuntimeSkillRootDTO {
+  provider: string;
+  path: string;
+  writable: boolean;
 }
 
 export interface SpecForgeClaimedTaskDTO {
@@ -745,6 +778,9 @@ export const specForgeService = {
       payload
     ),
 
+  getLatestProjectPlan: (projectId: number, config?: RequestConfig) =>
+    request.get<SpecForgePlanBundleDTO>(`/projects/${projectId}/specforge/latest-plan`, config),
+
   approvePlan: (planId: number, payload: ApprovePlanPayload) =>
     request.post<SpecForgePlanBundleDTO, ApprovePlanPayload>(`/plans/${planId}/approve`, payload),
 
@@ -830,6 +866,9 @@ export const specForgeService = {
     ),
 
   getRun: (runId: number) => request.get<SpecForgeExecutionBundleDTO>(`/runs/${runId}`),
+
+  getLatestPlanRun: (planId: number, config?: RequestConfig) =>
+    request.get<SpecForgeExecutionBundleDTO>(`/plans/${planId}/run/latest`, config),
 
   dispatchRun: (runId: number, payload?: DispatchRunPayload) =>
     request.post<SpecForgeExecutionBundleDTO, DispatchRunPayload | undefined>(

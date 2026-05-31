@@ -39,6 +39,12 @@ func TestRuntimeWorkerClaimsExecutesAndSubmitsTask(t *testing.T) {
 		RepoDir:      "/workspace/repo",
 		SessionID:    "session_123",
 		Env:          map[string]string{"CODEX_HOME": "/tmp/codex"},
+		AvailableCLIs: []domain.SpecForgeRuntimeCLI{
+			{Name: "Codex CLI", Command: "codex", Version: "codex 1.0.0", Available: true},
+		},
+		Sandbox:         &domain.SpecForgeRuntimeSandbox{Provider: "codex_cli", Mode: "workspace-write", NetworkAccess: true, Writable: true},
+		SkillRoots:      []domain.SpecForgeRuntimeSkillRoot{{Provider: "codex", Path: "/tmp/codex/skills", Writable: true}},
+		LocalSkillCount: 1,
 	}, client, executor)
 
 	result, err := worker.RunOnce(context.Background())
@@ -47,6 +53,9 @@ func TestRuntimeWorkerClaimsExecutesAndSubmitsTask(t *testing.T) {
 	require.True(t, result.Claimed)
 	require.Equal(t, uint(7), result.TaskID)
 	require.Equal(t, "runtime_123", client.heartbeatReq.RuntimeID)
+	require.Len(t, client.heartbeatReq.AvailableCLIs, 1)
+	require.Equal(t, "workspace-write", client.heartbeatReq.Sandbox.Mode)
+	require.Equal(t, 1, client.heartbeatReq.LocalSkillCount)
 	require.Equal(t, "runtime_123", client.claimRuntimeID)
 	require.Equal(t, "session_123", client.claimReq.SessionID)
 	require.Equal(t, "/workspace/repo", client.claimReq.Workdir)
