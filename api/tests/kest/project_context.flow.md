@@ -432,6 +432,23 @@ body.data.pr_nodes.0.evidence_refs.0 exists
 ```
 
 ```step
+@id get_plan_by_id
+@name Get Plan By ID
+
+GET /v1/plans/{{plan_id}}
+Authorization: Bearer {{token}}
+
+[Asserts]
+status == 200
+body.data.requirement.id == {{requirement_id}}
+body.data.idea.id == {{idea_id}}
+body.data.implementation_plan.id == {{plan_id}}
+body.data.implementation_plan.requirement_id == {{requirement_id}}
+body.data.project_context.project.name exists
+body.data.pr_nodes.0.id == {{pr_node_id}}
+```
+
+```step
 @id skill_runs
 @name List Plan Skill Runs
 

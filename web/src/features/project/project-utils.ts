@@ -25,6 +25,20 @@ export function projectRequirementNewHref(projectId: number): string {
   return buildRoute(ROUTES.CONSOLE.PROJECT_REQUIREMENT_NEW, { projectId });
 }
 
+export function projectPlanHref(projectId: number, planId: number): string {
+  return buildRoute(ROUTES.CONSOLE.PROJECT_PLAN, { projectId, planId });
+}
+
+export function projectIdFromConsolePathname(pathname: string): number | undefined {
+  const match = pathname.match(/^\/console\/projects\/(\d+)(?:\/|$)/);
+  if (!match) {
+    return undefined;
+  }
+
+  const projectId = Number(match[1]);
+  return Number.isFinite(projectId) ? projectId : undefined;
+}
+
 export function repositoryRoleLabel(role: string): string {
   switch (role) {
     case 'primary':

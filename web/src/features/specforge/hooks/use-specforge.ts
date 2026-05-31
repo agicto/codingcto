@@ -51,6 +51,7 @@ export const specForgeKeys = {
   projectSkills: (projectId: number) =>
     [...specForgeKeys.all, 'project-skills', projectId] as const,
   planSkillRuns: (planId: number) => [...specForgeKeys.all, 'plan-skill-runs', planId] as const,
+  plan: (planId: number) => [...specForgeKeys.all, 'plan', planId] as const,
   ideaPlan: (ideaId: number) => [...specForgeKeys.all, 'idea-plan', ideaId] as const,
   latestProjectPlan: (projectId: number) =>
     [...specForgeKeys.all, 'latest-project-plan', projectId] as const,
@@ -162,6 +163,15 @@ export function usePlanForIdea(ideaId?: number) {
     queryKey: specForgeKeys.ideaPlan(ideaId ?? 0),
     queryFn: () => specForgeService.getPlanForIdea(ideaId ?? 0),
     enabled: Boolean(ideaId),
+  });
+}
+
+export function useSpecForgePlan(planId?: number) {
+  return useQuery({
+    queryKey: specForgeKeys.plan(planId ?? 0),
+    queryFn: () => specForgeService.getPlan(planId ?? 0, silentQueryConfig),
+    enabled: Boolean(planId),
+    meta: silentQueryMeta,
   });
 }
 

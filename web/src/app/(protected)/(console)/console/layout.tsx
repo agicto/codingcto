@@ -40,7 +40,11 @@ import { useLogout } from '@/features/auth/hooks/use-auth';
 import { useAuthStore } from '@/features/auth/store/auth-store';
 import { useCreateWorkspace } from '@/features/project/hooks/use-projects';
 import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
-import { slugFromProjectName } from '@/features/project/project-utils';
+import {
+  projectIdFromConsolePathname,
+  projectRequirementNewHref,
+  slugFromProjectName,
+} from '@/features/project/project-utils';
 
 interface WorkspaceNavItem {
   title: string;
@@ -58,6 +62,10 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const sidebarT = useT('dashboard.sidebar');
   const user = useAuthStore.use.user();
   const { mutate: logout, isPending: isLoggingOut } = useLogout();
+  const currentProjectId = projectIdFromConsolePathname(pathname);
+  const newRequirementHref = currentProjectId
+    ? projectRequirementNewHref(currentProjectId)
+    : ROUTES.CONSOLE.SPECFORGE;
 
   const deliveryNavItems: WorkspaceNavItem[] = [
     {
@@ -105,7 +113,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
 
         <div className="mt-4 space-y-1">
           <Link
-            href={ROUTES.CONSOLE.SPECFORGE}
+            href={newRequirementHref}
             className="flex h-9 items-center justify-between rounded-lg px-2 text-sm text-text-subtle hover:bg-muted hover:text-text-main"
           >
             <span className="flex items-center gap-2">

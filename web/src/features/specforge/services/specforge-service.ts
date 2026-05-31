@@ -769,6 +769,9 @@ export const specForgeService = {
   getPlanForRequirement: (requirementId: number) =>
     request.get<SpecForgePlanBundleDTO>(`/requirements/${requirementId}/plan`),
 
+  getPlan: (planId: number, config?: RequestConfig) =>
+    request.get<SpecForgePlanBundleDTO>(`/plans/${planId}`, config),
+
   generateRequirementPlan: (requirementId: number, payload?: CreateIdeaPayload) =>
     request.post<SpecForgePlanBundleDTO, CreateIdeaPayload | undefined>(
       `/requirements/${requirementId}/generate-plan`,

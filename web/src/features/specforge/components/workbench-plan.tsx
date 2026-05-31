@@ -17,6 +17,7 @@ import {
 } from '@/features/specforge/execution-range';
 import type { ExecutionReadiness } from '@/features/specforge/execution-readiness';
 import { useSpecForgePlanSkillRuns } from '@/features/specforge/hooks/use-specforge';
+import { buildPromptPreview } from '@/features/specforge/prompt-preview';
 import type { SpecForgeSkillRunDTO } from '@/features/specforge/services/specforge-service';
 import type { PlanBundle, PRNode } from '@/features/specforge/types';
 import { statusClassName } from '@/features/specforge/components/workbench-utils';
@@ -47,6 +48,8 @@ export function PlanReview({
   const executionRangeNotes = executionRangeReview(plan.prNodes, selectedExecutionNodeIds);
   const canStartSelectedRange = canStartExecutionRange(plan.prNodes, selectedExecutionNodeIds);
   const decisionFields = decisionFieldsForPlan(plan);
+  const previewNode =
+    plan.prNodes.find(node => selectedExecutionNodeIds.includes(node.id)) ?? plan.prNodes[0];
   const planAssumptions = productSpec.assumptions.filter(
     item => !item.startsWith('PR DAG review:')
   );
@@ -93,6 +96,7 @@ export function PlanReview({
             disabled={approved || isStarting}
             onChange={onExecutionNodeSelectionChange}
           />
+          {previewNode ? <PromptContractPreview plan={plan} node={previewNode} /> : null}
           <ListBlock title="Execution range review" items={executionRangeNotes} />
           <ListBlock title="Security risks" items={implementationPlan.securityRisks} icon="risk" />
           <ListBlock title="Migration risks" items={implementationPlan.migrationRisks} />
@@ -131,6 +135,30 @@ export function PlanReview({
           </Button>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function PromptContractPreview({ plan, node }: { plan: PlanBundle; node: PRNode }) {
+  const promptPreview = buildPromptPreview(plan, node);
+
+  return (
+    <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div>
+          <h3 className="text-sm font-medium">Prompt contract preview</h3>
+          <p className="mt-1 text-xs leading-5 text-text-muted">
+            First selected PR node: {node.nodeKey}. This is the grounded prompt shape CodingCTO will
+            compile for the executor.
+          </p>
+        </div>
+        <Badge variant="outline" className="font-mono text-[10px]">
+          {node.nodeKey}
+        </Badge>
+      </div>
+      <pre className="mt-3 max-h-64 overflow-auto rounded-md border border-border-subtle bg-bg-surface p-3 text-xs leading-5 text-text-muted">
+        {promptPreview}
+      </pre>
     </div>
   );
 }

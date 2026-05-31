@@ -18,6 +18,7 @@ func (h *Handler) RegisterRoutes(r *router.Router) {
 		auth.POST("/requirements/:id/generate-plan", h.GenerateRequirementPlan).Name("specforge.requirements.plan.generate").WhereNumber("id")
 		auth.GET("/requirements/:id/skill-runs", h.ListRequirementSkillRuns).Name("specforge.requirements.skill_runs.index").WhereNumber("id")
 		auth.GET("/ideas/:id/plan", h.GetPlan).Name("specforge.ideas.plan").WhereNumber("id")
+		auth.GET("/plans/:id", h.GetPlanByID).Name("specforge.plans.show").WhereNumber("id")
 		auth.POST("/plans/:id/approve", h.ApprovePlan).Name("specforge.plans.approve").WhereNumber("id")
 		auth.GET("/plans/:id/skill-runs", h.ListPlanSkillRuns).Name("specforge.plans.skill_runs.index").WhereNumber("id")
 		auth.POST("/pr-nodes/:id/prompts", h.CompilePrompt).Name("specforge.pr_nodes.prompts.store").WhereNumber("id")
