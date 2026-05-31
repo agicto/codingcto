@@ -145,6 +145,9 @@ func TestStartRunIncludesActiveRepoSkillsInCompiledPrompt(t *testing.T) {
 	require.NoError(t, err)
 	require.NotEmpty(t, planningRepo.prompts)
 	prompt := planningRepo.prompts[0].PromptText
+	require.Contains(t, prompt, "Skill application protocol")
+	require.Contains(t, prompt, "translate every repository skill below into concrete constraints")
+	require.Contains(t, prompt, "skills_applied")
 	require.Contains(t, prompt, "Repository skills")
 	require.Contains(t, prompt, "## Service layer")
 	require.Contains(t, prompt, "Persistence rule")

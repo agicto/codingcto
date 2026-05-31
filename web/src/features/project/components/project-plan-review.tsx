@@ -29,10 +29,7 @@ import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { ProjectPlanningFlowCard } from '@/features/project/components/project-planning-flow-card';
 import { projectPlanningStages } from '@/features/project/project-planning-flow';
 import { projectContextHref, projectSpecForgeHref } from '@/features/project/project-utils';
-import {
-  executionRunFromDTO,
-  planBundleFromDTO,
-} from '@/features/specforge/plan-adapter';
+import { executionRunFromDTO, planBundleFromDTO } from '@/features/specforge/plan-adapter';
 import { buildPromptPreview } from '@/features/specforge/prompt-preview';
 import {
   defaultDecisionOverrides,
@@ -50,6 +47,7 @@ import {
   useApproveSpecForgePlan,
   useCompileSpecForgePrompt,
   useDispatchExecutionRun,
+  useSpecForgePlanSkillRuns,
   useSpecForgePlan,
   useSpecForgeRuntimes,
   useStartExecutionRun,
@@ -57,7 +55,13 @@ import {
 import type {
   SpecForgeCompiledPromptDTO,
   SpecForgePlanBundleDTO,
+  SpecForgeSkillRunDTO,
 } from '@/features/specforge/services/specforge-service';
+import {
+  skillEvidenceRefs,
+  skillNamesFromRuns,
+  skillRunStageLabel,
+} from '@/features/specforge/skill-pipeline';
 import {
   promptModeLabel,
   promptModes,
@@ -150,6 +154,8 @@ function ProjectPlanReview({
   );
   const approvePlan = useApproveSpecForgePlan();
   const compilePrompt = useCompileSpecForgePrompt();
+  const skillRunsQuery = useSpecForgePlanSkillRuns(plan.planId);
+  const skillRuns = skillRunsQuery.data?.skill_runs ?? [];
   const startRun = useStartExecutionRun();
   const dispatchRun = useDispatchExecutionRun();
   const isStarting = approvePlan.isPending || startRun.isPending || dispatchRun.isPending;
@@ -293,6 +299,8 @@ function ProjectPlanReview({
           promptMode={promptMode}
           compiledPrompt={compiledPrompt}
           message={promptMessage}
+          skillRuns={skillRuns}
+          isSkillRunsLoading={skillRunsQuery.isLoading}
           isCompiling={compilePrompt.isPending}
           onPromptModeChange={mode => {
             setPromptMode(mode);
@@ -323,6 +331,7 @@ function ProjectPlanReview({
           onExecutionNodeSelectionChange={setSelectedExecutionNodeIds}
           onApprove={approveAndStart}
           showPromptPreview={false}
+          showSkillPipeline={false}
         />
 
         <RuntimeSetupCard
@@ -360,10 +369,7 @@ function PRDagReviewCard({ nodes }: { nodes: PRNode[] }) {
       </CardHeader>
       <CardContent className="grid gap-3 lg:grid-cols-2">
         {nodes.map(node => (
-          <div
-            key={node.id}
-            className="rounded-[4px] border border-border-subtle bg-bg-subtle p-3"
-          >
+          <div key={node.id} className="rounded-[4px] border border-border-subtle bg-bg-subtle p-3">
             <div className="flex flex-wrap items-start justify-between gap-2">
               <div className="min-w-0">
                 <div className="flex items-center gap-2">
@@ -399,6 +405,8 @@ function PromptPreviewWorkbench({
   promptMode,
   compiledPrompt,
   message,
+  skillRuns,
+  isSkillRunsLoading,
   isCompiling,
   onPromptModeChange,
   onNodeChange,
@@ -409,6 +417,8 @@ function PromptPreviewWorkbench({
   promptMode: PromptMode;
   compiledPrompt?: SpecForgeCompiledPromptDTO;
   message: string;
+  skillRuns: SpecForgeSkillRunDTO[];
+  isSkillRunsLoading: boolean;
   isCompiling: boolean;
   onPromptModeChange: (mode: PromptMode) => void;
   onNodeChange: (nodeId: string) => void;
@@ -417,6 +427,8 @@ function PromptPreviewWorkbench({
   const [copyMessage, setCopyMessage] = useState('');
   const previewText = node ? (compiledPrompt?.prompt_text ?? buildPromptPreview(plan, node)) : '';
   const promptSource = compiledPrompt ? 'Compiled by API' : 'Grounded local preview';
+  const skillNames = skillNamesFromRuns(skillRuns);
+  const promptSkillRefs = skillEvidenceRefs(compiledPrompt?.evidence_refs);
 
   async function copyPrompt() {
     setCopyMessage('');
@@ -525,6 +537,14 @@ function PromptPreviewWorkbench({
             </div>
           ) : null}
 
+          <SkillEvidencePanel
+            skillRuns={skillRuns}
+            skillNames={skillNames}
+            promptSkillRefs={promptSkillRefs}
+            isLoading={isSkillRunsLoading}
+            hasCompiledPrompt={Boolean(compiledPrompt)}
+          />
+
           {(message || copyMessage) && (
             <div className="rounded-[4px] border border-border-subtle bg-bg-subtle px-3 py-2 text-sm leading-5 text-text-muted">
               {message || copyMessage}
@@ -537,6 +557,94 @@ function PromptPreviewWorkbench({
         </pre>
       </CardContent>
     </Card>
+  );
+}
+
+function SkillEvidencePanel({
+  skillRuns,
+  skillNames,
+  promptSkillRefs,
+  isLoading,
+  hasCompiledPrompt,
+}: {
+  skillRuns: SpecForgeSkillRunDTO[];
+  skillNames: string[];
+  promptSkillRefs: string[];
+  isLoading: boolean;
+  hasCompiledPrompt: boolean;
+}) {
+  return (
+    <div className="rounded-[4px] border border-border-subtle bg-bg-subtle p-3">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="text-sm font-medium text-text-main">Skill evidence</div>
+        <Badge variant="outline">
+          {isLoading
+            ? 'Checking'
+            : skillNames.length > 0
+              ? `${skillNames.length} skills`
+              : 'No skills'}
+        </Badge>
+      </div>
+      <p className="mt-2 text-xs leading-5 text-text-muted">
+        CodingCTO injects active project or repository skills into the compiled prompt and tracks
+        the planning stages that used them.
+      </p>
+
+      {skillNames.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {skillNames.map(skillName => (
+            <Badge key={skillName} variant="outline">
+              {skillName}
+            </Badge>
+          ))}
+        </div>
+      ) : (
+        <p className="mt-3 rounded-[4px] border border-border-subtle bg-bg-surface px-3 py-2 text-xs leading-5 text-text-muted">
+          No active skills were recorded for this plan. Add repo or project skills before generating
+          the next requirement to reduce prompt ambiguity.
+        </p>
+      )}
+
+      {hasCompiledPrompt ? (
+        <div className="mt-3 rounded-[4px] border border-border-subtle bg-bg-surface px-3 py-2">
+          <div className="text-xs font-medium text-text-main">Compiled prompt skill refs</div>
+          {promptSkillRefs.length > 0 ? (
+            <div className="mt-2 flex flex-wrap gap-1.5">
+              {promptSkillRefs.map(ref => (
+                <Badge key={ref} variant="outline" className="font-mono text-[10px]">
+                  {ref}
+                </Badge>
+              ))}
+            </div>
+          ) : (
+            <p className="mt-1 text-xs leading-5 text-text-muted">
+              The prompt was compiled without skill evidence refs.
+            </p>
+          )}
+        </div>
+      ) : null}
+
+      {skillRuns.length > 0 ? (
+        <div className="mt-3 space-y-2">
+          {skillRuns.slice(0, 4).map(run => (
+            <div
+              key={`${run.stage}-${run.id}`}
+              className="rounded-[4px] border border-border-subtle bg-bg-surface px-3 py-2"
+            >
+              <div className="flex flex-wrap items-center justify-between gap-2">
+                <span className="text-xs font-medium uppercase text-text-subtle">
+                  {skillRunStageLabel(run.stage)}
+                </span>
+                <Badge variant="outline">{run.status}</Badge>
+              </div>
+              <p className="mt-1 line-clamp-2 text-xs leading-5 text-text-muted">
+                {run.output_summary || 'No output recorded yet.'}
+              </p>
+            </div>
+          ))}
+        </div>
+      ) : null}
+    </div>
   );
 }
 
@@ -567,9 +675,7 @@ function VerificationReviewCard({ plan }: { plan: PlanBundle }) {
               <ShieldAlert className="h-4 w-4 text-primary" />
               Verification review
             </CardTitle>
-            <CardDescription className="mt-1 leading-6">
-              {review.headline}
-            </CardDescription>
+            <CardDescription className="mt-1 leading-6">{review.headline}</CardDescription>
           </div>
           <Badge
             variant="outline"
