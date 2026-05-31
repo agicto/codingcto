@@ -20,4 +20,15 @@ export interface RegisterRequest {
 
 export interface AuthResponse {
   user: AuthUser;
+  session?: AuthSessionInfo;
+}
+
+export interface AuthSessionInfo {
+  mode: 'backend' | 'mock';
+  projectApiReady: boolean;
+}
+
+export interface AuthRuntimeConfig {
+  backendAuthEnabled: boolean;
+  projectApiReady: boolean;
 }

@@ -1,5 +1,6 @@
 'use client';
 
+import { useQuery } from '@tanstack/react-query';
 import { useState } from 'react';
 import Link from 'next/link';
 import { Button } from '@/components/ui/button';
@@ -7,6 +8,8 @@ import { Card, CardContent, CardDescription, CardFooter, CardHeader, CardTitle }
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { useLogin } from '@/features/auth/hooks/use-auth';
+import { authRuntimeView } from '@/features/auth/auth-runtime';
+import { authService } from '@/features/auth/services/auth-service';
 import { useT } from '@/i18n';
 
 /**
@@ -18,6 +21,12 @@ import { useT } from '@/i18n';
 export function LoginForm() {
   const t = useT();
   const { mutate: login, isPending } = useLogin();
+  const authConfigQuery = useQuery({
+    queryKey: ['auth', 'runtime-config'],
+    queryFn: authService.config,
+    staleTime: 30_000,
+  });
+  const runtime = authRuntimeView(authConfigQuery.data);
   const [email, setEmail] = useState('admin@example.com');
   const [password, setPassword] = useState('admin123');
 
@@ -37,6 +46,17 @@ export function LoginForm() {
         </CardDescription>
       </CardHeader>
       <CardContent className="px-0 pt-4">
+        <div
+          className={
+            runtime.tone === 'success'
+              ? 'mb-4 rounded-lg border border-success/30 bg-success-subtle p-3 text-sm leading-6'
+              : 'mb-4 rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm leading-6'
+          }
+        >
+          <div className="font-medium text-text-main">{runtime.label}</div>
+          <p className="mt-1 text-text-muted">{runtime.description}</p>
+          <p className="mt-2 text-xs text-text-muted">{runtime.credentialHint}</p>
+        </div>
         <form onSubmit={handleSubmit} className="space-y-4">
           <div className="space-y-2">
             <Label htmlFor="email">{t.auth('email')}</Label>
