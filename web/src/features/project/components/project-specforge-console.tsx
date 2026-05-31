@@ -18,15 +18,16 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SpecForgeWorkbench } from '@/features/specforge';
+import { useGitHubRepositories } from '@/features/specforge/hooks/use-specforge';
 import { useT } from '@/i18n';
 import {
   useBindProjectRepository,
   useProjectContext,
   useUnbindProjectRepository,
 } from '@/features/project/hooks/use-projects';
-import { useGitHubRepositories } from '@/features/specforge/hooks/use-specforge';
 import {
   primaryRepositoryContext,
+  projectContextContract,
   projectContextReadiness,
 } from '@/features/project/project-context';
 import type {
@@ -75,16 +76,16 @@ export function ProjectSpecForgeConsole() {
     );
   }
 
+  const projectContext = context as ProjectContextDTO;
+
   return (
     <div>
-      <ProjectContextReadiness context={context} />
+      <ProjectContextReadiness context={projectContext} />
       <div className="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
         {!repositoryId ? (
           <Alert>
             <AlertTitle>{t('primaryRequired.title')}</AlertTitle>
-            <AlertDescription>
-              {t('primaryRequired.description')}
-            </AlertDescription>
+            <AlertDescription>{t('primaryRequired.description')}</AlertDescription>
           </Alert>
         ) : null}
         <ProjectRepositoryBindPanel
@@ -186,9 +187,7 @@ function ProjectRepositoryBindPanel({
     <Card className="mt-4">
       <CardHeader>
         <CardTitle className="text-base">{t('title')}</CardTitle>
-        <CardDescription>
-          {t('description')}
-        </CardDescription>
+        <CardDescription>{t('description')}</CardDescription>
       </CardHeader>
       <CardContent>
         <form
@@ -215,7 +214,8 @@ function ProjectRepositoryBindPanel({
                 <SelectContent>
                   {availableRepositories.map(repository => (
                     <SelectItem key={repository.repository_id} value={repository.repository_id}>
-                      {repository.github_owner}/{repository.github_repo} ({repository.default_branch})
+                      {repository.github_owner}/{repository.github_repo} (
+                      {repository.default_branch})
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -264,9 +264,7 @@ function ProjectRepositoryBindPanel({
             <Button
               type="submit"
               disabled={
-                bindRepository.isPending ||
-                allConnectedRepositoriesBound ||
-                !repositoryId.trim()
+                bindRepository.isPending || allConnectedRepositoriesBound || !repositoryId.trim()
               }
             >
               {bindRepository.isPending ? t('binding') : t('submit')}
@@ -286,6 +284,7 @@ function ProjectRepositoryBindPanel({
 function ProjectContextReadiness({ context }: { context?: ProjectContextDTO }) {
   const t = useT('dashboard.projectDelivery.readiness');
   const readiness = projectContextReadiness(context);
+  const contract = projectContextContract(context);
   const repositories = context?.repository_contexts ?? [];
   const unbindRepository = useUnbindProjectRepository(context?.project.id ?? 0);
   const [message, setMessage] = useState('');
@@ -298,9 +297,7 @@ function ProjectContextReadiness({ context }: { context?: ProjectContextDTO }) {
     setMessage('');
     try {
       await unbindRepository.mutateAsync(repositoryContext.repository.repository_id);
-      setMessage(
-        t('repository.removed', { repoId: repositoryContext.repository.repository_id })
-      );
+      setMessage(t('repository.removed', { repoId: repositoryContext.repository.repository_id }));
     } catch {
       setMessage(t('repository.removeFailed'));
     }
@@ -345,6 +342,30 @@ function ProjectContextReadiness({ context }: { context?: ProjectContextDTO }) {
           <div className="font-medium text-text-main">{t('nextAction')}</div>
           <div className="mt-1 text-text-muted">{readiness.nextAction}</div>
         </div>
+        {contract && (
+          <div className="mt-3 grid gap-3 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-xs md:grid-cols-[220px_minmax(0,1fr)]">
+            <div>
+              <div className="font-medium text-text-main">{t('contract.title')}</div>
+              <div className="mt-1 text-text-muted">{contract.version}</div>
+            </div>
+            <div className="grid gap-2 sm:grid-cols-3">
+              <div>
+                <div className="font-medium text-text-main">{t('contract.execution')}</div>
+                <div className="mt-1 text-text-muted">
+                  {contract.primary_repository_id || t('repository.missing')}
+                </div>
+              </div>
+              <div>
+                <div className="font-medium text-text-main">{t('contract.skills')}</div>
+                <div className="mt-1 text-text-muted">{contract.skill_names?.length ?? 0}</div>
+              </div>
+              <div>
+                <div className="font-medium text-text-main">{t('contract.missingEvidence')}</div>
+                <div className="mt-1 text-text-muted">{contract.missing_evidence?.length ?? 0}</div>
+              </div>
+            </div>
+          </div>
+        )}
         {readiness.guardrails.length > 0 && (
           <div className="mt-3 flex flex-wrap gap-2">
             {readiness.guardrails.map(guardrail => (

@@ -111,6 +111,39 @@ export interface ProjectContextReadinessDTO {
   next_action: string;
 }
 
+export interface ProjectRepositoryContextContractFragmentDTO {
+  repository_id: string;
+  role: string;
+  writable: boolean;
+  has_profile: boolean;
+  has_architecture_snapshot: boolean;
+  architecture_stale: boolean;
+  stack?: string[];
+  test_commands?: string[];
+  risk_areas?: string[];
+  coding_conventions?: string[];
+  architecture_modules?: string[];
+  architecture_entrypoints?: string[];
+  architecture_ci_workflows?: string[];
+  architecture_snapshot_commit?: string;
+  skill_names?: string[];
+}
+
+export interface ProjectContextContractDTO {
+  version: string;
+  project_id: number;
+  project_name: string;
+  primary_repository_id?: string;
+  execution_repository_id?: string;
+  read_only_repository_ids?: string[];
+  active_repository_count: number;
+  skill_names?: string[];
+  missing_evidence?: string[];
+  warnings?: string[];
+  prompt_guardrails?: string[];
+  repositories?: ProjectRepositoryContextContractFragmentDTO[];
+}
+
 export interface ProjectContextDTO {
   project: ProjectDTO;
   repositories: ProjectRepositoryDTO[];
@@ -120,6 +153,7 @@ export interface ProjectContextDTO {
   read_only_repository_ids?: string[];
   execution_guardrails?: string[];
   readiness?: ProjectContextReadinessDTO;
+  context_contract?: ProjectContextContractDTO;
 }
 
 export interface CreateProjectPayload {
@@ -146,7 +180,11 @@ export const projectService = {
     request.get<{ workspaces: WorkspaceDTO[] }>('/workspaces', config),
 
   createWorkspace: (payload: CreateWorkspacePayload, config?: RequestConfig) =>
-    request.post<{ workspace: WorkspaceDTO }, CreateWorkspacePayload>('/workspaces', payload, config),
+    request.post<{ workspace: WorkspaceDTO }, CreateWorkspacePayload>(
+      '/workspaces',
+      payload,
+      config
+    ),
 
   listProjects: (workspaceId: string, config?: RequestConfig) =>
     request.get<{ projects: ProjectDTO[] }>(

@@ -1,6 +1,10 @@
 import { describe, expect, it } from 'vitest';
 
-import { primaryRepositoryContext, projectContextReadiness } from './project-context';
+import {
+  primaryRepositoryContext,
+  projectContextContract,
+  projectContextReadiness,
+} from './project-context';
 import type { ProjectContextDTO } from './services/project-service';
 
 function projectContext(
@@ -105,11 +109,39 @@ describe('project context', () => {
     expect(readiness.nextAction).toBe('Server next action.');
   });
 
+  it('exposes the server-provided context contract', () => {
+    const context = projectContext([
+      ['dependency', true, 'repo_sdk'],
+      ['primary', true, 'repo_app'],
+    ]);
+    context.context_contract = {
+      version: 'project_context_contract_v1',
+      project_id: 1,
+      project_name: 'SpecForge',
+      primary_repository_id: 'repo_app',
+      execution_repository_id: 'repo_app',
+      read_only_repository_ids: ['repo_sdk'],
+      active_repository_count: 2,
+      skill_names: ['planning-sop'],
+      missing_evidence: ['architecture_snapshot:repo_sdk'],
+      prompt_guardrails: ['Executor must modify only repo_app.'],
+    };
+
+    const contract = projectContextContract(context);
+
+    expect(contract?.version).toBe('project_context_contract_v1');
+    expect(contract?.primary_repository_id).toBe('repo_app');
+    expect(contract?.read_only_repository_ids).toEqual(['repo_sdk']);
+    expect(contract?.missing_evidence).toEqual(['architecture_snapshot:repo_sdk']);
+  });
+
   it('asks for a primary repo before planning when none is active', () => {
     const readiness = projectContextReadiness(projectContext([['dependency', true, 'repo_docs']]));
 
     expect(readiness.hasPrimaryRepository).toBe(false);
-    expect(readiness.nextAction).toBe('Bind one active primary repository before generating a plan.');
+    expect(readiness.nextAction).toBe(
+      'Bind one active primary repository before generating a plan.'
+    );
   });
 
   it('counts architecture warnings in fallback readiness', () => {
@@ -122,6 +154,8 @@ describe('project context', () => {
     const readiness = projectContextReadiness(context);
 
     expect(readiness.warningCount).toBe(1);
-    expect(readiness.nextAction).toBe('Review repository context warnings before approving execution.');
+    expect(readiness.nextAction).toBe(
+      'Review repository context warnings before approving execution.'
+    );
   });
 });
