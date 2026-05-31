@@ -44,8 +44,8 @@ import {
   useCreateProject,
   useCreateWorkspace,
   useProjects,
-  useWorkspaces,
 } from '@/features/project/hooks/use-projects';
+import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
 import {
   executionRunFromDTO,
   planBundleFromDTO,
@@ -1124,7 +1124,6 @@ function runtimeCLILabel(name: string, version?: string): string {
 }
 
 function WorkspaceProjectLaunchPanel() {
-  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('');
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceSlug, setWorkspaceSlug] = useState('');
   const [workspaceDescription, setWorkspaceDescription] = useState('');
@@ -1133,12 +1132,13 @@ function WorkspaceProjectLaunchPanel() {
   const [projectDescription, setProjectDescription] = useState('');
   const [message, setMessage] = useState('');
 
-  const workspacesQuery = useWorkspaces();
-  const workspaces = workspacesQuery.data?.workspaces ?? [];
-  const effectiveWorkspaceId = selectedWorkspaceId || workspaces[0]?.workspace_id || '';
-  const selectedWorkspace = workspaces.find(
-    workspace => workspace.workspace_id === effectiveWorkspaceId
-  );
+  const {
+    workspacesQuery,
+    workspaces,
+    selectedWorkspaceId: effectiveWorkspaceId,
+    selectedWorkspace,
+    setSelectedWorkspaceId,
+  } = useSelectedWorkspace();
   const projectsQuery = useProjects(effectiveWorkspaceId);
   const projects = projectsQuery.data?.projects ?? [];
   const createWorkspace = useCreateWorkspace();

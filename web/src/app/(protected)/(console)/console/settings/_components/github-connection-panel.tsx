@@ -36,7 +36,7 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { env } from '@/config/env';
 import { ROUTES } from '@/constants/routes';
-import { useWorkspaces } from '@/features/project/hooks/use-projects';
+import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
 import {
   useGitHubSettings,
   useSyncGitHubInstallation,
@@ -69,7 +69,6 @@ function errorMessage(error: unknown) {
 export function GitHubConnectionPanel() {
   const searchParams = useSearchParams();
   const stateWorkspaceId = searchParams.get('state')?.trim() || '';
-  const [workspaceIdOverride, setWorkspaceId] = useState(() => stateWorkspaceId);
   const [installationId, setInstallationId] = useState(
     () => searchParams.get('installation_id')?.trim() || ''
   );
@@ -87,13 +86,13 @@ export function GitHubConnectionPanel() {
     env.NEXT_PUBLIC_GITHUB_APP_INSTALL_URL || env.NEXT_PUBLIC_GITHUB_APP_SLUG || ''
   );
 
-  const workspacesQuery = useWorkspaces();
-  const workspaces = useMemo(
-    () => workspacesQuery.data?.workspaces ?? [],
-    [workspacesQuery.data?.workspaces]
-  );
-  const workspaceId = workspaceIdOverride || workspaces[0]?.workspace_id || '';
-  const selectedWorkspace = workspaces.find(workspace => workspace.workspace_id === workspaceId);
+  const {
+    workspacesQuery,
+    workspaces,
+    selectedWorkspaceId: workspaceId,
+    selectedWorkspace,
+    setSelectedWorkspaceId,
+  } = useSelectedWorkspace(stateWorkspaceId);
   const githubSettings = useGitHubSettings(workspaceId.trim());
   const upsertSettings = useUpsertGitHubSettings();
   const syncInstallation = useSyncGitHubInstallation();
@@ -456,7 +455,7 @@ export function GitHubConnectionPanel() {
             <div className="space-y-2">
               <Label htmlFor="github-workspace">Workspace</Label>
               {workspaces.length > 0 ? (
-                <Select value={workspaceId} onValueChange={setWorkspaceId}>
+                <Select value={workspaceId} onValueChange={setSelectedWorkspaceId}>
                   <SelectTrigger id="github-workspace">
                     <SelectValue placeholder="Select workspace" />
                   </SelectTrigger>

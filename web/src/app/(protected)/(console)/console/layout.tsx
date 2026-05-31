@@ -1,8 +1,10 @@
 'use client';
 
-import Link from "next/link";
-import { usePathname } from "next/navigation";
+import Link from 'next/link';
+import { usePathname } from 'next/navigation';
+import { FormEvent, useState } from 'react';
 import {
+  Building2,
   LucideIcon,
   Settings,
   Bell,
@@ -23,23 +25,31 @@ import {
   BookOpen,
   HelpCircle,
   ChevronDown,
-} from "lucide-react";
+  Plus,
+} from 'lucide-react';
 
-import { cn } from "@/utils";
-import { ROUTES } from "@/constants/routes";
+import { cn } from '@/utils';
+import { ROUTES } from '@/constants/routes';
+import { Button } from '@/components/ui/button';
 import {
   DropdownMenu,
   DropdownMenuContent,
   DropdownMenuItem,
   DropdownMenuTrigger,
-} from "@/components/ui/dropdown-menu";
-import { Button } from "@/components/ui/button";
-import { Avatar, AvatarFallback, AvatarImage } from "@/components/ui/avatar";
-import { ThemeToggle } from "@/components/theme-toggle";
-import { LanguageSwitcher } from "@/components/common";
-import { useT } from "@/i18n";
-import { useLogout } from "@/features/auth/hooks/use-auth";
-import { useAuthStore } from "@/features/auth/store/auth-store";
+} from '@/components/ui/dropdown-menu';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import { Popover, PopoverContent, PopoverTrigger } from '@/components/ui/popover';
+import { Textarea } from '@/components/ui/textarea';
+import { Avatar, AvatarFallback, AvatarImage } from '@/components/ui/avatar';
+import { ThemeToggle } from '@/components/theme-toggle';
+import { LanguageSwitcher } from '@/components/common';
+import { useT } from '@/i18n';
+import { useLogout } from '@/features/auth/hooks/use-auth';
+import { useAuthStore } from '@/features/auth/store/auth-store';
+import { useCreateWorkspace } from '@/features/project/hooks/use-projects';
+import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
+import { slugFromProjectName } from '@/features/project/project-utils';
 
 interface WorkspaceNavItem {
   title: string;
@@ -48,11 +58,7 @@ interface WorkspaceNavItem {
   badge?: string;
 }
 
-export default function ConsoleLayout({
-  children,
-}: {
-  children: React.ReactNode;
-}) {
+export default function ConsoleLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const t = useT();
   const user = useAuthStore.use.user();
@@ -76,15 +82,7 @@ export default function ConsoleLayout({
   return (
     <div className="flex h-screen overflow-hidden bg-bg-canvas text-text-main">
       <aside className="hidden w-[256px] shrink-0 flex-col border-r border-border-subtle bg-bg-subtle px-3 py-3 md:flex">
-        <button className="flex h-9 w-full items-center justify-between rounded-md px-2 text-left text-sm font-medium hover:bg-muted">
-          <span className="flex min-w-0 items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-md border border-border-main bg-bg-surface text-xs font-semibold text-text-subtle">
-              A
-            </span>
-            <span className="truncate">agicto</span>
-          </span>
-          <ChevronDown className="h-4 w-4 text-text-muted" />
-        </button>
+        <WorkspaceSwitcher />
 
         <div className="mt-4 space-y-1">
           <button className="flex h-9 w-full items-center justify-between rounded-lg bg-muted px-2 text-sm text-text-main">
@@ -111,7 +109,12 @@ export default function ConsoleLayout({
         </div>
 
         <nav className="mt-8 space-y-1 text-sm">
-          <SidebarLink href={ROUTES.CONSOLE.HOME} icon={Inbox} label="Review Queue" pathname={pathname} />
+          <SidebarLink
+            href={ROUTES.CONSOLE.HOME}
+            icon={Inbox}
+            label="Review Queue"
+            pathname={pathname}
+          />
           <SidebarLink
             href={ROUTES.CONSOLE.HOME}
             icon={CircleUserRound}
@@ -150,13 +153,18 @@ export default function ConsoleLayout({
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
-                <Button variant="ghost" isIcon noScale className="h-8 w-8 overflow-hidden rounded-full">
+                <Button
+                  variant="ghost"
+                  isIcon
+                  noScale
+                  className="h-8 w-8 overflow-hidden rounded-full"
+                >
                   <Avatar className="h-full w-full">
                     <AvatarImage src="https://github.com/shadcn.png" />
                     <AvatarFallback className="bg-muted text-xs text-text-main">
                       {user?.name
                         ?.split(' ')
-                        .map((part) => part[0])
+                        .map(part => part[0])
                         .join('')
                         .slice(0, 2)
                         .toUpperCase() || 'CT'}
@@ -173,7 +181,7 @@ export default function ConsoleLayout({
                 <DropdownMenuItem>{t('nav.settings')}</DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-destructive"
-                  onSelect={(event) => {
+                  onSelect={event => {
                     event.preventDefault();
                     logout();
                   }}
@@ -190,6 +198,154 @@ export default function ConsoleLayout({
         <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
       </section>
     </div>
+  );
+}
+
+function WorkspaceSwitcher() {
+  const {
+    workspaces,
+    workspacesQuery,
+    selectedWorkspaceId,
+    selectedWorkspace,
+    setSelectedWorkspaceId,
+  } = useSelectedWorkspace();
+  const createWorkspace = useCreateWorkspace();
+  const [workspaceName, setWorkspaceName] = useState('');
+  const [workspaceSlug, setWorkspaceSlug] = useState('');
+  const [workspaceDescription, setWorkspaceDescription] = useState('');
+  const [message, setMessage] = useState('');
+
+  function handleWorkspaceName(value: string) {
+    setWorkspaceName(value);
+    setWorkspaceSlug(current => current || slugFromProjectName(value));
+  }
+
+  async function createWorkspaceFromSwitcher(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = workspaceName.trim();
+    const slug = slugFromProjectName(workspaceSlug || workspaceName);
+    if (!name || !slug) {
+      setMessage('Workspace name and slug are required.');
+      return;
+    }
+    setMessage('');
+    try {
+      const response = await createWorkspace.mutateAsync({
+        name,
+        slug,
+        description: workspaceDescription.trim(),
+      });
+      setSelectedWorkspaceId(response.workspace.workspace_id);
+      setWorkspaceName('');
+      setWorkspaceSlug('');
+      setWorkspaceDescription('');
+      setMessage(`Created ${response.workspace.name}.`);
+    } catch {
+      setMessage('Workspace could not be created. Try another slug or check backend auth.');
+    }
+  }
+
+  const fallbackName = workspacesQuery.isLoading ? 'Loading...' : 'Create workspace';
+  const workspaceNameLabel = selectedWorkspace?.name || fallbackName;
+  const workspaceInitial = (selectedWorkspace?.name || 'C').trim().slice(0, 1).toUpperCase();
+
+  return (
+    <Popover>
+      <PopoverTrigger asChild>
+        <button className="flex h-9 w-full items-center justify-between rounded-md px-2 text-left text-sm font-medium hover:bg-muted">
+          <span className="flex min-w-0 items-center gap-2">
+            <span className="flex h-6 w-6 items-center justify-center rounded-md border border-border-main bg-bg-surface text-xs font-semibold text-text-subtle">
+              {workspaceInitial}
+            </span>
+            <span className="truncate">{workspaceNameLabel}</span>
+          </span>
+          <ChevronDown className="h-4 w-4 text-text-muted" />
+        </button>
+      </PopoverTrigger>
+      <PopoverContent align="start" className="w-[340px] p-3">
+        <div className="flex items-start gap-3 rounded-lg border border-border-subtle bg-bg-subtle p-3">
+          <div className="flex h-9 w-9 shrink-0 items-center justify-center rounded-lg bg-primary/10 text-primary">
+            <Building2 className="h-4 w-4" />
+          </div>
+          <div className="min-w-0">
+            <div className="text-sm font-medium">Organization workspace</div>
+            <p className="mt-1 text-xs leading-5 text-text-muted">
+              Switch the enterprise boundary used by settings, GitHub binding, projects, and
+              SpecForge setup.
+            </p>
+          </div>
+        </div>
+
+        <div className="mt-3 max-h-44 space-y-1 overflow-auto">
+          {workspaces.map(workspace => (
+            <button
+              key={workspace.workspace_id}
+              type="button"
+              onClick={() => setSelectedWorkspaceId(workspace.workspace_id)}
+              className={cn(
+                'flex w-full items-center justify-between rounded-lg px-3 py-2 text-left text-sm hover:bg-muted',
+                selectedWorkspaceId === workspace.workspace_id && 'bg-primary-subtle text-primary'
+              )}
+            >
+              <span className="min-w-0">
+                <span className="block truncate font-medium">{workspace.name}</span>
+                <span className="block truncate text-xs text-text-muted">{workspace.slug}</span>
+              </span>
+              {selectedWorkspaceId === workspace.workspace_id ? (
+                <span className="text-xs">Current</span>
+              ) : null}
+            </button>
+          ))}
+          {!workspacesQuery.isLoading && workspaces.length === 0 ? (
+            <div className="rounded-lg border border-border-subtle bg-bg-surface p-3 text-sm text-text-muted">
+              No workspace yet. Create one below.
+            </div>
+          ) : null}
+        </div>
+
+        <form
+          className="mt-3 space-y-2 border-t border-border-subtle pt-3"
+          onSubmit={createWorkspaceFromSwitcher}
+        >
+          <div className="flex items-center gap-2 text-sm font-medium">
+            <Plus className="h-4 w-4 text-primary" />
+            New workspace
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="global-workspace-name">Name</Label>
+            <Input
+              id="global-workspace-name"
+              value={workspaceName}
+              onChange={event => handleWorkspaceName(event.target.value)}
+              placeholder="Acme Platform"
+            />
+          </div>
+          <div className="space-y-1.5">
+            <Label htmlFor="global-workspace-slug">Slug</Label>
+            <Input
+              id="global-workspace-slug"
+              value={workspaceSlug}
+              onChange={event => setWorkspaceSlug(slugFromProjectName(event.target.value))}
+              placeholder="acme-platform"
+            />
+          </div>
+          <Textarea
+            value={workspaceDescription}
+            onChange={event => setWorkspaceDescription(event.target.value)}
+            placeholder="Who owns this workspace?"
+            rows={2}
+          />
+          {message ? (
+            <div className="rounded-md border border-border-subtle bg-bg-surface px-2 py-1.5 text-xs leading-5 text-text-muted">
+              {message}
+            </div>
+          ) : null}
+          <Button type="submit" className="w-full" disabled={createWorkspace.isPending}>
+            {createWorkspace.isPending ? 'Creating' : 'Create and switch'}
+          </Button>
+        </form>
+      </PopoverContent>
+    </Popover>
   );
 }
 

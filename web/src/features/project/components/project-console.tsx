@@ -1,7 +1,7 @@
-"use client";
+'use client';
 
-import Link from "next/link";
-import { FormEvent, useMemo, useState } from "react";
+import Link from 'next/link';
+import { FormEvent, useMemo, useState } from 'react';
 import {
   ArrowRight,
   Boxes,
@@ -10,66 +10,55 @@ import {
   GitPullRequest,
   Plus,
   RefreshCw,
-} from "lucide-react";
+} from 'lucide-react';
 
-import { Badge } from "@/components/ui/badge";
-import { Button } from "@/components/ui/button";
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from "@/components/ui/card";
-import { Input } from "@/components/ui/input";
-import { Label } from "@/components/ui/label";
+import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
 import {
   Select,
   SelectContent,
   SelectItem,
   SelectTrigger,
   SelectValue,
-} from "@/components/ui/select";
-import { Textarea } from "@/components/ui/textarea";
-import { cn } from "@/utils";
+} from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
+import { cn } from '@/utils';
 import {
   projectSpecForgeHref,
   repositoryRoleLabel,
   slugFromProjectName,
-} from "@/features/project/project-utils";
+} from '@/features/project/project-utils';
 import {
   useCreateProject,
   useCreateWorkspace,
   useProjects,
-  useWorkspaces,
-} from "@/features/project/hooks/use-projects";
-import type { ProjectDTO } from "@/features/project/services/project-service";
+} from '@/features/project/hooks/use-projects';
+import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
+import type { ProjectDTO } from '@/features/project/services/project-service';
 
 export function ProjectConsole() {
-  const [userSelectedWorkspaceId, setUserSelectedWorkspaceId] = useState("");
-  const [workspaceName, setWorkspaceName] = useState("");
-  const [workspaceSlug, setWorkspaceSlug] = useState("");
-  const [workspaceDescription, setWorkspaceDescription] = useState("");
-  const [workspaceError, setWorkspaceError] = useState("");
-  const [name, setName] = useState("");
-  const [slug, setSlug] = useState("");
-  const [description, setDescription] = useState("");
-  const [formError, setFormError] = useState("");
+  const [workspaceName, setWorkspaceName] = useState('');
+  const [workspaceSlug, setWorkspaceSlug] = useState('');
+  const [workspaceDescription, setWorkspaceDescription] = useState('');
+  const [workspaceError, setWorkspaceError] = useState('');
+  const [name, setName] = useState('');
+  const [slug, setSlug] = useState('');
+  const [description, setDescription] = useState('');
+  const [formError, setFormError] = useState('');
 
-  const workspacesQuery = useWorkspaces();
-  const workspaces = useMemo(
-    () => workspacesQuery.data?.workspaces ?? [],
-    [workspacesQuery.data?.workspaces]
-  );
-  const selectedWorkspaceId = userSelectedWorkspaceId || workspaces[0]?.workspace_id || "";
+  const {
+    workspacesQuery,
+    workspaces,
+    selectedWorkspaceId,
+    selectedWorkspace,
+    setSelectedWorkspaceId,
+  } = useSelectedWorkspace();
   const projectsQuery = useProjects(selectedWorkspaceId);
   const createWorkspace = useCreateWorkspace();
   const createProject = useCreateProject(selectedWorkspaceId);
-
-  const selectedWorkspace = useMemo(
-    () => workspaces.find(workspace => workspace.workspace_id === selectedWorkspaceId),
-    [selectedWorkspaceId, workspaces]
-  );
 
   const projects = useMemo(
     () => projectsQuery.data?.projects ?? [],
@@ -88,11 +77,11 @@ export function ProjectConsole() {
 
   async function handleWorkspaceSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setWorkspaceError("");
+    setWorkspaceError('');
     const trimmedName = workspaceName.trim();
     const trimmedSlug = slugFromProjectName(workspaceSlug || workspaceName);
     if (!trimmedName || !trimmedSlug) {
-      setWorkspaceError("Workspace name and slug are required.");
+      setWorkspaceError('Workspace name and slug are required.');
       return;
     }
 
@@ -102,26 +91,28 @@ export function ProjectConsole() {
         slug: trimmedSlug,
         description: workspaceDescription.trim(),
       });
-      setUserSelectedWorkspaceId(response.workspace.workspace_id);
-      setWorkspaceName("");
-      setWorkspaceSlug("");
-      setWorkspaceDescription("");
+      setSelectedWorkspaceId(response.workspace.workspace_id);
+      setWorkspaceName('');
+      setWorkspaceSlug('');
+      setWorkspaceDescription('');
     } catch {
-      setWorkspaceError("Workspace could not be created. Check the API connection and slug uniqueness.");
+      setWorkspaceError(
+        'Workspace could not be created. Check the API connection and slug uniqueness.'
+      );
     }
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
-    setFormError("");
+    setFormError('');
     const trimmedName = name.trim();
     const trimmedSlug = slugFromProjectName(slug || name);
     if (!selectedWorkspaceId) {
-      setFormError("Create or select a workspace before creating a project.");
+      setFormError('Create or select a workspace before creating a project.');
       return;
     }
     if (!trimmedName || !trimmedSlug) {
-      setFormError("Project name and slug are required.");
+      setFormError('Project name and slug are required.');
       return;
     }
 
@@ -132,11 +123,11 @@ export function ProjectConsole() {
         slug: trimmedSlug,
         description: description.trim(),
       });
-      setName("");
-      setSlug("");
-      setDescription("");
+      setName('');
+      setSlug('');
+      setDescription('');
     } catch {
-      setFormError("Project could not be created. Check the API connection and slug uniqueness.");
+      setFormError('Project could not be created. Check the API connection and slug uniqueness.');
     }
   }
 
@@ -152,17 +143,17 @@ export function ProjectConsole() {
               variant="outline"
               className={cn(
                 workspacesQuery.isError
-                  ? "border-error/30 text-error"
-                  : "border-success/30 text-success"
+                  ? 'border-error/30 text-error'
+                  : 'border-success/30 text-success'
               )}
             >
-              {workspacesQuery.isError ? "API unavailable" : "Live API"}
+              {workspacesQuery.isError ? 'API unavailable' : 'Live API'}
             </Badge>
           </div>
           <h1 className="mt-3 text-2xl font-semibold tracking-normal">Projects</h1>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-text-muted">
-            Create a workspace, group repositories into projects, then run CodingCTO plans,
-            prompts, and PR execution from real backend records.
+            Create a workspace, group repositories into projects, then run CodingCTO plans, prompts,
+            and PR execution from real backend records.
           </p>
         </div>
         <Button
@@ -176,7 +167,7 @@ export function ProjectConsole() {
           }}
           disabled={workspacesQuery.isFetching || projectsQuery.isFetching}
         >
-          {workspacesQuery.isFetching || projectsQuery.isFetching ? "Refreshing" : "Refresh"}
+          {workspacesQuery.isFetching || projectsQuery.isFetching ? 'Refreshing' : 'Refresh'}
           <RefreshCw className="ml-1.5 h-4 w-4" />
         </Button>
       </header>
@@ -195,7 +186,7 @@ export function ProjectConsole() {
             </CardHeader>
             <CardContent className="space-y-3">
               {workspaces.length > 0 ? (
-                <Select value={selectedWorkspaceId} onValueChange={setUserSelectedWorkspaceId}>
+                <Select value={selectedWorkspaceId} onValueChange={setSelectedWorkspaceId}>
                   <SelectTrigger className="w-full">
                     <SelectValue placeholder="Select workspace" />
                   </SelectTrigger>
@@ -215,7 +206,7 @@ export function ProjectConsole() {
               {selectedWorkspace && (
                 <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm leading-6 text-text-muted">
                   <div className="font-medium text-text">{selectedWorkspace.name}</div>
-                  <div>{selectedWorkspace.description || "No workspace description yet."}</div>
+                  <div>{selectedWorkspace.description || 'No workspace description yet.'}</div>
                   <div className="mt-1 text-xs">ID: {selectedWorkspace.workspace_id}</div>
                 </div>
               )}
@@ -227,12 +218,14 @@ export function ProjectConsole() {
               Loading projects from the selected workspace...
             </div>
           ) : projects.length > 0 ? (
-            projects.map(project => <ProjectRow key={`${project.id}-${project.slug}`} project={project} />)
+            projects.map(project => (
+              <ProjectRow key={`${project.id}-${project.slug}`} project={project} />
+            ))
           ) : (
             <div className="rounded-lg border border-border-subtle bg-muted/30 p-4 text-sm text-text-muted">
               {selectedWorkspaceId
-                ? "No projects in this workspace yet. Create one to start repository binding."
-                : "Select or create a workspace to list projects."}
+                ? 'No projects in this workspace yet. Create one to start repository binding.'
+                : 'Select or create a workspace to list projects.'}
             </div>
           )}
         </section>
@@ -284,7 +277,7 @@ export function ProjectConsole() {
                   </div>
                 )}
                 <Button type="submit" className="w-full" disabled={createWorkspace.isPending}>
-                  {createWorkspace.isPending ? "Creating" : "Create workspace"}
+                  {createWorkspace.isPending ? 'Creating' : 'Create workspace'}
                   <ArrowRight className="ml-1.5 h-4 w-4" />
                 </Button>
               </form>
@@ -344,7 +337,7 @@ export function ProjectConsole() {
                   className="w-full"
                   disabled={!selectedWorkspaceId || createProject.isPending}
                 >
-                  {createProject.isPending ? "Creating" : "Create project"}
+                  {createProject.isPending ? 'Creating' : 'Create project'}
                   <ArrowRight className="ml-1.5 h-4 w-4" />
                 </Button>
               </form>
@@ -372,15 +365,18 @@ function ProjectRow({ project }: { project: ProjectDTO }) {
               </div>
             </div>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-text-muted">
-              {project.description || "No description yet."}
+              {project.description || 'No description yet.'}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
-              <Badge variant="outline" className={cn(project.status === "active" && "text-success")}>
+              <Badge
+                variant="outline"
+                className={cn(project.status === 'active' && 'text-success')}
+              >
                 {project.status}
               </Badge>
               <Badge variant="outline">
                 <GitBranch className="mr-1 h-3.5 w-3.5" />
-                {repositoryRoleLabel("primary")} repo required
+                {repositoryRoleLabel('primary')} repo required
               </Badge>
             </div>
           </div>
