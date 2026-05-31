@@ -8,7 +8,8 @@ type StartExecutionRunRequest struct {
 }
 
 type DispatchExecutionRunRequest struct {
-	MaxTasks int `json:"max_tasks" binding:"omitempty,min=1,max=20"`
+	MaxTasks            int  `json:"max_tasks" binding:"omitempty,min=1,max=20"`
+	RequireRuntimeReady bool `json:"require_runtime_ready" binding:"omitempty"`
 }
 
 type RuntimeHeartbeatRequest struct {

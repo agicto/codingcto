@@ -460,6 +460,11 @@ func (s *service) DispatchRun(ctx context.Context, runID uint, req *DispatchExec
 	if executionRunStatusBlocksTaskExecution(bundle.Run.Status) {
 		return nil, domain.ErrConflict
 	}
+	if req != nil && req.RequireRuntimeReady {
+		if err := s.ensureRuntimeReadyForDispatch(ctx, bundle); err != nil {
+			return nil, err
+		}
+	}
 	dispatched := 0
 	now := time.Now()
 	nodes := nodeByID(bundle.Plan.PRNodes)
@@ -494,6 +499,85 @@ func (s *service) DispatchRun(ctx context.Context, runID uint, req *DispatchExec
 		}
 	}
 	return s.GetRun(ctx, runID)
+}
+
+func (s *service) ensureRuntimeReadyForDispatch(ctx context.Context, bundle *domain.SpecForgeExecutionBundle) error {
+	if bundle == nil {
+		return domain.ErrInvalidInput
+	}
+	executors := queuedTaskExecutors(bundle.Tasks)
+	if len(executors) == 0 {
+		return nil
+	}
+	for _, executor := range executors {
+		runtimes, err := s.repo.ListRuntimes(ctx, executor, domain.RuntimeStatusOnline, 20)
+		if err != nil {
+			return fmt.Errorf("list online runtimes for dispatch: %w", err)
+		}
+		if !hasDispatchReadyRuntime(executor, runtimes) {
+			return domain.ErrConflict
+		}
+	}
+	return nil
+}
+
+func queuedTaskExecutors(tasks []*domain.SpecForgeAgentTask) []string {
+	seen := map[string]struct{}{}
+	out := []string{}
+	for _, task := range tasks {
+		if task == nil || task.Status != domain.AgentTaskStatusQueued {
+			continue
+		}
+		executor := strings.TrimSpace(task.Executor)
+		if executor == "" {
+			executor = ExecutorNameCodexCLI
+		}
+		if _, ok := seen[executor]; ok {
+			continue
+		}
+		seen[executor] = struct{}{}
+		out = append(out, executor)
+	}
+	return out
+}
+
+func hasDispatchReadyRuntime(executor string, runtimes []*domain.SpecForgeRuntime) bool {
+	for _, runtime := range runtimes {
+		if runtime == nil || runtime.Status != domain.RuntimeStatusOnline {
+			continue
+		}
+		if strings.TrimSpace(runtime.Executor) != strings.TrimSpace(executor) {
+			continue
+		}
+		if !runtimeSandboxWritable(runtime.Sandbox) {
+			continue
+		}
+		if executor == ExecutorNameCodexCLI && !runtimeHasAvailableCLI(runtime, "codex") {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func runtimeHasAvailableCLI(runtime *domain.SpecForgeRuntime, command string) bool {
+	command = strings.TrimSpace(command)
+	if runtime == nil || command == "" {
+		return false
+	}
+	for _, cli := range runtime.AvailableCLIs {
+		if cli.Available && strings.TrimSpace(cli.Command) == command {
+			return true
+		}
+	}
+	return false
+}
+
+func runtimeSandboxWritable(sandbox *domain.SpecForgeRuntimeSandbox) bool {
+	if sandbox == nil {
+		return false
+	}
+	return sandbox.Writable
 }
 
 func (s *service) CancelRun(ctx context.Context, runID uint) (*domain.SpecForgeExecutionBundle, error) {

@@ -383,6 +383,56 @@ func TestDispatchRunMovesQueuedTasksToDispatched(t *testing.T) {
 	require.Equal(t, domain.AgentTaskStatusWaiting, dispatched.Tasks[1].Status)
 }
 
+func TestDispatchRunCanRequireReadyRuntime(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+
+	_, err = svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{RequireRuntimeReady: true})
+	require.ErrorIs(t, err, domain.ErrConflict)
+
+	_, err = svc.HeartbeatRuntime(context.Background(), &RuntimeHeartbeatRequest{
+		RuntimeID: "runtime_123",
+		Executor:  ExecutorNameCodexCLI,
+		AvailableCLIs: []domain.SpecForgeRuntimeCLI{
+			{Name: "Codex CLI", Command: "codex", Available: true},
+		},
+		Sandbox: &domain.SpecForgeRuntimeSandbox{Provider: "codex_cli", Mode: "workspace-write", Writable: true, NetworkAccess: true},
+	})
+	require.NoError(t, err)
+
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{
+		MaxTasks:            1,
+		RequireRuntimeReady: true,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, domain.AgentTaskStatusDispatched, dispatched.Tasks[0].Status)
+}
+
+func TestDispatchRunRejectsRuntimeWithoutCodexCLIWhenReadinessRequired(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	_, err = svc.HeartbeatRuntime(context.Background(), &RuntimeHeartbeatRequest{
+		RuntimeID: "runtime_123",
+		Executor:  ExecutorNameCodexCLI,
+		AvailableCLIs: []domain.SpecForgeRuntimeCLI{
+			{Name: "Claude Code", Command: "claude", Available: true},
+		},
+		Sandbox: &domain.SpecForgeRuntimeSandbox{Provider: "codex_cli", Mode: "workspace-write", Writable: true, NetworkAccess: true},
+	})
+	require.NoError(t, err)
+
+	_, err = svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{RequireRuntimeReady: true})
+
+	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
 func TestDispatchRunRejectsCancelledRun(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
 	runRepo := &memoryExecutionRepo{}

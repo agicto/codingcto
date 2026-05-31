@@ -12,6 +12,7 @@ func (h *Handler) RegisterRoutes(r *router.Router) {
 		auth.POST("/github/installations/sync", h.SyncInstallation).Name("github.installations.sync")
 		auth.GET("/github/installations/:id", h.GetInstallation).Name("github.installations.show").WhereNumber("id")
 		auth.POST("/github/repositories", h.UpsertRepository).Name("github.repositories.store")
+		auth.GET("/github/repositories", h.ListRepositories).Name("github.repositories.index")
 		auth.GET("/repositories/:repo_id", h.GetRepository).Name("github.repositories.show")
 		auth.GET("/github/settings", h.GetSettings).Name("github.settings.show")
 		auth.PUT("/github/settings", h.UpsertSettings).Name("github.settings.update")

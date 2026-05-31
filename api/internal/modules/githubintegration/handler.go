@@ -103,6 +103,20 @@ func (h *Handler) GetRepository(c *gin.Context) {
 	response.Success(c, repository)
 }
 
+func (h *Handler) ListRepositories(c *gin.Context) {
+	var req ListRepositoriesRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		response.BadRequest(c, "Invalid request parameters", err)
+		return
+	}
+	repositories, err := h.service.ListRepositories(c.Request.Context(), req.WorkspaceID)
+	if err != nil {
+		response.HandleError(c, "Failed to list repositories", err)
+		return
+	}
+	response.Success(c, &ListRepositoriesResponse{Repositories: repositories})
+}
+
 func (h *Handler) GetSettings(c *gin.Context) {
 	var req GetSettingsRequest
 	if err := c.ShouldBindQuery(&req); err != nil {

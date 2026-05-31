@@ -19,6 +19,14 @@ type UpsertRepositoryRequest struct {
 	IsPrivate            bool   `json:"is_private"`
 }
 
+type ListRepositoriesRequest struct {
+	WorkspaceID string `form:"workspace_id" binding:"omitempty,max=255"`
+}
+
+type ListRepositoriesResponse struct {
+	Repositories []*domain.Repository `json:"repositories"`
+}
+
 type SyncInstallationRequest struct {
 	WorkspaceID    string `json:"workspace_id" binding:"required,max=255"`
 	InstallationID int64  `json:"installation_id" binding:"required"`

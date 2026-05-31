@@ -123,7 +123,5 @@ func normalizeSlug(value string) string {
 }
 
 func normalizeWorkspaceID(value string) string {
-	value = strings.TrimSpace(value)
-	value = strings.ReplaceAll(value, "-", "_")
-	return value
+	return domain.NormalizeWorkspaceID(value)
 }
