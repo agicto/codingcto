@@ -51,6 +51,27 @@ import {
   planBundleFromDTO,
   prNodeFromDTO,
 } from '@/features/specforge/plan-adapter';
+import {
+  WorkbenchDeliveryBoard,
+  WorkbenchModeTabs,
+  type WorkbenchItemId,
+  type WorkbenchStage,
+} from '@/features/specforge/components/workbench-board';
+import {
+  DetailPanel,
+  EmptyProjectPlanPanel,
+} from '@/features/specforge/components/workbench-panels';
+import {
+  formatTimestamp,
+  maxFixAttemptsPerNode,
+  promptModeLabel,
+  promptModes,
+  repoProfileSourceLabel,
+  riskClassName,
+  statusClassName,
+  statusLabel,
+  type PromptMode,
+} from '@/features/specforge/components/workbench-utils';
 import { buildPromptPreview } from '@/features/specforge/prompt-preview';
 import {
   defaultIdea,
@@ -119,7 +140,6 @@ import {
   type ExecutionReadiness,
 } from '@/features/specforge/execution-readiness';
 import type {
-  CompilePromptPayload,
   SpecForgeFixAttemptDTO,
   SpecForgeEscalationSummaryDTO,
   SpecForgeExecutionBundleDTO,
@@ -155,85 +175,6 @@ import type {
   PRNode,
   RepoProfile,
 } from '@/features/specforge/types';
-
-const statusLabel: Record<PRNode['status'], string> = {
-  planned: 'Planned',
-  queued: 'Queued',
-  running: 'Running',
-  waiting_on_dependencies: 'Waiting',
-  pr_opened: 'PR opened',
-  ci_running: 'CI running',
-  ready_for_review: 'Ready',
-  blocked: 'Blocked',
-  merged: 'Merged',
-  closed: 'Closed',
-  completed: 'Completed',
-  failed: 'Failed',
-  cancelled: 'Cancelled',
-};
-const maxFixAttemptsPerNode = 3;
-type PromptMode = NonNullable<CompilePromptPayload['type']>;
-const promptModes: PromptMode[] = ['implementation', 'fix', 'review_patch'];
-const promptModeLabel: Record<PromptMode, string> = {
-  implementation: 'Implement',
-  fix: 'Fix',
-  review_patch: 'Review',
-};
-
-function statusClassName(status: PRNode['status'] | string) {
-  const nodeStatus = status as PRNode['status'];
-  if (isPRNodeDelivered(nodeStatus)) {
-    return 'border-success/30 bg-success-subtle text-success';
-  }
-  if (isPRNodeActive(nodeStatus)) {
-    return 'border-info/30 bg-info-subtle text-info';
-  }
-  if (status === 'waiting_on_dependencies' || status === 'pr_opened') {
-    return 'border-warning/30 bg-warning-subtle text-warning';
-  }
-  if (
-    status === 'failed' ||
-    status === 'cancelled' ||
-    status === 'blocked' ||
-    status === 'closed'
-  ) {
-    return 'border-error/30 bg-error-subtle text-error';
-  }
-  return 'border-border bg-bg-surface text-text-subtle';
-}
-
-function repoProfileSourceLabel(source: string) {
-  switch (source) {
-    case 'github_tree':
-      return 'GitHub tree';
-    case 'request_hints':
-      return 'Request hints';
-    case 'manual':
-      return 'Manual profile';
-    case 'demo':
-      return 'Demo profile';
-    default:
-      return 'Unknown source';
-  }
-}
-
-function formatTimestamp(value: string) {
-  const time = new Date(value);
-  if (Number.isNaN(time.getTime())) {
-    return value;
-  }
-  return time.toLocaleString();
-}
-
-function riskClassName(risk: PRNode['estimatedRisk']) {
-  if (risk === 'high') {
-    return 'border-error/30 bg-error-subtle text-error';
-  }
-  if (risk === 'medium') {
-    return 'border-warning/30 bg-warning-subtle text-warning';
-  }
-  return 'border-success/30 bg-success-subtle text-success';
-}
 
 function demoPlanForInput(idea: string, repositoryId: string): PlanBundle {
   return {
@@ -283,9 +224,7 @@ export function SpecForgeWorkbench({
     selectedPRNodeIds: [],
     tasks: demoPlan.prNodes,
   });
-  const [selectedWorkItem, setSelectedWorkItem] = useState<
-    'intake' | 'plan' | 'dag' | 'run' | 'context'
-  >('intake');
+  const [selectedWorkItem, setSelectedWorkItem] = useState<WorkbenchItemId>('intake');
   const [currentRuntimeNow] = useState(() => Date.now());
 
   const createIdea = useCreateSpecForgeIdea(repoId.trim());
@@ -599,7 +538,7 @@ export function SpecForgeWorkbench({
     return `Prompt type: ${mode}\n\n${buildPromptPreview(activePlan, node)}`;
   }
 
-  const deliveryStages = [
+  const deliveryStages: WorkbenchStage[] = [
     {
       id: 'intake',
       title: 'Idea intake',
@@ -724,94 +663,17 @@ export function SpecForgeWorkbench({
 
       {!projectId && <WorkspaceProjectLaunchPanel />}
 
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle px-4">
-        <Button
-          variant={
-            selectedWorkItem === 'intake' || selectedWorkItem === 'context'
-              ? 'secondary'
-              : 'outline'
-          }
-          size="sm"
-          onClick={() => setSelectedWorkItem('intake')}
-        >
-          All work
-        </Button>
-        <Button
-          variant={
-            selectedWorkItem === 'plan' || selectedWorkItem === 'dag' ? 'secondary' : 'outline'
-          }
-          size="sm"
-          onClick={() => setSelectedWorkItem('plan')}
-        >
-          Plans
-        </Button>
-        <Button
-          variant={selectedWorkItem === 'run' ? 'secondary' : 'outline'}
-          size="sm"
-          onClick={() => setSelectedWorkItem('run')}
-        >
-          Runs
-        </Button>
-      </div>
+      <WorkbenchModeTabs
+        selectedWorkItem={selectedWorkItem}
+        onSelectWorkItem={setSelectedWorkItem}
+      />
 
       <section className="grid min-h-0 flex-1 grid-rows-[minmax(360px,1fr)_minmax(340px,42vh)] overflow-hidden xl:grid-cols-[minmax(0,1fr)_420px] xl:grid-rows-1">
-        <div className="min-w-0 overflow-x-auto p-3">
-          <div className="grid h-full min-w-[1320px] grid-cols-6 gap-3">
-            {deliveryStages.map(column => (
-              <div
-                key={column.id}
-                className={cn('flex min-h-0 flex-col rounded-xl p-3', column.tone)}
-              >
-                <div className="flex h-8 items-center justify-between text-sm">
-                  <div className="flex items-center gap-2 font-medium">
-                    <CircleDot className="h-3.5 w-3.5 text-text-muted" />
-                    {column.title}
-                    <span className="text-xs text-text-muted">{column.items.length}</span>
-                  </div>
-                  <span className="text-text-muted">+</span>
-                </div>
-                <div className="mt-3 space-y-2">
-                  {column.items.length === 0 ? (
-                    <div className="flex h-40 items-center justify-center text-sm text-text-muted">
-                      {column.emptyLabel}
-                    </div>
-                  ) : (
-                    column.items.map(item => {
-                      const Icon = item.icon;
-                      return (
-                        <button
-                          key={item.id}
-                          onClick={() => setSelectedWorkItem(item.id)}
-                          className={cn(
-                            'w-full rounded-lg border bg-bg-surface p-3 text-left shadow-sm transition hover:border-primary/40',
-                            selectedWorkItem === item.id
-                              ? 'border-primary ring-1 ring-primary'
-                              : 'border-border-subtle'
-                          )}
-                        >
-                          <div className="flex items-center gap-2 text-xs text-text-muted">
-                            <Icon className="h-3.5 w-3.5 text-primary" />
-                            {item.key}
-                          </div>
-                          <div className="mt-2 text-sm font-semibold leading-5">{item.title}</div>
-                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-text-muted">
-                            {item.description}
-                          </p>
-                          <div className="mt-3 flex items-center justify-between text-xs">
-                            <span className="rounded-full bg-muted px-2 py-1 text-text-subtle">
-                              {item.status}
-                            </span>
-                            <span className="text-text-muted">Current</span>
-                          </div>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <WorkbenchDeliveryBoard
+          stages={deliveryStages}
+          selectedWorkItem={selectedWorkItem}
+          onSelectWorkItem={setSelectedWorkItem}
+        />
 
         <aside className="min-h-0 overflow-y-auto border-t border-border-subtle bg-bg-subtle/60 p-4 xl:border-l xl:border-t-0">
           {selectedWorkItem === 'intake' && (
@@ -946,55 +808,6 @@ export function SpecForgeWorkbench({
           )}
         </aside>
       </section>
-    </div>
-  );
-}
-
-function DetailPanel({
-  title,
-  heading,
-  children,
-}: {
-  title: string;
-  heading: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-4">
-      <div>
-        <div className="text-xs font-medium text-text-muted">{title}</div>
-        <h2 className="mt-1 text-lg font-semibold leading-6">{heading}</h2>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function EmptyProjectPlanPanel({
-  isLoading,
-  onCreate,
-}: {
-  isLoading: boolean;
-  onCreate: () => void;
-}) {
-  return (
-    <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
-      <div className="flex items-start gap-3">
-        <Info className="mt-0.5 h-4 w-4 text-primary" />
-        <div>
-          <div className="text-sm font-medium">
-            {isLoading ? 'Checking for existing project plans' : 'Create a real project plan'}
-          </div>
-          <p className="mt-1 text-sm leading-6 text-text-muted">
-            Project-scoped CodingCTO no longer falls back to demo work. Generate a requirement to
-            create the first backend-backed plan, prompt contract, and execution run for this
-            project.
-          </p>
-          <Button className="mt-3" size="sm" onClick={onCreate}>
-            Open idea intake
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }
