@@ -431,6 +431,7 @@ export interface SpecForgeCompiledPromptDTO {
   version: string;
   prompt_text: string;
   prompt_hash: string;
+  evidence_refs?: string[];
   created_by: number;
   created_at: string;
 }
@@ -472,6 +473,7 @@ export interface SpecForgeSkillRunDTO {
   input_summary: string;
   output_summary: string;
   output_json?: string;
+  evidence_refs?: string[];
   error_message?: string;
   started_at?: string;
   completed_at?: string;
@@ -691,13 +693,10 @@ export const specForgeService = {
       payload
     ),
 
-  listGitHubRepositories: (
-    params: ListGitHubRepositoriesParams,
-    config?: RequestConfig
-  ) => {
+  listGitHubRepositories: (params: ListGitHubRepositoriesParams, config?: RequestConfig) => {
     const search = new URLSearchParams();
     search.set('workspace_id', params.workspace_id);
-    const suffix = search.toString() ? `?${search.toString()}` : "";
+    const suffix = search.toString() ? `?${search.toString()}` : '';
     return request.get<ListGitHubRepositoriesDTO>(`/github/repositories${suffix}`, config);
   },
 
