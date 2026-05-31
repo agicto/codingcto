@@ -18,6 +18,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SpecForgeWorkbench } from '@/features/specforge';
+import { useGitHubRepositories } from '@/features/specforge/hooks/use-specforge';
 import { useT } from '@/i18n';
 import { useBindProjectRepository, useProjectContext } from '@/features/project/hooks/use-projects';
 import {
@@ -70,16 +71,18 @@ export function ProjectSpecForgeConsole() {
     );
   }
 
+  const projectContext = context as ProjectContextDTO;
+
   return (
     <div>
-      <ProjectContextReadiness context={context} />
+      <ProjectContextReadiness context={projectContext} />
       {!repositoryId ? (
         <div className="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
           <Alert>
             <AlertTitle>{t('primaryRequired.title')}</AlertTitle>
             <AlertDescription>{t('primaryRequired.description')}</AlertDescription>
           </Alert>
-          <ProjectRepositoryBindPanel projectId={projectId} />
+          <ProjectRepositoryBindPanel projectId={projectId} context={projectContext} />
         </div>
       ) : (
         <SpecForgeWorkbench
@@ -120,9 +123,25 @@ function ProjectScopedState({
   );
 }
 
-function ProjectRepositoryBindPanel({ projectId }: { projectId: number }) {
+function ProjectRepositoryBindPanel({
+  projectId,
+  context,
+}: {
+  projectId: number;
+  context: ProjectContextDTO;
+}) {
   const t = useT('dashboard.projectDelivery.bindPanel');
   const bindRepository = useBindProjectRepository(projectId);
+  const repositoriesQuery = useGitHubRepositories({
+    workspace_id: context.project.workspace_id,
+  });
+  const connectedRepositories = repositoriesQuery.data?.repositories ?? [];
+  const boundRepositoryIds = new Set(
+    context.repositories.map(repository => repository.repository_id)
+  );
+  const availableRepositories = connectedRepositories.filter(
+    repository => !boundRepositoryIds.has(repository.repository_id)
+  );
   const [repositoryId, setRepositoryId] = useState('');
   const [role, setRole] = useState('primary');
   const [message, setMessage] = useState('');
@@ -160,6 +179,33 @@ function ProjectRepositoryBindPanel({ projectId }: { projectId: number }) {
         <CardDescription>{t('description')}</CardDescription>
       </CardHeader>
       <CardContent>
+        <div className="mb-4 rounded-lg border border-border-subtle bg-bg-subtle p-3">
+          <div className="text-sm font-medium text-text-main">{t('connectedRepositories')}</div>
+          <div className="mt-1 text-xs leading-5 text-text-muted">
+            {repositoriesQuery.isFetching
+              ? t('loadingRepositories')
+              : availableRepositories.length > 0
+                ? t('availableRepositories', { count: availableRepositories.length })
+                : t('noAvailableRepositories')}
+          </div>
+          {availableRepositories.length > 0 ? (
+            <div className="mt-3">
+              <Select value={repositoryId} onValueChange={setRepositoryId}>
+                <SelectTrigger aria-label={t('chooseRepository')}>
+                  <SelectValue placeholder={t('chooseRepository')} />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableRepositories.map(repository => (
+                    <SelectItem key={repository.repository_id} value={repository.repository_id}>
+                      {repository.github_owner}/{repository.github_repo} ·{' '}
+                      {repository.default_branch}
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            </div>
+          ) : null}
+        </div>
         <form
           className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]"
           onSubmit={bindRepositoryToProject}

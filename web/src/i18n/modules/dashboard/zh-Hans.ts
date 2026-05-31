@@ -279,6 +279,12 @@ const messages = {
       title: '绑定 GitHub 仓库',
       description:
         '使用“设置 > GitHub”创建的仓库 ID。主仓库可写入；依赖、文档和基础设施仓库会作为只读规划上下文。',
+      connectedRepositories: '已连接仓库',
+      loadingRepositories: '正在加载当前 workspace 已连接的仓库。',
+      availableRepositories: '有 {count} 个仓库可绑定到这个项目。',
+      noAvailableRepositories:
+        '没有可绑定的未使用仓库。请在 GitHub setup 中连接仓库，或手动输入仓库 ID。',
+      chooseRepository: '选择仓库',
       repositoryId: '仓库 ID',
       role: '角色',
       binding: '绑定中',
