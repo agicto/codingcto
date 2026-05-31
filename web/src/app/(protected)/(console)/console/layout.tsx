@@ -271,7 +271,7 @@ function WorkspaceSwitcher() {
             <div className="text-sm font-medium">Organization workspace</div>
             <p className="mt-1 text-xs leading-5 text-text-muted">
               Switch the enterprise boundary used by settings, GitHub binding, projects, and
-              SpecForge setup.
+              CodingCTO setup.
             </p>
           </div>
         </div>
@@ -388,7 +388,7 @@ function SidebarLink({
   const text = label ?? title ?? '';
   const active =
     text === 'Command Center'
-      ? pathname.includes('/specforge')
+      ? pathname.includes('/codingcto') || pathname.includes('/specforge')
       : href === ROUTES.CONSOLE.SPECFORGE
         ? false
         : pathname === href || (href !== ROUTES.CONSOLE.HOME && pathname.startsWith(`${href}/`));

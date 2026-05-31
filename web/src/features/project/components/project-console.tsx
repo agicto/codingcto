@@ -200,7 +200,7 @@ export function ProjectConsole() {
                 </Select>
               ) : (
                 <div className="rounded-lg border border-border-subtle bg-muted/30 p-4 text-sm text-text-muted">
-                  No workspace yet. Create one to unlock project and SpecForge flows.
+                  No workspace yet. Create one to unlock project and CodingCTO flows.
                 </div>
               )}
               {selectedWorkspace && (

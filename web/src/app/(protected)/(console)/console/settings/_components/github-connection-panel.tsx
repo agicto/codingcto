@@ -641,7 +641,7 @@ export function GitHubConnectionPanel() {
             <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3">
               <div className="text-sm font-medium text-text-main">Bind to project</div>
               <p className="mt-1 text-sm leading-6 text-text-muted">
-                Attach this connected GitHub repository to a project so project-scoped SpecForge can
+                Attach this connected GitHub repository to a project so project-scoped CodingCTO can
                 plan, compile prompts, and execute against the primary repository.
               </p>
               <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">

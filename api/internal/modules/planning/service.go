@@ -598,7 +598,7 @@ func (s *service) projectContextFor(ctx context.Context, projectID uint) (*domai
 
 func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, skills []*domain.SpecForgeSkill) string {
 	var b strings.Builder
-	b.WriteString("You are implementing a SpecForge PR node.\n\n")
+	b.WriteString("You are implementing a CodingCTO PR node.\n\n")
 	b.WriteString("Prompt type: " + promptType + "\n")
 	b.WriteString("PR node: " + node.NodeKey + " - " + node.Title + "\n")
 	if strings.TrimSpace(node.RepositoryID) != "" {

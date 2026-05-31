@@ -964,7 +964,7 @@ function EmptyProjectPlanPanel({
             {isLoading ? 'Checking for existing project plans' : 'Create a real project plan'}
           </div>
           <p className="mt-1 text-sm leading-6 text-text-muted">
-            Project-scoped SpecForge no longer falls back to demo work. Generate a requirement to
+            Project-scoped CodingCTO no longer falls back to demo work. Generate a requirement to
             create the first backend-backed plan, prompt contract, and execution run for this
             project.
           </p>
@@ -1220,7 +1220,7 @@ function WorkspaceProjectLaunchPanel() {
               Workspace setup
             </CardTitle>
             <CardDescription>
-              Global SpecForge is for experiments. Enterprise work should start from a workspace and
+              Global CodingCTO is for experiments. Enterprise work should start from a workspace and
               project so GitHub bindings, skills, and execution history stay scoped.
             </CardDescription>
           </CardHeader>
@@ -1312,7 +1312,7 @@ function WorkspaceProjectLaunchPanel() {
             </CardTitle>
             <CardDescription>
               Create the project boundary, then open it for repository binding and enterprise
-              SpecForge runs.
+              CodingCTO runs.
             </CardDescription>
           </CardHeader>
           <CardContent>

@@ -1521,7 +1521,7 @@ func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecF
 		promptType = domain.PromptTypeImplementation
 	}
 	var b strings.Builder
-	b.WriteString("You are implementing a SpecForge PR node from an approved plan snapshot.\n\n")
+	b.WriteString("You are implementing a CodingCTO PR node from an approved plan snapshot.\n\n")
 	b.WriteString("Prompt type: " + promptType + "\n")
 	b.WriteString("PR node: " + node.NodeKey + " - " + node.Title + "\n")
 	if strings.TrimSpace(node.RepositoryID) != "" {

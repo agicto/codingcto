@@ -86,7 +86,7 @@ func TestInferProfileDetectsStackCommandsAndRisks(t *testing.T) {
 		"Follow repository contribution guidelines in CONTRIBUTING.md.",
 		"Follow GitHub Copilot repository instructions in .github/copilot-instructions.md.",
 	})
-	require.Contains(t, profile.Summary, "SpecForge inferred")
+	require.Contains(t, profile.Summary, "CodingCTO inferred")
 	require.Equal(t, "request_hints", profile.Source)
 	require.Equal(t, uint(12), profile.CreatedBy)
 }
@@ -229,7 +229,7 @@ func TestReindexArchitectureCreatesSnapshotAndUpdatesProfile(t *testing.T) {
 	require.Contains(t, status.Snapshot.Entrypoints, "cmd/server/main.go")
 	require.Contains(t, status.Snapshot.CIWorkflows, ".github/workflows/ci.yml")
 	require.Contains(t, status.Snapshot.Warnings, "GitHub tree response was truncated; architecture snapshot may miss files.")
-	require.Contains(t, status.Snapshot.Warnings, "SpecForge filtered 1 sensitive repository paths from the architecture snapshot.")
+	require.Contains(t, status.Snapshot.Warnings, "CodingCTO filtered 1 sensitive repository paths from the architecture snapshot.")
 	require.NotContains(t, strings.Join(status.Snapshot.Modules, " "), ".env")
 	require.NotNil(t, repo.profile)
 	require.Equal(t, "architecture_snapshot", repo.profile.Source)
@@ -303,7 +303,7 @@ func TestInferProfileReadsOnlySafeInstructionFiles(t *testing.T) {
 	require.Contains(t, profile.CodingConventions, "Instruction excerpt from AGENTS.md: Root rule.")
 	require.Contains(t, profile.CodingConventions, "Instruction excerpt from api/AGENTS.md: API rule.")
 	require.Contains(t, profile.CodingConventions, "Instruction excerpt from .github/copilot-instructions.md: Copilot rule.")
-	require.Contains(t, profile.Warnings, "SpecForge filtered 1 sensitive repository paths from the inferred profile.")
+	require.Contains(t, profile.Warnings, "CodingCTO filtered 1 sensitive repository paths from the inferred profile.")
 }
 
 func TestInferProfileFiltersSensitiveRepositoryPaths(t *testing.T) {
@@ -324,7 +324,7 @@ func TestInferProfileFiltersSensitiveRepositoryPaths(t *testing.T) {
 	require.NoError(t, err)
 	require.Contains(t, profile.Stack, "Go")
 	require.Contains(t, profile.AppStructure, "api/internal/modules")
-	require.Contains(t, profile.Warnings, "SpecForge filtered 4 sensitive repository paths from the inferred profile.")
+	require.Contains(t, profile.Warnings, "CodingCTO filtered 4 sensitive repository paths from the inferred profile.")
 	require.NotContains(t, profile.Summary, ".env")
 	require.NotContains(t, profile.Summary, "private.key")
 }
@@ -358,7 +358,7 @@ func TestInferProfileDoesNotReadSensitivePackageJSONPaths(t *testing.T) {
 	require.Equal(t, "web/package.json", treeSource.readPaths[0])
 	require.Len(t, treeSource.readPaths, 1)
 	require.Contains(t, profile.TestCommands, "pnpm test")
-	require.Contains(t, profile.Warnings, "SpecForge filtered 1 sensitive repository paths from the inferred profile.")
+	require.Contains(t, profile.Warnings, "CodingCTO filtered 1 sensitive repository paths from the inferred profile.")
 }
 
 type memoryRepo struct {
