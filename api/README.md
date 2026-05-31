@@ -41,8 +41,8 @@ SERVER_PORT=8025
 DB_DRIVER=postgres
 DB_HOST=localhost
 DB_PORT=5432
-DB_USERNAME=postgres
-DB_PASSWORD=postgres
+DB_USERNAME=luas_user
+DB_PASSWORD=luas_pass
 DB_NAME=luas
 
 JWT_SECRET=replace-me
@@ -61,6 +61,27 @@ make wire
 ```bash
 make run
 ```
+
+For browser-driven local development, use the PostgreSQL service from `docker-compose.yml`:
+
+```bash
+make db-up
+make migrate-pg
+make dev-pg
+```
+
+If you already have a local PostgreSQL server instead of Docker, create the expected local role and
+database first:
+
+```bash
+make db-bootstrap-pg
+make migrate-pg
+make dev-pg
+```
+
+`make dev-pg` uses `luas_user` / `luas_pass` / `luas` by default. Override
+`LOCAL_PG_HOST`, `LOCAL_PG_PORT`, `LOCAL_PG_DB`, `LOCAL_PG_USER`, or
+`LOCAL_PG_PASSWORD` if your local PostgreSQL service uses different credentials.
 
 Default local endpoints:
 
