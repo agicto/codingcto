@@ -438,6 +438,17 @@ export function SpecForgeWorkbench({
     setRun(next.run);
   }
 
+  function applyPRNodeUpdate(node: PRNode) {
+    setActivePlan(current => ({
+      ...current,
+      prNodes: current.prNodes.map(existing => (existing.id === node.id ? node : existing)),
+    }));
+    setRun(current => ({
+      ...current,
+      tasks: current.tasks.map(existing => (existing.id === node.id ? node : existing)),
+    }));
+  }
+
   async function compileNodePrompt(node: PRNode, mode: PromptMode) {
     const prNodeId = Number(node.id);
     if (Number.isFinite(prNodeId) && prNodeId > 0) {
@@ -711,10 +722,12 @@ export function SpecForgeWorkbench({
                 />
                 <ExecutionStatus
                   run={run}
+                  repositoryId={activePlan.repoProfile.repositoryId}
                   isCancelling={cancelRun.isPending}
                   onAdvance={advanceRun}
                   onCancel={cancelActiveRun}
                   onExecutionBundle={applyExecutionBundle}
+                  onPRNodeUpdate={applyPRNodeUpdate}
                 />
               </div>
             </DetailPanel>
