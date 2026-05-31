@@ -2,6 +2,7 @@ package domain
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
@@ -30,4 +31,10 @@ type WorkspaceRepository interface {
 	FindWorkspaceByWorkspaceID(ctx context.Context, workspaceID string) (*Workspace, error)
 	FindWorkspaceBySlug(ctx context.Context, slug string) (*Workspace, error)
 	ListWorkspaces(ctx context.Context, createdBy uint, status string, limit int) ([]*Workspace, error)
+}
+
+func NormalizeWorkspaceID(value string) string {
+	value = strings.TrimSpace(value)
+	value = strings.ReplaceAll(value, "-", "_")
+	return value
 }
