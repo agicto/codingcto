@@ -34,6 +34,7 @@ import type {
   ProjectContextDTO,
   ProjectRepositoryContextDTO,
 } from '@/features/project/services/project-service';
+import { ProjectOverview } from '@/features/project/components/project-overview';
 
 export function ProjectSpecForgeConsole() {
   const t = useT('dashboard.projectDelivery');
@@ -80,6 +81,7 @@ export function ProjectSpecForgeConsole() {
 
   return (
     <div>
+      <ProjectOverview context={projectContext} selectedRepository={selectedRepository} />
       <ProjectContextReadiness context={projectContext} />
       <div className="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
         {!repositoryId ? (
@@ -89,6 +91,7 @@ export function ProjectSpecForgeConsole() {
           </Alert>
         ) : null}
         <ProjectRepositoryBindPanel
+          id="repository-binding"
           projectId={projectId}
           workspaceId={workspaceId}
           boundRepositoryIds={(context?.repository_contexts ?? []).map(
@@ -97,13 +100,15 @@ export function ProjectSpecForgeConsole() {
         />
       </div>
       {repositoryId ? (
-        <SpecForgeWorkbench
-          key={repositoryId}
-          projectId={validProjectId}
-          initialRepositoryId={repositoryId}
-          projectLabel={context?.project.name}
-          repositoryLocked
-        />
+        <div id="project-delivery">
+          <SpecForgeWorkbench
+            key={repositoryId}
+            projectId={validProjectId}
+            initialRepositoryId={repositoryId}
+            projectLabel={context?.project.name}
+            repositoryLocked
+          />
+        </div>
       ) : null}
     </div>
   );
@@ -136,10 +141,12 @@ function ProjectScopedState({
 }
 
 function ProjectRepositoryBindPanel({
+  id,
   projectId,
   workspaceId,
   boundRepositoryIds = [],
 }: {
+  id?: string;
   projectId: number;
   workspaceId: string;
   boundRepositoryIds?: string[];
@@ -184,7 +191,7 @@ function ProjectRepositoryBindPanel({
   }
 
   return (
-    <Card className="mt-4">
+    <Card id={id} className="mt-4 scroll-mt-20">
       <CardHeader>
         <CardTitle className="text-base">{t('title')}</CardTitle>
         <CardDescription>{t('description')}</CardDescription>
@@ -304,7 +311,10 @@ function ProjectContextReadiness({ context }: { context?: ProjectContextDTO }) {
   }
 
   return (
-    <section className="mx-auto w-full max-w-7xl px-4 pt-6 md:px-8">
+    <section
+      id="project-context"
+      className="mx-auto w-full max-w-7xl scroll-mt-20 px-4 pt-6 md:px-8"
+    >
       <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>

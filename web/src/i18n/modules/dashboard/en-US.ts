@@ -177,6 +177,7 @@ const messages: DashboardMessages = {
       newProject: 'New project',
       createWorkspace: 'Create workspace',
       createProject: 'Create project',
+      openProject: 'Open project',
       openCodingCTO: 'Open CodingCTO',
       configureGitHub: 'Configure GitHub',
     },
