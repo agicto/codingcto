@@ -27,11 +27,13 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { ProjectPlanningFlowCard } from '@/features/project/components/project-planning-flow-card';
 import { useProjectContext } from '@/features/project/hooks/use-projects';
 import {
   primaryRepositoryContext,
   projectContextReadiness,
 } from '@/features/project/project-context';
+import { projectPlanningStages } from '@/features/project/project-planning-flow';
 import { projectContextHref, projectPlanHref } from '@/features/project/project-utils';
 import type { ProjectContextDTO } from '@/features/project/services/project-service';
 import { useCreateSpecForgeProjectIdea } from '@/features/specforge/hooks/use-specforge';
@@ -166,6 +168,13 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
     () => requirementTypes.find(item => item.value === requirementType) ?? requirementTypes[0],
     [requirementType]
   );
+  const planningStages = projectPlanningStages({
+    hasPrimaryRepository: readiness.hasPrimaryRepository,
+    hasRequirementInput: Boolean(input.trim()),
+    hasPlan: false,
+    prNodeCount: 0,
+    hasCompiledPrompt: false,
+  });
 
   function applyExample(example: (typeof requirementExamples)[number]) {
     setInput(example.input);
@@ -233,6 +242,14 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
             Describe the product outcome once. CodingCTO will use the project context to generate a
             product plan, technical plan, PR DAG, and scoped implementation prompts.
           </p>
+        </div>
+
+        <div className="mt-5">
+          <ProjectPlanningFlowCard
+            stages={planningStages}
+            title="Requirement planning path"
+            description="This is the first complete CodingCTO loop: project context, requirement, generated plan, PR DAG, and prompt preview."
+          />
         </div>
 
         <form className="mt-5 space-y-4" onSubmit={submitRequirement}>
