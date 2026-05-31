@@ -170,6 +170,7 @@ const messages = {
       openProject: '打开项目',
       openCodingCTO: '打开 CodingCTO',
       configureGitHub: '配置 GitHub',
+      signInBackend: '使用后端登录',
     },
     metrics: {
       workspaces: {
@@ -202,6 +203,16 @@ const messages = {
       empty: '暂无 workspace。创建后才能解锁项目和 CodingCTO 流程。',
       noDescription: '暂无 workspace 描述。',
       id: 'ID: {id}',
+    },
+    backendGate: {
+      title: '需要后端登录状态',
+      description:
+        '项目、仓库和执行数据来自 CodingCTO API。当前浏览器只登录了控制台，但没有后端 API token，因此不能把 workspace 数据当成可信结果。',
+      localHint:
+        '本地开发请启用 LUAS_AUTH_BACKEND_ENABLED=true，并使用已 seed 的后端用户登录。',
+      emptyTitle: 'Workspace 数据不可用',
+      emptyDescription:
+        '这是认证或 API 连接问题，不是 workspace 为空。请先恢复后端登录状态，再创建项目。',
     },
     projects: {
       title: '交付项目',

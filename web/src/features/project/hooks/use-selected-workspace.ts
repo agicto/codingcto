@@ -3,6 +3,7 @@
 import { useCallback, useEffect, useMemo, useState } from 'react';
 
 import { useWorkspaces } from '@/features/project/hooks/use-projects';
+import { resolveSelectedWorkspaceId } from '@/features/project/workspace-selection';
 
 const selectedWorkspaceStorageKey = 'codingcto.selectedWorkspaceId';
 const selectedWorkspaceEvent = 'codingcto:selected-workspace';
@@ -25,14 +26,12 @@ export function useSelectedWorkspace(initialWorkspaceId = '') {
   );
 
   const selectedWorkspaceId = useMemo(() => {
-    if (
-      storedWorkspaceId &&
-      workspaces.some(workspace => workspace.workspace_id === storedWorkspaceId)
-    ) {
-      return storedWorkspaceId;
-    }
-    return workspaces[0]?.workspace_id ?? storedWorkspaceId;
-  }, [storedWorkspaceId, workspaces]);
+    return resolveSelectedWorkspaceId({
+      storedWorkspaceId,
+      workspaces,
+      unavailable: workspacesQuery.isError,
+    });
+  }, [storedWorkspaceId, workspaces, workspacesQuery.isError]);
 
   const selectedWorkspace = useMemo(
     () => workspaces.find(workspace => workspace.workspace_id === selectedWorkspaceId),

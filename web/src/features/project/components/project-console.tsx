@@ -13,6 +13,7 @@ import {
   Github,
   GitPullRequest,
   Layers3,
+  LogIn,
   Plus,
   RefreshCw,
   Sparkles,
@@ -75,6 +76,7 @@ export function ProjectConsole() {
   const projectsQuery = useProjects(selectedWorkspaceId);
   const createWorkspace = useCreateWorkspace();
   const createProject = useCreateProject(selectedWorkspaceId);
+  const backendUnavailable = workspacesQuery.isError;
 
   const projects = useMemo(
     () => projectsQuery.data?.projects ?? [],
@@ -179,7 +181,7 @@ export function ProjectConsole() {
           </Button>
           <Dialog open={projectDialogOpen} onOpenChange={setProjectDialogOpen}>
             <DialogTrigger asChild>
-              <Button type="button" disabled={!selectedWorkspaceId}>
+              <Button type="button" disabled={!selectedWorkspaceId || backendUnavailable}>
                 {t('actions.newProject')}
                 <Plus className="ml-1.5 h-4 w-4" />
               </Button>
@@ -235,6 +237,8 @@ export function ProjectConsole() {
         />
       </section>
 
+      {backendUnavailable ? <BackendSessionGate t={t} /> : null}
+
       <Card className="gap-0 overflow-hidden border-border-subtle bg-background/95 py-0 shadow-xs">
         <CardContent className="p-0">
           <div className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
@@ -270,7 +274,7 @@ export function ProjectConsole() {
               )}
               <Dialog open={workspaceDialogOpen} onOpenChange={setWorkspaceDialogOpen}>
                 <DialogTrigger asChild>
-                  <Button type="button" variant="outline">
+                  <Button type="button" variant="outline" disabled={backendUnavailable}>
                     {t('actions.newWorkspace')}
                     <Plus className="ml-1.5 h-4 w-4" />
                   </Button>
@@ -327,7 +331,9 @@ export function ProjectConsole() {
             </Badge>
           </CardHeader>
           <CardContent className="p-0">
-            {projectsQuery.isFetching ? (
+            {backendUnavailable ? (
+              <BackendUnavailableEmptyState t={t} />
+            ) : projectsQuery.isFetching ? (
               <div className="p-5 text-sm text-text-muted">{t('projects.loading')}</div>
             ) : projects.length > 0 ? (
               <div className="divide-y divide-border-subtle">
@@ -353,7 +359,7 @@ export function ProjectConsole() {
                 <Button
                   type="button"
                   variant="outline"
-                  disabled={!selectedWorkspaceId}
+                  disabled={!selectedWorkspaceId || backendUnavailable}
                   onClick={() => setProjectDialogOpen(true)}
                 >
                   {t('actions.newProject')}
@@ -400,6 +406,58 @@ export function ProjectConsole() {
           </Card>
         </aside>
       </div>
+    </div>
+  );
+}
+
+function BackendSessionGate({
+  t,
+}: {
+  t: (key: string, values?: Record<string, string | number | Date>) => string;
+}) {
+  return (
+    <Card className="border-warning/30 bg-warning-subtle shadow-xs">
+      <CardContent className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-text-main">{t('backendGate.title')}</div>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-text-muted">
+            {t('backendGate.description')}
+          </p>
+          <p className="mt-2 text-xs leading-5 text-text-muted">{t('backendGate.localHint')}</p>
+        </div>
+        <Button asChild variant="outline" className="shrink-0">
+          <Link href="/login?returnUrl=/console/projects">
+            {t('actions.signInBackend')}
+            <LogIn className="ml-1.5 h-4 w-4" />
+          </Link>
+        </Button>
+      </CardContent>
+    </Card>
+  );
+}
+
+function BackendUnavailableEmptyState({
+  t,
+}: {
+  t: (key: string, values?: Record<string, string | number | Date>) => string;
+}) {
+  return (
+    <div className="flex min-h-[220px] flex-col items-center justify-center gap-3 p-8 text-center">
+      <div className="flex h-11 w-11 items-center justify-center rounded-full border border-warning/30 bg-warning-subtle text-warning">
+        <CircleDotDashed className="h-5 w-5" />
+      </div>
+      <div>
+        <div className="text-sm font-medium text-text-main">{t('backendGate.emptyTitle')}</div>
+        <p className="mt-1 max-w-md text-sm leading-6 text-text-muted">
+          {t('backendGate.emptyDescription')}
+        </p>
+      </div>
+      <Button asChild variant="outline">
+        <Link href="/login?returnUrl=/console/projects">
+          {t('actions.signInBackend')}
+          <ArrowRight className="ml-1.5 h-4 w-4" />
+        </Link>
+      </Button>
     </div>
   );
 }

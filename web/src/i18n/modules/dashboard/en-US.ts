@@ -180,6 +180,7 @@ const messages: DashboardMessages = {
       openProject: 'Open project',
       openCodingCTO: 'Open CodingCTO',
       configureGitHub: 'Configure GitHub',
+      signInBackend: 'Sign in with backend',
     },
     metrics: {
       workspaces: {
@@ -213,6 +214,16 @@ const messages: DashboardMessages = {
       empty: 'No workspace yet. Create one to unlock project and CodingCTO flows.',
       noDescription: 'No workspace description yet.',
       id: 'ID: {id}',
+    },
+    backendGate: {
+      title: 'Backend session required',
+      description:
+        'Project, repository, and execution data come from the CodingCTO API. Your current browser session is signed in to the console but does not include a backend API token, so workspace data cannot be trusted.',
+      localHint:
+        'For local development, enable backend-backed login with LUAS_AUTH_BACKEND_ENABLED=true and sign in with a seeded backend user.',
+      emptyTitle: 'Workspace data is unavailable',
+      emptyDescription:
+        'This is an authentication or API connectivity problem, not an empty workspace. Reconnect the backend session before creating projects.',
     },
     projects: {
       title: 'Delivery projects',
