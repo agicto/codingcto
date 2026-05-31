@@ -21,19 +21,21 @@ type CompilePromptRequest struct {
 }
 
 type UpsertSkillRequest struct {
-	Name        string `json:"name" binding:"required,min=2,max=120"`
-	Description string `json:"description" binding:"omitempty,max=1000"`
-	Content     string `json:"content" binding:"required,min=3,max=50000"`
-	Active      *bool  `json:"active" binding:"omitempty"`
+	Name         string   `json:"name" binding:"required,min=2,max=120"`
+	Description  string   `json:"description" binding:"omitempty,max=1000"`
+	Content      string   `json:"content" binding:"required,min=3,max=50000"`
+	Active       *bool    `json:"active" binding:"omitempty"`
+	TargetAgents []string `json:"target_agents" binding:"omitempty,max=20,dive,max=100"`
 }
 
 type UpsertProjectSkillRequest struct {
-	RepositoryID string `json:"repository_id" binding:"required,min=1,max=255"`
-	Name         string `json:"name" binding:"required,min=2,max=120"`
-	Description  string `json:"description" binding:"omitempty,max=1000"`
-	Content      string `json:"content" binding:"required,min=3,max=50000"`
-	Active       *bool  `json:"active" binding:"omitempty"`
-	SortOrder    int    `json:"sort_order" binding:"omitempty,min=0,max=1000"`
+	RepositoryID string   `json:"repository_id" binding:"required,min=1,max=255"`
+	Name         string   `json:"name" binding:"required,min=2,max=120"`
+	Description  string   `json:"description" binding:"omitempty,max=1000"`
+	Content      string   `json:"content" binding:"required,min=3,max=50000"`
+	Active       *bool    `json:"active" binding:"omitempty"`
+	TargetAgents []string `json:"target_agents" binding:"omitempty,max=20,dive,max=100"`
+	SortOrder    int      `json:"sort_order" binding:"omitempty,min=0,max=1000"`
 }
 
 type PlanReviewResponse struct {

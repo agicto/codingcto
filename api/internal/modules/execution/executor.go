@@ -135,10 +135,10 @@ func (e *CodexCLIExecutor) Run(ctx context.Context, execContext ExecutionContext
 	defer cancel()
 
 	args := []string{
+		"--ask-for-approval", e.cfg.ApprovalPolicy,
 		"exec",
 		"--json",
 		"--cd", execContext.Workdir,
-		"--ask-for-approval", e.cfg.ApprovalPolicy,
 		"--sandbox", e.cfg.SandboxMode,
 		"--skip-git-repo-check",
 	}

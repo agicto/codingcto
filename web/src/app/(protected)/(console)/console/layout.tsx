@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname } from 'next/navigation';
-import { FormEvent, useState } from 'react';
+import { usePathname, useSearchParams } from 'next/navigation';
+import { FormEvent, useMemo, useState } from 'react';
 import {
   Building2,
   LucideIcon,
@@ -17,6 +17,9 @@ import {
   ChevronDown,
   Plus,
   Github,
+  GitBranch,
+  BookOpen,
+  Bot,
 } from 'lucide-react';
 
 import { cn } from '@/utils';
@@ -40,11 +43,8 @@ import { useLogout } from '@/features/auth/hooks/use-auth';
 import { useAuthStore } from '@/features/auth/store/auth-store';
 import { useCreateWorkspace } from '@/features/project/hooks/use-projects';
 import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
-import {
-  projectIdFromConsolePathname,
-  projectRequirementNewHref,
-  slugFromProjectName,
-} from '@/features/project/project-utils';
+import { slugFromProjectName } from '@/features/project/project-utils';
+import { useSpecForgeRuntimes } from '@/features/specforge/hooks/use-specforge';
 
 interface WorkspaceNavItem {
   title: string;
@@ -53,19 +53,41 @@ interface WorkspaceNavItem {
   description?: string;
   badge?: string;
   disabled?: boolean;
-  activeOn?: 'home' | 'projects' | 'codingcto' | 'settings' | 'none';
+  activeOn?:
+    | 'home'
+    | 'projects'
+    | 'codingcto'
+    | 'agents'
+    | 'skills'
+    | 'github-settings'
+    | 'repository-settings'
+    | 'settings'
+    | 'none';
 }
 
 export default function ConsoleLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
+  const searchParams = useSearchParams();
+  const settingsTab = searchParams.get('tab') ?? 'profile';
   const t = useT();
   const sidebarT = useT('dashboard.sidebar');
   const user = useAuthStore.use.user();
   const { mutate: logout, isPending: isLoggingOut } = useLogout();
-  const currentProjectId = projectIdFromConsolePathname(pathname);
-  const newRequirementHref = currentProjectId
-    ? projectRequirementNewHref(currentProjectId)
-    : ROUTES.CONSOLE.SPECFORGE;
+  const runtimesQuery = useSpecForgeRuntimes({ status: 'online', limit: 20 });
+  const codexDispatchReady = useMemo(
+    () =>
+      (runtimesQuery.data?.runtimes ?? []).some(runtime => {
+        if (runtime.status !== 'online' || runtime.executor !== 'codex_cli') {
+          return false;
+        }
+        return (runtime.available_clis ?? []).some(
+          cli => cli.available && cli.command === 'codex'
+        );
+      }),
+    [runtimesQuery.data?.runtimes]
+  );
+  const isDeliveryPath = pathname.includes('/codingcto') || pathname.includes('/specforge');
+  const newRequirementHref = `${isDeliveryPath ? pathname : ROUTES.CONSOLE.SPECFORGE}?new=requirement`;
 
   const deliveryNavItems: WorkspaceNavItem[] = [
     {
@@ -83,6 +105,14 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
       description: sidebarT('items.projects.description'),
       activeOn: 'projects',
     },
+    {
+      title: sidebarT('items.agents.title'),
+      href: ROUTES.CONSOLE.AGENTS,
+      icon: Bot,
+      description: sidebarT('items.agents.description'),
+      badge: codexDispatchReady ? sidebarT('badges.codexReady') : undefined,
+      activeOn: 'agents',
+    },
   ];
 
   const reviewNavItems: WorkspaceNavItem[] = [
@@ -98,11 +128,32 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
 
   const platformNavItems: WorkspaceNavItem[] = [
     {
+      title: sidebarT('items.skills.title'),
+      href: ROUTES.CONSOLE.SKILLS,
+      icon: BookOpen,
+      description: sidebarT('items.skills.description'),
+      activeOn: 'skills',
+    },
+    {
+      title: sidebarT('items.settings.title'),
+      href: ROUTES.CONSOLE.SETTINGS,
+      icon: Settings,
+      description: sidebarT('items.settings.description'),
+      activeOn: 'settings',
+    },
+    {
       title: sidebarT('items.github.title'),
       href: `${ROUTES.CONSOLE.SETTINGS}?tab=github`,
       icon: Github,
       description: sidebarT('items.github.description'),
-      activeOn: 'settings',
+      activeOn: 'github-settings',
+    },
+    {
+      title: sidebarT('items.repositories.title'),
+      href: `${ROUTES.CONSOLE.SETTINGS}?tab=repositories`,
+      icon: GitBranch,
+      description: sidebarT('items.repositories.description'),
+      activeOn: 'repository-settings',
     },
   ];
 
@@ -131,23 +182,26 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
             title={sidebarT('groups.deliver')}
             items={deliveryNavItems}
             pathname={pathname}
+            settingsTab={settingsTab}
           />
           <SidebarSection
             title={sidebarT('groups.review')}
             items={reviewNavItems}
             pathname={pathname}
+            settingsTab={settingsTab}
           />
           <SidebarSection
             title={sidebarT('groups.platform')}
             items={platformNavItems}
             pathname={pathname}
+            settingsTab={settingsTab}
           />
         </div>
 
         <div className="mt-3 flex shrink-0 items-center gap-2 border-t border-border-subtle px-2 pt-3 text-xs text-text-muted">
           <Settings className="h-3.5 w-3.5" />
           <Link
-            href={`${ROUTES.CONSOLE.SETTINGS}?tab=github`}
+            href={ROUTES.CONSOLE.SETTINGS}
             className="truncate hover:text-text-main"
           >
             {sidebarT('footer')}
@@ -194,8 +248,12 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
                 <div className="px-2 py-1.5 text-xs font-medium text-text-muted">
                   {user?.name || t('nav.profile')}
                 </div>
-                <DropdownMenuItem>{t('nav.profile')}</DropdownMenuItem>
-                <DropdownMenuItem>{t('nav.settings')}</DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href={ROUTES.CONSOLE.SETTINGS}>{t('nav.profile')}</Link>
+                </DropdownMenuItem>
+                <DropdownMenuItem asChild>
+                  <Link href={ROUTES.CONSOLE.SETTINGS}>{t('nav.settings')}</Link>
+                </DropdownMenuItem>
                 <DropdownMenuItem
                   className="text-destructive"
                   onSelect={event => {
@@ -242,8 +300,16 @@ function WorkspaceSwitcher() {
     event.preventDefault();
     const name = workspaceName.trim();
     const slug = slugFromProjectName(workspaceSlug || workspaceName);
-    if (!name || !slug) {
+    if (name.length < 2) {
+      setMessage(t('nameInvalid'));
+      return;
+    }
+    if (!slug) {
       setMessage(t('required'));
+      return;
+    }
+    if (slug.length < 2) {
+      setMessage(t('slugInvalid'));
       return;
     }
     setMessage('');
@@ -333,6 +399,8 @@ function WorkspaceSwitcher() {
               value={workspaceName}
               onChange={event => handleWorkspaceName(event.target.value)}
               placeholder="Acme Platform"
+              minLength={2}
+              maxLength={120}
             />
           </div>
           <div className="space-y-1.5">
@@ -342,6 +410,8 @@ function WorkspaceSwitcher() {
               value={workspaceSlug}
               onChange={event => setWorkspaceSlug(slugFromProjectName(event.target.value))}
               placeholder="acme-platform"
+              minLength={2}
+              maxLength={100}
             />
           </div>
           <Textarea
@@ -368,17 +438,24 @@ function SidebarSection({
   title,
   items,
   pathname,
+  settingsTab,
 }: {
   title: string;
   items: WorkspaceNavItem[];
   pathname: string;
+  settingsTab: string;
 }) {
   return (
     <div className="mt-4 first:mt-0">
       <div className="px-2 pb-1.5 text-xs font-medium text-text-muted">{title}</div>
       <nav className="space-y-1 text-sm">
         {items.map(item => (
-          <SidebarLink key={`${title}-${item.title}`} {...item} pathname={pathname} />
+          <SidebarLink
+            key={`${title}-${item.title}`}
+            {...item}
+            pathname={pathname}
+            settingsTab={settingsTab}
+          />
         ))}
       </nav>
     </div>
@@ -395,6 +472,7 @@ function SidebarLink({
   disabled,
   activeOn,
   pathname,
+  settingsTab,
 }: {
   href: string;
   icon: LucideIcon;
@@ -405,9 +483,10 @@ function SidebarLink({
   disabled?: boolean;
   activeOn?: WorkspaceNavItem['activeOn'];
   pathname: string;
+  settingsTab: string;
 }) {
   const text = label ?? title ?? '';
-  const active = !disabled && isSidebarItemActive({ href, activeOn }, pathname);
+  const active = !disabled && isSidebarItemActive({ href, activeOn }, pathname, settingsTab);
   const showDescription = Boolean(active && description);
   const content = (
     <>
@@ -462,7 +541,8 @@ function SidebarLink({
 
 function isSidebarItemActive(
   item: Pick<WorkspaceNavItem, 'href' | 'activeOn'>,
-  pathname: string
+  pathname: string,
+  settingsTab: string
 ) {
   if (item.activeOn === 'home') {
     return pathname === ROUTES.CONSOLE.HOME;
@@ -478,8 +558,25 @@ function isSidebarItemActive(
   if (item.activeOn === 'codingcto') {
     return pathname.includes('/codingcto') || pathname.includes('/specforge');
   }
+  if (item.activeOn === 'agents') {
+    return pathname === ROUTES.CONSOLE.AGENTS || pathname.startsWith(`${ROUTES.CONSOLE.AGENTS}/`);
+  }
+  if (item.activeOn === 'skills') {
+    return pathname === ROUTES.CONSOLE.SKILLS || pathname.startsWith(`${ROUTES.CONSOLE.SKILLS}/`);
+  }
   if (item.activeOn === 'settings') {
-    return pathname === ROUTES.CONSOLE.SETTINGS || pathname.startsWith(`${ROUTES.CONSOLE.SETTINGS}/`);
+    return (
+      (pathname === ROUTES.CONSOLE.SETTINGS ||
+        pathname.startsWith(`${ROUTES.CONSOLE.SETTINGS}/`)) &&
+      settingsTab !== 'github' &&
+      settingsTab !== 'repositories'
+    );
+  }
+  if (item.activeOn === 'github-settings') {
+    return pathname === ROUTES.CONSOLE.SETTINGS && settingsTab === 'github';
+  }
+  if (item.activeOn === 'repository-settings') {
+    return pathname === ROUTES.CONSOLE.SETTINGS && settingsTab === 'repositories';
   }
   if (item.activeOn === 'none') {
     return false;

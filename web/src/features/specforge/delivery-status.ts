@@ -64,18 +64,18 @@ function deliveryHeadline(
   failed: number
 ) {
   if (runStatus === 'idle' || total === 0) {
-    return 'No execution run has started.';
+    return '还没有开始执行。';
   }
   if (blocked > 0 || failed > 0 || runStatus === 'blocked') {
-    return 'Delivery is blocked and needs a decision.';
+    return '交付已阻塞，需要做出决策。';
   }
   if (ready === total) {
-    return 'All selected PR nodes are ready for review.';
+    return '所有选中的 PR 节点都已可评审。';
   }
   if (runStatus === 'cancelled') {
-    return 'Execution was cancelled before all PR nodes were delivered.';
+    return '执行已取消，仍有 PR 节点未交付。';
   }
-  return `${ready} of ${total} PR nodes are ready for review.`;
+  return `${ready} / ${total} 个 PR 节点已可评审。`;
 }
 
 function deliveryNextAction(
@@ -84,25 +84,25 @@ function deliveryNextAction(
 ) {
   const blockedNode = nextBlockedNode(run.tasks);
   if (blockedNode) {
-    return `Resolve ${blockedNode.nodeKey}: ${blockedNode.title}`;
+    return `处理 ${blockedNode.nodeKey}：${blockedNode.title}`;
   }
 
   if (counts.total > 0 && counts.ready === counts.total) {
-    return 'Review and merge the delivered GitHub pull requests.';
+    return '评审并合并已交付的 GitHub Pull Request。';
   }
 
   const reviewableNode = nextReviewableNode(run.tasks);
   if (reviewableNode) {
-    return `Review ${reviewableNode.nodeKey}: ${reviewableNode.title}`;
+    return `评审 ${reviewableNode.nodeKey}：${reviewableNode.title}`;
   }
 
   if (counts.active > 0) {
-    return 'Wait for the active PR node to finish execution or CI.';
+    return '等待执行中的 PR 节点完成实现或 CI。';
   }
 
   if (counts.waiting > 0) {
-    return 'Waiting PR nodes will unlock after their dependencies are delivered.';
+    return '等待中的 PR 节点会在依赖交付后解锁。';
   }
 
-  return 'Approve a plan and start an execution run.';
+  return '批准方案并启动执行。';
 }

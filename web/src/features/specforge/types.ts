@@ -47,6 +47,9 @@ export interface PRNode {
   githubPrUrl?: string;
   headSha?: string;
   executor?: string;
+  runtimeId?: string;
+  sessionId?: string;
+  workdir?: string;
   attemptNumber?: number;
   fixAttemptId?: number;
   failureReason?: string;
