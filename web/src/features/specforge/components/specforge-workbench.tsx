@@ -151,7 +151,13 @@ export function SpecForgeWorkbench({
   });
   const latestProjectPlanQuery = useLatestProjectPlan(projectId);
   const latestPlanRunQuery = useLatestPlanRun(activePlan.planId, {
-    enabled: Boolean(projectId && activePlan.planId && planSource === 'api' && !run.runId),
+    enabled: Boolean(
+      projectId &&
+        activePlan.planId &&
+        planSource === 'api' &&
+        !run.runId &&
+        activePlan.implementationPlan.status === 'approved'
+    ),
     refetchInterval: false,
   });
   const readyCount = run.tasks.filter(task => isPRNodeDelivered(task.status)).length;

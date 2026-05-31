@@ -215,6 +215,15 @@ function SkillPipelinePanel({
             <p className="mt-1 line-clamp-2 text-xs leading-5 text-text-muted">
               {run.output_summary || 'No output recorded yet.'}
             </p>
+            {run.evidence_refs?.length ? (
+              <div className="mt-2 flex flex-wrap gap-1.5">
+                {run.evidence_refs.slice(0, 4).map(ref => (
+                  <Badge key={ref} variant="outline" className="font-mono text-[10px]">
+                    {ref}
+                  </Badge>
+                ))}
+              </div>
+            ) : null}
           </div>
         ))}
       </div>
@@ -334,4 +343,3 @@ function ListBlock({ title, items, icon }: { title: string; items: string[]; ico
     </div>
   );
 }
-

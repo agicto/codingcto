@@ -21,6 +21,7 @@ export const ROUTES = {
     PROJECTS: '/console/projects',
     PROJECT: '/console/projects/:projectId',
     PROJECT_CONTEXT: '/console/projects/:projectId/context',
+    PROJECT_REQUIREMENT_NEW: '/console/projects/:projectId/requirements/new',
     PROJECT_SPECFORGE: '/console/projects/:projectId/codingcto',
     SPECFORGE: '/console/codingcto',
     SETTINGS: '/console/settings',

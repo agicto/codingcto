@@ -7,6 +7,7 @@ import {
   projectOverviewDecision,
   projectRepositoryEvidence,
   projectContextReadiness,
+  projectSkillContract,
 } from './project-context';
 import type { ProjectContextDTO } from './services/project-service';
 
@@ -179,7 +180,7 @@ describe('project context', () => {
     expect(decision.actionHref).toBe('#project-context');
   });
 
-  it('routes the project overview to delivery when context is ready', () => {
+  it('routes the project overview to requirement intake when context is ready', () => {
     const context = projectContext([['primary', true, 'repo_app']]);
     context.repository_contexts[0].skills = [
       {
@@ -198,7 +199,7 @@ describe('project context', () => {
     const decision = projectOverviewDecision(context);
 
     expect(decision.step).toBe('create_requirement');
-    expect(decision.actionHref).toBe('#project-delivery');
+    expect(decision.actionHref).toBe('#project-requirement');
   });
 
   it('builds repository evidence rows for context review', () => {
@@ -255,5 +256,42 @@ describe('project context', () => {
       warningCount: 1,
     });
     expect(projectContextMissingEvidence(context)).toContain('repo_profile:repo_docs');
+  });
+
+  it('summarizes the effective skill contract for prompt compilation', () => {
+    const context = projectContext([
+      ['primary', true, 'repo_app'],
+      ['dependency', true, 'repo_docs'],
+    ]);
+    context.repository_contexts[0].skills = [
+      {
+        id: 7,
+        repository_id: 'repo_app',
+        name: 'service-layer',
+        description: 'Use service layer.',
+        content: 'API routes must call services.',
+        active: true,
+        created_by: 1,
+        created_at: '',
+        updated_at: '',
+      },
+    ];
+    context.context_contract = {
+      version: 'project_context_contract_v1',
+      project_id: 1,
+      project_name: 'SpecForge',
+      active_repository_count: 2,
+      skill_names: ['service-layer'],
+      prompt_guardrails: [],
+      missing_evidence: [],
+    };
+
+    const contract = projectSkillContract(context);
+
+    expect(contract.effectiveSkillNames).toEqual(['service-layer']);
+    expect(contract.promptEvidenceRefs).toContain('skill:7');
+    expect(contract.promptEvidenceRefs).toContain('skill_name:service-layer');
+    expect(contract.repositoriesMissingSkills).toEqual(['repo_docs']);
+    expect(contract.canPlanWithSkills).toBe(false);
   });
 });
