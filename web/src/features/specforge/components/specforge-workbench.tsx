@@ -1,12 +1,9 @@
 'use client';
 
-import Link from 'next/link';
 import { useSearchParams } from 'next/navigation';
-import { startTransition, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
+import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
 import {
   ArrowRight,
-  Boxes,
-  Building2,
   CheckCircle2,
   CircleDot,
   CircleX,
@@ -29,24 +26,11 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/utils';
 import { useT } from '@/i18n';
-import { projectSpecForgeHref, slugFromProjectName } from '@/features/project/project-utils';
-import {
-  useCreateProject,
-  useCreateWorkspace,
-  useProjects,
-} from '@/features/project/hooks/use-projects';
 import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
 import {
   executionRunFromDTO,
@@ -774,8 +758,6 @@ export function SpecForgeWorkbench({
         </div>
       </header>
 
-      {!projectId && <WorkspaceProjectLaunchPanel />}
-
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle px-4">
         <Button
           variant={
@@ -1244,241 +1226,6 @@ function runtimeCLILabel(name: string, version?: string): string {
     return cleanName;
   }
   return `${cleanName}: ${cleanVersion.replace(cleanName, '').trim() || cleanVersion}`;
-}
-
-function WorkspaceProjectLaunchPanel() {
-  const t = useT('dashboard.specForge.launch');
-  const [workspaceName, setWorkspaceName] = useState('');
-  const [workspaceSlug, setWorkspaceSlug] = useState('');
-  const [workspaceDescription, setWorkspaceDescription] = useState('');
-  const [projectName, setProjectName] = useState('');
-  const [projectSlug, setProjectSlug] = useState('');
-  const [projectDescription, setProjectDescription] = useState('');
-  const [message, setMessage] = useState('');
-
-  const {
-    workspacesQuery,
-    workspaces,
-    selectedWorkspaceId: effectiveWorkspaceId,
-    selectedWorkspace,
-    setSelectedWorkspaceId,
-  } = useSelectedWorkspace();
-  const projectsQuery = useProjects(effectiveWorkspaceId);
-  const projects = projectsQuery.data?.projects ?? [];
-  const createWorkspace = useCreateWorkspace();
-  const createProject = useCreateProject(effectiveWorkspaceId);
-
-  function updateWorkspaceName(value: string) {
-    setWorkspaceName(value);
-    setWorkspaceSlug(current => current || slugFromProjectName(value));
-  }
-
-  function updateProjectName(value: string) {
-    setProjectName(value);
-    setProjectSlug(current => current || slugFromProjectName(value));
-  }
-
-  async function createNewWorkspace(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const name = workspaceName.trim();
-    const slug = slugFromProjectName(workspaceSlug || workspaceName);
-    if (!name || !slug) {
-      setMessage(t('workspaceRequired'));
-      return;
-    }
-    setMessage('');
-    try {
-      const response = await createWorkspace.mutateAsync({
-        name,
-        slug,
-        description: workspaceDescription.trim(),
-      });
-      setSelectedWorkspaceId(response.workspace.workspace_id);
-      setWorkspaceName('');
-      setWorkspaceSlug('');
-      setWorkspaceDescription('');
-      setMessage(t('workspaceCreated', { name: response.workspace.name }));
-    } catch {
-      setMessage(t('workspaceCreateFailed'));
-    }
-  }
-
-  async function createNewProject(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    const name = projectName.trim();
-    const slug = slugFromProjectName(projectSlug || projectName);
-    if (!effectiveWorkspaceId) {
-      setMessage(t('projectWorkspaceRequired'));
-      return;
-    }
-    if (!name || !slug) {
-      setMessage(t('projectRequired'));
-      return;
-    }
-    setMessage('');
-    try {
-      const response = await createProject.mutateAsync({
-        workspace_id: effectiveWorkspaceId,
-        name,
-        slug,
-        description: projectDescription.trim(),
-      });
-      setProjectName('');
-      setProjectSlug('');
-      setProjectDescription('');
-      setMessage(t('projectCreated', { name: response.project.name }));
-    } catch {
-      setMessage(t('projectCreateFailed'));
-    }
-  }
-
-  return (
-    <div className="border-b border-border-subtle bg-bg-canvas px-4 py-4">
-      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
-        <Card className="border-primary/20">
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Building2 className="h-4 w-4 text-primary" />
-              {t('workspaceTitle')}
-            </CardTitle>
-            <CardDescription>{t('workspaceDescription')}</CardDescription>
-          </CardHeader>
-          <CardContent className="grid gap-4 lg:grid-cols-2">
-            <div className="space-y-3">
-              <Label>{t('selectWorkspace')}</Label>
-              {workspaces.length > 0 ? (
-                <Select value={effectiveWorkspaceId} onValueChange={setSelectedWorkspaceId}>
-                  <SelectTrigger>
-                    <SelectValue placeholder={t('selectWorkspace')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {workspaces.map(workspace => (
-                      <SelectItem key={workspace.workspace_id} value={workspace.workspace_id}>
-                        {workspace.name} ({workspace.slug})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
-                  {t('noWorkspace')}
-                </div>
-              )}
-              {selectedWorkspace && (
-                <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm leading-6 text-text-muted">
-                  <div className="font-medium text-text-main">{selectedWorkspace.name}</div>
-                  <div>{selectedWorkspace.description || t('noWorkspaceDescription')}</div>
-                  <div className="mt-1 text-xs">ID: {selectedWorkspace.workspace_id}</div>
-                </div>
-              )}
-              {projects.length > 0 && (
-                <div className="space-y-2">
-                  <div className="text-xs font-medium uppercase tracking-wide text-text-muted">
-                    {t('projects')}
-                  </div>
-                  {projects.slice(0, 4).map(project => (
-                    <div
-                      key={project.id}
-                      className="flex items-center justify-between gap-3 rounded-lg border border-border-subtle bg-bg-surface px-3 py-2 text-sm"
-                    >
-                      <div className="min-w-0">
-                        <div className="truncate font-medium">{project.name}</div>
-                        <div className="text-xs text-text-muted">{project.slug}</div>
-                      </div>
-                      <Button asChild size="sm" variant="outline">
-                        <Link href={projectSpecForgeHref(project.id)}>{t('open')}</Link>
-                      </Button>
-                    </div>
-                  ))}
-                </div>
-              )}
-            </div>
-
-            <form className="space-y-3" onSubmit={createNewWorkspace}>
-              <div className="text-sm font-medium">{t('createWorkspace')}</div>
-              <Input
-                value={workspaceName}
-                onChange={event => updateWorkspaceName(event.target.value)}
-                placeholder="Acme Platform"
-                aria-label={t('workspaceName')}
-              />
-              <Input
-                value={workspaceSlug}
-                onChange={event => setWorkspaceSlug(slugFromProjectName(event.target.value))}
-                placeholder="acme-platform"
-                aria-label={t('workspaceSlug')}
-              />
-              <Textarea
-                value={workspaceDescription}
-                onChange={event => setWorkspaceDescription(event.target.value)}
-                placeholder={t('workspaceDescriptionPlaceholder')}
-                aria-label={t('workspaceDescriptionLabel')}
-                rows={3}
-              />
-              <Button type="submit" disabled={createWorkspace.isPending} className="w-full">
-                {createWorkspace.isPending ? t('creatingWorkspace') : t('createWorkspace')}
-                <ArrowRight className="ml-1.5 h-4 w-4" />
-              </Button>
-            </form>
-          </CardContent>
-        </Card>
-
-        <Card>
-          <CardHeader>
-            <CardTitle className="flex items-center gap-2 text-base">
-              <Boxes className="h-4 w-4 text-primary" />
-              {t('projectTitle')}
-            </CardTitle>
-            <CardDescription>{t('projectDescription')}</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <form className="space-y-3" onSubmit={createNewProject}>
-              <Input
-                value={projectName}
-                onChange={event => updateProjectName(event.target.value)}
-                placeholder="CodingCTO"
-                aria-label={t('projectName')}
-                disabled={!effectiveWorkspaceId}
-              />
-              <Input
-                value={projectSlug}
-                onChange={event => setProjectSlug(slugFromProjectName(event.target.value))}
-                placeholder="codingcto"
-                aria-label={t('projectSlug')}
-                disabled={!effectiveWorkspaceId}
-              />
-              <Textarea
-                value={projectDescription}
-                onChange={event => setProjectDescription(event.target.value)}
-                placeholder={t('projectDescriptionPlaceholder')}
-                aria-label={t('projectDescriptionLabel')}
-                rows={3}
-                disabled={!effectiveWorkspaceId}
-              />
-              <Button
-                type="submit"
-                disabled={!effectiveWorkspaceId || createProject.isPending}
-                className="w-full"
-              >
-                {createProject.isPending ? t('creatingProject') : t('createProject')}
-                <ArrowRight className="ml-1.5 h-4 w-4" />
-              </Button>
-            </form>
-            {message && (
-              <div className="mt-3 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm leading-5 text-text-muted">
-                {message}
-              </div>
-            )}
-            {workspacesQuery.isError && (
-              <div className="mt-3 rounded-lg border border-error/30 bg-error-subtle p-3 text-sm text-error">
-                {t('workspaceApiUnavailable')}
-              </div>
-            )}
-          </CardContent>
-        </Card>
-      </div>
-    </div>
-  );
 }
 
 function RepoProfileSummary({
