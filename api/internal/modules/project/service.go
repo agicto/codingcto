@@ -22,6 +22,7 @@ type Service interface {
 
 type service struct {
 	repo             domain.SpecForgeProjectRepositoryStore
+	workspaceRepo    domain.WorkspaceRepository
 	githubRepo       domain.GitHubIntegrationRepository
 	profileRepo      domain.SpecForgeRepoProfileRepository
 	architectureRepo repoArchitectureStore
@@ -34,6 +35,7 @@ type repoArchitectureStore interface {
 
 func NewService(
 	repo domain.SpecForgeProjectRepositoryStore,
+	workspaceRepo domain.WorkspaceRepository,
 	githubRepo domain.GitHubIntegrationRepository,
 	profileRepo domain.SpecForgeRepoProfileRepository,
 	skillRepo domain.SpecForgeSkillRepository,
@@ -44,6 +46,7 @@ func NewService(
 	}
 	return &service{
 		repo:             repo,
+		workspaceRepo:    workspaceRepo,
 		githubRepo:       githubRepo,
 		profileRepo:      profileRepo,
 		architectureRepo: architectureRepo,
@@ -52,7 +55,11 @@ func NewService(
 }
 
 func (s *service) CreateProject(ctx context.Context, userID uint, req *CreateProjectRequest) (*domain.SpecForgeProject, error) {
-	workspaceID := strings.TrimSpace(req.WorkspaceID)
+	workspace, err := s.resolveActiveWorkspace(ctx, req.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	workspaceID := workspace.WorkspaceID
 	slug := normalizeSlug(req.Slug)
 	name := strings.TrimSpace(req.Name)
 	if workspaceID == "" || slug == "" || name == "" {
@@ -112,11 +119,11 @@ func (s *service) GetProject(ctx context.Context, projectID uint) (*domain.SpecF
 }
 
 func (s *service) ListProjects(ctx context.Context, workspaceID string) ([]*domain.SpecForgeProject, error) {
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return nil, domain.ErrInvalidInput
+	workspace, err := s.resolveActiveWorkspace(ctx, workspaceID)
+	if err != nil {
+		return nil, err
 	}
-	return s.repo.ListProjectsByWorkspace(ctx, workspaceID)
+	return s.repo.ListProjectsByWorkspace(ctx, workspace.WorkspaceID)
 }
 
 func (s *service) BindRepository(ctx context.Context, userID, projectID uint, req *BindRepositoryRequest) (*domain.SpecForgeProjectRepository, error) {
@@ -292,4 +299,19 @@ func validRepositoryRole(role string) bool {
 	default:
 		return false
 	}
+}
+
+func (s *service) resolveActiveWorkspace(ctx context.Context, workspaceID string) (*domain.Workspace, error) {
+	workspaceID = domain.NormalizeWorkspaceID(workspaceID)
+	if workspaceID == "" || s.workspaceRepo == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	workspace, err := s.workspaceRepo.FindWorkspaceByWorkspaceID(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if workspace.Status != domain.WorkspaceStatusActive {
+		return nil, domain.ErrInvalidInput
+	}
+	return workspace, nil
 }
