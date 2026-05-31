@@ -9,6 +9,7 @@ import {
   GitBranch,
   GitMerge,
   ListChecks,
+  LogIn,
   Play,
   ScrollText,
   Sparkles,
@@ -902,6 +903,7 @@ function WorkspaceProjectLaunchPanel() {
   const projects = projectsQuery.data?.projects ?? [];
   const createWorkspace = useCreateWorkspace();
   const createProject = useCreateProject(effectiveWorkspaceId);
+  const backendUnavailable = workspacesQuery.isError;
 
   function updateWorkspaceName(value: string) {
     setWorkspaceName(value);
@@ -1041,12 +1043,14 @@ function WorkspaceProjectLaunchPanel() {
                 onChange={event => updateWorkspaceName(event.target.value)}
                 placeholder="Acme Platform"
                 aria-label="Workspace name"
+                disabled={backendUnavailable}
               />
               <Input
                 value={workspaceSlug}
                 onChange={event => setWorkspaceSlug(slugFromProjectName(event.target.value))}
                 placeholder="acme-platform"
                 aria-label="Workspace slug"
+                disabled={backendUnavailable}
               />
               <Textarea
                 value={workspaceDescription}
@@ -1054,8 +1058,13 @@ function WorkspaceProjectLaunchPanel() {
                 placeholder="Who owns this product portfolio?"
                 aria-label="Workspace description"
                 rows={3}
+                disabled={backendUnavailable}
               />
-              <Button type="submit" disabled={createWorkspace.isPending} className="w-full">
+              <Button
+                type="submit"
+                disabled={backendUnavailable || createWorkspace.isPending}
+                className="w-full"
+              >
                 {createWorkspace.isPending ? 'Creating workspace' : 'Create workspace'}
                 <ArrowRight className="ml-1.5 h-4 w-4" />
               </Button>
@@ -1075,20 +1084,35 @@ function WorkspaceProjectLaunchPanel() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {backendUnavailable ? (
+              <div className="mb-4 rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm leading-6">
+                <div className="font-medium text-text-main">Backend session required</div>
+                <p className="mt-1 text-text-muted">
+                  Project setup needs a backend API token. Sign in with backend auth before
+                  creating workspaces, projects, repositories, or execution runs.
+                </p>
+                <Button asChild variant="outline" size="sm" className="mt-3">
+                  <Link href="/login?returnUrl=/console/codingcto">
+                    Sign in with backend
+                    <LogIn className="ml-1.5 h-4 w-4" />
+                  </Link>
+                </Button>
+              </div>
+            ) : null}
             <form className="space-y-3" onSubmit={createNewProject}>
               <Input
                 value={projectName}
                 onChange={event => updateProjectName(event.target.value)}
                 placeholder="CodingCTO"
                 aria-label="Project name"
-                disabled={!effectiveWorkspaceId}
+                disabled={!effectiveWorkspaceId || backendUnavailable}
               />
               <Input
                 value={projectSlug}
                 onChange={event => setProjectSlug(slugFromProjectName(event.target.value))}
                 placeholder="codingcto"
                 aria-label="Project slug"
-                disabled={!effectiveWorkspaceId}
+                disabled={!effectiveWorkspaceId || backendUnavailable}
               />
               <Textarea
                 value={projectDescription}
@@ -1096,11 +1120,11 @@ function WorkspaceProjectLaunchPanel() {
                 placeholder="What product or system does this project represent?"
                 aria-label="Project description"
                 rows={3}
-                disabled={!effectiveWorkspaceId}
+                disabled={!effectiveWorkspaceId || backendUnavailable}
               />
               <Button
                 type="submit"
-                disabled={!effectiveWorkspaceId || createProject.isPending}
+                disabled={!effectiveWorkspaceId || backendUnavailable || createProject.isPending}
                 className="w-full"
               >
                 {createProject.isPending ? 'Creating project' : 'Create project'}
