@@ -93,12 +93,15 @@ type ClaimedAgentTask struct {
 	Executor      string `json:"executor"`
 	Status        string `json:"status"`
 	PromptType    string `json:"prompt_type"`
+	ProcessStatus string `json:"process_status,omitempty"`
+	CurrentPhase  string `json:"current_phase,omitempty"`
 	RuntimeID     string `json:"runtime_id"`
 	AttemptNumber int    `json:"attempt_number"`
 	ParentTaskID  *uint  `json:"parent_task_id,omitempty"`
 	FixAttemptID  *uint  `json:"fix_attempt_id,omitempty"`
 	SessionID     string `json:"session_id,omitempty"`
 	Workdir       string `json:"workdir,omitempty"`
+	ProcessRef    string `json:"process_ref,omitempty"`
 }
 
 type ClaimedTaskPRNode struct {
@@ -142,6 +145,7 @@ type SubmitTaskResultRequest struct {
 	RuntimeID     string `json:"runtime_id" binding:"omitempty,max=100"`
 	SessionID     string `json:"session_id" binding:"omitempty,max=255"`
 	Workdir       string `json:"workdir" binding:"omitempty,max=500"`
+	ProcessRef    string `json:"process_ref" binding:"omitempty,max=255"`
 	Status        string `json:"status" binding:"required,oneof=completed failed timeout"`
 	Output        string `json:"output" binding:"omitempty,max=200000"`
 	Error         string `json:"error" binding:"omitempty,max=200000"`

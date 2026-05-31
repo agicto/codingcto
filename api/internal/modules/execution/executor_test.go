@@ -12,13 +12,13 @@ import (
 
 func TestCodexCLIExecutorBuildsNonInteractiveCommand(t *testing.T) {
 	runner := &captureRunner{result: CommandResult{Stdout: `{"type":"message"}`, ExitCode: 0}}
-	executor := NewCodexCLIExecutor(CodexCLIExecutorConfig{
+	executor := newExecutorAdapter(newCodexCLIExecutor(CodexCLIExecutorConfig{
 		ExecutablePath: "codex-test",
 		SandboxMode:    "read-only",
 		ApprovalPolicy: "never",
 		Timeout:        time.Minute,
 		ExtraArgs:      []string{"--ephemeral"},
-	}, runner)
+	}, runner))
 
 	result, err := executor.Run(context.Background(), ExecutionContext{
 		RunID:   "run_123",
@@ -43,10 +43,36 @@ func TestCodexCLIExecutorBuildsNonInteractiveCommand(t *testing.T) {
 		"exec",
 		"--json",
 		"--cd", "/tmp/repo",
-		"--ask-for-approval", "never",
 		"--sandbox", "read-only",
 		"--skip-git-repo-check",
 		"--ephemeral",
+		"-",
+	}, runner.spec.Args)
+}
+
+func TestCodexCLIExecutorBypassesApprovalsForDangerFullAccess(t *testing.T) {
+	runner := &captureRunner{result: CommandResult{Stdout: `{"type":"message"}`, ExitCode: 0}}
+	executor := newExecutorAdapter(newCodexCLIExecutor(CodexCLIExecutorConfig{
+		ExecutablePath: "codex-test",
+		SandboxMode:    "danger-full-access",
+		ApprovalPolicy: "never",
+		Timeout:        time.Minute,
+	}, runner))
+
+	result, err := executor.Run(context.Background(), ExecutionContext{
+		Workdir: "/tmp/repo",
+	}, CompiledExecutionPrompt{
+		PromptText: "Implement PR-001",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "completed", result.Status)
+	require.Equal(t, []string{
+		"exec",
+		"--json",
+		"--cd", "/tmp/repo",
+		"--dangerously-bypass-approvals-and-sandbox",
+		"--skip-git-repo-check",
 		"-",
 	}, runner.spec.Args)
 }
@@ -60,10 +86,10 @@ func TestCodexCLIExecutorChecksOutBranchBeforeRunningPrompt(t *testing.T) {
 		{Stdout: "1\n", ExitCode: 0},
 		{ExitCode: 0},
 	}}
-	executor := NewCodexCLIExecutor(CodexCLIExecutorConfig{
+	executor := newExecutorAdapter(newCodexCLIExecutor(CodexCLIExecutorConfig{
 		ExecutablePath: "codex-test",
 		Timeout:        time.Minute,
-	}, runner)
+	}, runner))
 
 	result, err := executor.Run(context.Background(), ExecutionContext{
 		Workdir:    "/tmp/repo",
@@ -81,6 +107,39 @@ func TestCodexCLIExecutorChecksOutBranchBeforeRunningPrompt(t *testing.T) {
 	require.Equal(t, []string{"status", "--porcelain"}, runner.specs[3].Args)
 	require.Equal(t, []string{"rev-list", "--count", "origin/specforge/pr-001..HEAD"}, runner.specs[4].Args)
 	require.Equal(t, []string{"push", "origin", "HEAD:specforge/pr-001"}, runner.specs[5].Args)
+}
+
+func TestCodexCLIExecutorFallsBackToLocalBranchWhenRemoteBranchMissing(t *testing.T) {
+	runner := &captureRunner{results: []CommandResult{
+		{Stderr: "fatal: couldn't find remote ref specforge/pr-001", ExitCode: 128},
+		{ExitCode: 0},
+		{Stdout: `{"type":"message"}`, ExitCode: 0},
+		{ExitCode: 0},
+		{Stdout: "1\n", ExitCode: 0},
+		{ExitCode: 0},
+	}, errs: []error{
+		errors.New("exit status 128"),
+		nil,
+		nil,
+		nil,
+		nil,
+		nil,
+	}}
+	executor := newExecutorAdapter(newCodexCLIExecutor(CodexCLIExecutorConfig{
+		ExecutablePath: "codex-test",
+		Timeout:        time.Minute,
+	}, runner))
+
+	result, err := executor.Run(context.Background(), ExecutionContext{
+		Workdir:    "/tmp/repo",
+		BranchName: "specforge/pr-001",
+	}, CompiledExecutionPrompt{PromptText: "Implement PR-001"})
+
+	require.NoError(t, err)
+	require.Equal(t, "completed", result.Status)
+	require.Len(t, runner.specs, 6)
+	require.Equal(t, []string{"fetch", "origin", "specforge/pr-001"}, runner.specs[0].Args)
+	require.Equal(t, []string{"checkout", "-B", "specforge/pr-001"}, runner.specs[1].Args)
 }
 
 func TestCodexCLIExecutorCommitsDirtyWorktreeBeforePush(t *testing.T) {
@@ -105,7 +164,7 @@ func TestCodexCLIExecutorCommitsDirtyWorktreeBeforePush(t *testing.T) {
 		nil,
 		nil,
 	}}
-	executor := NewCodexCLIExecutor(CodexCLIExecutorConfig{ExecutablePath: "codex-test"}, runner)
+	executor := newExecutorAdapter(newCodexCLIExecutor(CodexCLIExecutorConfig{ExecutablePath: "codex-test"}, runner))
 
 	result, err := executor.Run(context.Background(), ExecutionContext{
 		Workdir:    "/tmp/repo",
@@ -137,7 +196,7 @@ func TestCodexCLIExecutorFailsWhenExecutorProducesNoCommits(t *testing.T) {
 		{ExitCode: 0},
 		{Stdout: "0\n", ExitCode: 0},
 	}}
-	executor := NewCodexCLIExecutor(CodexCLIExecutorConfig{ExecutablePath: "codex-test"}, runner)
+	executor := newExecutorAdapter(newCodexCLIExecutor(CodexCLIExecutorConfig{ExecutablePath: "codex-test"}, runner))
 
 	result, err := executor.Run(context.Background(), ExecutionContext{
 		Workdir:    "/tmp/repo",
@@ -155,7 +214,7 @@ func TestCodexCLIExecutorFailsWhenBranchCheckoutFails(t *testing.T) {
 		results: []CommandResult{{Stderr: "missing ref", ExitCode: 128}},
 		errs:    []error{errors.New("exit status 128")},
 	}
-	executor := NewCodexCLIExecutor(CodexCLIExecutorConfig{}, runner)
+	executor := newExecutorAdapter(newCodexCLIExecutor(CodexCLIExecutorConfig{}, runner))
 
 	_, err := executor.Run(context.Background(), ExecutionContext{
 		Workdir:    "/tmp/repo",
@@ -167,7 +226,7 @@ func TestCodexCLIExecutorFailsWhenBranchCheckoutFails(t *testing.T) {
 }
 
 func TestCodexCLIExecutorFailsWithoutWorkdirOrPrompt(t *testing.T) {
-	executor := NewCodexCLIExecutor(CodexCLIExecutorConfig{}, &captureRunner{})
+	executor := newExecutorAdapter(newCodexCLIExecutor(CodexCLIExecutorConfig{}, &captureRunner{}))
 
 	_, err := executor.Run(context.Background(), ExecutionContext{}, CompiledExecutionPrompt{PromptText: "hello"})
 	require.ErrorContains(t, err, "workdir is required")
@@ -181,7 +240,7 @@ func TestCodexCLIExecutorReturnsFailureResult(t *testing.T) {
 		result: CommandResult{Stderr: "boom", ExitCode: 2},
 		err:    errors.New("exit status 2"),
 	}
-	executor := NewCodexCLIExecutor(CodexCLIExecutorConfig{}, runner)
+	executor := newExecutorAdapter(newCodexCLIExecutor(CodexCLIExecutorConfig{}, runner))
 
 	result, err := executor.Run(context.Background(), ExecutionContext{Workdir: "/tmp/repo"}, CompiledExecutionPrompt{PromptText: "hello"})
 
@@ -224,6 +283,22 @@ func (r *captureRunner) Run(ctx context.Context, spec CommandSpec) (CommandResul
 	err := r.err
 	if index < len(r.errs) {
 		err = r.errs[index]
+	}
+	return result, err
+}
+
+func (r *captureRunner) Stream(
+	ctx context.Context,
+	spec CommandSpec,
+	onStdout func(string),
+	onStderr func(string),
+) (CommandResult, error) {
+	result, err := r.Run(ctx, spec)
+	if onStdout != nil && strings.TrimSpace(result.Stdout) != "" {
+		onStdout(result.Stdout)
+	}
+	if onStderr != nil && strings.TrimSpace(result.Stderr) != "" {
+		onStderr(result.Stderr)
 	}
 	return result, err
 }

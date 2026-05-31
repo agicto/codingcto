@@ -212,7 +212,9 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
+        <main className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
+          {children}
+        </main>
       </section>
     </div>
   );
