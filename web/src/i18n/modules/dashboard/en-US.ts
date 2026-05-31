@@ -299,14 +299,14 @@ const messages: DashboardMessages = {
     bindPanel: {
       title: 'Bind GitHub repository',
       description:
-        'Use the repository ID created by Settings > GitHub. Primary repositories are writable; dependency, docs, and infra repositories become read-only planning context.',
-      connectedRepositories: 'Connected repositories',
-      loadingRepositories: 'Loading repositories connected to this workspace.',
-      availableRepositories: '{count} repositories can be bound to this project.',
-      noAvailableRepositories:
-        'No unbound repositories are available. Connect a repository in GitHub setup or enter a repository ID manually.',
-      chooseRepository: 'Choose a repository',
-      repositoryId: 'Repository ID',
+        'Select a repository already connected in Settings > GitHub. Primary repositories are writable; dependency, docs, and infra repositories become read-only planning context.',
+      repositoryId: 'GitHub repository',
+      selectRepository: 'Select connected repository',
+      loadingRepositories: 'Loading connected repositories...',
+      emptyRepositories: 'No connected repositories exist in this workspace yet.',
+      allRepositoriesBound:
+        'Every connected GitHub repository in this workspace is already bound to this project.',
+      connectRepository: 'Connect GitHub',
       role: 'Role',
       binding: 'Binding',
       submit: 'Bind repository',
@@ -361,6 +361,12 @@ const messages: DashboardMessages = {
         fresh: 'fresh',
         missing: 'missing',
         generateSnapshot: 'Generate a snapshot before approving execution.',
+        remove: 'Remove',
+        removing: 'Removing',
+        removed: 'Repository {repoId} was removed from the project context.',
+        removeFailed: 'Repository could not be removed. Refresh and try again.',
+        primaryRemoveBlocked:
+          'The primary repository cannot be removed directly. Bind another primary repo or adjust the execution boundary first.',
       },
     },
   },

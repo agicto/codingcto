@@ -79,10 +79,10 @@ export const specForgeKeys = {
       params?.repository_full_name ?? '',
       params?.limit ?? 50,
     ] as const,
-  githubRepositories: (params?: ListGitHubRepositoriesParams) =>
-    [...specForgeKeys.all, "github-repositories", params?.workspace_id ?? ""] as const,
   githubRepository: (repoId: string) =>
     [...specForgeKeys.all, 'github-repository', repoId] as const,
+  githubRepositories: (workspaceId: string) =>
+    [...specForgeKeys.all, 'github-repositories', workspaceId] as const,
   githubSettings: (workspaceId: string) =>
     [...specForgeKeys.all, 'github-settings', workspaceId] as const,
 };
@@ -260,9 +260,12 @@ export function useGitHubRepository(repoId: string) {
 }
 
 export function useGitHubRepositories(params?: ListGitHubRepositoriesParams) {
+  const workspaceId = params?.workspace_id ?? '';
   return useQuery({
-    queryKey: specForgeKeys.githubRepositories(params),
-    queryFn: () => specForgeService.listGitHubRepositories(params, silentQueryConfig),
+    queryKey: specForgeKeys.githubRepositories(workspaceId),
+    queryFn: () =>
+      specForgeService.listGitHubRepositories({ workspace_id: workspaceId }, silentQueryConfig),
+    enabled: Boolean(workspaceId),
     meta: silentQueryMeta,
   });
 }
@@ -312,7 +315,7 @@ export function useUpsertGitHubRepository() {
       specForgeService.upsertGitHubRepository(payload),
     onSuccess: repository => {
       queryClient.invalidateQueries({
-        queryKey: specForgeKeys.githubRepositories({ workspace_id: repository.workspace_id }),
+        queryKey: specForgeKeys.githubRepositories(repository.workspace_id),
       });
       queryClient.invalidateQueries({
         queryKey: specForgeKeys.githubRepository(repository.repository_id),
