@@ -161,9 +161,9 @@ const messages: DashboardMessages = {
   },
   projectsConsole: {
     eyebrow: 'Project console',
-    title: 'Organize projects into executable delivery entry points',
+    title: 'Set up a delivery project',
     description:
-      'Select a workspace, shape project boundaries, then connect GitHub repositories, prompts, and PR execution into one CodingCTO flow.',
+      'Create one workspace, one project, and one primary GitHub repository before starting CodingCTO delivery.',
     badges: {
       enterprise: 'Enterprise workspace',
       apiUnavailable: 'API unavailable',
@@ -212,6 +212,7 @@ const messages: DashboardMessages = {
         'The workspace is the shared boundary for organization, permissions, GitHub binding, and CodingCTO execution.',
       selectPlaceholder: 'Select workspace',
       empty: 'No workspace yet. Create one to unlock project and CodingCTO flows.',
+      selected: 'Workspace: {name}',
       noDescription: 'No workspace description yet.',
       id: 'ID: {id}',
     },
@@ -237,7 +238,7 @@ const messages: DashboardMessages = {
       emptyDescription:
         'After creating a project, open the CodingCTO delivery board to bind GitHub repositories and generate an execution plan.',
       noDescription: 'No description yet.',
-      primaryRepoRequired: 'Primary repo required',
+      primaryRepoRequired: 'Review repo context',
       status: {
         active: 'Active',
         inactive: 'Inactive',
@@ -256,21 +257,27 @@ const messages: DashboardMessages = {
       descriptionPlaceholder: 'What product or system does this project represent?',
     },
     setup: {
-      title: 'Recommended path',
-      description: 'Like a deployment platform, define resource boundaries before execution.',
+      title: 'Setup path',
+      description: 'Finish the setup in order. Each step unlocks the next action.',
+      nextAction: 'Next action',
+      actions: {
+        backend: 'Reconnect the backend session',
+        workspace: 'Create the first workspace',
+        project: 'Create a delivery project',
+        github: 'Open project delivery',
+      },
       steps: {
+        workspace: {
+          title: 'Workspace',
+          description: 'Organization boundary for permissions, repositories, and execution.',
+        },
         project: {
-          title: 'Create the project boundary',
-          description: 'Clarify the product, system, or code domain this project represents.',
+          title: 'Project',
+          description: 'Product or system boundary that CodingCTO will plan against.',
         },
         github: {
-          title: 'Bind GitHub repositories',
-          description: 'Connect the primary repository and read-only context repositories.',
-        },
-        delivery: {
-          title: 'Enter CodingCTO delivery',
-          description:
-            'Generate plans, execution tasks, and reviewable PRs with repository context.',
+          title: 'GitHub repository',
+          description: 'Bind the writable primary repository, then generate plans and PRs.',
         },
       },
     },
