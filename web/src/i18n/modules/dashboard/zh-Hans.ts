@@ -151,9 +151,9 @@ const messages = {
   },
   projectsConsole: {
     eyebrow: '项目控制台',
-    title: '把项目组织成可执行的交付入口',
+    title: '设置一个交付项目',
     description:
-      '选择工作区，整理项目边界，再把 GitHub 仓库、提示词和 PR 执行连接到同一条 CodingCTO 流程。',
+      '先创建一个 workspace、一个项目和一个主 GitHub 仓库，再进入 CodingCTO 交付。',
     badges: {
       enterprise: '企业工作区',
       apiUnavailable: 'API 不可用',
@@ -201,6 +201,7 @@ const messages = {
       description: '工作区是组织、权限、GitHub 绑定和 CodingCTO 执行的共同边界。',
       selectPlaceholder: '选择 workspace',
       empty: '暂无 workspace。创建后才能解锁项目和 CodingCTO 流程。',
+      selected: 'Workspace：{name}',
       noDescription: '暂无 workspace 描述。',
       id: 'ID: {id}',
     },
@@ -223,7 +224,7 @@ const messages = {
       selectWorkspace: '请选择或创建工作区以列出项目。',
       emptyDescription: '项目创建完成后，可进入 CodingCTO 交付板绑定 GitHub 仓库并生成执行计划。',
       noDescription: '暂无描述。',
-      primaryRepoRequired: '需要主仓库',
+      primaryRepoRequired: '查看仓库上下文',
       status: {
         active: '活跃',
         inactive: '停用',
@@ -240,20 +241,27 @@ const messages = {
       descriptionPlaceholder: '这个项目代表哪个产品或系统？',
     },
     setup: {
-      title: '推荐路径',
-      description: '像部署平台一样，先把资源边界建清楚，再进入执行。',
+      title: '设置路径',
+      description: '按顺序完成设置。每一步都会解锁下一步动作。',
+      nextAction: '下一步',
+      actions: {
+        backend: '重新建立后端登录',
+        workspace: '创建第一个 workspace',
+        project: '创建交付项目',
+        github: '打开项目交付',
+      },
       steps: {
+        workspace: {
+          title: 'Workspace',
+          description: '组织、权限、仓库和执行的共同边界。',
+        },
         project: {
-          title: '创建项目边界',
-          description: '明确这个项目代表的产品、系统或代码域。',
+          title: '项目',
+          description: 'CodingCTO 会围绕这个产品或系统边界进行规划。',
         },
         github: {
-          title: '绑定 GitHub 仓库',
-          description: '把主仓库和只读上下文仓库连接到项目。',
-        },
-        delivery: {
-          title: '进入 CodingCTO 交付',
-          description: '用仓库上下文生成计划、执行任务并产出可 review 的 PR。',
+          title: 'GitHub 仓库',
+          description: '绑定可写入的主仓库，然后生成计划和 PR。',
         },
       },
     },
