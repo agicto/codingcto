@@ -1,8 +1,11 @@
 'use client';
 
-import { startTransition, useEffect, useMemo, useRef, useState } from 'react';
+import Link from 'next/link';
+import { startTransition, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   ArrowRight,
+  Boxes,
+  Building2,
   CheckCircle2,
   CircleDot,
   CircleX,
@@ -25,10 +28,24 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/utils';
+import { projectSpecForgeHref, slugFromProjectName } from '@/features/project/project-utils';
+import {
+  useCreateProject,
+  useCreateWorkspace,
+  useProjects,
+  useWorkspaces,
+} from '@/features/project/hooks/use-projects';
 import {
   executionRunFromDTO,
   planBundleFromDTO,
@@ -685,6 +702,8 @@ export function SpecForgeWorkbench({
         </div>
       </header>
 
+      {!projectId && <WorkspaceProjectLaunchPanel />}
+
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle px-4">
         <Button
           variant={
@@ -1102,6 +1121,248 @@ function runtimeCLILabel(name: string, version?: string): string {
     return cleanName;
   }
   return `${cleanName}: ${cleanVersion.replace(cleanName, '').trim() || cleanVersion}`;
+}
+
+function WorkspaceProjectLaunchPanel() {
+  const [selectedWorkspaceId, setSelectedWorkspaceId] = useState('');
+  const [workspaceName, setWorkspaceName] = useState('');
+  const [workspaceSlug, setWorkspaceSlug] = useState('');
+  const [workspaceDescription, setWorkspaceDescription] = useState('');
+  const [projectName, setProjectName] = useState('');
+  const [projectSlug, setProjectSlug] = useState('');
+  const [projectDescription, setProjectDescription] = useState('');
+  const [message, setMessage] = useState('');
+
+  const workspacesQuery = useWorkspaces();
+  const workspaces = workspacesQuery.data?.workspaces ?? [];
+  const effectiveWorkspaceId = selectedWorkspaceId || workspaces[0]?.workspace_id || '';
+  const selectedWorkspace = workspaces.find(
+    workspace => workspace.workspace_id === effectiveWorkspaceId
+  );
+  const projectsQuery = useProjects(effectiveWorkspaceId);
+  const projects = projectsQuery.data?.projects ?? [];
+  const createWorkspace = useCreateWorkspace();
+  const createProject = useCreateProject(effectiveWorkspaceId);
+
+  function updateWorkspaceName(value: string) {
+    setWorkspaceName(value);
+    setWorkspaceSlug(current => current || slugFromProjectName(value));
+  }
+
+  function updateProjectName(value: string) {
+    setProjectName(value);
+    setProjectSlug(current => current || slugFromProjectName(value));
+  }
+
+  async function createNewWorkspace(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = workspaceName.trim();
+    const slug = slugFromProjectName(workspaceSlug || workspaceName);
+    if (!name || !slug) {
+      setMessage('Workspace name and slug are required.');
+      return;
+    }
+    setMessage('');
+    try {
+      const response = await createWorkspace.mutateAsync({
+        name,
+        slug,
+        description: workspaceDescription.trim(),
+      });
+      setSelectedWorkspaceId(response.workspace.workspace_id);
+      setWorkspaceName('');
+      setWorkspaceSlug('');
+      setWorkspaceDescription('');
+      setMessage(`Workspace "${response.workspace.name}" created. Create or open a project next.`);
+    } catch {
+      setMessage('Workspace could not be created. Try another slug or check backend auth.');
+    }
+  }
+
+  async function createNewProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = projectName.trim();
+    const slug = slugFromProjectName(projectSlug || projectName);
+    if (!effectiveWorkspaceId) {
+      setMessage('Create or select a workspace before creating a project.');
+      return;
+    }
+    if (!name || !slug) {
+      setMessage('Project name and slug are required.');
+      return;
+    }
+    setMessage('');
+    try {
+      const response = await createProject.mutateAsync({
+        workspace_id: effectiveWorkspaceId,
+        name,
+        slug,
+        description: projectDescription.trim(),
+      });
+      setProjectName('');
+      setProjectSlug('');
+      setProjectDescription('');
+      setMessage(
+        `Project "${response.project.name}" created. Open it to continue with Git binding.`
+      );
+    } catch {
+      setMessage('Project could not be created. Try another slug or check the selected workspace.');
+    }
+  }
+
+  return (
+    <div className="border-b border-border-subtle bg-bg-canvas px-4 py-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+        <Card className="border-primary/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Building2 className="h-4 w-4 text-primary" />
+              Workspace setup
+            </CardTitle>
+            <CardDescription>
+              Global SpecForge is for experiments. Enterprise work should start from a workspace and
+              project so GitHub bindings, skills, and execution history stay scoped.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-3">
+              <Label>Select workspace</Label>
+              {workspaces.length > 0 ? (
+                <Select value={effectiveWorkspaceId} onValueChange={setSelectedWorkspaceId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select workspace" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {workspaces.map(workspace => (
+                      <SelectItem key={workspace.workspace_id} value={workspace.workspace_id}>
+                        {workspace.name} ({workspace.slug})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
+                  No workspace yet. Create one here to unlock project flows.
+                </div>
+              )}
+              {selectedWorkspace && (
+                <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm leading-6 text-text-muted">
+                  <div className="font-medium text-text-main">{selectedWorkspace.name}</div>
+                  <div>{selectedWorkspace.description || 'No workspace description yet.'}</div>
+                  <div className="mt-1 text-xs">ID: {selectedWorkspace.workspace_id}</div>
+                </div>
+              )}
+              {projects.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs font-medium uppercase tracking-wide text-text-muted">
+                    Projects
+                  </div>
+                  {projects.slice(0, 4).map(project => (
+                    <div
+                      key={project.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-border-subtle bg-bg-surface px-3 py-2 text-sm"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{project.name}</div>
+                        <div className="text-xs text-text-muted">{project.slug}</div>
+                      </div>
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={projectSpecForgeHref(project.id)}>Open</Link>
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <form className="space-y-3" onSubmit={createNewWorkspace}>
+              <div className="text-sm font-medium">Create workspace</div>
+              <Input
+                value={workspaceName}
+                onChange={event => updateWorkspaceName(event.target.value)}
+                placeholder="Acme Platform"
+                aria-label="Workspace name"
+              />
+              <Input
+                value={workspaceSlug}
+                onChange={event => setWorkspaceSlug(slugFromProjectName(event.target.value))}
+                placeholder="acme-platform"
+                aria-label="Workspace slug"
+              />
+              <Textarea
+                value={workspaceDescription}
+                onChange={event => setWorkspaceDescription(event.target.value)}
+                placeholder="Who owns this product portfolio?"
+                aria-label="Workspace description"
+                rows={3}
+              />
+              <Button type="submit" disabled={createWorkspace.isPending} className="w-full">
+                {createWorkspace.isPending ? 'Creating workspace' : 'Create workspace'}
+                <ArrowRight className="ml-1.5 h-4 w-4" />
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Boxes className="h-4 w-4 text-primary" />
+              Project setup
+            </CardTitle>
+            <CardDescription>
+              Create the project boundary, then open it for repository binding and enterprise
+              SpecForge runs.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="space-y-3" onSubmit={createNewProject}>
+              <Input
+                value={projectName}
+                onChange={event => updateProjectName(event.target.value)}
+                placeholder="CodingCTO"
+                aria-label="Project name"
+                disabled={!effectiveWorkspaceId}
+              />
+              <Input
+                value={projectSlug}
+                onChange={event => setProjectSlug(slugFromProjectName(event.target.value))}
+                placeholder="codingcto"
+                aria-label="Project slug"
+                disabled={!effectiveWorkspaceId}
+              />
+              <Textarea
+                value={projectDescription}
+                onChange={event => setProjectDescription(event.target.value)}
+                placeholder="What product or system does this project represent?"
+                aria-label="Project description"
+                rows={3}
+                disabled={!effectiveWorkspaceId}
+              />
+              <Button
+                type="submit"
+                disabled={!effectiveWorkspaceId || createProject.isPending}
+                className="w-full"
+              >
+                {createProject.isPending ? 'Creating project' : 'Create project'}
+                <ArrowRight className="ml-1.5 h-4 w-4" />
+              </Button>
+            </form>
+            {message && (
+              <div className="mt-3 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm leading-5 text-text-muted">
+                {message}
+              </div>
+            )}
+            {workspacesQuery.isError && (
+              <div className="mt-3 rounded-lg border border-error/30 bg-error-subtle p-3 text-sm text-error">
+                Workspace API unavailable. Sign in with backend auth and confirm the API is running.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
 }
 
 function RepoProfileSummary({

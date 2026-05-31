@@ -26,9 +26,17 @@ import {
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { env } from '@/config/env';
 import { ROUTES } from '@/constants/routes';
+import { useWorkspaces } from '@/features/project/hooks/use-projects';
 import {
   useGitHubSettings,
   useSyncGitHubInstallation,
@@ -60,9 +68,8 @@ function errorMessage(error: unknown) {
 
 export function GitHubConnectionPanel() {
   const searchParams = useSearchParams();
-  const [workspaceId, setWorkspaceId] = useState(
-    () => searchParams.get('state')?.trim() || 'default'
-  );
+  const stateWorkspaceId = searchParams.get('state')?.trim() || '';
+  const [workspaceIdOverride, setWorkspaceId] = useState(() => stateWorkspaceId);
   const [installationId, setInstallationId] = useState(
     () => searchParams.get('installation_id')?.trim() || ''
   );
@@ -80,7 +87,14 @@ export function GitHubConnectionPanel() {
     env.NEXT_PUBLIC_GITHUB_APP_INSTALL_URL || env.NEXT_PUBLIC_GITHUB_APP_SLUG || ''
   );
 
-  const githubSettings = useGitHubSettings(workspaceId.trim() || 'default');
+  const workspacesQuery = useWorkspaces();
+  const workspaces = useMemo(
+    () => workspacesQuery.data?.workspaces ?? [],
+    [workspacesQuery.data?.workspaces]
+  );
+  const workspaceId = workspaceIdOverride || workspaces[0]?.workspace_id || '';
+  const selectedWorkspace = workspaces.find(workspace => workspace.workspace_id === workspaceId);
+  const githubSettings = useGitHubSettings(workspaceId.trim());
   const upsertSettings = useUpsertGitHubSettings();
   const syncInstallation = useSyncGitHubInstallation();
   const upsertRepository = useUpsertGitHubRepository();
@@ -120,7 +134,7 @@ export function GitHubConnectionPanel() {
       .replace(/^https?:\/\/github\.com\/apps\//, '')
       .replace(/\/installations\/new.*$/, '')
       .replace(/^\/+|\/+$/g, '');
-    const state = encodeURIComponent(workspaceId.trim() || 'default');
+    const state = encodeURIComponent(workspaceId.trim());
     return `https://github.com/apps/${slug}/installations/new?state=${state}`;
   }, [installEntry, workspaceId]);
 
@@ -134,6 +148,10 @@ export function GitHubConnectionPanel() {
 
   const syncGitHubInstallation = useCallback(
     async (installationIdValue: string, workspaceIdValue: string) => {
+      if (!workspaceIdValue.trim()) {
+        setMessage('Create or select a workspace before syncing a GitHub installation.');
+        return false;
+      }
       const parsedInstallationId = Number(installationIdValue);
       if (!Number.isFinite(parsedInstallationId) || parsedInstallationId <= 0) {
         setMessage('Install the GitHub App first, or enter a valid installation ID.');
@@ -142,7 +160,7 @@ export function GitHubConnectionPanel() {
       setMessage('');
       try {
         const result = await syncInstallation.mutateAsync({
-          workspace_id: workspaceIdValue.trim() || 'default',
+          workspace_id: workspaceIdValue.trim(),
           installation_id: parsedInstallationId,
         });
         setInstallationId(String(result.installation.installation_id));
@@ -172,11 +190,15 @@ export function GitHubConnectionPanel() {
     key: Key,
     value: GitHubSettings[Key]
   ) {
+    if (!workspaceId.trim()) {
+      setMessage('Create or select a workspace before changing GitHub feature settings.');
+      return;
+    }
     const next = { ...settings, [key]: value };
     setMessage('');
     try {
       await upsertSettings.mutateAsync({
-        workspace_id: workspaceId.trim() || 'default',
+        workspace_id: workspaceId.trim(),
         enabled: next.enabled,
         pull_request_sidebar: next.pullRequestSidebar,
         co_authored_by_trailer: next.coAuthoredByTrailer,
@@ -205,7 +227,9 @@ export function GitHubConnectionPanel() {
 
   async function connectRepository() {
     if (!canSubmit) {
-      setMessage('Enter the GitHub installation ID, account, and repository details.');
+      setMessage(
+        'Select a workspace, then enter the GitHub installation ID and repository details.'
+      );
       return;
     }
 
@@ -289,7 +313,7 @@ export function GitHubConnectionPanel() {
                 </p>
               </div>
             </div>
-            {installURL ? (
+            {installURL && workspaceId.trim() ? (
               <Button asChild disabled={!settings.enabled}>
                 <a href={installURL} target="_blank" rel="noreferrer">
                   Install GitHub App
@@ -299,9 +323,13 @@ export function GitHubConnectionPanel() {
               <Button
                 onClick={() => {
                   setMessage(
-                    'Enter a GitHub App slug or installation URL first. If you do not have a GitHub App yet, create one in GitHub.'
+                    workspaceId.trim()
+                      ? 'Enter a GitHub App slug or installation URL first. If you do not have a GitHub App yet, create one in GitHub.'
+                      : 'Create or select a workspace first so the GitHub App installation can return to the correct workspace.'
                   );
-                  focusInstallEntry();
+                  if (workspaceId.trim()) {
+                    focusInstallEntry();
+                  }
                 }}
                 disabled={!settings.enabled}
               >
@@ -391,7 +419,7 @@ export function GitHubConnectionPanel() {
                 onChange={event => setInstallEntry(event.target.value)}
                 placeholder="codingcto or https://github.com/apps/codingcto/installations/new"
               />
-              {installURL ? (
+              {installURL && workspaceId.trim() ? (
                 <Button asChild variant="outline" disabled={!settings.enabled}>
                   <a href={installURL} target="_blank" rel="noreferrer">
                     Open install page
@@ -399,7 +427,20 @@ export function GitHubConnectionPanel() {
                   </a>
                 </Button>
               ) : (
-                <Button variant="outline" onClick={focusInstallEntry} disabled={!settings.enabled}>
+                <Button
+                  variant="outline"
+                  onClick={() => {
+                    setMessage(
+                      workspaceId.trim()
+                        ? 'Enter a GitHub App slug or installation URL first.'
+                        : 'Create or select a workspace before opening the GitHub App install page.'
+                    );
+                    if (workspaceId.trim()) {
+                      focusInstallEntry();
+                    }
+                  }}
+                  disabled={!settings.enabled}
+                >
                   Open install page
                   <ExternalLink className="ml-1.5 h-4 w-4" />
                 </Button>
@@ -413,13 +454,35 @@ export function GitHubConnectionPanel() {
 
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
-              <Label htmlFor="github-workspace">Workspace ID</Label>
-              <Input
-                id="github-workspace"
-                value={workspaceId}
-                onChange={event => setWorkspaceId(event.target.value)}
-                placeholder="default"
-              />
+              <Label htmlFor="github-workspace">Workspace</Label>
+              {workspaces.length > 0 ? (
+                <Select value={workspaceId} onValueChange={setWorkspaceId}>
+                  <SelectTrigger id="github-workspace">
+                    <SelectValue placeholder="Select workspace" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {workspaces.map(workspace => (
+                      <SelectItem key={workspace.workspace_id} value={workspace.workspace_id}>
+                        {workspace.name} ({workspace.slug})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <Button asChild variant="outline" className="w-full justify-start">
+                  <Link href={ROUTES.CONSOLE.PROJECTS}>Create workspace first</Link>
+                </Button>
+              )}
+              {selectedWorkspace && (
+                <p className="text-xs leading-5 text-text-muted">
+                  ID: {selectedWorkspace.workspace_id}
+                </p>
+              )}
+              {workspacesQuery.isError && (
+                <p className="text-xs leading-5 text-error">
+                  Workspace API unavailable. Sign in with backend auth first.
+                </p>
+              )}
             </div>
             <div className="space-y-2">
               <Label htmlFor="github-installation">Installation ID</Label>
