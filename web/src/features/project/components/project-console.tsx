@@ -26,9 +26,9 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/utils';
+import { useT } from '@/i18n';
 import {
   projectSpecForgeHref,
-  repositoryRoleLabel,
   slugFromProjectName,
 } from '@/features/project/project-utils';
 import {
@@ -40,6 +40,7 @@ import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-work
 import type { ProjectDTO } from '@/features/project/services/project-service';
 
 export function ProjectConsole() {
+  const t = useT('dashboard.projectsConsole');
   const [workspaceName, setWorkspaceName] = useState('');
   const [workspaceSlug, setWorkspaceSlug] = useState('');
   const [workspaceDescription, setWorkspaceDescription] = useState('');
@@ -81,7 +82,7 @@ export function ProjectConsole() {
     const trimmedName = workspaceName.trim();
     const trimmedSlug = slugFromProjectName(workspaceSlug || workspaceName);
     if (!trimmedName || !trimmedSlug) {
-      setWorkspaceError('Workspace name and slug are required.');
+      setWorkspaceError(t('messages.workspaceRequired'));
       return;
     }
 
@@ -96,9 +97,7 @@ export function ProjectConsole() {
       setWorkspaceSlug('');
       setWorkspaceDescription('');
     } catch {
-      setWorkspaceError(
-        'Workspace could not be created. Check the API connection and slug uniqueness.'
-      );
+      setWorkspaceError(t('messages.workspaceCreateFailed'));
     }
   }
 
@@ -108,11 +107,11 @@ export function ProjectConsole() {
     const trimmedName = name.trim();
     const trimmedSlug = slugFromProjectName(slug || name);
     if (!selectedWorkspaceId) {
-      setFormError('Create or select a workspace before creating a project.');
+      setFormError(t('messages.selectWorkspaceFirst'));
       return;
     }
     if (!trimmedName || !trimmedSlug) {
-      setFormError('Project name and slug are required.');
+      setFormError(t('messages.projectRequired'));
       return;
     }
 
@@ -127,7 +126,7 @@ export function ProjectConsole() {
       setSlug('');
       setDescription('');
     } catch {
-      setFormError('Project could not be created. Check the API connection and slug uniqueness.');
+      setFormError(t('messages.projectCreateFailed'));
     }
   }
 
@@ -137,7 +136,7 @@ export function ProjectConsole() {
         <div>
           <div className="flex flex-wrap items-center gap-2">
             <Badge variant="outline" className="border-primary/30 text-primary">
-              Enterprise workspace
+              {t('badges.enterprise')}
             </Badge>
             <Badge
               variant="outline"
@@ -147,13 +146,12 @@ export function ProjectConsole() {
                   : 'border-success/30 text-success'
               )}
             >
-              {workspacesQuery.isError ? 'API unavailable' : 'Live API'}
+              {workspacesQuery.isError ? t('badges.apiUnavailable') : t('badges.liveApi')}
             </Badge>
           </div>
-          <h1 className="mt-3 text-2xl font-semibold tracking-normal">Projects</h1>
+          <h1 className="mt-3 text-2xl font-semibold tracking-normal">{t('title')}</h1>
           <p className="mt-1 max-w-2xl text-sm leading-6 text-text-muted">
-            Create a workspace, group repositories into projects, then run CodingCTO plans, prompts,
-            and PR execution from real backend records.
+            {t('description')}
           </p>
         </div>
         <Button
@@ -167,7 +165,9 @@ export function ProjectConsole() {
           }}
           disabled={workspacesQuery.isFetching || projectsQuery.isFetching}
         >
-          {workspacesQuery.isFetching || projectsQuery.isFetching ? 'Refreshing' : 'Refresh'}
+          {workspacesQuery.isFetching || projectsQuery.isFetching
+            ? t('actions.refreshing')
+            : t('actions.refresh')}
           <RefreshCw className="ml-1.5 h-4 w-4" />
         </Button>
       </header>
@@ -178,17 +178,17 @@ export function ProjectConsole() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Building2 className="h-4 w-4 text-primary" />
-                Workspace
+                {t('workspace.title')}
               </CardTitle>
               <CardDescription>
-                Select the enterprise boundary that owns these projects.
+                {t('workspace.description')}
               </CardDescription>
             </CardHeader>
             <CardContent className="space-y-3">
               {workspaces.length > 0 ? (
                 <Select value={selectedWorkspaceId} onValueChange={setSelectedWorkspaceId}>
                   <SelectTrigger className="w-full">
-                    <SelectValue placeholder="Select workspace" />
+                    <SelectValue placeholder={t('workspace.selectPlaceholder')} />
                   </SelectTrigger>
                   <SelectContent>
                     {workspaces.map(workspace => (
@@ -200,14 +200,16 @@ export function ProjectConsole() {
                 </Select>
               ) : (
                 <div className="rounded-lg border border-border-subtle bg-muted/30 p-4 text-sm text-text-muted">
-                  No workspace yet. Create one to unlock project and CodingCTO flows.
+                  {t('workspace.empty')}
                 </div>
               )}
               {selectedWorkspace && (
                 <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm leading-6 text-text-muted">
                   <div className="font-medium text-text">{selectedWorkspace.name}</div>
-                  <div>{selectedWorkspace.description || 'No workspace description yet.'}</div>
-                  <div className="mt-1 text-xs">ID: {selectedWorkspace.workspace_id}</div>
+                  <div>{selectedWorkspace.description || t('workspace.noDescription')}</div>
+                  <div className="mt-1 text-xs">
+                    {t('workspace.id', { id: selectedWorkspace.workspace_id })}
+                  </div>
                 </div>
               )}
             </CardContent>
@@ -215,17 +217,17 @@ export function ProjectConsole() {
 
           {projectsQuery.isFetching ? (
             <div className="rounded-lg border border-border-subtle bg-muted/30 p-4 text-sm text-text-muted">
-              Loading projects from the selected workspace...
+              {t('projects.loading')}
             </div>
           ) : projects.length > 0 ? (
             projects.map(project => (
-              <ProjectRow key={`${project.id}-${project.slug}`} project={project} />
+              <ProjectRow key={`${project.id}-${project.slug}`} project={project} t={t} />
             ))
           ) : (
             <div className="rounded-lg border border-border-subtle bg-muted/30 p-4 text-sm text-text-muted">
               {selectedWorkspaceId
-                ? 'No projects in this workspace yet. Create one to start repository binding.'
-                : 'Select or create a workspace to list projects.'}
+                ? t('projects.emptyForWorkspace')
+                : t('projects.selectWorkspace')}
             </div>
           )}
         </section>
@@ -235,16 +237,16 @@ export function ProjectConsole() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Plus className="h-4 w-4 text-primary" />
-                New workspace
+                {t('newWorkspace.title')}
               </CardTitle>
               <CardDescription>
-                Create the real container before project and Git binding.
+                {t('newWorkspace.description')}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <form className="space-y-4" onSubmit={handleWorkspaceSubmit}>
                 <div className="space-y-2">
-                  <Label htmlFor="workspace-name">Name</Label>
+                  <Label htmlFor="workspace-name">{t('fields.name')}</Label>
                   <Input
                     id="workspace-name"
                     value={workspaceName}
@@ -253,7 +255,7 @@ export function ProjectConsole() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="workspace-slug">Slug</Label>
+                  <Label htmlFor="workspace-slug">{t('fields.slug')}</Label>
                   <Input
                     id="workspace-slug"
                     value={workspaceSlug}
@@ -262,12 +264,12 @@ export function ProjectConsole() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="workspace-description">Description</Label>
+                  <Label htmlFor="workspace-description">{t('fields.description')}</Label>
                   <Textarea
                     id="workspace-description"
                     value={workspaceDescription}
                     onChange={event => setWorkspaceDescription(event.target.value)}
-                    placeholder="Who owns this product portfolio?"
+                    placeholder={t('newWorkspace.descriptionPlaceholder')}
                     rows={3}
                   />
                 </div>
@@ -277,7 +279,7 @@ export function ProjectConsole() {
                   </div>
                 )}
                 <Button type="submit" className="w-full" disabled={createWorkspace.isPending}>
-                  {createWorkspace.isPending ? 'Creating' : 'Create workspace'}
+                  {createWorkspace.isPending ? t('actions.creating') : t('actions.createWorkspace')}
                   <ArrowRight className="ml-1.5 h-4 w-4" />
                 </Button>
               </form>
@@ -288,16 +290,16 @@ export function ProjectConsole() {
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <Plus className="h-4 w-4 text-primary" />
-                New project
+                {t('newProject.title')}
               </CardTitle>
               <CardDescription>
-                Start with a product boundary, then bind repositories in the next step.
+                {t('newProject.description')}
               </CardDescription>
             </CardHeader>
             <CardContent>
               <form className="space-y-4" onSubmit={handleSubmit}>
                 <div className="space-y-2">
-                  <Label htmlFor="project-name">Name</Label>
+                  <Label htmlFor="project-name">{t('fields.name')}</Label>
                   <Input
                     id="project-name"
                     value={name}
@@ -307,7 +309,7 @@ export function ProjectConsole() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="project-slug">Slug</Label>
+                  <Label htmlFor="project-slug">{t('fields.slug')}</Label>
                   <Input
                     id="project-slug"
                     value={slug}
@@ -317,12 +319,12 @@ export function ProjectConsole() {
                   />
                 </div>
                 <div className="space-y-2">
-                  <Label htmlFor="project-description">Description</Label>
+                  <Label htmlFor="project-description">{t('fields.description')}</Label>
                   <Textarea
                     id="project-description"
                     value={description}
                     onChange={event => setDescription(event.target.value)}
-                    placeholder="What product or system does this project represent?"
+                    placeholder={t('newProject.descriptionPlaceholder')}
                     rows={4}
                     disabled={!selectedWorkspaceId}
                   />
@@ -337,7 +339,7 @@ export function ProjectConsole() {
                   className="w-full"
                   disabled={!selectedWorkspaceId || createProject.isPending}
                 >
-                  {createProject.isPending ? 'Creating' : 'Create project'}
+                  {createProject.isPending ? t('actions.creating') : t('actions.createProject')}
                   <ArrowRight className="ml-1.5 h-4 w-4" />
                 </Button>
               </form>
@@ -349,7 +351,13 @@ export function ProjectConsole() {
   );
 }
 
-function ProjectRow({ project }: { project: ProjectDTO }) {
+function ProjectRow({
+  project,
+  t,
+}: {
+  project: ProjectDTO;
+  t: (key: string, values?: Record<string, string | number | Date>) => string;
+}) {
   return (
     <Card className="transition-colors hover:border-primary/40">
       <CardContent className="p-4">
@@ -365,7 +373,7 @@ function ProjectRow({ project }: { project: ProjectDTO }) {
               </div>
             </div>
             <p className="mt-3 max-w-3xl text-sm leading-6 text-text-muted">
-              {project.description || 'No description yet.'}
+              {project.description || t('projects.noDescription')}
             </p>
             <div className="mt-3 flex flex-wrap gap-2">
               <Badge
@@ -376,13 +384,13 @@ function ProjectRow({ project }: { project: ProjectDTO }) {
               </Badge>
               <Badge variant="outline">
                 <GitBranch className="mr-1 h-3.5 w-3.5" />
-                {repositoryRoleLabel('primary')} repo required
+                {t('projects.primaryRepoRequired')}
               </Badge>
             </div>
           </div>
           <Button asChild variant="outline" className="shrink-0">
             <Link href={projectSpecForgeHref(project.id)}>
-              Open CodingCTO
+              {t('actions.openCodingCTO')}
               <GitPullRequest className="ml-1.5 h-4 w-4" />
             </Link>
           </Button>

@@ -9,23 +9,14 @@ import {
   Settings,
   Bell,
   LogOut,
-  Palette,
   GitPullRequest,
-  GitBranch,
   Boxes,
-  Search,
   SquarePen,
   Inbox,
-  CircleUserRound,
   ListChecks,
-  Zap,
-  Bot,
-  BarChart3,
-  Monitor,
-  BookOpen,
-  HelpCircle,
   ChevronDown,
   Plus,
+  Github,
 } from 'lucide-react';
 
 import { cn } from '@/utils';
@@ -55,28 +46,56 @@ interface WorkspaceNavItem {
   title: string;
   href: string;
   icon: LucideIcon;
+  description?: string;
   badge?: string;
+  disabled?: boolean;
+  activeOn?: 'home' | 'projects' | 'codingcto' | 'settings' | 'none';
 }
 
 export default function ConsoleLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
   const t = useT();
+  const sidebarT = useT('dashboard.sidebar');
   const user = useAuthStore.use.user();
   const { mutate: logout, isPending: isLoggingOut } = useLogout();
 
-  const workspaceNavItems: WorkspaceNavItem[] = [
-    { title: 'Command Center', href: ROUTES.CONSOLE.SPECFORGE, icon: ListChecks, badge: '4' },
-    { title: 'Projects', href: ROUTES.CONSOLE.PROJECTS, icon: Boxes },
-    { title: 'Repositories', href: ROUTES.CONSOLE.PROJECTS, icon: GitBranch },
-    { title: 'Autopilot', href: ROUTES.CONSOLE.SPECFORGE, icon: Zap },
-    { title: 'Runs', href: ROUTES.CONSOLE.SPECFORGE, icon: Bot },
-    { title: 'Usage', href: ROUTES.CONSOLE.HOME, icon: BarChart3 },
+  const deliveryNavItems: WorkspaceNavItem[] = [
+    {
+      title: sidebarT('items.delivery.title'),
+      href: ROUTES.CONSOLE.SPECFORGE,
+      icon: ListChecks,
+      description: sidebarT('items.delivery.description'),
+      badge: sidebarT('badges.live'),
+      activeOn: 'codingcto',
+    },
+    {
+      title: sidebarT('items.projects.title'),
+      href: ROUTES.CONSOLE.PROJECTS,
+      icon: Boxes,
+      description: sidebarT('items.projects.description'),
+      activeOn: 'projects',
+    },
   ];
 
-  const configureNavItems: WorkspaceNavItem[] = [
-    { title: 'Runtimes', href: ROUTES.CONSOLE.SPECFORGE, icon: Monitor },
-    { title: 'Skills', href: ROUTES.CONSOLE.SPECFORGE, icon: BookOpen },
-    { title: 'Settings', href: ROUTES.CONSOLE.SETTINGS, icon: Settings },
+  const reviewNavItems: WorkspaceNavItem[] = [
+    {
+      title: sidebarT('items.review.title'),
+      href: ROUTES.CONSOLE.SPECFORGE,
+      icon: Inbox,
+      description: sidebarT('items.review.description'),
+      badge: sidebarT('badges.soon'),
+      disabled: true,
+    },
+  ];
+
+  const platformNavItems: WorkspaceNavItem[] = [
+    {
+      title: sidebarT('items.github.title'),
+      href: `${ROUTES.CONSOLE.SETTINGS}?tab=github`,
+      icon: Github,
+      description: sidebarT('items.github.description'),
+      activeOn: 'settings',
+    },
   ];
 
   return (
@@ -85,22 +104,13 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
         <WorkspaceSwitcher />
 
         <div className="mt-4 space-y-1">
-          <button className="flex h-9 w-full items-center justify-between rounded-lg bg-muted px-2 text-sm text-text-main">
-            <span className="flex items-center gap-2">
-              <Search className="h-4 w-4" />
-              Search...
-            </span>
-            <kbd className="rounded border border-border-main bg-bg-surface px-1.5 py-0.5 text-[11px] text-text-muted">
-              ⌘ K
-            </kbd>
-          </button>
           <Link
             href={ROUTES.CONSOLE.SPECFORGE}
             className="flex h-9 items-center justify-between rounded-lg px-2 text-sm text-text-subtle hover:bg-muted hover:text-text-main"
           >
             <span className="flex items-center gap-2">
               <SquarePen className="h-4 w-4" />
-              New Requirement
+              {sidebarT('quick.newRequirement')}
             </span>
             <kbd className="rounded border border-border-main bg-bg-surface px-1.5 py-0.5 text-[11px] text-text-muted">
               C
@@ -108,33 +118,32 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
           </Link>
         </div>
 
-        <nav className="mt-8 space-y-1 text-sm">
-          <SidebarLink
-            href={ROUTES.CONSOLE.HOME}
-            icon={Inbox}
-            label="Review Queue"
+        <div className="mt-6 min-h-0 flex-1 overflow-y-auto pr-1">
+          <SidebarSection
+            title={sidebarT('groups.deliver')}
+            items={deliveryNavItems}
             pathname={pathname}
           />
-          <SidebarLink
-            href={ROUTES.CONSOLE.HOME}
-            icon={CircleUserRound}
-            label="My PR Sets"
+          <SidebarSection
+            title={sidebarT('groups.review')}
+            items={reviewNavItems}
             pathname={pathname}
           />
-        </nav>
+          <SidebarSection
+            title={sidebarT('groups.platform')}
+            items={platformNavItems}
+            pathname={pathname}
+          />
+        </div>
 
-        <SidebarSection title="Workspace" items={workspaceNavItems} pathname={pathname} />
-        <SidebarSection title="Configure" items={configureNavItems} pathname={pathname} />
-
-        <div className="mt-auto flex items-center justify-between px-2">
+        <div className="mt-3 flex shrink-0 items-center gap-2 border-t border-border-subtle px-2 pt-3 text-xs text-text-muted">
+          <Settings className="h-3.5 w-3.5" />
           <Link
-            href={ROUTES.DEVTOOLS.STYLEGUIDE}
-            className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-text-subtle hover:bg-muted hover:text-text-main"
+            href={`${ROUTES.CONSOLE.SETTINGS}?tab=github`}
+            className="truncate hover:text-text-main"
           >
-            <Palette className="h-4 w-4" />
-            Styleguide
+            {sidebarT('footer')}
           </Link>
-          <HelpCircle className="h-4 w-4 text-text-muted" />
         </div>
       </aside>
 
@@ -202,6 +211,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
 }
 
 function WorkspaceSwitcher() {
+  const t = useT('dashboard.sidebar.workspace');
   const {
     workspaces,
     workspacesQuery,
@@ -225,7 +235,7 @@ function WorkspaceSwitcher() {
     const name = workspaceName.trim();
     const slug = slugFromProjectName(workspaceSlug || workspaceName);
     if (!name || !slug) {
-      setMessage('Workspace name and slug are required.');
+      setMessage(t('required'));
       return;
     }
     setMessage('');
@@ -239,13 +249,13 @@ function WorkspaceSwitcher() {
       setWorkspaceName('');
       setWorkspaceSlug('');
       setWorkspaceDescription('');
-      setMessage(`Created ${response.workspace.name}.`);
+      setMessage(t('created', { name: response.workspace.name }));
     } catch {
-      setMessage('Workspace could not be created. Try another slug or check backend auth.');
+      setMessage(t('createFailed'));
     }
   }
 
-  const fallbackName = workspacesQuery.isLoading ? 'Loading...' : 'Create workspace';
+  const fallbackName = workspacesQuery.isLoading ? t('loading') : t('createWorkspace');
   const workspaceNameLabel = selectedWorkspace?.name || fallbackName;
   const workspaceInitial = (selectedWorkspace?.name || 'C').trim().slice(0, 1).toUpperCase();
 
@@ -268,11 +278,8 @@ function WorkspaceSwitcher() {
             <Building2 className="h-4 w-4" />
           </div>
           <div className="min-w-0">
-            <div className="text-sm font-medium">Organization workspace</div>
-            <p className="mt-1 text-xs leading-5 text-text-muted">
-              Switch the enterprise boundary used by settings, GitHub binding, projects, and
-              CodingCTO setup.
-            </p>
+            <div className="text-sm font-medium">{t('title')}</div>
+            <p className="mt-1 text-xs leading-5 text-text-muted">{t('description')}</p>
           </div>
         </div>
 
@@ -292,13 +299,13 @@ function WorkspaceSwitcher() {
                 <span className="block truncate text-xs text-text-muted">{workspace.slug}</span>
               </span>
               {selectedWorkspaceId === workspace.workspace_id ? (
-                <span className="text-xs">Current</span>
+                <span className="text-xs">{t('current')}</span>
               ) : null}
             </button>
           ))}
           {!workspacesQuery.isLoading && workspaces.length === 0 ? (
             <div className="rounded-lg border border-border-subtle bg-bg-surface p-3 text-sm text-text-muted">
-              No workspace yet. Create one below.
+              {t('empty')}
             </div>
           ) : null}
         </div>
@@ -309,10 +316,10 @@ function WorkspaceSwitcher() {
         >
           <div className="flex items-center gap-2 text-sm font-medium">
             <Plus className="h-4 w-4 text-primary" />
-            New workspace
+            {t('newWorkspace')}
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="global-workspace-name">Name</Label>
+            <Label htmlFor="global-workspace-name">{t('name')}</Label>
             <Input
               id="global-workspace-name"
               value={workspaceName}
@@ -321,7 +328,7 @@ function WorkspaceSwitcher() {
             />
           </div>
           <div className="space-y-1.5">
-            <Label htmlFor="global-workspace-slug">Slug</Label>
+            <Label htmlFor="global-workspace-slug">{t('slug')}</Label>
             <Input
               id="global-workspace-slug"
               value={workspaceSlug}
@@ -332,7 +339,7 @@ function WorkspaceSwitcher() {
           <Textarea
             value={workspaceDescription}
             onChange={event => setWorkspaceDescription(event.target.value)}
-            placeholder="Who owns this workspace?"
+            placeholder={t('descriptionPlaceholder')}
             rows={2}
           />
           {message ? (
@@ -341,7 +348,7 @@ function WorkspaceSwitcher() {
             </div>
           ) : null}
           <Button type="submit" className="w-full" disabled={createWorkspace.isPending}>
-            {createWorkspace.isPending ? 'Creating' : 'Create and switch'}
+            {createWorkspace.isPending ? t('creating') : t('createAndSwitch')}
           </Button>
         </form>
       </PopoverContent>
@@ -359,8 +366,8 @@ function SidebarSection({
   pathname: string;
 }) {
   return (
-    <div className="mt-8">
-      <div className="px-2 pb-2 text-xs font-medium text-text-muted">{title}</div>
+    <div className="mt-4 first:mt-0">
+      <div className="px-2 pb-1.5 text-xs font-medium text-text-muted">{title}</div>
       <nav className="space-y-1 text-sm">
         {items.map(item => (
           <SidebarLink key={`${title}-${item.title}`} {...item} pathname={pathname} />
@@ -375,37 +382,99 @@ function SidebarLink({
   icon: Icon,
   label,
   title,
+  description,
   badge,
+  disabled,
+  activeOn,
   pathname,
 }: {
   href: string;
   icon: LucideIcon;
   label?: string;
   title?: string;
+  description?: string;
   badge?: string;
+  disabled?: boolean;
+  activeOn?: WorkspaceNavItem['activeOn'];
   pathname: string;
 }) {
   const text = label ?? title ?? '';
-  const active =
-    text === 'Command Center'
-      ? pathname.includes('/codingcto') || pathname.includes('/specforge')
-      : href === ROUTES.CONSOLE.SPECFORGE
-        ? false
-        : pathname === href || (href !== ROUTES.CONSOLE.HOME && pathname.startsWith(`${href}/`));
+  const active = !disabled && isSidebarItemActive({ href, activeOn }, pathname);
+  const showDescription = Boolean(active && description);
+  const content = (
+    <>
+      <span className="flex min-w-0 items-start gap-2">
+        <Icon className={cn('h-4 w-4 shrink-0', showDescription ? 'mt-0.5' : 'mt-0')} />
+        <span className="min-w-0">
+          <span className="block truncate">{text}</span>
+          {showDescription ? (
+            <span className="mt-0.5 block truncate text-[11px] leading-4 text-text-muted">
+              {description}
+            </span>
+          ) : null}
+        </span>
+      </span>
+      {badge ? (
+        <span
+          className={cn(
+            'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
+            disabled ? 'bg-muted text-text-muted' : 'bg-bg-surface text-text-muted'
+          )}
+        >
+          {badge}
+        </span>
+      ) : null}
+    </>
+  );
+
+  const className = cn(
+    'flex min-h-9 items-start justify-between gap-2 rounded-lg px-2 py-2 text-text-subtle hover:bg-muted hover:text-text-main',
+    active && 'bg-primary-subtle text-primary',
+    disabled && 'cursor-not-allowed opacity-70 hover:bg-transparent hover:text-text-subtle'
+  );
+
+  if (disabled) {
+    return (
+      <div aria-disabled="true" title={description} className={className}>
+        {content}
+      </div>
+    );
+  }
 
   return (
     <Link
       href={href}
-      className={cn(
-        'flex h-9 items-center justify-between rounded-lg px-2 text-text-subtle hover:bg-muted hover:text-text-main',
-        active && 'bg-primary-subtle text-primary'
-      )}
+      title={description}
+      className={className}
     >
-      <span className="flex min-w-0 items-center gap-2">
-        <Icon className="h-4 w-4 shrink-0" />
-        <span className="truncate">{text}</span>
-      </span>
-      {badge ? <span className="text-xs text-text-muted">{badge}</span> : null}
+      {content}
     </Link>
   );
+}
+
+function isSidebarItemActive(
+  item: Pick<WorkspaceNavItem, 'href' | 'activeOn'>,
+  pathname: string
+) {
+  if (item.activeOn === 'home') {
+    return pathname === ROUTES.CONSOLE.HOME;
+  }
+  if (item.activeOn === 'projects') {
+    const isProjectScopedDelivery =
+      pathname.includes('/codingcto') || pathname.includes('/specforge');
+    return (
+      !isProjectScopedDelivery &&
+      (pathname === ROUTES.CONSOLE.PROJECTS || pathname.startsWith('/console/projects/'))
+    );
+  }
+  if (item.activeOn === 'codingcto') {
+    return pathname.includes('/codingcto') || pathname.includes('/specforge');
+  }
+  if (item.activeOn === 'settings') {
+    return pathname === ROUTES.CONSOLE.SETTINGS || pathname.startsWith(`${ROUTES.CONSOLE.SETTINGS}/`);
+  }
+  if (item.activeOn === 'none') {
+    return false;
+  }
+  return pathname === item.href || (item.href !== ROUTES.CONSOLE.HOME && pathname.startsWith(`${item.href}/`));
 }
