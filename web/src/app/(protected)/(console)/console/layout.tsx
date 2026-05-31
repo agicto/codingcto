@@ -59,18 +59,18 @@ export default function ConsoleLayout({
   const { mutate: logout, isPending: isLoggingOut } = useLogout();
 
   const workspaceNavItems: WorkspaceNavItem[] = [
-    { title: 'Command Center', href: ROUTES.CONSOLE.SPECFORGE, icon: ListChecks, badge: '4' },
-    { title: 'Projects', href: ROUTES.CONSOLE.PROJECTS, icon: Boxes },
-    { title: 'Repositories', href: ROUTES.CONSOLE.PROJECTS, icon: GitBranch },
-    { title: 'Autopilot', href: ROUTES.CONSOLE.SPECFORGE, icon: Zap },
-    { title: 'Runs', href: ROUTES.CONSOLE.SPECFORGE, icon: Bot },
-    { title: 'Usage', href: ROUTES.CONSOLE.HOME, icon: BarChart3 },
+    { title: '指挥中心', href: ROUTES.CONSOLE.SPECFORGE, icon: ListChecks, badge: '4' },
+    { title: '项目', href: ROUTES.CONSOLE.PROJECTS, icon: Boxes },
+    { title: '代码仓库', href: ROUTES.CONSOLE.PROJECTS, icon: GitBranch },
+    { title: '自动驾驶', href: ROUTES.CONSOLE.SPECFORGE, icon: Zap },
+    { title: '运行', href: ROUTES.CONSOLE.SPECFORGE, icon: Bot },
+    { title: '用量', href: ROUTES.CONSOLE.HOME, icon: BarChart3 },
   ];
 
   const configureNavItems: WorkspaceNavItem[] = [
-    { title: 'Runtimes', href: ROUTES.CONSOLE.SPECFORGE, icon: Monitor },
-    { title: 'Skills', href: ROUTES.CONSOLE.SPECFORGE, icon: BookOpen },
-    { title: 'Settings', href: ROUTES.CONSOLE.SETTINGS, icon: Settings },
+    { title: '执行器', href: ROUTES.CONSOLE.SPECFORGE, icon: Monitor },
+    { title: '技能', href: ROUTES.CONSOLE.SPECFORGE, icon: BookOpen },
+    { title: '设置', href: ROUTES.CONSOLE.SETTINGS, icon: Settings },
   ];
 
   return (
@@ -90,7 +90,7 @@ export default function ConsoleLayout({
           <button className="flex h-9 w-full items-center justify-between rounded-lg bg-muted px-2 text-sm text-text-main">
             <span className="flex items-center gap-2">
               <Search className="h-4 w-4" />
-              Search...
+              搜索...
             </span>
             <kbd className="rounded border border-border-main bg-bg-surface px-1.5 py-0.5 text-[11px] text-text-muted">
               ⌘ K
@@ -102,7 +102,7 @@ export default function ConsoleLayout({
           >
             <span className="flex items-center gap-2">
               <SquarePen className="h-4 w-4" />
-              New Requirement
+              新建需求
             </span>
             <kbd className="rounded border border-border-main bg-bg-surface px-1.5 py-0.5 text-[11px] text-text-muted">
               C
@@ -111,17 +111,17 @@ export default function ConsoleLayout({
         </div>
 
         <nav className="mt-8 space-y-1 text-sm">
-          <SidebarLink href={ROUTES.CONSOLE.HOME} icon={Inbox} label="Review Queue" pathname={pathname} />
+          <SidebarLink href={ROUTES.CONSOLE.HOME} icon={Inbox} label="评审队列" pathname={pathname} />
           <SidebarLink
             href={ROUTES.CONSOLE.HOME}
             icon={CircleUserRound}
-            label="My PR Sets"
+            label="我的 PR 集"
             pathname={pathname}
           />
         </nav>
 
-        <SidebarSection title="Workspace" items={workspaceNavItems} pathname={pathname} />
-        <SidebarSection title="Configure" items={configureNavItems} pathname={pathname} />
+        <SidebarSection title="工作区" items={workspaceNavItems} pathname={pathname} />
+        <SidebarSection title="配置" items={configureNavItems} pathname={pathname} />
 
         <div className="mt-auto flex items-center justify-between px-2">
           <Link
@@ -129,7 +129,7 @@ export default function ConsoleLayout({
             className="flex items-center gap-2 rounded-lg px-2 py-2 text-sm text-text-subtle hover:bg-muted hover:text-text-main"
           >
             <Palette className="h-4 w-4" />
-            Styleguide
+            设计规范
           </Link>
           <HelpCircle className="h-4 w-4 text-text-muted" />
         </div>
@@ -146,7 +146,7 @@ export default function ConsoleLayout({
             <ThemeToggle />
             <Button variant="ghost" isIcon className="h-8 w-8 rounded-md">
               <Bell className="h-4 w-4 text-text-subtle" />
-              <span className="sr-only">Notifications</span>
+              <span className="sr-only">通知</span>
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -162,7 +162,7 @@ export default function ConsoleLayout({
                         .toUpperCase() || 'CT'}
                     </AvatarFallback>
                   </Avatar>
-                  <span className="sr-only">Profile</span>
+                  <span className="sr-only">个人资料</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56 rounded-lg p-1">
@@ -231,7 +231,7 @@ function SidebarLink({
 }) {
   const text = label ?? title ?? '';
   const active =
-    text === 'Command Center'
+    text === '指挥中心'
       ? pathname.includes('/specforge')
       : href === ROUTES.CONSOLE.SPECFORGE
         ? false

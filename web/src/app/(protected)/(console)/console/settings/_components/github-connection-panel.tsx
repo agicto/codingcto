@@ -56,7 +56,7 @@ function errorMessage(error: unknown) {
   if (error instanceof Error) {
     return error.message;
   }
-  return 'Failed to connect the GitHub repository. Check backend auth and GitHub App configuration.';
+  return '连接 GitHub 仓库失败，请检查后端登录状态和 GitHub App 配置。';
 }
 
 export function GitHubConnectionPanel() {
@@ -153,7 +153,7 @@ export function GitHubConnectionPanel() {
     ) => {
       const parsedInstallationId = Number(installationIdValue);
       if (!Number.isFinite(parsedInstallationId) || parsedInstallationId <= 0) {
-        setMessage('Install the GitHub App first, or enter a valid installation ID.');
+        setMessage('请先完成 GitHub App 安装，或填写有效的 Installation ID。');
         return;
       }
       setMessage('');
@@ -171,15 +171,15 @@ export function GitHubConnectionPanel() {
         }
         setMessage(
           result.repositories.length > 0
-            ? 'GitHub App synced. Choose the repository to bind, then save it.'
-            : 'GitHub App synced, but no accessible repositories were returned. Check the repositories selected during installation.'
+            ? 'GitHub App 已同步，请选择要绑定的仓库后保存。'
+            : 'GitHub App 已同步，但没有返回可访问仓库。请确认安装时选择了仓库权限。'
         );
         if (options.clearReturnParams) {
           router.replace(`${ROUTES.CONSOLE.SETTINGS}?tab=github`, { scroll: false });
         }
       } catch (error) {
         setMessage(
-          `${errorMessage(error)} Confirm the backend has GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY configured.`
+          `${errorMessage(error)} 请确认后端已配置 GITHUB_APP_ID 和 GITHUB_APP_PRIVATE_KEY。`
         );
       }
     },
@@ -221,9 +221,9 @@ export function GitHubConnectionPanel() {
         co_authored_by_trailer: next.coAuthoredByTrailer,
         issue_pr_auto_link: next.issuePrAutoLink,
       });
-      setMessage('GitHub feature settings saved.');
+      setMessage('GitHub 功能设置已保存。');
     } catch (error) {
-      setMessage(`${errorMessage(error)} GitHub feature settings were not saved.`);
+      setMessage(`${errorMessage(error)} GitHub 功能设置未保存。`);
     }
   }
 
@@ -244,7 +244,7 @@ export function GitHubConnectionPanel() {
 
   async function connectRepository() {
     if (!canSubmit) {
-      setMessage('Enter the GitHub installation ID, account, and repository details.');
+      setMessage('请填写 GitHub installation ID、账号和仓库信息。');
       return;
     }
 
@@ -273,10 +273,10 @@ export function GitHubConnectionPanel() {
       });
 
       setSavedRepoId(repository.repository_id);
-      setMessage('GitHub repository connected. You can use this repository ID in CodingCTO.');
+      setMessage('GitHub 仓库已连接，可以在 SpecForge 中使用。');
     } catch (error) {
       setMessage(
-        `${errorMessage(error)} If you are using demo auth, switch to backend auth and sign in with a backend user first.`
+        `${errorMessage(error)} 如果当前是演示登录，请切换到后端登录后再保存。`
       );
     }
   }
@@ -284,8 +284,8 @@ export function GitHubConnectionPanel() {
   return (
     <div className="mx-auto max-w-4xl space-y-8">
       <p className="text-sm leading-6 text-text-muted">
-        Connect the GitHub App, control how pull requests appear in CodingCTO, and choose which
-        agent attribution is added to commits.
+        连接 GitHub App，控制 Pull Request 如何出现在 CodingCTO 中，并决定智能体在 commit
+        记录里留下哪些痕迹。
       </p>
 
       <Card>
@@ -295,10 +295,9 @@ export function GitHubConnectionPanel() {
               <Github className="h-5 w-5" />
             </div>
             <div>
-              <div className="font-medium">Enable GitHub features</div>
+              <div className="font-medium">启用 GitHub 功能</div>
               <p className="mt-1 text-sm leading-6 text-text-muted">
-                When disabled, GitHub entry points are hidden and no new GitHub side effects are
-                created. Existing records are kept.
+                关闭后，所有 GitHub 入口都会被隐藏，也不再产生新的副作用。已有数据不会被删除。
               </p>
             </div>
           </div>
@@ -311,7 +310,7 @@ export function GitHubConnectionPanel() {
       </Card>
 
       <section className="space-y-3">
-        <h3 className="text-base font-semibold">Connection</h3>
+        <h3 className="text-base font-semibold">连接</h3>
         <Card>
           <CardContent className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
             <div className="flex gap-3">
@@ -321,30 +320,29 @@ export function GitHubConnectionPanel() {
               <div>
                 <div className="font-medium">GitHub App</div>
                 <p className="mt-1 text-sm leading-6 text-text-muted">
-                  Automatically link issues to pull requests. When a PR branch, title, or body
-                  contains{' '}
-                  <code className="rounded bg-bg-subtle px-1.5 py-0.5 text-xs">MUL-123</code> and
-                  the PR is merged, the matching issue can be marked as completed.
+                  自动把 issue 关联到 Pull Request。当 PR 的分支、标题或正文中包含{' '}
+                  <code className="rounded bg-bg-subtle px-1.5 py-0.5 text-xs">MUL-123</code>
+                  并被合并时，对应 issue 会自动转为已完成。
                 </p>
               </div>
             </div>
             {installURL ? (
               <Button asChild disabled={!settings.enabled}>
                 <a href={installURL} target="_blank" rel="noreferrer">
-                  Install GitHub App
+                  安装 GitHub App
                 </a>
               </Button>
             ) : (
               <Button
                 onClick={() => {
                   setMessage(
-                    'Enter a GitHub App slug or installation URL first. If you do not have a GitHub App yet, create one in GitHub.'
+                    '请先填写 GitHub App slug 或安装地址。如果还没有 GitHub App，需要先在 GitHub 创建。'
                   );
                   focusInstallEntry();
                 }}
                 disabled={!settings.enabled}
               >
-                Install GitHub App
+                安装 GitHub App
               </Button>
             )}
           </CardContent>
@@ -352,13 +350,13 @@ export function GitHubConnectionPanel() {
       </section>
 
       <section className="space-y-3">
-        <h3 className="text-base font-semibold">Features</h3>
+        <h3 className="text-base font-semibold">功能</h3>
         <Card>
           <CardContent className="divide-y divide-border-subtle p-0">
             <FeatureToggle
               icon={PanelRight}
-              title="Pull request sidebar"
-              description="Show linked pull requests in the issue detail sidebar."
+              title="Pull Request 侧栏"
+              description="在 issue 详情侧栏中展示关联的 Pull Request。"
               checked={settings.pullRequestSidebar}
               disabled={!settings.enabled || isSaving}
               onCheckedChange={checked => updateSetting('pullRequestSidebar', checked)}
@@ -382,7 +380,7 @@ export function GitHubConnectionPanel() {
             <FeatureToggle
               icon={Link2}
               title="Issue and PR auto-linking"
-              description="Match issue IDs from PR titles, bodies, and branch names, then create links automatically."
+              description="根据 PR 标题、正文和分支名匹配 issue 编号并自动建立链接。"
               checked={settings.issuePrAutoLink}
               disabled={!settings.enabled || isSaving}
               onCheckedChange={checked => updateSetting('issuePrAutoLink', checked)}
@@ -392,35 +390,35 @@ export function GitHubConnectionPanel() {
       </section>
 
       <section className="space-y-3">
-        <h3 className="text-base font-semibold">Code Repository</h3>
+        <h3 className="text-base font-semibold">代码仓库</h3>
         <Card>
           <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
             <div>
               <div className="font-medium">
                 {connectedRepository
                   ? `${connectedRepository.github_owner}/${connectedRepository.github_repo}`
-                  : 'No repository connected yet'}
+                  : '尚未连接仓库'}
               </div>
               <p className="mt-1 text-sm text-text-muted">
                 {connectedRepository
-                  ? `SpecForge will split work, create branches, and open PRs from ${connectedRepository.default_branch}.`
-                  : 'Install the GitHub App, then choose the repository CodingCTO may operate on.'}
+                  ? `SpecForge 将基于 ${connectedRepository.default_branch} 分支拆分任务、建分支并提交 PR。`
+                  : '安装 GitHub App 后，选择一个允许 CodingCTO 操作的仓库并保存。'}
               </p>
               {connectedRepository ? (
                 <p className="mt-1 text-xs text-text-muted">
-                  Repository ID: {connectedRepository.repository_id}
+                  仓库 ID：{connectedRepository.repository_id}
                 </p>
               ) : null}
             </div>
             <div className="flex flex-wrap gap-2">
               <Button variant="outline" onClick={focusConnectionForm} disabled={!settings.enabled}>
-                {connectedRepository ? 'Change repository' : 'Enter repository'}
+                {connectedRepository ? '更换仓库' : '填写仓库'}
                 <ExternalLink className="ml-1.5 h-4 w-4" />
               </Button>
               {connectedRepository ? (
                 <Button asChild>
                   <Link href={specForgeHref}>
-                    Open SpecForge
+                    去 SpecForge
                     <ArrowRight className="ml-1.5 h-4 w-4" />
                   </Link>
                 </Button>
@@ -434,16 +432,16 @@ export function GitHubConnectionPanel() {
         <CardHeader>
           <CardTitle className="flex items-center gap-2">
             <Bot className="h-5 w-5" />
-            CodingCTO repository connection
+            SpecForge 仓库连接
           </CardTitle>
           <CardDescription>
-            After installing the GitHub App, save the installation and repository mapping. The
-            backend reads the default branch to verify that the App can access this repository.
+            安装 GitHub App 后，保存 installation 和仓库映射。后端会读取默认分支做一次真实校验，
+            确认 App 有权限访问这个仓库。
           </CardDescription>
         </CardHeader>
         <CardContent className="space-y-4">
           <div className="space-y-2">
-            <Label htmlFor="github-app-install-entry">GitHub App slug or installation URL</Label>
+            <Label htmlFor="github-app-install-entry">GitHub App slug 或安装地址</Label>
             <div className="flex flex-col gap-2 md:flex-row">
               <Input
                 id="github-app-install-entry"
@@ -454,26 +452,26 @@ export function GitHubConnectionPanel() {
               {installURL ? (
                 <Button asChild variant="outline" disabled={!settings.enabled}>
                   <a href={installURL} target="_blank" rel="noreferrer">
-                    Open install page
+                    打开安装页
                     <ExternalLink className="ml-1.5 h-4 w-4" />
                   </a>
                 </Button>
               ) : (
                 <Button variant="outline" onClick={focusInstallEntry} disabled={!settings.enabled}>
-                  Open install page
+                  打开安装页
                   <ExternalLink className="ml-1.5 h-4 w-4" />
                 </Button>
               )}
             </div>
             <p className="text-sm leading-6 text-text-muted">
-              This is the platform GitHub App installation entry. Users install it and select the
-              GitHub account, organization, and repositories CodingCTO may access.
+              这里是平台 GitHub App 的安装入口。普通用户只需要点安装并选择自己的 GitHub
+              账号、组织和仓库。
             </p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
-              <Label htmlFor="github-workspace">Workspace ID</Label>
+              <Label htmlFor="github-workspace">工作区 ID</Label>
               <Input
                 id="github-workspace"
                 value={workspaceId}
@@ -492,7 +490,7 @@ export function GitHubConnectionPanel() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="github-account">Installed account</Label>
+              <Label htmlFor="github-account">安装账号</Label>
               <Input
                 id="github-account"
                 value={accountLogin}
@@ -509,13 +507,13 @@ export function GitHubConnectionPanel() {
               onClick={() => syncGitHubInstallation(installationId, workspaceId)}
               disabled={!settings.enabled || !installationId.trim() || isSaving}
             >
-              {syncInstallation.isPending ? 'Syncing' : 'Sync accessible repositories'}
+              {syncInstallation.isPending ? '同步中' : '同步可访问仓库'}
             </Button>
           </div>
 
           {repositoryOptions.length > 0 && (
             <div className="space-y-2">
-              <Label htmlFor="github-repository-option">Select repository</Label>
+              <Label htmlFor="github-repository-option">选择仓库</Label>
               <select
                 id="github-repository-option"
                 className="h-10 w-full rounded-md border border-border bg-bg-canvas px-3 text-sm"
@@ -540,7 +538,7 @@ export function GitHubConnectionPanel() {
 
           <div className="grid gap-4 md:grid-cols-3">
             <div className="space-y-2">
-              <Label htmlFor="github-owner">Repository owner</Label>
+              <Label htmlFor="github-owner">仓库 Owner</Label>
               <Input
                 id="github-owner"
                 value={owner}
@@ -549,7 +547,7 @@ export function GitHubConnectionPanel() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="github-repo">Repository name</Label>
+              <Label htmlFor="github-repo">仓库名称</Label>
               <Input
                 id="github-repo"
                 value={repo}
@@ -558,7 +556,7 @@ export function GitHubConnectionPanel() {
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="github-default-branch">Default branch</Label>
+              <Label htmlFor="github-default-branch">默认分支</Label>
               <Input
                 id="github-default-branch"
                 value={defaultBranch}
@@ -570,10 +568,9 @@ export function GitHubConnectionPanel() {
 
           <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-subtle bg-bg-subtle px-3 py-2">
             <div>
-              <Label className="text-base">Private repository</Label>
+              <Label className="text-base">私有仓库</Label>
               <p className="mt-1 text-sm text-text-muted">
-                This only affects the local repository record. Actual access is controlled by the
-                GitHub App installation.
+                勾选后仅影响本地仓库记录；实际访问权限由 GitHub App installation 决定。
               </p>
             </div>
             <Switch checked={isPrivate} onCheckedChange={setIsPrivate} />
@@ -589,11 +586,11 @@ export function GitHubConnectionPanel() {
             <div className="rounded-lg border border-success/30 bg-success-subtle p-3 text-sm leading-6 text-success">
               <div className="flex items-center gap-2 font-medium">
                 <CheckCircle2 className="h-4 w-4" />
-                Connected: {visibleRepoId}
+                已连接：{visibleRepoId}
               </div>
               {visibleInstallationDbId ? (
                 <div className="mt-1 text-xs">
-                  Local installation record ID: {visibleInstallationDbId}
+                  本地 installation 记录 ID：{visibleInstallationDbId}
                 </div>
               ) : null}
             </div>
@@ -604,18 +601,18 @@ export function GitHubConnectionPanel() {
             onClick={connectRepository}
             disabled={!settings.enabled || !canSubmit || isSaving}
           >
-            {isSaving ? 'Connecting' : 'Connect GitHub repository'}
+            {isSaving ? '连接中' : '连接 GitHub 仓库'}
           </Button>
           {visibleRepoId ? (
             <Button asChild variant="outline">
               <Link href={specForgeHref}>
-                Use in CodingCTO
+                去 SpecForge 使用
                 <ArrowRight className="ml-1.5 h-4 w-4" />
               </Link>
             </Button>
           ) : (
             <Button variant="outline" disabled>
-              Use in CodingCTO
+              去 SpecForge 使用
               <ArrowRight className="ml-1.5 h-4 w-4" />
             </Button>
           )}
