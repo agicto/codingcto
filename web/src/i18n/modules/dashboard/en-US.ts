@@ -181,6 +181,7 @@ const messages: DashboardMessages = {
       openCodingCTO: 'Open CodingCTO',
       configureGitHub: 'Configure GitHub',
       signInBackend: 'Sign in with backend',
+      cancel: 'Cancel',
     },
     metrics: {
       workspaces: {
@@ -279,6 +280,58 @@ const messages: DashboardMessages = {
           title: 'GitHub repository',
           description: 'Bind the writable primary repository, then generate plans and PRs.',
         },
+        repository: {
+          title: 'GitHub repository',
+          description: 'Bind the writable primary repository, then generate plans and PRs.',
+        },
+      },
+    },
+    wizard: {
+      title: 'Guided setup',
+      description:
+        'Finish the required delivery context in one place: workspace, project, and writable primary repository.',
+      status: {
+        workspace: 'Workspace needed',
+        project: 'Project needed',
+        repository: 'Repository needed',
+        complete: 'Ready for requirements',
+      },
+      workspace: {
+        title: 'Choose the operating workspace',
+        description:
+          'The workspace owns GitHub access, permissions, and every project that will later generate PRs.',
+      },
+      project: {
+        title: 'Choose the delivery project',
+        description:
+          'A project is the product boundary CodingCTO will analyze before writing PRDs, tasks, prompts, and code.',
+        selectLabel: 'Delivery project',
+        selectPlaceholder: 'Select project',
+        selected: 'Project: {name}',
+        empty: 'No delivery project selected.',
+      },
+      repository: {
+        title: 'Bind the primary repository',
+        description:
+          'The primary repository is the only writable execution target. Other repositories can be added later as read-only context.',
+        project: 'Project: {name}',
+        loading: 'Loading connected GitHub repositories...',
+        connectedCount: '{count} connected repositories',
+        emptyTitle: 'No connected repositories yet',
+        emptyDescription:
+          'Connect or sync GitHub in Settings first, then return here to bind the primary repository.',
+        allBound:
+          'All connected repositories are already bound to this project. Open the project context page to review roles.',
+        selectLabel: 'Primary repository',
+        selectPlaceholder: 'Select connected repository',
+        bindPrimary: 'Bind as primary',
+      },
+      complete: {
+        title: 'Delivery context is ready',
+        description:
+          'You can now submit a product idea, generate the PRD and technical plan, then compile prompts for execution.',
+        ready: '{name} has a writable primary repository.',
+        startRequirement: 'Create requirement',
       },
     },
     messages: {
@@ -286,9 +339,14 @@ const messages: DashboardMessages = {
       workspaceCreateFailed:
         'Workspace could not be created. Check the API connection and slug uniqueness.',
       selectWorkspaceFirst: 'Create or select a workspace before creating a project.',
+      selectProjectFirst: 'Create or select a project before binding a repository.',
       projectRequired: 'Project name and slug are required.',
       projectCreateFailed:
         'Project could not be created. Check the API connection and slug uniqueness.',
+      repositoryRequired: 'Select a connected GitHub repository first.',
+      repositoryBound: 'Primary repository {repoId} is bound to this project.',
+      repositoryBindFailed:
+        'Repository could not be bound. Confirm it belongs to this workspace and try again.',
     },
   },
   projectDelivery: {
