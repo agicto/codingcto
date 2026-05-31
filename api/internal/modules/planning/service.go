@@ -619,6 +619,7 @@ func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, no
 	b.WriteString("Goal:\n" + node.Goal + "\n\n")
 	writePromptContract(&b, promptType, bundle, node, skills)
 	writePromptTypeInstructions(&b, promptType)
+	writeSkillApplicationProtocol(&b, skills)
 	b.WriteString("Product context:\n")
 	for _, goal := range bundle.ProductSpec.Goals {
 		b.WriteString("- " + goal + "\n")
@@ -638,6 +639,18 @@ func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, no
 	b.WriteString("- Run the listed test commands.\n")
 	b.WriteString("- Prepare a PR description with summary, scope, non-goals, tests, risks, and dependencies.\n")
 	return b.String()
+}
+
+func writeSkillApplicationProtocol(b *strings.Builder, skills []*domain.SpecForgeSkill) {
+	b.WriteString("Skill application protocol:\n")
+	if len(activePromptSkills(skills)) == 0 {
+		b.WriteString("- No active repository skills were available for this prompt; do not invent skill rules.\n\n")
+		return
+	}
+	b.WriteString("- Before planning or editing files, translate every repository skill below into concrete constraints for this PR node.\n")
+	b.WriteString("- Apply those constraints together with the acceptance criteria, non-goals, and PR DAG dependencies.\n")
+	b.WriteString("- If a skill conflicts with approved plan evidence or repository evidence, stop and produce an escalation summary.\n")
+	b.WriteString("- In the final task summary, include skills_applied with the skill names used and the evidence refs that supported the decision.\n\n")
 }
 
 func writePromptContract(b *strings.Builder, promptType string, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, skills []*domain.SpecForgeSkill) {
@@ -1018,20 +1031,29 @@ func writeIndentedList(b *strings.Builder, label string, values []string) {
 
 func writeSkills(b *strings.Builder, skills []*domain.SpecForgeSkill) {
 	b.WriteString("Repository skills:\n")
-	if len(skills) == 0 {
+	activeSkills := activePromptSkills(skills)
+	if len(activeSkills) == 0 {
 		b.WriteString("- None\n\n")
 		return
 	}
-	for _, skill := range skills {
-		if skill == nil || strings.TrimSpace(skill.Name) == "" || strings.TrimSpace(skill.Content) == "" {
-			continue
-		}
+	for _, skill := range activeSkills {
 		b.WriteString("## " + strings.TrimSpace(skill.Name) + "\n")
 		if strings.TrimSpace(skill.Description) != "" {
 			b.WriteString(strings.TrimSpace(skill.Description) + "\n")
 		}
 		b.WriteString(strings.TrimSpace(skill.Content) + "\n\n")
 	}
+}
+
+func activePromptSkills(skills []*domain.SpecForgeSkill) []*domain.SpecForgeSkill {
+	out := make([]*domain.SpecForgeSkill, 0, len(skills))
+	for _, skill := range skills {
+		if skill == nil || strings.TrimSpace(skill.Name) == "" || strings.TrimSpace(skill.Content) == "" {
+			continue
+		}
+		out = append(out, skill)
+	}
+	return out
 }
 
 func primaryRepositoryID(context *domain.SpecForgeProjectContext) string {

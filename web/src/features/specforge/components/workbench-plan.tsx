@@ -19,6 +19,7 @@ import type { ExecutionReadiness } from '@/features/specforge/execution-readines
 import { useSpecForgePlanSkillRuns } from '@/features/specforge/hooks/use-specforge';
 import { buildPromptPreview } from '@/features/specforge/prompt-preview';
 import type { SpecForgeSkillRunDTO } from '@/features/specforge/services/specforge-service';
+import { skillNamesFromRuns, skillRunStageLabel } from '@/features/specforge/skill-pipeline';
 import type { PlanBundle, PRNode } from '@/features/specforge/types';
 import { statusClassName } from '@/features/specforge/components/workbench-utils';
 
@@ -30,6 +31,7 @@ export function PlanReview({
   isStarting,
   executionReadiness,
   showPromptPreview = true,
+  showSkillPipeline = true,
   onDecisionOverrideChange,
   onExecutionNodeSelectionChange,
   onApprove,
@@ -41,6 +43,7 @@ export function PlanReview({
   isStarting: boolean;
   executionReadiness: ExecutionReadiness;
   showPromptPreview?: boolean;
+  showSkillPipeline?: boolean;
   onDecisionOverrideChange: (key: string, value: string) => void;
   onExecutionNodeSelectionChange: (nodeIds: string[]) => void;
   onApprove: () => void;
@@ -76,11 +79,13 @@ export function PlanReview({
           />
           <ListBlock title="Acceptance criteria" items={productSpec.acceptanceCriteria} />
           <ListBlock title="Plan assumptions" items={planAssumptions} />
-          <SkillPipelinePanel
-            skillRuns={skillRuns}
-            isLoading={skillRunsQuery.isLoading}
-            isOffline={skillRunsQuery.isError}
-          />
+          {showSkillPipeline ? (
+            <SkillPipelinePanel
+              skillRuns={skillRuns}
+              isLoading={skillRunsQuery.isLoading}
+              isOffline={skillRunsQuery.isError}
+            />
+          ) : null}
         </CardContent>
       </Card>
 
@@ -176,6 +181,7 @@ function SkillPipelinePanel({
   isLoading: boolean;
   isOffline: boolean;
 }) {
+  const skillNames = skillNamesFromRuns(skillRuns);
   const stages = skillRuns.length
     ? skillRuns
     : [
@@ -222,13 +228,28 @@ function SkillPipelinePanel({
           variant="outline"
           className={skillRuns.length > 0 ? statusClassName('completed') : ''}
         >
-          {isLoading ? 'Checking' : skillRuns.length > 0 ? `${skillRuns.length} runs` : 'Pending'}
+          {isLoading
+            ? 'Checking'
+            : skillNames.length > 0
+              ? `${skillNames.length} skills`
+              : skillRuns.length > 0
+                ? `${skillRuns.length} runs`
+                : 'Pending'}
         </Badge>
       </div>
       {isOffline ? (
         <p className="mt-2 text-xs leading-5 text-text-muted">
           Skill run history will load when the CodingCTO backend is available.
         </p>
+      ) : null}
+      {skillNames.length > 0 ? (
+        <div className="mt-3 flex flex-wrap gap-1.5">
+          {skillNames.map(skillName => (
+            <Badge key={skillName} variant="outline">
+              {skillName}
+            </Badge>
+          ))}
+        </div>
       ) : null}
       <div className="mt-3 space-y-2">
         {stages.map(run => (
@@ -261,16 +282,6 @@ function SkillPipelinePanel({
       </div>
     </div>
   );
-}
-
-function skillRunStageLabel(stage: string) {
-  const labels: Record<string, string> = {
-    product_plan: 'Product plan',
-    technical_plan: 'Technical plan',
-    pr_dag: 'PR DAG',
-    self_review: 'Self review',
-  };
-  return labels[stage] ?? stage.replaceAll('_', ' ');
 }
 
 function ExecutionRangeSelector({

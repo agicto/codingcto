@@ -473,6 +473,9 @@ func TestCompilePromptInjectsActiveRepoSkills(t *testing.T) {
 	prompt, err := svc.CompilePrompt(context.Background(), 42, created.PRNodes[0].ID, &CompilePromptRequest{})
 
 	require.NoError(t, err)
+	require.Contains(t, prompt.PromptText, "Skill application protocol")
+	require.Contains(t, prompt.PromptText, "translate every repository skill below into concrete constraints")
+	require.Contains(t, prompt.PromptText, "skills_applied")
 	require.Contains(t, prompt.PromptText, "Repository skills")
 	require.Contains(t, prompt.PromptText, "go-layering")
 	require.Contains(t, prompt.PromptText, "Use handlers only for HTTP binding and response mapping.")
