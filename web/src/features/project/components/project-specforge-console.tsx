@@ -1,15 +1,28 @@
 'use client';
 
+import { FormEvent, useState } from 'react';
 import { useParams } from 'next/navigation';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Input } from '@/components/ui/input';
+import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { SpecForgeWorkbench } from '@/features/specforge';
-import { useProjectContext } from '@/features/project/hooks/use-projects';
+import { useBindProjectRepository, useProjectContext } from '@/features/project/hooks/use-projects';
 import {
   primaryRepositoryContext,
   projectContextReadiness,
 } from '@/features/project/project-context';
+import { repositoryRoleLabel } from '@/features/project/project-utils';
 import type {
   ProjectContextDTO,
   ProjectRepositoryContextDTO,
@@ -36,6 +49,7 @@ export function ProjectSpecForgeConsole() {
               execution only writes to the active primary repository.
             </AlertDescription>
           </Alert>
+          <ProjectRepositoryBindPanel projectId={projectId} />
         </div>
       ) : (
         <SpecForgeWorkbench
@@ -47,6 +61,91 @@ export function ProjectSpecForgeConsole() {
         />
       )}
     </div>
+  );
+}
+
+function ProjectRepositoryBindPanel({ projectId }: { projectId: number }) {
+  const bindRepository = useBindProjectRepository(projectId);
+  const [repositoryId, setRepositoryId] = useState('');
+  const [role, setRole] = useState('primary');
+  const [message, setMessage] = useState('');
+
+  async function bindRepositoryToProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const nextRepositoryId = repositoryId.trim();
+    if (!nextRepositoryId) {
+      setMessage('Repository ID is required. Connect a GitHub repository in Settings first.');
+      return;
+    }
+    setMessage('');
+    try {
+      const response = await bindRepository.mutateAsync({
+        repository_id: nextRepositoryId,
+        role: role as 'primary' | 'dependency' | 'docs' | 'infra',
+      });
+      setRepositoryId('');
+      setRole('primary');
+      setMessage(
+        `${repositoryRoleLabel(response.repository.role)} repository ${response.repository.repository_id} bound.`
+      );
+    } catch {
+      setMessage(
+        'Repository could not be bound. Confirm it was connected in Settings and belongs to this workspace.'
+      );
+    }
+  }
+
+  return (
+    <Card className="mt-4">
+      <CardHeader>
+        <CardTitle className="text-base">Bind GitHub repository</CardTitle>
+        <CardDescription>
+          Use the repository ID created by Settings &gt; GitHub. Primary repositories are writable;
+          dependency, docs, and infra repositories become read-only planning context.
+        </CardDescription>
+      </CardHeader>
+      <CardContent>
+        <form
+          className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]"
+          onSubmit={bindRepositoryToProject}
+        >
+          <div className="space-y-2">
+            <Label htmlFor="project-repository-id">Repository ID</Label>
+            <Input
+              id="project-repository-id"
+              value={repositoryId}
+              onChange={event => setRepositoryId(event.target.value)}
+              placeholder="github_agicto__codingcto"
+            />
+          </div>
+          <div className="space-y-2">
+            <Label htmlFor="project-repository-role">Role</Label>
+            <Select value={role} onValueChange={setRole}>
+              <SelectTrigger id="project-repository-role">
+                <SelectValue placeholder="Role" />
+              </SelectTrigger>
+              <SelectContent>
+                {['primary', 'dependency', 'docs', 'infra'].map(item => (
+                  <SelectItem key={item} value={item}>
+                    {repositoryRoleLabel(item)}
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+          </div>
+          <div className="flex items-end">
+            <Button type="submit" disabled={bindRepository.isPending || !repositoryId.trim()}>
+              {bindRepository.isPending ? 'Binding' : 'Bind repository'}
+            </Button>
+          </div>
+        </form>
+        {message && (
+          <div className="mt-3 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm leading-5 text-text-muted">
+            {message}
+          </div>
+        )}
+      </CardContent>
+    </Card>
   );
 }
 
@@ -77,9 +176,7 @@ function ProjectContextReadiness({ context }: { context?: ProjectContextDTO }) {
             <h2 className="mt-3 text-base font-semibold text-text-main">
               {context?.project.name ?? 'Project context'}
             </h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-text-muted">
-              {readiness.summary}
-            </p>
+            <p className="mt-1 max-w-3xl text-sm leading-6 text-text-muted">{readiness.summary}</p>
           </div>
           <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
             <ReadinessMetric label="Repos" value={readiness.activeRepositoryCount} />
@@ -130,8 +227,13 @@ function ProjectRepositoryCard({
 }: {
   repositoryContext: ProjectRepositoryContextDTO;
 }) {
-  const { repository, profile, architecture_snapshot: architectureSnapshot, skills, warnings } =
-    repositoryContext;
+  const {
+    repository,
+    profile,
+    architecture_snapshot: architectureSnapshot,
+    skills,
+    warnings,
+  } = repositoryContext;
   const repoWarnings = [
     ...(warnings ?? []),
     ...(repositoryContext.architecture_warnings ?? []),
@@ -145,7 +247,9 @@ function ProjectRepositoryCard({
           <div className="truncate text-sm font-medium text-text-main">
             {repository.repository_id}
           </div>
-          <div className="mt-1 text-xs text-text-muted">{profile?.summary ?? 'No profile yet.'}</div>
+          <div className="mt-1 text-xs text-text-muted">
+            {profile?.summary ?? 'No profile yet.'}
+          </div>
         </div>
         <div className="flex flex-wrap gap-2">
           <Badge variant="outline">{repository.role}</Badge>

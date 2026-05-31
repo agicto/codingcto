@@ -36,7 +36,9 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { env } from '@/config/env';
 import { ROUTES } from '@/constants/routes';
+import { useBindProjectRepository, useProjects } from '@/features/project/hooks/use-projects';
 import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
+import { projectSpecForgeHref, repositoryRoleLabel } from '@/features/project/project-utils';
 import {
   useGitHubSettings,
   useSyncGitHubInstallation,
@@ -79,7 +81,10 @@ export function GitHubConnectionPanel() {
   const [isPrivate, setIsPrivate] = useState(true);
   const [repositoryOptions, setRepositoryOptions] = useState<GitHubRepositoryOptionDTO[]>([]);
   const [selectedRepository, setSelectedRepository] = useState('');
+  const [selectedProjectId, setSelectedProjectId] = useState('');
+  const [repositoryRole, setRepositoryRole] = useState('primary');
   const [savedRepoId, setSavedRepoId] = useState('');
+  const [boundProjectId, setBoundProjectId] = useState<number>();
   const [savedInstallationDbId, setSavedInstallationDbId] = useState<number>();
   const [message, setMessage] = useState('');
   const [installEntry, setInstallEntry] = useState(
@@ -94,11 +99,17 @@ export function GitHubConnectionPanel() {
     setSelectedWorkspaceId,
   } = useSelectedWorkspace(stateWorkspaceId);
   const githubSettings = useGitHubSettings(workspaceId.trim());
+  const projectsQuery = useProjects(workspaceId.trim());
+  const projects = projectsQuery.data?.projects ?? [];
   const upsertSettings = useUpsertGitHubSettings();
   const syncInstallation = useSyncGitHubInstallation();
   const upsertRepository = useUpsertGitHubRepository();
+  const bindRepository = useBindProjectRepository(Number(selectedProjectId) || 0);
   const isSaving =
-    upsertSettings.isPending || syncInstallation.isPending || upsertRepository.isPending;
+    upsertSettings.isPending ||
+    syncInstallation.isPending ||
+    upsertRepository.isPending ||
+    bindRepository.isPending;
   const settings: GitHubSettings = {
     enabled: githubSettings.data?.enabled ?? defaultSettings.enabled,
     pullRequestSidebar:
@@ -119,8 +130,11 @@ export function GitHubConnectionPanel() {
     if (!savedRepoId) {
       return ROUTES.CONSOLE.SPECFORGE;
     }
+    if (boundProjectId) {
+      return projectSpecForgeHref(boundProjectId);
+    }
     return `${ROUTES.CONSOLE.SPECFORGE}?repo_id=${encodeURIComponent(savedRepoId)}`;
-  }, [savedRepoId]);
+  }, [boundProjectId, savedRepoId]);
   const installURL = useMemo(() => {
     const entry = installEntry.trim();
     if (!entry) {
@@ -257,10 +271,32 @@ export function GitHubConnectionPanel() {
       });
 
       setSavedRepoId(repository.repository_id);
+      setBoundProjectId(undefined);
       setMessage('GitHub repository connected. You can use this repository ID in CodingCTO.');
     } catch (error) {
       setMessage(
         `${errorMessage(error)} If you are using demo auth, switch to backend auth and sign in with a backend user first.`
+      );
+    }
+  }
+
+  async function bindConnectedRepositoryToProject() {
+    const projectId = Number(selectedProjectId);
+    if (!savedRepoId || !Number.isFinite(projectId) || projectId <= 0) {
+      setMessage('Connect a GitHub repository, then choose a project to bind it to.');
+      return;
+    }
+    setMessage('');
+    try {
+      await bindRepository.mutateAsync({
+        repository_id: savedRepoId,
+        role: repositoryRole as 'primary' | 'dependency' | 'docs' | 'infra',
+      });
+      setBoundProjectId(projectId);
+      setMessage(`Repository ${savedRepoId} bound to the selected project.`);
+    } catch {
+      setMessage(
+        'Repository could not be bound to this project. It may already be bound, or the project may already have a primary repository.'
       );
     }
   }
@@ -598,6 +634,69 @@ export function GitHubConnectionPanel() {
                   Local installation record ID: {savedInstallationDbId}
                 </div>
               ) : null}
+            </div>
+          )}
+
+          {savedRepoId && (
+            <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3">
+              <div className="text-sm font-medium text-text-main">Bind to project</div>
+              <p className="mt-1 text-sm leading-6 text-text-muted">
+                Attach this connected GitHub repository to a project so project-scoped SpecForge can
+                plan, compile prompts, and execute against the primary repository.
+              </p>
+              <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
+                <div className="space-y-2">
+                  <Label htmlFor="github-project-bind">Project</Label>
+                  {projects.length > 0 ? (
+                    <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
+                      <SelectTrigger id="github-project-bind">
+                        <SelectValue placeholder="Select project" />
+                      </SelectTrigger>
+                      <SelectContent>
+                        {projects.map(project => (
+                          <SelectItem key={project.id} value={String(project.id)}>
+                            {project.name} ({project.slug})
+                          </SelectItem>
+                        ))}
+                      </SelectContent>
+                    </Select>
+                  ) : (
+                    <Button asChild variant="outline" className="w-full justify-start">
+                      <Link href={ROUTES.CONSOLE.PROJECTS}>Create project first</Link>
+                    </Button>
+                  )}
+                </div>
+                <div className="space-y-2">
+                  <Label htmlFor="github-project-role">Role</Label>
+                  <Select value={repositoryRole} onValueChange={setRepositoryRole}>
+                    <SelectTrigger id="github-project-role">
+                      <SelectValue placeholder="Role" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      {['primary', 'dependency', 'docs', 'infra'].map(role => (
+                        <SelectItem key={role} value={role}>
+                          {repositoryRoleLabel(role)}
+                        </SelectItem>
+                      ))}
+                    </SelectContent>
+                  </Select>
+                </div>
+                <div className="flex items-end">
+                  <Button
+                    type="button"
+                    variant="outline"
+                    onClick={bindConnectedRepositoryToProject}
+                    disabled={!selectedProjectId || bindRepository.isPending}
+                  >
+                    {bindRepository.isPending ? 'Binding' : 'Bind to project'}
+                  </Button>
+                </div>
+              </div>
+              {projectsQuery.isError && (
+                <p className="mt-2 text-xs leading-5 text-error">
+                  Could not load projects for this workspace.
+                </p>
+              )}
             </div>
           )}
         </CardContent>
