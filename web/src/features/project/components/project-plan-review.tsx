@@ -7,6 +7,7 @@ import {
   ArrowRight,
   CheckCircle2,
   Copy,
+  FileText,
   GitPullRequest,
   ScrollText,
   ShieldAlert,
@@ -17,11 +18,22 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
+import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
+import { ProjectPlanningFlowCard } from '@/features/project/components/project-planning-flow-card';
+import { projectPlanningStages } from '@/features/project/project-planning-flow';
 import { projectContextHref, projectSpecForgeHref } from '@/features/project/project-utils';
 import {
   executionRunFromDTO,
   planBundleFromDTO,
 } from '@/features/specforge/plan-adapter';
+import { buildPromptPreview } from '@/features/specforge/prompt-preview';
 import {
   defaultDecisionOverrides,
   normalizeDecisionOverrides,
@@ -36,13 +48,23 @@ import {
 import { verificationReviewForNodes } from '@/features/specforge/verification-review';
 import {
   useApproveSpecForgePlan,
+  useCompileSpecForgePrompt,
   useDispatchExecutionRun,
   useSpecForgePlan,
   useSpecForgeRuntimes,
   useStartExecutionRun,
 } from '@/features/specforge/hooks/use-specforge';
-import type { SpecForgePlanBundleDTO } from '@/features/specforge/services/specforge-service';
-import type { PlanBundle } from '@/features/specforge/types';
+import type {
+  SpecForgeCompiledPromptDTO,
+  SpecForgePlanBundleDTO,
+} from '@/features/specforge/services/specforge-service';
+import {
+  promptModeLabel,
+  promptModes,
+  riskClassName,
+  type PromptMode,
+} from '@/features/specforge/components/workbench-utils';
+import type { PlanBundle, PRNode } from '@/features/specforge/types';
 
 export function ProjectPlanReviewPage() {
   const params = useParams<{ projectId: string; planId: string }>();
@@ -103,6 +125,12 @@ function ProjectPlanReview({
   const [selectedExecutionNodeIds, setSelectedExecutionNodeIds] = useState<string[]>(() =>
     initialPlan.prNodes.map(node => node.id)
   );
+  const [selectedPromptNodeId, setSelectedPromptNodeId] = useState(
+    () => initialPlan.prNodes[0]?.id ?? ''
+  );
+  const [promptMode, setPromptMode] = useState<PromptMode>('implementation');
+  const [compiledPrompt, setCompiledPrompt] = useState<SpecForgeCompiledPromptDTO>();
+  const [promptMessage, setPromptMessage] = useState('');
   const [message, setMessage] = useState('');
   const runtimesQuery = useSpecForgeRuntimes({ limit: 20 });
   const runtimes = useMemo(
@@ -121,11 +149,53 @@ function ProjectPlanReview({
     [runtimeNow, runtimes]
   );
   const approvePlan = useApproveSpecForgePlan();
+  const compilePrompt = useCompileSpecForgePrompt();
   const startRun = useStartExecutionRun();
   const dispatchRun = useDispatchExecutionRun();
   const isStarting = approvePlan.isPending || startRun.isPending || dispatchRun.isPending;
   const approved = plan.implementationPlan.status === 'approved';
   const boardHref = `${projectSpecForgeHref(projectId)}#project-delivery`;
+  const selectedPromptNode =
+    plan.prNodes.find(node => node.id === selectedPromptNodeId) ?? plan.prNodes[0];
+  const planningStages = projectPlanningStages({
+    hasPrimaryRepository: Boolean(plan.repoProfile.repositoryId),
+    hasRequirementInput: Boolean(plan.idea.trim()),
+    hasPlan: Boolean(plan.planId),
+    prNodeCount: plan.prNodes.length,
+    hasCompiledPrompt: Boolean(compiledPrompt),
+  });
+
+  function selectPromptNode(nodeId: string) {
+    setSelectedPromptNodeId(nodeId);
+    setCompiledPrompt(undefined);
+    setPromptMessage('');
+  }
+
+  async function compileSelectedPrompt() {
+    if (!selectedPromptNode) {
+      return;
+    }
+    const prNodeId = Number(selectedPromptNode.id);
+    if (!Number.isFinite(prNodeId) || prNodeId <= 0) {
+      setPromptMessage('Prompt compilation requires a persisted PR node.');
+      return;
+    }
+
+    setPromptMessage('');
+    try {
+      const response = await compilePrompt.mutateAsync({
+        prNodeId,
+        payload: { type: promptMode },
+      });
+      setCompiledPrompt(response.prompt);
+      setPromptMessage(
+        `Compiled ${promptModeLabel[promptMode].toLowerCase()} prompt ${response.prompt.version}.`
+      );
+    } catch {
+      setCompiledPrompt(undefined);
+      setPromptMessage('Live prompt compilation failed. The grounded preview is still available.');
+    }
+  }
 
   async function approveAndStart() {
     const selectedPRNodeIDs = selectedExecutionNodeIds
@@ -210,13 +280,28 @@ function ProjectPlanReview({
           </div>
         </header>
 
-        <PlanMetaCard plan={plan} runtimeCount={executionReadiness.healthyRuntimeCount} />
-        <RuntimeSetupCard
-          plan={plan}
-          readyRuntimeCount={executionReadiness.healthyRuntimeCount}
-          readinessReason={executionReadiness.reason}
+        <ProjectPlanningFlowCard
+          stages={planningStages}
+          title="Requirement-to-prompt flow"
+          description="Project ready -> create requirement -> generate plan -> review PR DAG -> preview prompts."
         />
-        <VerificationReviewCard plan={plan} />
+        <PlanMetaCard plan={plan} runtimeCount={executionReadiness.healthyRuntimeCount} />
+        <PRDagReviewCard nodes={plan.prNodes} />
+        <PromptPreviewWorkbench
+          plan={plan}
+          node={selectedPromptNode}
+          promptMode={promptMode}
+          compiledPrompt={compiledPrompt}
+          message={promptMessage}
+          isCompiling={compilePrompt.isPending}
+          onPromptModeChange={mode => {
+            setPromptMode(mode);
+            setCompiledPrompt(undefined);
+            setPromptMessage('');
+          }}
+          onNodeChange={selectPromptNode}
+          onCompilePrompt={compileSelectedPrompt}
+        />
 
         {message ? (
           <Alert>
@@ -237,9 +322,230 @@ function ProjectPlanReview({
           }
           onExecutionNodeSelectionChange={setSelectedExecutionNodeIds}
           onApprove={approveAndStart}
+          showPromptPreview={false}
         />
+
+        <RuntimeSetupCard
+          plan={plan}
+          readyRuntimeCount={executionReadiness.healthyRuntimeCount}
+          readinessReason={executionReadiness.reason}
+        />
+        <VerificationReviewCard plan={plan} />
       </div>
     </main>
+  );
+}
+
+function PRDagReviewCard({ nodes }: { nodes: PRNode[] }) {
+  const dependencyCount = nodes.reduce((count, node) => count + node.dependsOn.length, 0);
+
+  return (
+    <Card className="border-border-subtle shadow-xs">
+      <CardHeader className="space-y-2">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <GitPullRequest className="h-4 w-4 text-primary" />
+              PR DAG review
+            </CardTitle>
+            <CardDescription className="mt-1 leading-6">
+              Review the implementation slices before approving execution. Each node should be
+              scoped, testable, and clear enough for a human PR review.
+            </CardDescription>
+          </div>
+          <Badge variant="outline">
+            {nodes.length} nodes · {dependencyCount} dependencies
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-3 lg:grid-cols-2">
+        {nodes.map(node => (
+          <div
+            key={node.id}
+            className="rounded-[4px] border border-border-subtle bg-bg-subtle p-3"
+          >
+            <div className="flex flex-wrap items-start justify-between gap-2">
+              <div className="min-w-0">
+                <div className="flex items-center gap-2">
+                  <Badge variant="outline" className="font-mono text-[10px]">
+                    {node.nodeKey}
+                  </Badge>
+                  <Badge variant="outline" className={riskClassName(node.estimatedRisk)}>
+                    {node.estimatedRisk}
+                  </Badge>
+                </div>
+                <h2 className="mt-2 text-sm font-semibold leading-5 text-text-main">
+                  {node.title}
+                </h2>
+              </div>
+              <Badge variant="outline">{node.type}</Badge>
+            </div>
+            <p className="mt-2 line-clamp-2 text-sm leading-6 text-text-muted">{node.goal}</p>
+            <div className="mt-3 grid gap-2 text-xs text-text-muted md:grid-cols-3">
+              <DagMeta label="Depends" value={node.dependsOn.join(', ') || 'None'} />
+              <DagMeta label="Files" value={String(node.expectedFiles.length)} />
+              <DagMeta label="Tests" value={String(node.testCommands.length)} />
+            </div>
+          </div>
+        ))}
+      </CardContent>
+    </Card>
+  );
+}
+
+function PromptPreviewWorkbench({
+  plan,
+  node,
+  promptMode,
+  compiledPrompt,
+  message,
+  isCompiling,
+  onPromptModeChange,
+  onNodeChange,
+  onCompilePrompt,
+}: {
+  plan: PlanBundle;
+  node?: PRNode;
+  promptMode: PromptMode;
+  compiledPrompt?: SpecForgeCompiledPromptDTO;
+  message: string;
+  isCompiling: boolean;
+  onPromptModeChange: (mode: PromptMode) => void;
+  onNodeChange: (nodeId: string) => void;
+  onCompilePrompt: () => void;
+}) {
+  const [copyMessage, setCopyMessage] = useState('');
+  const previewText = node ? (compiledPrompt?.prompt_text ?? buildPromptPreview(plan, node)) : '';
+  const promptSource = compiledPrompt ? 'Compiled by API' : 'Grounded local preview';
+
+  async function copyPrompt() {
+    setCopyMessage('');
+    try {
+      await navigator.clipboard.writeText(previewText);
+      setCopyMessage('Copied prompt.');
+    } catch {
+      setCopyMessage('Copy unavailable. Select the prompt manually.');
+    }
+  }
+
+  return (
+    <Card className="border-border-subtle shadow-xs">
+      <CardHeader className="space-y-2">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <FileText className="h-4 w-4 text-primary" />
+              Prompt preview
+            </CardTitle>
+            <CardDescription className="mt-1 leading-6">
+              Inspect the prompt contract before execution. CodingCTO compiles prompts from the
+              project context, product plan, technical plan, PR DAG, and acceptance criteria.
+            </CardDescription>
+          </div>
+          <Badge variant="outline">{promptSource}</Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 xl:grid-cols-[360px_minmax(0,1fr)]">
+        <div className="space-y-4">
+          <div className="space-y-2">
+            <div className="text-sm font-medium text-text-main">PR node</div>
+            <Select value={node?.id ?? ''} onValueChange={onNodeChange}>
+              <SelectTrigger className="min-w-0 w-full overflow-hidden bg-background [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:max-w-full [&_[data-slot=select-value]]:truncate">
+                <SelectValue placeholder="Select PR node" />
+              </SelectTrigger>
+              <SelectContent className="max-w-[min(560px,calc(100vw-2rem))]">
+                {plan.prNodes.map(item => (
+                  <SelectItem key={item.id} value={item.id}>
+                    <span className="block max-w-[480px] truncate">
+                      {item.nodeKey}: {item.title}
+                    </span>
+                  </SelectItem>
+                ))}
+              </SelectContent>
+            </Select>
+            {node ? (
+              <p className="text-xs leading-5 text-text-muted">
+                {node.expectedFiles.length} expected file scopes · {node.testCommands.length} test
+                commands
+              </p>
+            ) : null}
+          </div>
+
+          <div className="space-y-2">
+            <div className="text-sm font-medium text-text-main">Prompt mode</div>
+            <ToggleGroup
+              type="single"
+              variant="outline"
+              size="sm"
+              value={promptMode}
+              onValueChange={value => {
+                if (promptModes.includes(value as PromptMode)) {
+                  onPromptModeChange(value as PromptMode);
+                }
+              }}
+              className="grid w-full grid-cols-3"
+            >
+              {promptModes.map(mode => (
+                <ToggleGroupItem
+                  key={mode}
+                  value={mode}
+                  aria-label={`${promptModeLabel[mode]} prompt`}
+                  className="min-w-0"
+                >
+                  {promptModeLabel[mode]}
+                </ToggleGroupItem>
+              ))}
+            </ToggleGroup>
+          </div>
+
+          <div className="flex flex-col gap-2 sm:flex-row xl:flex-col">
+            <Button
+              type="button"
+              onClick={onCompilePrompt}
+              disabled={!node || isCompiling}
+              loading={isCompiling}
+            >
+              {isCompiling ? 'Compiling prompt' : 'Compile prompt'}
+              <ScrollText className="h-4 w-4" />
+            </Button>
+            <Button type="button" variant="outline" onClick={copyPrompt} disabled={!previewText}>
+              Copy prompt
+              <Copy className="h-4 w-4" />
+            </Button>
+          </div>
+
+          {compiledPrompt ? (
+            <div className="rounded-[4px] border border-border-subtle bg-bg-subtle p-3 text-xs leading-5 text-text-muted">
+              <div className="font-medium text-text-main">Compiled prompt metadata</div>
+              <div className="mt-2 grid gap-1">
+                <span>Version: {compiledPrompt.version}</span>
+                <span>Type: {compiledPrompt.type}</span>
+                <span>Hash: {compiledPrompt.prompt_hash}</span>
+              </div>
+            </div>
+          ) : null}
+
+          {(message || copyMessage) && (
+            <div className="rounded-[4px] border border-border-subtle bg-bg-subtle px-3 py-2 text-sm leading-5 text-text-muted">
+              {message || copyMessage}
+            </div>
+          )}
+        </div>
+
+        <pre className="max-h-[540px] overflow-auto rounded-[4px] border border-border-subtle bg-bg-surface p-4 text-xs leading-5 text-text-main">
+          {previewText || 'Select a PR node to preview its prompt contract.'}
+        </pre>
+      </CardContent>
+    </Card>
+  );
+}
+
+function DagMeta({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="rounded-[4px] border border-border-subtle bg-bg-surface px-2 py-1.5">
+      <div className="text-[10px] uppercase tracking-wide text-text-subtle">{label}</div>
+      <div className="mt-0.5 truncate text-text-main">{value}</div>
+    </div>
   );
 }
 

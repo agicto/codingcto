@@ -29,6 +29,7 @@ export function PlanReview({
   approved,
   isStarting,
   executionReadiness,
+  showPromptPreview = true,
   onDecisionOverrideChange,
   onExecutionNodeSelectionChange,
   onApprove,
@@ -39,6 +40,7 @@ export function PlanReview({
   approved: boolean;
   isStarting: boolean;
   executionReadiness: ExecutionReadiness;
+  showPromptPreview?: boolean;
   onDecisionOverrideChange: (key: string, value: string) => void;
   onExecutionNodeSelectionChange: (nodeIds: string[]) => void;
   onApprove: () => void;
@@ -96,7 +98,9 @@ export function PlanReview({
             disabled={approved || isStarting}
             onChange={onExecutionNodeSelectionChange}
           />
-          {previewNode ? <PromptContractPreview plan={plan} node={previewNode} /> : null}
+          {showPromptPreview && previewNode ? (
+            <PromptContractPreview plan={plan} node={previewNode} />
+          ) : null}
           <ListBlock title="Execution range review" items={executionRangeNotes} />
           <ListBlock title="Security risks" items={implementationPlan.securityRisks} icon="risk" />
           <ListBlock title="Migration risks" items={implementationPlan.migrationRisks} />
