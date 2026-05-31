@@ -12,7 +12,7 @@ type UpsertInstallationRequest struct {
 type UpsertRepositoryRequest struct {
 	RepositoryID         string `json:"repository_id" binding:"omitempty,max=255"`
 	WorkspaceID          string `json:"workspace_id" binding:"required,max=255"`
-	GitHubInstallationID uint   `json:"github_installation_id" binding:"required"`
+	GitHubInstallationID uint   `json:"github_installation_id" binding:"omitempty"`
 	GitHubOwner          string `json:"github_owner" binding:"required,max=255"`
 	GitHubRepo           string `json:"github_repo" binding:"required,max=255"`
 	DefaultBranch        string `json:"default_branch" binding:"omitempty,max=100"`
@@ -20,7 +20,7 @@ type UpsertRepositoryRequest struct {
 }
 
 type ListRepositoriesRequest struct {
-	WorkspaceID string `form:"workspace_id" binding:"required,max=255"`
+	WorkspaceID string `form:"workspace_id" binding:"omitempty,max=255"`
 }
 
 type ListRepositoriesResponse struct {
@@ -71,6 +71,38 @@ type ListWebhookEventsRequest struct {
 	Status             string `form:"status" binding:"omitempty,max=50"`
 	RepositoryFullName string `form:"repository_full_name" binding:"omitempty,max=511"`
 	Limit              int    `form:"limit" binding:"omitempty,min=1,max=100"`
+}
+
+type CreateIssueRequest struct {
+	RepositoryID string   `json:"repository_id" binding:"required,max=255"`
+	Title        string   `json:"title" binding:"required,max=255"`
+	Body         string   `json:"body" binding:"omitempty"`
+	Labels       []string `json:"labels" binding:"omitempty,dive,max=100"`
+}
+
+type GitHubIssueResponse struct {
+	RepositoryID string `json:"repository_id"`
+	Number       int    `json:"number"`
+	HTMLURL      string `json:"html_url"`
+	State        string `json:"state"`
+	Title        string `json:"title"`
+}
+
+type GitHubRepositoryReadinessResponse struct {
+	RepositoryID string                 `json:"repository_id"`
+	WorkspaceID  string                 `json:"workspace_id"`
+	GitHubOwner  string                 `json:"github_owner"`
+	GitHubRepo   string                 `json:"github_repo"`
+	Ready        bool                   `json:"ready"`
+	Checks       []GitHubReadinessCheck `json:"checks"`
+}
+
+type GitHubReadinessCheck struct {
+	Key      string `json:"key"`
+	Status   string `json:"status"`
+	Message  string `json:"message"`
+	Detail   string `json:"detail,omitempty"`
+	Required bool   `json:"required"`
 }
 
 type ListRepositoryTreeRequest struct {

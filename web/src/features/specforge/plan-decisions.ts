@@ -83,5 +83,5 @@ function mentionsInviteFlow(plan: PlanBundle): boolean {
     .join(' ')
     .toLowerCase();
 
-  return text.includes('invite') || text.includes('invitation');
+  return text.includes('invite') || text.includes('invitation') || text.includes('邀请');
 }

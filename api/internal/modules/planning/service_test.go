@@ -226,22 +226,25 @@ func TestUpsertSkillPersistsRepoInstruction(t *testing.T) {
 	active := true
 
 	skill, err := svc.UpsertSkill(context.Background(), 42, "repo_123", &UpsertSkillRequest{
-		Name:        "service-layer",
-		Description: "API route guidance",
-		Content:     "API handlers must delegate business logic to services.",
-		Active:      &active,
+		Name:         "service-layer",
+		Description:  "API route guidance",
+		Content:      "API handlers must delegate business logic to services.",
+		Active:       &active,
+		TargetAgents: []string{"planning", "planning", " codex_cli "},
 	})
 
 	require.NoError(t, err)
 	require.Equal(t, "repo_123", skill.RepositoryID)
 	require.Equal(t, uint(42), skill.CreatedBy)
 	require.True(t, skill.Active)
+	require.Equal(t, []string{"planning", "codex_cli"}, skill.TargetAgents)
 
 	skills, err := svc.ListSkills(context.Background(), "repo_123")
 	require.NoError(t, err)
 	require.Len(t, skills, 1)
 	require.Equal(t, "service-layer", skills[0].Name)
 	require.Equal(t, "API handlers must delegate business logic to services.", skills[0].Content)
+	require.Equal(t, []string{"planning", "codex_cli"}, skills[0].TargetAgents)
 }
 
 func TestUpsertProjectSkillBindsSkillToProject(t *testing.T) {
@@ -324,6 +327,7 @@ func TestCreateProjectRequirementRecordsSkillRunPipeline(t *testing.T) {
 		Name:         "Planning SOP",
 		Content:      "Use evidence-backed planning.",
 		Active:       boolPtr(true),
+		TargetAgents: []string{"planning"},
 	})
 	require.NoError(t, err)
 
@@ -458,8 +462,15 @@ func TestCompilePromptInjectsActiveRepoSkills(t *testing.T) {
 	})
 	require.NoError(t, err)
 	_, err = svc.UpsertSkill(context.Background(), 42, "repo_123", &UpsertSkillRequest{
-		Name:    "go-layering",
-		Content: "Use handlers only for HTTP binding and response mapping.",
+		Name:         "go-layering",
+		Content:      "Use handlers only for HTTP binding and response mapping.",
+		TargetAgents: []string{"planning"},
+	})
+	require.NoError(t, err)
+	_, err = svc.UpsertSkill(context.Background(), 42, "repo_123", &UpsertSkillRequest{
+		Name:         "execution-only",
+		Content:      "This is only for implementation agents.",
+		TargetAgents: []string{"codex_cli"},
 	})
 	require.NoError(t, err)
 	inactive := false
@@ -479,6 +490,7 @@ func TestCompilePromptInjectsActiveRepoSkills(t *testing.T) {
 	require.Contains(t, prompt.PromptText, "Repository skills")
 	require.Contains(t, prompt.PromptText, "go-layering")
 	require.Contains(t, prompt.PromptText, "Use handlers only for HTTP binding and response mapping.")
+	require.NotContains(t, prompt.PromptText, "This is only for implementation agents.")
 	require.NotContains(t, prompt.PromptText, "This should not appear.")
 }
 
@@ -633,8 +645,9 @@ func TestCompilePromptInjectsProjectContextSkills(t *testing.T) {
 	}
 	svc := NewService(repo, profileRepo, repo, projectRepo)
 	_, err := svc.UpsertSkill(context.Background(), 42, "repo_web", &UpsertSkillRequest{
-		Name:    "module-boundaries",
-		Content: "Web code talks to API over HTTP only.",
+		Name:         "module-boundaries",
+		Content:      "Web code talks to API over HTTP only.",
+		TargetAgents: []string{"planning"},
 	})
 	require.NoError(t, err)
 	created, err := svc.CreateProjectIdea(context.Background(), 42, 9, &CreateIdeaRequest{

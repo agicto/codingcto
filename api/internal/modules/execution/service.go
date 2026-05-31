@@ -16,6 +16,8 @@ import (
 	"github.com/zgiai/luas/api/pkg/redact"
 )
 
+const runtimeDispatchFreshness = 5 * time.Minute
+
 type Service interface {
 	StartRun(ctx context.Context, userID, planID uint, req *StartExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error)
 	GetLatestRunForPlan(ctx context.Context, planID uint) (*domain.SpecForgeExecutionBundle, error)
@@ -193,6 +195,9 @@ func (s *service) GetLatestRunForPlan(ctx context.Context, planID uint) (*domain
 			return nil, err
 		}
 	}
+	if err := s.reconcileRunDeliveryStatus(ctx, bundle); err != nil {
+		return nil, err
+	}
 	return attachExecutionRange(bundle), nil
 }
 
@@ -283,6 +288,7 @@ func (s *service) createPromptForPRNode(ctx context.Context, userID uint, bundle
 	if err != nil {
 		return err
 	}
+	skills = filterExecutionSkillsForAgents(skills, executionSkillAgentKeys(promptType, parent)...)
 	text := compileRunPromptText(bundle, node, promptType, parent, skills)
 	hash := sha256.Sum256([]byte(text))
 	prompt := &domain.SpecForgeCompiledPrompt{
@@ -421,7 +427,17 @@ func (s *service) GetRun(ctx context.Context, runID uint) (*domain.SpecForgeExec
 		}
 		bundle.Plan = plan
 	}
+	if err := s.reconcileRunDeliveryStatus(ctx, bundle); err != nil {
+		return nil, err
+	}
 	return attachExecutionRange(bundle), nil
+}
+
+func (s *service) reconcileRunDeliveryStatus(ctx context.Context, bundle *domain.SpecForgeExecutionBundle) error {
+	if bundle == nil || bundle.Run == nil || bundle.Plan == nil {
+		return nil
+	}
+	return s.completeRunIfDeliveryReady(ctx, bundle, time.Now())
 }
 
 func attachExecutionRange(bundle *domain.SpecForgeExecutionBundle) *domain.SpecForgeExecutionBundle {
@@ -542,8 +558,12 @@ func queuedTaskExecutors(tasks []*domain.SpecForgeAgentTask) []string {
 }
 
 func hasDispatchReadyRuntime(executor string, runtimes []*domain.SpecForgeRuntime) bool {
+	staleBefore := time.Now().Add(-runtimeDispatchFreshness)
 	for _, runtime := range runtimes {
 		if runtime == nil || runtime.Status != domain.RuntimeStatusOnline {
+			continue
+		}
+		if runtime.LastSeenAt.IsZero() || runtime.LastSeenAt.Before(staleBefore) {
 			continue
 		}
 		if strings.TrimSpace(runtime.Executor) != strings.TrimSpace(executor) {
@@ -763,6 +783,10 @@ func (s *service) ClaimTask(ctx context.Context, runtimeID string, req *ClaimAge
 			return &ClaimAgentTaskResponse{}, nil
 		}
 		return nil, fmt.Errorf("claim agent task: %w", err)
+	}
+	if _, err := s.prepareTaskBranch(ctx, task); err != nil {
+		_, _ = s.failTaskBeforeExecutor(ctx, task, "branch_preparation_failed", err.Error())
+		return nil, fmt.Errorf("prepare claimed task branch: %w", err)
 	}
 	claim, err := s.buildClaimResponse(ctx, task)
 	if err != nil {
@@ -1614,7 +1638,6 @@ func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecF
 	b.WriteString("Goal:\n" + strings.TrimSpace(node.Goal) + "\n\n")
 	writeRunPromptContract(&b, bundle, node, promptType, parent, skills)
 	writeExecutionPromptModeInstructions(&b, promptType, parent)
-	writeExecutionSkillApplicationProtocol(&b, skills)
 	if bundle != nil && bundle.ProductSpec != nil {
 		writeExecutionList(&b, "Product goals", bundle.ProductSpec.Goals)
 		writeExecutionList(&b, "Product acceptance criteria", bundle.ProductSpec.AcceptanceCriteria)
@@ -1637,18 +1660,6 @@ func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecF
 	b.WriteString("- Run the listed test commands before submitting the result.\n")
 	b.WriteString("- Prepare a PR description with summary, scope, non-goals, tests, risks, and dependencies.\n")
 	return b.String()
-}
-
-func writeExecutionSkillApplicationProtocol(b *strings.Builder, skills []*domain.SpecForgeSkill) {
-	b.WriteString("Skill application protocol:\n")
-	if len(activeExecutionSkills(skills)) == 0 {
-		b.WriteString("- No active repository skills were available for this execution task; do not invent skill rules.\n\n")
-		return
-	}
-	b.WriteString("- Before editing files, translate every repository skill below into concrete constraints for this PR node.\n")
-	b.WriteString("- Apply those constraints together with acceptance criteria, non-goals, and dependency guardrails.\n")
-	b.WriteString("- If a skill conflicts with approved plan evidence or repository evidence, stop and submit a blocker summary.\n")
-	b.WriteString("- In the task result, include skills_applied with the skill names used and the evidence refs that supported the decision.\n\n")
 }
 
 func writeRunPromptContract(b *strings.Builder, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, promptType string, parent *domain.SpecForgeAgentTask, skills []*domain.SpecForgeSkill) {
@@ -2069,7 +2080,6 @@ func writeExecutionProjectContext(b *strings.Builder, bundle *domain.SpecForgePl
 	context := bundle.ProjectContext
 	b.WriteString("Project context:\n")
 	b.WriteString("- Project: " + strings.TrimSpace(context.Project.Name) + "\n")
-	writeExecutionProjectContextContract(b, context.ContextContract)
 	if strings.TrimSpace(context.PrimaryRepositoryID) != "" {
 		b.WriteString("- Primary repository: " + strings.TrimSpace(context.PrimaryRepositoryID) + "\n")
 	}
@@ -2102,49 +2112,6 @@ func writeExecutionProjectContext(b *strings.Builder, bundle *domain.SpecForgePl
 		writeExecutionArchitectureContext(b, repoContext)
 	}
 	b.WriteString("\n")
-}
-
-func writeExecutionProjectContextContract(b *strings.Builder, contract *domain.SpecForgeProjectContextContract) {
-	if contract == nil {
-		return
-	}
-	b.WriteString("- Context contract: " + contract.Version + "\n")
-	if strings.TrimSpace(contract.PrimaryRepositoryID) != "" {
-		b.WriteString("  - contract.primary_repository_id: " + strings.TrimSpace(contract.PrimaryRepositoryID) + "\n")
-	}
-	if len(contract.ReadOnlyRepositoryIDs) > 0 {
-		b.WriteString("  - contract.read_only_repository_ids: " + strings.Join(normalizeExecutionList(contract.ReadOnlyRepositoryIDs), ", ") + "\n")
-	}
-	if len(contract.SkillNames) > 0 {
-		b.WriteString("  - contract.active_skills: " + strings.Join(normalizeExecutionList(contract.SkillNames), ", ") + "\n")
-	}
-	if len(contract.MissingEvidence) > 0 {
-		b.WriteString("  - contract.missing_evidence: " + strings.Join(normalizeExecutionList(contract.MissingEvidence), ", ") + "\n")
-	}
-	for _, guardrail := range normalizeExecutionList(contract.PromptGuardrails) {
-		b.WriteString("  - contract.guardrail: " + guardrail + "\n")
-	}
-	for _, repository := range contract.Repositories {
-		if repository == nil {
-			continue
-		}
-		b.WriteString("  - contract.repository: " + repository.RepositoryID + " role=" + repository.Role)
-		if repository.Writable {
-			b.WriteString(" writable=true")
-		} else {
-			b.WriteString(" writable=false")
-		}
-		b.WriteString("\n")
-		if len(repository.TestCommands) > 0 {
-			b.WriteString("    - contract.repository_tests: " + strings.Join(normalizeExecutionList(repository.TestCommands), ", ") + "\n")
-		}
-		if len(repository.RiskAreas) > 0 {
-			b.WriteString("    - contract.repository_risks: " + strings.Join(normalizeExecutionList(repository.RiskAreas), ", ") + "\n")
-		}
-		if repository.ArchitectureSnapshotCommit != "" {
-			b.WriteString("    - contract.architecture_snapshot_commit: " + compactExecutionLine(repository.ArchitectureSnapshotCommit) + "\n")
-		}
-	}
 }
 
 func writeExecutionArchitectureContext(b *strings.Builder, repoContext *domain.SpecForgeProjectRepositoryContext) {
@@ -2205,29 +2172,28 @@ func writeExecutionRepoProfile(b *strings.Builder, bundle *domain.SpecForgePlanB
 
 func writeExecutionSkills(b *strings.Builder, skills []*domain.SpecForgeSkill) {
 	b.WriteString("Repository skills:\n")
-	activeSkills := activeExecutionSkills(skills)
-	if len(activeSkills) == 0 {
+	if len(skills) == 0 {
 		b.WriteString("- None\n\n")
 		return
 	}
-	for _, skill := range activeSkills {
-		b.WriteString("## " + strings.TrimSpace(skill.Name) + "\n")
-		if strings.TrimSpace(skill.Description) != "" {
-			b.WriteString(strings.TrimSpace(skill.Description) + "\n")
-		}
-		b.WriteString(strings.TrimSpace(skill.Content) + "\n\n")
-	}
-}
-
-func activeExecutionSkills(skills []*domain.SpecForgeSkill) []*domain.SpecForgeSkill {
-	out := make([]*domain.SpecForgeSkill, 0, len(skills))
+	wrote := false
 	for _, skill := range skills {
 		if skill == nil || strings.TrimSpace(skill.Name) == "" || strings.TrimSpace(skill.Content) == "" {
 			continue
 		}
-		out = append(out, skill)
+		wrote = true
+		b.WriteString("## " + strings.TrimSpace(skill.Name) + "\n")
+		if strings.TrimSpace(skill.Description) != "" {
+			b.WriteString(strings.TrimSpace(skill.Description) + "\n")
+		}
+		if len(skill.TargetAgents) > 0 {
+			b.WriteString("Assigned agents: " + strings.Join(skill.TargetAgents, ", ") + "\n")
+		}
+		b.WriteString(strings.TrimSpace(skill.Content) + "\n\n")
 	}
-	return out
+	if !wrote {
+		b.WriteString("- None\n\n")
+	}
 }
 
 func synthesizedExecutionProjectProfile(context *domain.SpecForgeProjectContext, primaryRepoID string) *domain.SpecForgeRepoProfile {
@@ -2303,6 +2269,55 @@ func activeExecutionProjectSkills(context *domain.SpecForgeProjectContext) []*do
 		}
 	}
 	return skills
+}
+
+func executionSkillAgentKeys(promptType string, parent *domain.SpecForgeAgentTask) []string {
+	keys := []string{"execution", "codex_cli", "codex"}
+	if parent != nil && strings.TrimSpace(parent.Executor) != "" {
+		keys = append(keys, strings.TrimSpace(parent.Executor))
+	}
+	switch strings.TrimSpace(promptType) {
+	case domain.PromptTypeFix:
+		keys = append(keys, "fix")
+	case domain.PromptTypeReviewPatch:
+		keys = append(keys, "review", "review_patch")
+	default:
+		keys = append(keys, "implementation")
+	}
+	return keys
+}
+
+func filterExecutionSkillsForAgents(skills []*domain.SpecForgeSkill, agents ...string) []*domain.SpecForgeSkill {
+	out := make([]*domain.SpecForgeSkill, 0, len(skills))
+	for _, skill := range skills {
+		if executionSkillAppliesToAgents(skill, agents...) {
+			out = append(out, skill)
+		}
+	}
+	return out
+}
+
+func executionSkillAppliesToAgents(skill *domain.SpecForgeSkill, agents ...string) bool {
+	if skill == nil {
+		return false
+	}
+	targets := map[string]struct{}{}
+	for _, target := range skill.TargetAgents {
+		normalized := strings.ToLower(strings.TrimSpace(target))
+		if normalized == "" {
+			continue
+		}
+		if normalized == "*" || normalized == "all" {
+			return true
+		}
+		targets[normalized] = struct{}{}
+	}
+	for _, agent := range agents {
+		if _, ok := targets[strings.ToLower(strings.TrimSpace(agent))]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func writeExecutionPromptModeInstructions(b *strings.Builder, promptType string, parent *domain.SpecForgeAgentTask) {
@@ -2494,7 +2509,7 @@ func prNodeRequiresStatusGate(node *domain.SpecForgePRNode) bool {
 
 func prNodeStatusSatisfiesDependency(status string) bool {
 	switch status {
-	case domain.PRNodeStatusReadyForReview, domain.PRNodeStatusMerged:
+	case domain.PRNodeStatusPROpened, domain.PRNodeStatusReadyForReview, domain.PRNodeStatusMerged:
 		return true
 	default:
 		return false

@@ -148,7 +148,11 @@ func (w *RuntimeWorker) executeClaim(ctx context.Context, claim *ClaimAgentTaskR
 		PromptText: claim.Prompt.PromptText,
 	})
 	if result == nil {
-		result = &ExecutionResult{Status: "failed", Error: "executor returned no result", ExitCode: -1}
+		errorLine := "executor returned no result"
+		if runErr != nil && strings.TrimSpace(runErr.Error()) != "" {
+			errorLine = runErr.Error()
+		}
+		result = &ExecutionResult{Status: "failed", Error: errorLine, ExitCode: -1}
 	}
 	_, _ = w.client.CreateTaskEvent(ctx, taskID, &CreateTaskEventRequest{
 		Type:   "executor_result",

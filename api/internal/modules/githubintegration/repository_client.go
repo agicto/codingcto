@@ -25,6 +25,7 @@ type RepositoryClient interface {
 	ListRepositoryTree(ctx context.Context, owner, repo, ref string, recursive bool) (*GitTree, error)
 	GetRepositoryFile(ctx context.Context, owner, repo, path, ref string) (*RepositoryFile, error)
 	CreateBranch(ctx context.Context, owner, repo, branch, sha string) (*GitReference, error)
+	CreateIssue(ctx context.Context, input CreateIssueInput) (*Issue, error)
 	CreatePullRequest(ctx context.Context, input CreatePullRequestInput) (*PullRequest, error)
 	ListWorkflowRuns(ctx context.Context, owner, repo, branch string) ([]WorkflowRun, error)
 	ListWorkflowJobs(ctx context.Context, owner, repo string, runID int64) ([]WorkflowJob, error)
@@ -137,9 +138,24 @@ type PullRequest struct {
 	Head    PRHead `json:"head"`
 }
 
+type Issue struct {
+	Number  int    `json:"number"`
+	HTMLURL string `json:"html_url"`
+	State   string `json:"state"`
+	Title   string `json:"title"`
+}
+
 type PRHead struct {
 	Ref string `json:"ref"`
 	SHA string `json:"sha"`
+}
+
+type CreateIssueInput struct {
+	Owner  string
+	Repo   string
+	Title  string
+	Body   string
+	Labels []string
 }
 
 type CreatePullRequestInput struct {
@@ -202,13 +218,24 @@ func (c *GitHubRepositoryClient) GetBranchRef(ctx context.Context, owner, repo, 
 }
 
 func (c *GitHubRepositoryClient) ListInstallationRepositories(ctx context.Context) ([]InstallationRepository, error) {
-	var out struct {
-		Repositories []InstallationRepository `json:"repositories"`
+	var repositories []InstallationRepository
+	path := "/installation/repositories?per_page=100"
+	for {
+		var out struct {
+			Repositories []InstallationRepository `json:"repositories"`
+		}
+		header, err := c.doWithHeader(ctx, http.MethodGet, path, nil, &out)
+		if err != nil {
+			return nil, err
+		}
+		repositories = append(repositories, out.Repositories...)
+		next := nextLinkFromHeader(header.Get("Link"))
+		if next == "" {
+			break
+		}
+		path = next
 	}
-	if err := c.do(ctx, http.MethodGet, "/installation/repositories?per_page=100", nil, &out); err != nil {
-		return nil, err
-	}
-	return out.Repositories, nil
+	return repositories, nil
 }
 
 func (c *GitHubRepositoryClient) ListRepositoryTree(ctx context.Context, owner, repo, ref string, recursive bool) (*GitTree, error) {
@@ -281,6 +308,28 @@ func (c *GitHubRepositoryClient) CreateBranch(ctx context.Context, owner, repo, 
 		return nil, err
 	}
 	return &ref, nil
+}
+
+func (c *GitHubRepositoryClient) CreateIssue(ctx context.Context, input CreateIssueInput) (*Issue, error) {
+	if err := requireRepoArgs(input.Owner, input.Repo); err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(input.Title) == "" {
+		return nil, fmt.Errorf("github repository client: issue title is required")
+	}
+	payload := map[string]any{
+		"title": strings.TrimSpace(input.Title),
+		"body":  input.Body,
+	}
+	if len(input.Labels) > 0 {
+		payload["labels"] = input.Labels
+	}
+	var issue Issue
+	path := fmt.Sprintf("/repos/%s/%s/issues", url.PathEscape(input.Owner), url.PathEscape(input.Repo))
+	if err := c.do(ctx, http.MethodPost, path, payload, &issue); err != nil {
+		return nil, err
+	}
+	return &issue, nil
 }
 
 func (c *GitHubRepositoryClient) CreatePullRequest(ctx context.Context, input CreatePullRequestInput) (*PullRequest, error) {
@@ -357,17 +406,22 @@ func (c *GitHubRepositoryClient) GetWorkflowJobLogs(ctx context.Context, owner, 
 }
 
 func (c *GitHubRepositoryClient) do(ctx context.Context, method, path string, payload any, out any) error {
+	_, err := c.doWithHeader(ctx, method, path, payload, out)
+	return err
+}
+
+func (c *GitHubRepositoryClient) doWithHeader(ctx context.Context, method, path string, payload any, out any) (http.Header, error) {
 	var body io.Reader
 	if payload != nil {
 		encoded, err := json.Marshal(payload)
 		if err != nil {
-			return fmt.Errorf("github repository client: encode request: %w", err)
+			return nil, fmt.Errorf("github repository client: encode request: %w", err)
 		}
 		body = bytes.NewReader(encoded)
 	}
 	req, err := http.NewRequestWithContext(ctx, method, strings.TrimRight(c.baseURL, "/")+path, body)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	req.Header.Set("Accept", "application/vnd.github+json")
 	req.Header.Set("Authorization", "Bearer "+c.token)
@@ -378,13 +432,13 @@ func (c *GitHubRepositoryClient) do(ctx context.Context, method, path string, pa
 
 	resp, err := c.httpClient.Do(req)
 	if err != nil {
-		return err
+		return nil, err
 	}
 	defer resp.Body.Close()
 
 	responseBody, err := io.ReadAll(resp.Body)
 	if err != nil {
-		return fmt.Errorf("github repository client: read response: %w", err)
+		return nil, fmt.Errorf("github repository client: read response: %w", err)
 	}
 	var errorBody struct {
 		Message string `json:"message"`
@@ -392,17 +446,17 @@ func (c *GitHubRepositoryClient) do(ctx context.Context, method, path string, pa
 	if resp.StatusCode < 200 || resp.StatusCode >= 300 {
 		_ = json.Unmarshal(responseBody, &errorBody)
 		if errorBody.Message != "" {
-			return fmt.Errorf("github repository client: request failed: %s", errorBody.Message)
+			return nil, fmt.Errorf("github repository client: request failed: %s", errorBody.Message)
 		}
-		return fmt.Errorf("github repository client: request failed with HTTP %d", resp.StatusCode)
+		return nil, fmt.Errorf("github repository client: request failed with HTTP %d", resp.StatusCode)
 	}
 	if out == nil || len(responseBody) == 0 {
-		return nil
+		return resp.Header, nil
 	}
 	if err := json.Unmarshal(responseBody, out); err != nil {
-		return fmt.Errorf("github repository client: decode response: %w", err)
+		return nil, fmt.Errorf("github repository client: decode response: %w", err)
 	}
-	return nil
+	return resp.Header, nil
 }
 
 func (c *GitHubRepositoryClient) doText(ctx context.Context, method, path string) (string, error) {
@@ -460,4 +514,28 @@ func escapePathSegments(path string) string {
 		parts[i] = url.PathEscape(part)
 	}
 	return strings.Join(parts, "/")
+}
+
+func nextLinkFromHeader(linkHeader string) string {
+	for _, part := range strings.Split(linkHeader, ",") {
+		part = strings.TrimSpace(part)
+		if !strings.Contains(part, `rel="next"`) {
+			continue
+		}
+		start := strings.Index(part, "<")
+		end := strings.Index(part, ">")
+		if start < 0 || end <= start+1 {
+			continue
+		}
+		rawURL := strings.TrimSpace(part[start+1 : end])
+		parsed, err := url.Parse(rawURL)
+		if err != nil {
+			continue
+		}
+		if parsed.RawQuery == "" {
+			return parsed.Path
+		}
+		return parsed.Path + "?" + parsed.RawQuery
+	}
+	return ""
 }

@@ -38,6 +38,54 @@ func TestGitHubRepositoryClientGetBranchRef(t *testing.T) {
 	require.Equal(t, "abc123", ref.Object.SHA)
 }
 
+func TestGitHubRepositoryClientListInstallationRepositoriesFollowsPagination(t *testing.T) {
+	requests := []string{}
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodGet, r.Method)
+		requests = append(requests, r.URL.String())
+		switch r.URL.Query().Get("page") {
+		case "":
+			w.Header().Set("Link", `<https://api.github.test/installation/repositories?per_page=100&page=2>; rel="next"`)
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"repositories": []map[string]any{
+					{
+						"id":             101,
+						"name":           "codingcto",
+						"full_name":      "agicto/codingcto",
+						"default_branch": "main",
+					},
+				},
+			})
+		case "2":
+			_ = json.NewEncoder(w).Encode(map[string]any{
+				"repositories": []map[string]any{
+					{
+						"id":             102,
+						"name":           "codingcto-key",
+						"full_name":      "agicto/codingcto-key",
+						"default_branch": "main",
+					},
+				},
+			})
+		default:
+			t.Fatalf("unexpected page %q", r.URL.Query().Get("page"))
+		}
+	}))
+	defer server.Close()
+	client := newTestRepositoryClient(t, server.URL)
+
+	repositories, err := client.ListInstallationRepositories(context.Background())
+
+	require.NoError(t, err)
+	require.Equal(t, []string{
+		"/installation/repositories?per_page=100",
+		"/installation/repositories?per_page=100&page=2",
+	}, requests)
+	require.Len(t, repositories, 2)
+	require.Equal(t, "agicto/codingcto", repositories[0].FullName)
+	require.Equal(t, "agicto/codingcto-key", repositories[1].FullName)
+}
+
 func TestGitHubRepositoryClientListRepositoryTree(t *testing.T) {
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
 		require.Equal(t, http.MethodGet, r.Method)

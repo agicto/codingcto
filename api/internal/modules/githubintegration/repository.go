@@ -89,15 +89,12 @@ func (r *repository) FindRepositoryByRepositoryID(ctx context.Context, repositor
 }
 
 func (r *repository) ListRepositoriesByWorkspaceID(ctx context.Context, workspaceID string) ([]*domain.Repository, error) {
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
-		return nil, domain.ErrInvalidInput
-	}
 	var pos []*RepositoryPO
-	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ?", workspaceID).
-		Order("updated_at DESC, id DESC").
-		Find(&pos).Error; err != nil {
+	query := r.db.WithContext(ctx).Model(&RepositoryPO{})
+	if strings.TrimSpace(workspaceID) != "" {
+		query = query.Where("workspace_id = ?", strings.TrimSpace(workspaceID))
+	}
+	if err := query.Order("updated_at DESC, id DESC").Find(&pos).Error; err != nil {
 		return nil, err
 	}
 	repositories := make([]*domain.Repository, len(pos))
