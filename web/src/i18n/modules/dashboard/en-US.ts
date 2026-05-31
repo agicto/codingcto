@@ -375,17 +375,23 @@ const messages: DashboardMessages = {
   specForge: {
     demoIdea: 'Add a team invite flow. Workspace admins can invite members by email, and invited users accept through a secure link.',
     header: {
-      title: 'Project command center',
-      description: 'Idea to plan, prompts, Codex run, and PR delivery',
+      title: 'PR delivery flow',
+      description: 'Turn one requirement into an approved plan, Codex run, and reviewable pull requests',
       activeRuns: '{count} active runs',
-      analyzeRepo: 'Analyze repo',
-      manualPlan: 'Manual plan',
-      pipeline: 'Pipeline',
+      analyzeRepo: 'Repo context',
+      manualPlan: 'Plan review',
+      pipeline: 'PR pipeline',
+    },
+    workflow: {
+      requirement: 'Write the requirement',
+      repository: 'Read repository context',
+      plan: 'Approve the plan',
+      delivery: 'Run Codex and deliver PRs',
     },
     tabs: {
-      allWork: 'All work',
-      plans: 'Plans',
-      runs: 'Runs',
+      allWork: 'Requirement',
+      plans: 'Plan',
+      runs: 'Execution',
     },
     progress: {
       awaiting: 'Awaiting plan approval; {reason}',
@@ -410,15 +416,15 @@ const messages: DashboardMessages = {
     },
     stages: {
       intake: {
-        title: 'Idea intake',
+        title: 'Requirement',
         empty: 'Waiting for idea',
-        itemTitle: 'Capture product intent',
+        itemTitle: 'Write requirement',
         itemDescription: 'Describe the feature outcome, constraints, and acceptance boundaries.',
       },
       context: {
-        title: 'Repo intelligence',
+        title: 'Repository',
         empty: 'No repo selected',
-        itemTitle: 'Analyze repos and skills',
+        itemTitle: 'Read repository context',
       },
       planning: {
         title: 'Planning',
@@ -433,7 +439,7 @@ const messages: DashboardMessages = {
       execution: {
         title: 'Execution',
         empty: 'No run started',
-        itemTitle: 'Run Codex and deliver PRs',
+        itemTitle: 'Run Codex',
       },
       delivery: {
         title: 'PR delivery',
@@ -481,8 +487,8 @@ const messages: DashboardMessages = {
   },
   projectsConsole: {
     eyebrow: 'Project console',
-    title: 'Organize projects into executable delivery entry points',
-    description: 'Select a workspace, shape project boundaries, then connect GitHub repositories, prompts, and PR execution into one CodingCTO flow.',
+    title: 'Projects',
+    description: 'Create a project, add a short description, then open it when you are ready to connect repositories.',
     badges: {
       enterprise: 'Enterprise workspace',
       apiUnavailable: 'API unavailable',
@@ -497,6 +503,7 @@ const messages: DashboardMessages = {
       createWorkspace: 'Create workspace',
       createProject: 'Create project',
       openCodingCTO: 'Open CodingCTO',
+      openProject: 'Open project',
       configureGitHub: 'Configure GitHub',
       openAgents: 'View agents',
     },
@@ -537,10 +544,10 @@ const messages: DashboardMessages = {
       title: 'Delivery projects',
       description: 'Each project should bind a primary repository and become context for planning, execution, and review.',
       count: '{count} projects',
-      loading: 'Loading projects from the selected workspace...',
-      emptyForWorkspace: 'No projects in this workspace yet. Create one to start repository binding.',
-      selectWorkspace: 'Select or create a workspace to list projects.',
-      emptyDescription: 'After creating a project, open the CodingCTO delivery board to bind GitHub repositories and generate an execution plan.',
+      loading: 'Loading projects...',
+      emptyForWorkspace: 'No projects yet. Create one to start repository binding.',
+      selectWorkspace: 'No projects yet.',
+      emptyDescription: 'After creating a project, open it to bind GitHub repositories and generate an execution plan.',
       noDescription: 'No description yet.',
       primaryRepoRequired: 'Primary repo required',
       status: {
@@ -556,7 +563,12 @@ const messages: DashboardMessages = {
     newProject: {
       title: 'New project',
       description: 'Define the product or system boundary first, then open the project delivery board to bind GitHub repositories.',
+      titlePlaceholder: 'Project title',
       descriptionPlaceholder: 'What product or system does this project represent?',
+      statusPlanned: 'Planned',
+      noPriority: 'No priority',
+      ownerLead: 'Lead',
+      repositories: 'Repos',
     },
     setup: {
       title: 'Recommended path',
@@ -579,7 +591,9 @@ const messages: DashboardMessages = {
     messages: {
       workspaceRequired: 'Workspace name and slug are required.',
       workspaceCreateFailed: 'Workspace could not be created. Check the API connection and slug uniqueness.',
-      selectWorkspaceFirst: 'Create or select a workspace before creating a project.',
+      projectSpaceCreateFailed: 'Projects are not ready yet. Check the API connection and try again.',
+      selectWorkspaceFirst: 'Projects are getting ready. Try again in a moment.',
+      projectUnauthorized: 'Project creation needs a backend session. Sign out, sign in again, then retry.',
       projectRequired: 'Project name and slug are required.',
       slugInvalid: 'Slug must be at least 2 characters and use lowercase letters, numbers, or hyphens.',
       projectCreateFailed: 'Project could not be created. Check the API connection and slug uniqueness.',
@@ -609,6 +623,11 @@ const messages: DashboardMessages = {
       title: 'Bind GitHub repository',
       description: 'Use the repository ID created by Settings > GitHub. Primary repositories are writable; dependency, docs, and infra repositories become read-only planning context.',
       repositoryId: 'Repository ID',
+      selectRepository: 'Select repository',
+      allRepositoriesBound: 'All connected repositories are already bound.',
+      loadingRepositories: 'Loading connected repositories...',
+      emptyRepositories: 'No connected GitHub repositories yet.',
+      connectRepository: 'Connect GitHub',
       role: 'Role',
       binding: 'Binding',
       submit: 'Bind repository',

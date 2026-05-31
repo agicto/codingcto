@@ -8,10 +8,12 @@ services:
     container_name: luas-web
     restart: unless-stopped
     ports:
-      - "3000:3000"
+      - "2020:2020"
     environment:
       - NODE_ENV=production
       - NEXT_PUBLIC_API_URL=/api
-      - NEXT_PUBLIC_DEPLOY_API_URL=http://localhost:8025/v1
-      - NEXT_PUBLIC_PLATFORM_API_URL=http://localhost:8025/v1
-      - NEXT_PUBLIC_APP_URL=http://localhost:3000
+      - LUAS_API_PROXY_TARGET=http://localhost:2010
+      - PORT=2020
+      - NEXT_PUBLIC_DEPLOY_API_URL=http://localhost:2010/v1
+      - NEXT_PUBLIC_PLATFORM_API_URL=http://localhost:2010/v1
+      - NEXT_PUBLIC_APP_URL=http://localhost:2020

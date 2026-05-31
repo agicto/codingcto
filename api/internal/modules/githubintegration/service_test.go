@@ -75,6 +75,15 @@ func TestSyncInstallationStoresAccountAndListsRepositories(t *testing.T) {
 	require.Equal(t, "codingcto", result.Repositories[0].Repo)
 	require.Equal(t, "main", result.Repositories[0].DefaultBranch)
 	require.True(t, result.Repositories[0].IsPrivate)
+
+	syncedRepository, err := repo.FindRepositoryByRepositoryID(context.Background(), "github_agicto__codingcto")
+	require.NoError(t, err)
+	require.Equal(t, "default", syncedRepository.WorkspaceID)
+	require.Equal(t, result.Installation.ID, syncedRepository.GitHubInstallationID)
+	require.Equal(t, "agicto", syncedRepository.GitHubOwner)
+	require.Equal(t, "codingcto", syncedRepository.GitHubRepo)
+	require.Equal(t, "main", syncedRepository.DefaultBranch)
+	require.True(t, syncedRepository.IsPrivate)
 }
 
 func TestUpsertRepositoryDefaultsRepositoryIDAndBranch(t *testing.T) {

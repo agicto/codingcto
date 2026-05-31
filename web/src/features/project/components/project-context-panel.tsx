@@ -19,6 +19,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { ApiError } from '@/http/request';
 import { useProjectContext } from '@/features/project/hooks/use-projects';
 import {
   useBindProjectRepository,
@@ -264,7 +265,7 @@ function ProjectContextState({
   );
 }
 
-function ProjectRepositoryBindPanel({
+export function ProjectRepositoryBindPanel({
   id,
   projectId,
   workspaceId,
@@ -574,12 +575,15 @@ function ProjectRepositoryCard({
     try {
       await reindexArchitecture.mutateAsync({
         default_branch: profile?.default_branch,
-        file_paths: ['README.md', 'package.json', 'pnpm-lock.yaml', 'go.mod', '.github/workflows'],
       });
       queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
       setMessage('Architecture analysis refreshed.');
-    } catch {
-      setMessage('Architecture analysis failed.');
+    } catch (error) {
+      setMessage(
+        error instanceof ApiError
+          ? `Architecture analysis failed: ${error.message}`
+          : 'Architecture analysis failed.'
+      );
     }
   }
 

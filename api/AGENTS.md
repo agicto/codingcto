@@ -130,11 +130,14 @@ luas/
 
 ## Common Commands
 
+Local API development uses `http://localhost:2010` by default. Keep docs, `.env.example`, and local scripts aligned with that port.
+
 ```bash
 make build         # Build CLI
 make test          # Run tests
 make lint          # Code linting
 make wire          # Generate DI
+make run           # Run dev server on :2010
 make air           # Hot-reload dev server
 ```
 

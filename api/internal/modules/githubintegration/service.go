@@ -120,6 +120,20 @@ func (s *service) SyncInstallation(ctx context.Context, userID uint, req *SyncIn
 			IsPrivate:     repository.Private,
 			HTMLURL:       repository.HTMLURL,
 		})
+		if owner != "" && repoName != "" {
+			if err := s.repo.UpsertRepository(ctx, &domain.Repository{
+				RepositoryID:         githubRepositoryID(owner, repoName),
+				WorkspaceID:          strings.TrimSpace(req.WorkspaceID),
+				GitHubInstallationID: installation.ID,
+				GitHubOwner:          owner,
+				GitHubRepo:           repoName,
+				DefaultBranch:        defaultText(strings.TrimSpace(repository.DefaultBranch), "main"),
+				IsPrivate:            repository.Private,
+				CreatedBy:            userID,
+			}); err != nil {
+				return nil, fmt.Errorf("sync github repository: %w", err)
+			}
+		}
 	}
 	return &SyncInstallationResponse{Installation: installation, Repositories: options}, nil
 }
@@ -141,7 +155,7 @@ func (s *service) UpsertRepository(ctx context.Context, userID uint, req *Upsert
 	}
 	repositoryID := strings.TrimSpace(req.RepositoryID)
 	if repositoryID == "" {
-		repositoryID = fmt.Sprintf("github_%s__%s", strings.TrimSpace(req.GitHubOwner), strings.TrimSpace(req.GitHubRepo))
+		repositoryID = githubRepositoryID(req.GitHubOwner, req.GitHubRepo)
 	}
 
 	repository := &domain.Repository{
@@ -181,6 +195,10 @@ func sameGitHubRepositoryAccess(existing, next *domain.Repository) bool {
 	return existing.GitHubInstallationID == next.GitHubInstallationID &&
 		strings.EqualFold(strings.TrimSpace(existing.GitHubOwner), strings.TrimSpace(next.GitHubOwner)) &&
 		strings.EqualFold(strings.TrimSpace(existing.GitHubRepo), strings.TrimSpace(next.GitHubRepo))
+}
+
+func githubRepositoryID(owner, repo string) string {
+	return fmt.Sprintf("github_%s__%s", strings.TrimSpace(owner), strings.TrimSpace(repo))
 }
 
 func (s *service) GetRepository(ctx context.Context, repositoryID string) (*domain.Repository, error) {
@@ -240,7 +258,7 @@ func (s *service) CheckRepositoryReadiness(ctx context.Context, repositoryID str
 		if err != nil {
 			checks = append(checks, readinessError("installation_token", "GitHub App 令牌交换失败", userFacingGitHubError(err), true))
 		} else if token == nil || strings.TrimSpace(token.Token) == "" {
-			checks = append(checks, readinessError("installation_token", "GitHub App 令牌为空", "请检查 GITHUB_APP_ID 和 GITHUB_APP_PRIVATE_KEY 是否对应当前安装。", true))
+			checks = append(checks, readinessError("installation_token", "GitHub App 令牌为空", "请检查 GITHUB_APP_ID 和 GitHub App 私钥配置是否对应当前安装。", true))
 		} else {
 			checks = append(checks, readinessOK("installation_token", "GitHub App 令牌可用", "", true))
 		}

@@ -1,26 +1,21 @@
 'use client';
 
 import Link from 'next/link';
+import { useRouter } from 'next/navigation';
 import { FormEvent, ReactNode, useMemo, useState } from 'react';
 import {
   ArrowRight,
-  Boxes,
-  Building2,
-  CheckCircle2,
-  CircleDotDashed,
-  FolderGit2,
-  GitBranch,
+  Circle,
+  Folder,
   Github,
-  GitPullRequest,
-  Layers3,
+  Minus,
   Plus,
   RefreshCw,
-  Sparkles,
+  UserRound,
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import {
   Dialog,
   DialogBody,
@@ -31,20 +26,11 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
-import { cn } from '@/utils';
+import { ApiError } from '@/http/request';
 import { useT } from '@/i18n';
 import {
-  projectSpecForgeHref,
+  projectOverviewHref,
   slugFromProjectName,
 } from '@/features/project/project-utils';
 import {
@@ -56,74 +42,64 @@ import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-work
 import type { ProjectDTO } from '@/features/project/services/project-service';
 
 const minSlugLength = 2;
+const defaultProjectWorkspaceId = 'workspace_projects';
 
 export function ProjectConsole() {
+  const router = useRouter();
   const t = useT('dashboard.projectsConsole');
-  const [workspaceName, setWorkspaceName] = useState('');
-  const [workspaceSlug, setWorkspaceSlug] = useState('');
-  const [workspaceDescription, setWorkspaceDescription] = useState('');
-  const [workspaceError, setWorkspaceError] = useState('');
   const [name, setName] = useState('');
   const [slug, setSlug] = useState('');
   const [description, setDescription] = useState('');
   const [formError, setFormError] = useState('');
-  const [workspaceDialogOpen, setWorkspaceDialogOpen] = useState(false);
   const [projectDialogOpen, setProjectDialogOpen] = useState(false);
 
   const {
     workspacesQuery,
     workspaces,
     selectedWorkspaceId,
-    selectedWorkspace,
     setSelectedWorkspaceId,
   } = useSelectedWorkspace();
-  const projectsQuery = useProjects(selectedWorkspaceId);
+  const projectWorkspaceId = useMemo(() => {
+    const defaultWorkspace = workspaces.find(
+      workspace =>
+        workspace.workspace_id === defaultProjectWorkspaceId ||
+        workspace.slug === 'projects'
+    );
+    return defaultWorkspace?.workspace_id ?? selectedWorkspaceId;
+  }, [selectedWorkspaceId, workspaces]);
+  const projectsQuery = useProjects(projectWorkspaceId);
   const createWorkspace = useCreateWorkspace();
-  const createProject = useCreateProject(selectedWorkspaceId);
+  const createProject = useCreateProject(projectWorkspaceId);
+  const isCreating = createProject.isPending || createWorkspace.isPending;
 
-  const projects = useMemo(
-    () => projectsQuery.data?.projects ?? [],
-    [projectsQuery.data?.projects]
-  );
-
-  function handleWorkspaceNameChange(value: string) {
-    setWorkspaceName(value);
-    setWorkspaceSlug(current => (current ? current : slugFromProjectName(value)));
-  }
+  const projects = useMemo(() => projectsQuery.data?.projects ?? [], [projectsQuery.data?.projects]);
 
   function handleNameChange(value: string) {
     setName(value);
     setSlug(current => (current ? current : slugFromProjectName(value)));
   }
 
-  async function handleWorkspaceSubmit(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    setWorkspaceError('');
-    const trimmedName = workspaceName.trim();
-    const trimmedSlug = slugFromProjectName(workspaceSlug || workspaceName);
-    if (!trimmedName || !trimmedSlug) {
-      setWorkspaceError(t('messages.workspaceRequired'));
-      return;
+  async function resolveProjectWorkspaceId() {
+    if (projectWorkspaceId) {
+      if (projectWorkspaceId !== selectedWorkspaceId) {
+        setSelectedWorkspaceId(projectWorkspaceId);
+      }
+      return projectWorkspaceId;
     }
-    if (trimmedSlug.length < minSlugLength) {
-      setWorkspaceError(t('messages.slugInvalid'));
-      return;
+    const existingWorkspace =
+      workspaces.find(workspace => workspace.slug === 'projects')?.workspace_id ??
+      workspaces[0]?.workspace_id;
+    if (existingWorkspace) {
+      setSelectedWorkspaceId(existingWorkspace);
+      return existingWorkspace;
     }
-
-    try {
-      const response = await createWorkspace.mutateAsync({
-        name: trimmedName,
-        slug: trimmedSlug,
-        description: workspaceDescription.trim(),
-      });
-      setSelectedWorkspaceId(response.workspace.workspace_id);
-      setWorkspaceName('');
-      setWorkspaceSlug('');
-      setWorkspaceDescription('');
-      setWorkspaceDialogOpen(false);
-    } catch {
-      setWorkspaceError(t('messages.workspaceCreateFailed'));
-    }
+    const response = await createWorkspace.mutateAsync({
+      name: 'Projects',
+      slug: 'projects',
+      description: 'Default project container.',
+    });
+    setSelectedWorkspaceId(response.workspace.workspace_id);
+    return response.workspace.workspace_id;
   }
 
   async function handleSubmit(event: FormEvent<HTMLFormElement>) {
@@ -131,10 +107,6 @@ export function ProjectConsole() {
     setFormError('');
     const trimmedName = name.trim();
     const trimmedSlug = slugFromProjectName(slug || name);
-    if (!selectedWorkspaceId) {
-      setFormError(t('messages.selectWorkspaceFirst'));
-      return;
-    }
     if (!trimmedName || !trimmedSlug) {
       setFormError(t('messages.projectRequired'));
       return;
@@ -145,8 +117,9 @@ export function ProjectConsole() {
     }
 
     try {
-      await createProject.mutateAsync({
-        workspace_id: selectedWorkspaceId,
+      const workspaceId = await resolveProjectWorkspaceId();
+      const response = await createProject.mutateAsync({
+        workspace_id: workspaceId,
         name: trimmedName,
         slug: trimmedSlug,
         description: description.trim(),
@@ -155,46 +128,49 @@ export function ProjectConsole() {
       setSlug('');
       setDescription('');
       setProjectDialogOpen(false);
-    } catch {
+      router.push(projectOverviewHref(response.project.id));
+    } catch (error) {
+      if (error instanceof ApiError && error.status === 401) {
+        setFormError(t('messages.projectUnauthorized'));
+        return;
+      }
       setFormError(t('messages.projectCreateFailed'));
     }
   }
 
   return (
-    <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-6 md:px-8 md:py-8">
-      <header className="flex flex-col gap-4 border-b border-border-subtle pb-5 md:flex-row md:items-end md:justify-between">
+    <main className="mx-auto flex w-full max-w-6xl flex-col gap-6 px-4 py-6 md:px-8 md:py-10">
+      <header className="flex flex-col gap-5 md:flex-row md:items-end md:justify-between">
         <div className="min-w-0">
-          <div className="flex items-center gap-2 text-xs font-medium uppercase tracking-wide text-primary">
-            <Sparkles className="h-3.5 w-3.5" />
-            {t('eyebrow')}
-          </div>
-          <h1 className="mt-2 text-2xl font-semibold tracking-tight text-text-main md:text-3xl">
+          <h1 className="text-4xl font-semibold leading-[1.07] tracking-[-0.01em] text-text-main md:text-[56px]">
             {t('title')}
           </h1>
-          <p className="mt-2 max-w-2xl text-sm leading-6 text-text-muted">{t('description')}</p>
+          <p className="mt-3 max-w-2xl text-[17px] leading-[1.47] tracking-[-0.01em] text-text-subtle">
+            {t('description')}
+          </p>
         </div>
-        <div className="flex flex-col gap-2 sm:flex-row">
+        <div className="flex flex-wrap gap-2">
           <Button
             type="button"
             variant="outline"
             onClick={() => {
               workspacesQuery.refetch();
-              if (selectedWorkspaceId) {
+              if (projectWorkspaceId) {
                 projectsQuery.refetch();
               }
             }}
             disabled={workspacesQuery.isFetching || projectsQuery.isFetching}
           >
+            <RefreshCw className="mr-1.5 h-4 w-4" />
             {workspacesQuery.isFetching || projectsQuery.isFetching
               ? t('actions.refreshing')
               : t('actions.refresh')}
-            <RefreshCw className="ml-1.5 h-4 w-4" />
           </Button>
           <Dialog open={projectDialogOpen} onOpenChange={setProjectDialogOpen}>
             <DialogTrigger asChild>
-              <Button type="button" disabled={!selectedWorkspaceId}>
+              <Button type="button" disabled={isCreating}>
+                <Plus className="mr-1.5 h-4 w-4" />
                 {t('actions.newProject')}
-                <Plus className="ml-1.5 h-4 w-4" />
               </Button>
             </DialogTrigger>
             <ProjectDialogContent
@@ -203,8 +179,7 @@ export function ProjectConsole() {
               slug={slug}
               description={description}
               formError={formError}
-              selectedWorkspaceId={selectedWorkspaceId}
-              isPending={createProject.isPending}
+              isPending={isCreating}
               onSubmit={handleSubmit}
               onNameChange={handleNameChange}
               onSlugChange={setSlug}
@@ -214,330 +189,40 @@ export function ProjectConsole() {
         </div>
       </header>
 
-      <section className="grid gap-2 rounded-xl border border-border-subtle bg-background/80 p-2 shadow-xs sm:grid-cols-2 xl:grid-cols-4">
-        <StatusPill
-          label={t('metrics.workspaces.label')}
-          value={workspaces.length}
-          caption={t('metrics.workspaces.caption')}
-          icon={<Building2 className="h-4 w-4" />}
-        />
-        <StatusPill
-          label={t('metrics.projects.label')}
-          value={projects.length}
-          caption={t('metrics.projects.caption')}
-          icon={<FolderGit2 className="h-4 w-4" />}
-        />
-        <StatusPill
-          label={t('metrics.workspace.label')}
-          value={selectedWorkspace?.slug ?? t('metrics.workspace.empty')}
-          caption={selectedWorkspace?.name ?? t('metrics.workspace.caption')}
-          icon={<Layers3 className="h-4 w-4" />}
-        />
-        <StatusPill
-          label={t('metrics.api.label')}
-          value={workspacesQuery.isError ? t('badges.apiUnavailable') : t('badges.liveApi')}
-          caption={t('metrics.api.caption')}
-          icon={
-            workspacesQuery.isError ? (
-              <CircleDotDashed className="h-4 w-4" />
-            ) : (
-              <CheckCircle2 className="h-4 w-4" />
-            )
-          }
-          tone={workspacesQuery.isError ? 'danger' : 'success'}
-        />
-      </section>
-
-      <Card className="gap-0 overflow-hidden border-border-subtle bg-background/95 py-0 shadow-xs">
-        <CardContent className="p-0">
-          <div className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex min-w-0 items-start gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-bg-subtle text-primary">
-                <Building2 className="h-4.5 w-4.5" />
-              </div>
-              <div className="min-w-0">
-                <div className="text-sm font-semibold text-text-main">{t('workspace.title')}</div>
-                <p className="mt-1 text-sm leading-6 text-text-muted">{t('workspace.description')}</p>
-              </div>
-            </div>
-            <div className="flex flex-col gap-2 sm:flex-row md:min-w-[420px]">
-              {workspaces.length > 0 ? (
-                <Select value={selectedWorkspaceId} onValueChange={setSelectedWorkspaceId}>
-                  <SelectTrigger className="w-full bg-background sm:min-w-[260px]">
-                    <SelectValue placeholder={t('workspace.selectPlaceholder')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {workspaces.map(workspace => (
-                      <SelectItem key={workspace.workspace_id} value={workspace.workspace_id}>
-                        {workspace.name} ({workspace.slug})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <div className="rounded-md border border-dashed border-border-subtle bg-muted/20 px-3 py-2 text-sm text-text-muted">
-                  {t('workspace.empty')}
-                </div>
-              )}
-              <Dialog open={workspaceDialogOpen} onOpenChange={setWorkspaceDialogOpen}>
-                <DialogTrigger asChild>
-                  <Button type="button" variant="outline">
-                    {t('actions.newWorkspace')}
-                    <Plus className="ml-1.5 h-4 w-4" />
-                  </Button>
-                </DialogTrigger>
-                <WorkspaceDialogContent
-                  t={t}
-                  workspaceName={workspaceName}
-                  workspaceSlug={workspaceSlug}
-                  workspaceDescription={workspaceDescription}
-                  workspaceError={workspaceError}
-                  isPending={createWorkspace.isPending}
-                  onSubmit={handleWorkspaceSubmit}
-                  onNameChange={handleWorkspaceNameChange}
-                  onSlugChange={setWorkspaceSlug}
-                  onDescriptionChange={setWorkspaceDescription}
-                />
-              </Dialog>
-            </div>
+      <section className="overflow-hidden rounded-[var(--radius-card)] border border-border-subtle bg-bg-surface">
+        {workspacesQuery.isLoading || projectsQuery.isFetching ? (
+          <div className="p-8 text-sm text-text-muted">{t('projects.loading')}</div>
+        ) : projects.length > 0 ? (
+          <div className="divide-y divide-border-subtle">
+            {projects.map(project => (
+              <ProjectRow key={`${project.id}-${project.slug}`} project={project} t={t} />
+            ))}
           </div>
-          {selectedWorkspace && (
-            <div className="border-t border-border-subtle bg-bg-subtle/70 px-4 py-3">
-              <div className="flex flex-col gap-2 text-sm md:flex-row md:items-center md:justify-between">
-                <div className="min-w-0">
-                  <span className="font-medium text-text-main">{selectedWorkspace.name}</span>
-                  <span className="mx-2 text-text-muted">/</span>
-                  <span className="font-mono text-xs text-text-muted">{selectedWorkspace.slug}</span>
-                </div>
-                <div className="font-mono text-xs text-text-muted">
-                  {t('workspace.id', { id: selectedWorkspace.workspace_id })}
-                </div>
+        ) : (
+          <div className="flex min-h-[300px] flex-col items-center justify-center gap-4 p-8 text-center">
+            <div className="flex h-14 w-14 items-center justify-center rounded-[var(--radius-card)] bg-bg-subtle text-text-main">
+              <Folder className="h-6 w-6" />
+            </div>
+            <div>
+              <div className="text-sm font-medium text-text-main">
+                {t('projects.emptyForWorkspace')}
               </div>
-              <p className="mt-2 text-sm leading-6 text-text-muted">
-                {selectedWorkspace.description || t('workspace.noDescription')}
+              <p className="mt-1 max-w-md text-sm leading-6 text-text-muted">
+                {t('projects.emptyDescription')}
               </p>
             </div>
-          )}
-        </CardContent>
-      </Card>
-
-      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
-        <Card className="gap-0 overflow-hidden border-border-subtle py-0 shadow-xs">
-          <CardHeader className="flex flex-col gap-3 border-b border-border-subtle bg-background/95 p-5 md:flex-row md:items-center md:justify-between">
-            <div>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <Boxes className="h-4 w-4 text-primary" />
-                {t('projects.title')}
-              </CardTitle>
-              <CardDescription className="mt-1">{t('projects.description')}</CardDescription>
-            </div>
-            <Badge variant="outline" className="w-fit">
-              {t('projects.count', { count: projects.length })}
-            </Badge>
-          </CardHeader>
-          <CardContent className="p-0">
-            {projectsQuery.isFetching ? (
-              <div className="p-5 text-sm text-text-muted">{t('projects.loading')}</div>
-            ) : projects.length > 0 ? (
-              <div className="divide-y divide-border-subtle">
-                {projects.map(project => (
-                  <ProjectRow key={`${project.id}-${project.slug}`} project={project} t={t} />
-                ))}
-              </div>
-            ) : (
-              <div className="flex min-h-[220px] flex-col items-center justify-center gap-3 p-8 text-center">
-                <div className="flex h-11 w-11 items-center justify-center rounded-full border border-dashed border-border-subtle bg-bg-subtle text-primary">
-                  <FolderGit2 className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="text-sm font-medium text-text-main">
-                    {selectedWorkspaceId
-                      ? t('projects.emptyForWorkspace')
-                      : t('projects.selectWorkspace')}
-                  </div>
-                  <p className="mt-1 max-w-md text-sm leading-6 text-text-muted">
-                    {t('projects.emptyDescription')}
-                  </p>
-                </div>
-                <Button
-                  type="button"
-                  variant="outline"
-                  disabled={!selectedWorkspaceId}
-                  onClick={() => setProjectDialogOpen(true)}
-                >
-                  {t('actions.newProject')}
-                  <ArrowRight className="ml-1.5 h-4 w-4" />
-                </Button>
-              </div>
-            )}
-          </CardContent>
-        </Card>
-
-        <aside className="min-w-0 space-y-5">
-          <Card className="gap-0 overflow-hidden border-border-subtle py-0 shadow-xs">
-            <CardHeader>
-              <CardTitle className="flex items-center gap-2 text-base">
-                <GitPullRequest className="h-4 w-4 text-primary" />
-                {t('setup.title')}
-              </CardTitle>
-              <CardDescription>{t('setup.description')}</CardDescription>
-            </CardHeader>
-            <CardContent className="space-y-3">
-              <SetupStep
-                index="01"
-                icon={<Boxes className="h-4 w-4" />}
-                title={t('setup.steps.project.title')}
-                description={t('setup.steps.project.description')}
-              />
-              <SetupStep
-                index="02"
-                icon={<Github className="h-4 w-4" />}
-                title={t('setup.steps.github.title')}
-                description={t('setup.steps.github.description')}
-              />
-              <SetupStep
-                index="03"
-                icon={<GitPullRequest className="h-4 w-4" />}
-                title={t('setup.steps.delivery.title')}
-                description={t('setup.steps.delivery.description')}
-              />
-              <Separator />
-              <div className="grid gap-2">
-                <Button asChild variant="outline" className="w-full justify-between">
-                  <Link href="/console/settings?tab=github">
-                    <span className="inline-flex items-center gap-2">
-                      <Github className="h-4 w-4" />
-                      {t('actions.configureGitHub')}
-                    </span>
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
-                </Button>
-                <Button asChild variant="outline" className="w-full justify-between">
-                  <Link href="/console/agents">
-                    <span className="inline-flex items-center gap-2">
-                      <Sparkles className="h-4 w-4" />
-                      {t('actions.openAgents')}
-                    </span>
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
-                </Button>
-              </div>
-            </CardContent>
-          </Card>
-        </aside>
-      </div>
-    </div>
-  );
-}
-
-function StatusPill({
-  label,
-  value,
-  caption,
-  icon,
-  tone = 'default',
-}: {
-  label: string;
-  value: string | number;
-  caption: string;
-  icon: ReactNode;
-  tone?: 'default' | 'success' | 'danger';
-}) {
-  return (
-    <div className="flex items-center gap-3 rounded-lg px-3 py-2 transition-colors hover:bg-bg-subtle">
-      <div
-        className={cn(
-          'flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border-subtle bg-bg-subtle text-text-muted',
-          tone === 'success' && 'border-success/25 bg-success/5 text-success',
-          tone === 'danger' && 'border-error/25 bg-error/5 text-error'
+            <Button
+              type="button"
+              disabled={isCreating}
+              onClick={() => setProjectDialogOpen(true)}
+            >
+              <Plus className="mr-1.5 h-4 w-4" />
+              {t('actions.newProject')}
+            </Button>
+          </div>
         )}
-      >
-        {icon}
-      </div>
-      <div className="min-w-0">
-        <div className="text-xs font-medium uppercase tracking-wide text-text-muted">{label}</div>
-        <div className="flex min-w-0 items-baseline gap-2">
-          <span className="truncate text-sm font-semibold text-text-main">{value}</span>
-          <span className="truncate text-xs text-text-muted">{caption}</span>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function WorkspaceDialogContent({
-  t,
-  workspaceName,
-  workspaceSlug,
-  workspaceDescription,
-  workspaceError,
-  isPending,
-  onSubmit,
-  onNameChange,
-  onSlugChange,
-  onDescriptionChange,
-}: {
-  t: (key: string, values?: Record<string, string | number | Date>) => string;
-  workspaceName: string;
-  workspaceSlug: string;
-  workspaceDescription: string;
-  workspaceError: string;
-  isPending: boolean;
-  onSubmit: (event: FormEvent<HTMLFormElement>) => void;
-  onNameChange: (value: string) => void;
-  onSlugChange: (value: string) => void;
-  onDescriptionChange: (value: string) => void;
-}) {
-  return (
-    <DialogContent>
-      <DialogHeader>
-        <DialogTitle>{t('newWorkspace.title')}</DialogTitle>
-        <DialogDescription>{t('newWorkspace.description')}</DialogDescription>
-      </DialogHeader>
-      <DialogBody>
-        <form className="space-y-4 pb-1" onSubmit={onSubmit}>
-          <div className="space-y-2">
-            <Label htmlFor="workspace-name">{t('fields.name')}</Label>
-            <Input
-              id="workspace-name"
-              value={workspaceName}
-              onChange={event => onNameChange(event.target.value)}
-              placeholder="Acme Platform"
-            />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="workspace-slug">{t('fields.slug')}</Label>
-            <Input
-              id="workspace-slug"
-              value={workspaceSlug}
-              onChange={event => onSlugChange(slugFromProjectName(event.target.value))}
-              placeholder="acme-platform"
-              minLength={minSlugLength}
-            />
-            <p className="text-xs leading-5 text-text-muted">{t('fields.slugHelp')}</p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="workspace-description">{t('fields.description')}</Label>
-            <Textarea
-              id="workspace-description"
-              value={workspaceDescription}
-              onChange={event => onDescriptionChange(event.target.value)}
-              placeholder={t('newWorkspace.descriptionPlaceholder')}
-              rows={3}
-            />
-          </div>
-          {workspaceError && (
-            <div className="rounded-lg border border-error/30 bg-error-subtle p-3 text-sm leading-5 text-error">
-              {workspaceError}
-            </div>
-          )}
-          <Button type="submit" className="w-full" disabled={isPending}>
-            {isPending ? t('actions.creating') : t('actions.createWorkspace')}
-            <ArrowRight className="ml-1.5 h-4 w-4" />
-          </Button>
-        </form>
-      </DialogBody>
-    </DialogContent>
+      </section>
+    </main>
   );
 }
 
@@ -547,7 +232,6 @@ function ProjectDialogContent({
   slug,
   description,
   formError,
-  selectedWorkspaceId,
   isPending,
   onSubmit,
   onNameChange,
@@ -559,7 +243,6 @@ function ProjectDialogContent({
   slug: string;
   description: string;
   formError: string;
-  selectedWorkspaceId: string;
   isPending: boolean;
   onSubmit: (event: FormEvent<HTMLFormElement>) => void;
   onNameChange: (value: string) => void;
@@ -567,91 +250,80 @@ function ProjectDialogContent({
   onDescriptionChange: (value: string) => void;
 }) {
   return (
-    <DialogContent>
-      <DialogHeader>
-        <DialogTitle>{t('newProject.title')}</DialogTitle>
-        <DialogDescription>{t('newProject.description')}</DialogDescription>
+    <DialogContent
+      size="xl"
+      className="min-h-[620px] gap-0 overflow-hidden rounded-[var(--radius-card)] border-border-subtle bg-bg-surface p-0 shadow-xl"
+    >
+      <DialogHeader className="border-b border-border-subtle px-6 py-5 text-left">
+        <DialogTitle className="flex items-center gap-2 text-base font-medium text-text-main">
+          <span>{t('newProject.title')}</span>
+        </DialogTitle>
+        <DialogDescription className="sr-only">{t('newProject.description')}</DialogDescription>
       </DialogHeader>
-      <DialogBody>
-        <form className="space-y-4 pb-1" onSubmit={onSubmit}>
-          <div className="space-y-2">
-            <Label htmlFor="project-name">{t('fields.name')}</Label>
+      <DialogBody className="mx-0 flex min-h-0 flex-1 flex-col overflow-hidden px-0">
+        <form className="flex min-h-0 flex-1 flex-col" onSubmit={onSubmit}>
+          <div className="flex-1 px-6 py-8">
+            <div
+              className="mb-6 flex h-12 w-12 items-center justify-center rounded-[16px] bg-bg-subtle text-text-main"
+              aria-hidden="true"
+            >
+              <Folder className="h-7 w-7" />
+            </div>
             <Input
-              id="project-name"
+              aria-label={t('fields.name')}
               value={name}
               onChange={event => onNameChange(event.target.value)}
-              placeholder="CodingCTO"
-              disabled={!selectedWorkspaceId}
+              placeholder={t('newProject.titlePlaceholder')}
+              disabled={isPending}
+              className="h-auto border-0 bg-transparent px-0 text-4xl font-bold leading-tight text-text-main shadow-none outline-none placeholder:text-text-muted focus-visible:ring-0"
             />
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="project-slug">{t('fields.slug')}</Label>
             <Input
-              id="project-slug"
+              aria-label={t('fields.slug')}
               value={slug}
               onChange={event => onSlugChange(slugFromProjectName(event.target.value))}
-              placeholder="codingcto"
-              disabled={!selectedWorkspaceId}
+              placeholder="project-slug"
+              disabled={isPending}
               minLength={minSlugLength}
+              className="mt-1 h-auto border-0 bg-transparent px-0 font-mono text-xs text-text-muted shadow-none outline-none placeholder:text-text-muted/70 focus-visible:ring-0"
             />
-            <p className="text-xs leading-5 text-text-muted">{t('fields.slugHelp')}</p>
-          </div>
-          <div className="space-y-2">
-            <Label htmlFor="project-description">{t('fields.description')}</Label>
             <Textarea
-              id="project-description"
+              aria-label={t('fields.description')}
               value={description}
               onChange={event => onDescriptionChange(event.target.value)}
               placeholder={t('newProject.descriptionPlaceholder')}
-              rows={4}
-              disabled={!selectedWorkspaceId}
+              rows={8}
+              disabled={isPending}
+              className="mt-5 min-h-[240px] resize-none border-0 bg-transparent px-0 text-lg leading-8 text-text-main shadow-none outline-none placeholder:text-text-muted focus-visible:ring-0"
             />
+            {formError ? (
+              <div className="mt-4 rounded-md border border-error/30 bg-error-subtle p-3 text-sm leading-5 text-error">
+                {formError}
+              </div>
+            ) : null}
           </div>
-          {formError && (
-            <div className="rounded-lg border border-error/30 bg-error-subtle p-3 text-sm leading-5 text-error">
-              {formError}
+          <div className="flex flex-col gap-3 border-t border-border-subtle bg-bg-subtle px-6 py-4 md:flex-row md:items-center md:justify-between">
+            <div className="flex flex-wrap gap-2">
+              <MetaChip icon={<Circle className="h-3.5 w-3.5 fill-current" />} label={t('newProject.statusPlanned')} />
+              <MetaChip icon={<Minus className="h-3.5 w-3.5" />} label={t('newProject.noPriority')} />
+              <MetaChip icon={<UserRound className="h-3.5 w-3.5" />} label={t('newProject.ownerLead')} />
+              <MetaChip icon={<Github className="h-3.5 w-3.5" />} label={t('newProject.repositories')} />
             </div>
-          )}
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={!selectedWorkspaceId || isPending}
-          >
-            {isPending ? t('actions.creating') : t('actions.createProject')}
-            <ArrowRight className="ml-1.5 h-4 w-4" />
-          </Button>
+            <Button type="submit" disabled={isPending || !name.trim()}>
+              {isPending ? t('actions.creating') : t('actions.createProject')}
+            </Button>
+          </div>
         </form>
       </DialogBody>
     </DialogContent>
   );
 }
 
-function SetupStep({
-  index,
-  icon,
-  title,
-  description,
-}: {
-  index: string;
-  icon: ReactNode;
-  title: string;
-  description: string;
-}) {
+function MetaChip({ icon, label }: { icon: ReactNode; label: string }) {
   return (
-    <div className="rounded-lg border border-border-subtle bg-bg-surface p-3">
-      <div className="flex gap-3">
-        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border-subtle bg-bg-subtle text-primary">
-          {icon}
-        </div>
-        <div className="min-w-0">
-        <div className="flex items-center gap-2 text-sm font-medium text-text-main">
-          <span className="font-mono text-xs text-text-muted">{index}</span>
-          <span className="break-words">{title}</span>
-        </div>
-        <p className="mt-1 text-sm leading-6 text-text-muted">{description}</p>
-        </div>
-      </div>
-    </div>
+    <span className="inline-flex h-9 items-center gap-2 rounded-full border border-border-subtle bg-bg-surface px-3 text-sm font-medium text-text-main shadow-none">
+      <span className="text-text-muted">{icon}</span>
+      {label}
+    </span>
   );
 }
 
@@ -663,42 +335,36 @@ function ProjectRow({
   t: (key: string, values?: Record<string, string | number | Date>) => string;
 }) {
   return (
-    <div className="group flex flex-col gap-4 p-4 transition-colors hover:bg-bg-subtle/70 md:flex-row md:items-center md:justify-between">
-      <div className="min-w-0">
-        <div className="flex items-start gap-3">
-          <div className="mt-0.5 flex h-9 w-9 shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-background text-primary">
-            <Boxes className="h-4.5 w-4.5" />
-          </div>
-          <div className="min-w-0">
+    <Link
+      href={projectOverviewHref(project.id)}
+      className="group grid gap-3 p-5 transition-colors hover:bg-bg-subtle/70 md:grid-cols-[minmax(0,1fr)_auto] md:items-center"
+    >
+      <div className="flex min-w-0 items-start gap-3">
+        <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[16px] bg-bg-subtle text-text-main">
+          <Folder className="h-5 w-5" />
+        </div>
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
             <h2 className="truncate text-sm font-semibold text-text-main">{project.name}</h2>
-            <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-text-muted">
-              <span className="font-mono">{project.slug}</span>
-              <span>·</span>
-              <span>{project.description || t('projects.noDescription')}</span>
-            </div>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <Badge
-                variant="outline"
-                className={cn(project.status === 'active' && 'border-success/25 text-success')}
-              >
-                {project.status === 'active'
-                  ? t('projects.status.active')
-                  : t('projects.status.inactive')}
-              </Badge>
-              <Badge variant="outline">
-                <GitBranch className="mr-1 h-3.5 w-3.5" />
-                {t('projects.primaryRepoRequired')}
-              </Badge>
-            </div>
+            <Badge
+              variant="outline"
+              className={project.status === 'active' ? 'border-success/25 text-success' : ''}
+            >
+              {project.status === 'active'
+                ? t('projects.status.active')
+                : t('projects.status.inactive')}
+            </Badge>
           </div>
+          <p className="mt-1 line-clamp-2 text-sm leading-6 text-text-muted">
+            {project.description || t('projects.noDescription')}
+          </p>
+          <div className="mt-2 font-mono text-xs text-text-muted">{project.slug}</div>
         </div>
       </div>
-      <Button asChild variant="outline" className="shrink-0 md:opacity-85 md:transition-opacity md:group-hover:opacity-100">
-        <Link href={projectSpecForgeHref(project.id)}>
-          {t('actions.openCodingCTO')}
-          <GitPullRequest className="ml-1.5 h-4 w-4" />
-        </Link>
-      </Button>
-    </div>
+      <div className="flex items-center gap-2 text-sm text-text-muted md:opacity-0 md:transition-opacity md:group-hover:opacity-100">
+        {t('actions.openProject')}
+        <ArrowRight className="h-4 w-4" />
+      </div>
+    </Link>
   );
 }

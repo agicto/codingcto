@@ -373,17 +373,23 @@ const messages = {
   specForge: {
     demoIdea: '添加团队邀请流程。工作区管理员可以通过邮箱邀请成员，受邀用户通过安全链接接受邀请。',
     header: {
-      title: '项目指挥台',
-      description: '从需求到计划、提示词、Codex 执行和 PR 交付',
+      title: 'PR 交付流程',
+      description: '把一个需求变成可审批计划、Codex 执行和可评审 PR',
       activeRuns: '{count} 个运行中',
-      analyzeRepo: '分析仓库',
-      manualPlan: '手动计划',
-      pipeline: '流水线',
+      analyzeRepo: '仓库上下文',
+      manualPlan: '计划评审',
+      pipeline: 'PR 流程',
+    },
+    workflow: {
+      requirement: '写清需求',
+      repository: '读取仓库上下文',
+      plan: '审批计划',
+      delivery: '执行并交付 PR',
     },
     tabs: {
-      allWork: '全部工作',
+      allWork: '需求',
       plans: '计划',
-      runs: '运行',
+      runs: '执行',
     },
     progress: {
       awaiting: '等待计划审批；{reason}',
@@ -408,15 +414,15 @@ const messages = {
     },
     stages: {
       intake: {
-        title: '需求录入',
+        title: '需求',
         empty: '等待需求',
-        itemTitle: '捕获产品意图',
+        itemTitle: '写清需求',
         itemDescription: '描述功能目标、约束和验收边界。',
       },
       context: {
-        title: '仓库理解',
+        title: '仓库',
         empty: '未选择仓库',
-        itemTitle: '分析仓库和技能',
+        itemTitle: '读取仓库上下文',
       },
       planning: {
         title: '计划',
@@ -431,7 +437,7 @@ const messages = {
       execution: {
         title: '执行',
         empty: '尚未开始运行',
-        itemTitle: '运行 Codex 并交付 PR',
+        itemTitle: '运行 Codex',
       },
       delivery: {
         title: 'PR 交付',
@@ -477,8 +483,8 @@ const messages = {
   },
   projectsConsole: {
     eyebrow: '项目控制台',
-    title: '把项目组织成可执行的交付入口',
-    description: '选择工作区，整理项目边界，再把 GitHub 仓库、提示词和 PR 执行连接到同一条 CodingCTO 流程。',
+    title: '项目',
+    description: '创建项目，补一句描述；准备好之后再进入项目连接仓库。',
     badges: {
       enterprise: '企业工作区',
       apiUnavailable: 'API 不可用',
@@ -493,6 +499,7 @@ const messages = {
       createWorkspace: '创建工作区',
       createProject: '创建项目',
       openCodingCTO: '打开 CodingCTO',
+      openProject: '打开项目',
       configureGitHub: '配置 GitHub',
       openAgents: '查看智能体',
     },
@@ -533,10 +540,10 @@ const messages = {
       title: '交付项目',
       description: '每个项目都应该绑定主仓库，并沉淀为后续计划、执行和评审的上下文。',
       count: '{count} 个项目',
-      loading: '正在从所选工作区加载项目...',
-      emptyForWorkspace: '当前工作区暂无项目。创建项目后即可开始绑定仓库。',
-      selectWorkspace: '请选择或创建工作区以列出项目。',
-      emptyDescription: '项目创建完成后，可进入 CodingCTO 交付板绑定 GitHub 仓库并生成执行计划。',
+      loading: '正在加载项目...',
+      emptyForWorkspace: '暂无项目。创建项目后即可开始绑定仓库。',
+      selectWorkspace: '暂无项目。',
+      emptyDescription: '项目创建完成后，可进入项目绑定 GitHub 仓库并生成执行计划。',
       noDescription: '暂无描述。',
       primaryRepoRequired: '需要主仓库',
       status: {
@@ -552,7 +559,12 @@ const messages = {
     newProject: {
       title: '新建项目',
       description: '先定义产品或系统边界，再进入项目交付板绑定 GitHub 仓库。',
+      titlePlaceholder: '项目标题',
       descriptionPlaceholder: '这个项目代表哪个产品或系统？',
+      statusPlanned: 'Planned',
+      noPriority: 'No priority',
+      ownerLead: 'Lead',
+      repositories: 'Repos',
     },
     setup: {
       title: '推荐路径',
@@ -575,7 +587,9 @@ const messages = {
     messages: {
       workspaceRequired: '请填写工作区名称和标识。',
       workspaceCreateFailed: '工作区创建失败。请检查 API 连接和标识是否唯一。',
-      selectWorkspaceFirst: '请先创建或选择工作区，再创建项目。',
+      projectSpaceCreateFailed: '项目暂时还没准备好。请检查 API 连接后重试。',
+      selectWorkspaceFirst: '项目正在准备中，请稍后重试。',
+      projectUnauthorized: '创建项目需要后端登录态。请退出后重新登录，再重试。',
       projectRequired: '请填写项目名称和标识。',
       slugInvalid: '标识至少需要 2 个字符，请使用小写字母、数字或连字符。',
       projectCreateFailed: '项目创建失败。请检查 API 连接和标识是否唯一。',
@@ -605,6 +619,11 @@ const messages = {
       title: '绑定 GitHub 仓库',
       description: '使用“设置 > GitHub”创建的仓库 ID。主仓库可写入；依赖、文档和基础设施仓库会作为只读规划上下文。',
       repositoryId: '仓库 ID',
+      selectRepository: '选择仓库',
+      allRepositoriesBound: '已连接的仓库都已绑定。',
+      loadingRepositories: '正在加载已连接仓库...',
+      emptyRepositories: '还没有连接 GitHub 仓库。',
+      connectRepository: '连接 GitHub',
       role: '角色',
       binding: '绑定中',
       submit: '绑定仓库',

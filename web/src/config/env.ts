@@ -19,7 +19,7 @@ const envSchema = z.object({
   ),
 
   // Absolute app URL for metadata, sitemap, and robots generation
-  NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:3000'),
+  NEXT_PUBLIC_APP_URL: z.string().url().default('http://localhost:2020'),
 
   // Optional but sometimes required
   NEXT_PUBLIC_GA_MEASUREMENT_ID: z.string().optional(),
