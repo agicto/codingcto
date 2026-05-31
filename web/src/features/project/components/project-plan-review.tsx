@@ -3,7 +3,7 @@
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
-import { ArrowRight, GitPullRequest, ScrollText } from 'lucide-react';
+import { ArrowRight, CheckCircle2, Copy, GitPullRequest, ScrollText, Terminal } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -21,6 +21,10 @@ import {
 import { executionReadinessForExecutor } from '@/features/specforge/execution-readiness';
 import { PlanReview } from '@/features/specforge/components/workbench-plan';
 import { runtimeFromDTO } from '@/features/specforge/runtime-health';
+import {
+  buildRuntimeSetupCommand,
+  runtimeSetupChecklist,
+} from '@/features/specforge/runtime-setup';
 import {
   useApproveSpecForgePlan,
   useDispatchExecutionRun,
@@ -198,6 +202,11 @@ function ProjectPlanReview({
         </header>
 
         <PlanMetaCard plan={plan} runtimeCount={executionReadiness.healthyRuntimeCount} />
+        <RuntimeSetupCard
+          plan={plan}
+          readyRuntimeCount={executionReadiness.healthyRuntimeCount}
+          readinessReason={executionReadiness.reason}
+        />
 
         {message ? (
           <Alert>
@@ -221,6 +230,97 @@ function ProjectPlanReview({
         />
       </div>
     </main>
+  );
+}
+
+function RuntimeSetupCard({
+  plan,
+  readyRuntimeCount,
+  readinessReason,
+}: {
+  plan: PlanBundle;
+  readyRuntimeCount: number;
+  readinessReason: string;
+}) {
+  const [copyMessage, setCopyMessage] = useState('');
+  const runtimeId = `local-codex-plan-${plan.planId ?? 'draft'}`;
+  const command = buildRuntimeSetupCommand({
+    apiBaseUrl: 'http://localhost:8025/v1',
+    runtimeId,
+    repositoryId: plan.repoProfile.repositoryId,
+    repoDir: '/path/to/local/repo',
+    once: true,
+  });
+  const checklist = runtimeSetupChecklist({
+    repositoryId: plan.repoProfile.repositoryId,
+    readyRuntimeCount,
+  });
+
+  async function copyCommand() {
+    setCopyMessage('');
+    try {
+      await navigator.clipboard.writeText(command);
+      setCopyMessage('Copied runtime command.');
+    } catch {
+      setCopyMessage('Copy unavailable. Select the command manually.');
+    }
+  }
+
+  return (
+    <Card className="border-border-subtle shadow-xs">
+      <CardHeader className="space-y-2">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Terminal className="h-4 w-4 text-primary" />
+              Runtime setup
+            </CardTitle>
+            <CardDescription className="mt-1 leading-6">
+              {readinessReason} Use this one-cycle command to connect a local Codex runtime before
+              approving execution.
+            </CardDescription>
+          </div>
+          <Badge
+            variant="outline"
+            className={
+              readyRuntimeCount > 0
+                ? 'border-success/30 text-success'
+                : 'border-warning/30 text-warning'
+            }
+          >
+            {readyRuntimeCount > 0 ? `${readyRuntimeCount} ready` : 'Runtime required'}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,1.1fr)_minmax(320px,0.9fr)]">
+        <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+          <div className="text-sm font-medium text-text-main">Before Approve & Start</div>
+          <ul className="mt-3 space-y-2 text-sm leading-6 text-text-muted">
+            {checklist.map(item => (
+              <li key={item} className="flex gap-2">
+                <CheckCircle2 className="mt-1 h-3.5 w-3.5 shrink-0 text-primary" />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </div>
+        <div className="min-w-0">
+          <div className="flex items-center justify-between gap-2">
+            <div className="text-sm font-medium text-text-main">Local runtime command</div>
+            <Button type="button" variant="outline" size="sm" onClick={copyCommand}>
+              <Copy className="mr-1.5 h-3.5 w-3.5" />
+              Copy
+            </Button>
+          </div>
+          <pre className="mt-2 max-h-56 overflow-auto rounded-md border border-border-subtle bg-bg-surface p-3 text-xs leading-5 text-text-muted">
+            {command}
+          </pre>
+          {copyMessage ? (
+            <div className="mt-2 text-xs leading-5 text-text-muted">{copyMessage}</div>
+          ) : null}
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
