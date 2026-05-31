@@ -87,6 +87,23 @@ func (r *repository) FindLatestActiveExecutionBundleByPlanID(ctx context.Context
 	return r.FindExecutionBundleByRunID(ctx, runPO.ID)
 }
 
+func (r *repository) FindLatestExecutionBundleByPlanID(ctx context.Context, planID uint) (*domain.SpecForgeExecutionBundle, error) {
+	if planID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	var runPO ExecutionRunPO
+	if err := r.db.WithContext(ctx).
+		Where("plan_id = ?", planID).
+		Order("id DESC").
+		First(&runPO).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return r.FindExecutionBundleByRunID(ctx, runPO.ID)
+}
+
 func (r *repository) FindAgentTaskByID(ctx context.Context, taskID uint) (*domain.SpecForgeAgentTask, error) {
 	var po AgentTaskPO
 	if err := r.db.WithContext(ctx).First(&po, taskID).Error; err != nil {

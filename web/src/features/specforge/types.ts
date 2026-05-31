@@ -25,7 +25,7 @@ export interface ImplementationPlan {
   affectedAreas: string[];
   securityRisks: string[];
   migrationRisks: string[];
-  status: "draft" | "approved";
+  status: 'draft' | 'approved';
 }
 
 export interface PRNode {
@@ -34,10 +34,10 @@ export interface PRNode {
   nodeKey: string;
   order: number;
   title: string;
-  type: "foundation" | "backend" | "frontend" | "implementation" | "api" | "ui" | "verification";
+  type: 'foundation' | 'backend' | 'frontend' | 'implementation' | 'api' | 'ui' | 'verification';
   goal: string;
   dependsOn: string[];
-  estimatedRisk: "low" | "medium" | "high";
+  estimatedRisk: 'low' | 'medium' | 'high';
   expectedFiles: string[];
   nonGoals: string[];
   acceptanceCriteria: string[];
@@ -54,19 +54,19 @@ export interface PRNode {
   outputLog?: string;
   errorLog?: string;
   status:
-    | "planned"
-    | "queued"
-    | "running"
-    | "waiting_on_dependencies"
-    | "pr_opened"
-    | "ci_running"
-    | "ready_for_review"
-    | "blocked"
-    | "merged"
-    | "closed"
-    | "completed"
-    | "failed"
-    | "cancelled";
+    | 'planned'
+    | 'queued'
+    | 'running'
+    | 'waiting_on_dependencies'
+    | 'pr_opened'
+    | 'ci_running'
+    | 'ready_for_review'
+    | 'blocked'
+    | 'merged'
+    | 'closed'
+    | 'completed'
+    | 'failed'
+    | 'cancelled';
 }
 
 export interface PlanBundle {
@@ -82,19 +82,47 @@ export interface PlanBundle {
 
 export interface ExecutionRun {
   runId?: number;
-  status: "idle" | "queued" | "running" | "completed" | "blocked" | "cancelled";
+  status: 'idle' | 'queued' | 'running' | 'completed' | 'blocked' | 'cancelled';
   startedAt?: string;
   selectedPRNodeIds: string[];
   tasks: PRNode[];
 }
 
-export type RuntimeHealth = "online" | "recently_lost" | "offline" | "stale";
+export type RuntimeHealth = 'online' | 'recently_lost' | 'offline' | 'stale';
 
 export interface ExecutorRuntime {
   runtimeId: string;
   executor: string;
-  status: "online" | "offline" | string;
+  status: 'online' | 'offline' | string;
   hostname?: string;
   version?: string;
+  availableClis: ExecutorRuntimeCLI[];
+  sandbox?: ExecutorRuntimeSandbox;
+  skillRoots: ExecutorRuntimeSkillRoot[];
+  localSkillCount: number;
+  capabilitiesHash?: string;
   lastSeenAt?: string;
+}
+
+export interface ExecutorRuntimeCLI {
+  name: string;
+  command: string;
+  path?: string;
+  version?: string;
+  available: boolean;
+}
+
+export interface ExecutorRuntimeSandbox {
+  provider?: string;
+  mode?: string;
+  networkAccess: boolean;
+  writable: boolean;
+  approvalPolicy?: string;
+  reason?: string;
+}
+
+export interface ExecutorRuntimeSkillRoot {
+  provider: string;
+  path: string;
+  writable: boolean;
 }

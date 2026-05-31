@@ -8,14 +8,19 @@ type StartExecutionRunRequest struct {
 }
 
 type DispatchExecutionRunRequest struct {
-	MaxTasks int `json:"max_tasks" binding:"omitempty,min=1,max=20"`
+	MaxTasks            int  `json:"max_tasks" binding:"omitempty,min=1,max=20"`
+	RequireRuntimeReady bool `json:"require_runtime_ready" binding:"omitempty"`
 }
 
 type RuntimeHeartbeatRequest struct {
-	RuntimeID string `json:"runtime_id" binding:"required,max=100"`
-	Executor  string `json:"executor" binding:"omitempty,max=100"`
-	Hostname  string `json:"hostname" binding:"omitempty,max=255"`
-	Version   string `json:"version" binding:"omitempty,max=100"`
+	RuntimeID       string                             `json:"runtime_id" binding:"required,max=100"`
+	Executor        string                             `json:"executor" binding:"omitempty,max=100"`
+	Hostname        string                             `json:"hostname" binding:"omitempty,max=255"`
+	Version         string                             `json:"version" binding:"omitempty,max=100"`
+	AvailableCLIs   []domain.SpecForgeRuntimeCLI       `json:"available_clis" binding:"omitempty,max=20,dive"`
+	Sandbox         *domain.SpecForgeRuntimeSandbox    `json:"sandbox" binding:"omitempty"`
+	SkillRoots      []domain.SpecForgeRuntimeSkillRoot `json:"skill_roots" binding:"omitempty,max=20,dive"`
+	LocalSkillCount int                                `json:"local_skill_count" binding:"omitempty,min=0,max=10000"`
 }
 
 type RuntimeSweepRequest struct {

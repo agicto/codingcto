@@ -1,9 +1,11 @@
 'use client';
 
-import { useEffect, useMemo, useRef, useState } from 'react';
-import { useSearchParams } from 'next/navigation';
+import Link from 'next/link';
+import { startTransition, useEffect, useMemo, useRef, useState, type FormEvent } from 'react';
 import {
   ArrowRight,
+  Boxes,
+  Building2,
   CheckCircle2,
   CircleDot,
   CircleX,
@@ -26,10 +28,24 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import {
+  Select,
+  SelectContent,
+  SelectItem,
+  SelectTrigger,
+  SelectValue,
+} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { cn } from '@/utils';
+import { projectSpecForgeHref, slugFromProjectName } from '@/features/project/project-utils';
+import {
+  useCreateProject,
+  useCreateWorkspace,
+  useProjects,
+} from '@/features/project/hooks/use-projects';
+import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
 import {
   executionRunFromDTO,
   planBundleFromDTO,
@@ -58,8 +74,9 @@ import {
   useDeliverSpecForgePRNode,
   useDispatchExecutionRun,
   useExecutionRun,
-  useGitHubRepositories,
   useGitHubWebhookEvents,
+  useLatestPlanRun,
+  useLatestProjectPlan,
   useInferRepoProfile,
   usePrepareSpecForgePRNodeBranch,
   useRepoProfile,
@@ -97,6 +114,10 @@ import {
   executionRangeReview,
   selectExecutionNode,
 } from '@/features/specforge/execution-range';
+import {
+  executionReadinessForExecutor,
+  type ExecutionReadiness,
+} from '@/features/specforge/execution-readiness';
 import type {
   CompilePromptPayload,
   SpecForgeFixAttemptDTO,
@@ -238,13 +259,12 @@ export function SpecForgeWorkbench({
   projectLabel,
   repositoryLocked = false,
 }: SpecForgeWorkbenchProps = {}) {
-  const searchParams = useSearchParams();
   const initialRepoId = initialRepositoryId?.trim() || demoPlan.repoProfile.repositoryId;
-  const repoIdFromURL = searchParams.get('repo_id')?.trim();
-  const [idea, setIdea] = useState(defaultIdea);
-  const [repoIdOverride, setRepoIdOverride] = useState<string | null>(null);
+  const initialIdea = projectId ? '' : defaultIdea;
+  const [idea, setIdea] = useState(initialIdea);
+  const [repoId, setRepoId] = useState(initialRepoId);
   const [activePlan, setActivePlan] = useState<PlanBundle>(() =>
-    demoPlanForInput(defaultIdea, initialRepoId)
+    demoPlanForInput(initialIdea || defaultIdea, initialRepoId)
   );
   const activePlanRef = useRef(activePlan);
   const [decisionOverrides, setDecisionOverrides] = useState<Record<string, string>>(() =>
@@ -253,8 +273,10 @@ export function SpecForgeWorkbench({
   const [selectedExecutionNodeIds, setSelectedExecutionNodeIds] = useState<string[]>(() =>
     demoPlan.prNodes.map(node => node.id)
   );
-  const [planSource, setPlanSource] = useState<'api' | 'demo'>('demo');
-  const [hasPlan, setHasPlan] = useState(true);
+  const [planSource, setPlanSource] = useState<'api' | 'demo' | 'empty'>(
+    projectId ? 'empty' : 'demo'
+  );
+  const [hasPlan, setHasPlan] = useState(!projectId);
   const [approved, setApproved] = useState(false);
   const [run, setRun] = useState<ExecutionRun>({
     status: 'idle',
@@ -265,20 +287,6 @@ export function SpecForgeWorkbench({
     'intake' | 'plan' | 'dag' | 'run' | 'context'
   >('intake');
   const [currentRuntimeNow] = useState(() => Date.now());
-  const connectedRepositoriesQuery = useGitHubRepositories({ workspace_id: 'default' });
-  const connectedRepositories = useMemo(
-    () => connectedRepositoriesQuery.data?.repositories ?? [],
-    [connectedRepositoriesQuery.data?.repositories]
-  );
-  const repoId =
-    repoIdOverride ||
-    initialRepositoryId?.trim() ||
-    repoIdFromURL ||
-    connectedRepositories[0]?.repository_id ||
-    demoPlan.repoProfile.repositoryId;
-  const selectedGitHubRepository = connectedRepositories.find(
-    repository => repository.repository_id === repoId.trim()
-  );
 
   const createIdea = useCreateSpecForgeIdea(repoId.trim());
   const createProjectIdea = useCreateSpecForgeProjectIdea(projectId);
@@ -292,30 +300,48 @@ export function SpecForgeWorkbench({
     enabled: Boolean(run.runId),
     refetchInterval: run.status === 'queued' || run.status === 'running' ? 5000 : false,
   });
+  const latestProjectPlanQuery = useLatestProjectPlan(projectId);
+  const latestPlanRunQuery = useLatestPlanRun(activePlan.planId, {
+    enabled: Boolean(projectId && activePlan.planId && planSource === 'api' && !run.runId),
+    refetchInterval: false,
+  });
   const readyCount = run.tasks.filter(task => isPRNodeDelivered(task.status)).length;
   const runningCount = run.tasks.filter(task => isPRNodeActive(task.status)).length;
   const runtimesQuery = useSpecForgeRuntimes({ limit: 20 });
   const runtimeDTOs = runtimesQuery.data?.runtimes;
+  const useRuntimeFallback = !projectId && Boolean(runtimesQuery.isError || !runtimeDTOs?.length);
   const runtimes = useMemo(() => {
     if (runtimeDTOs?.length) {
       return runtimeDTOs.map(runtimeFromDTO);
     }
-    return demoRuntimes;
-  }, [runtimeDTOs]);
-  const runtimeNow = runtimeDTOs?.length ? currentRuntimeNow : demoRuntimeNow;
+    return useRuntimeFallback ? demoRuntimes : [];
+  }, [runtimeDTOs, useRuntimeFallback]);
+  const runtimeNow = runtimeDTOs?.length
+    ? currentRuntimeNow
+    : useRuntimeFallback
+      ? demoRuntimeNow
+      : currentRuntimeNow;
   const runtimeSummary = useMemo(
     () => summarizeRuntimeHealth(runtimes, runtimeNow),
     [runtimes, runtimeNow]
   );
+  const executionReadiness = useMemo(
+    () =>
+      executionReadinessForExecutor({
+        runtimes,
+        executor: 'codex_cli',
+        now: runtimeNow,
+        allowFallback: useRuntimeFallback,
+      }),
+    [runtimeNow, runtimes, useRuntimeFallback]
+  );
 
   const progressText = useMemo(() => {
     if (run.status === 'idle') {
-      return runtimeSummary.online > 0
-        ? 'Awaiting plan approval; a healthy executor is ready'
-        : 'Awaiting plan approval; no healthy executor is online';
+      return `Awaiting plan approval; ${executionReadiness.reason}`;
     }
     return `${readyCount} / ${run.tasks.length} PR nodes ready or merged`;
-  }, [readyCount, run.status, run.tasks.length, runtimeSummary.online]);
+  }, [executionReadiness.reason, readyCount, run.status, run.tasks.length]);
 
   useEffect(() => {
     activePlanRef.current = activePlan;
@@ -333,6 +359,40 @@ export function SpecForgeWorkbench({
     setRun(next.run);
     setApproved(true);
   }, [runQuery.data]);
+
+  useEffect(() => {
+    if (!projectId || !latestProjectPlanQuery.data) {
+      return;
+    }
+
+    startTransition(() => {
+      const nextPlan = planBundleFromDTO(latestProjectPlanQuery.data);
+      setActivePlan(nextPlan);
+      setDecisionOverrides(defaultDecisionOverrides(nextPlan));
+      setSelectedExecutionNodeIds(nextPlan.prNodes.map(node => node.id));
+      setIdea(nextPlan.idea);
+      setRepoId(nextPlan.repoProfile.repositoryId);
+      setPlanSource('api');
+      setHasPlan(true);
+      setApproved(nextPlan.implementationPlan.status === 'approved');
+      setRun({ status: 'idle', selectedPRNodeIds: [], tasks: nextPlan.prNodes });
+    });
+  }, [latestProjectPlanQuery.data, projectId]);
+
+  useEffect(() => {
+    if (!projectId || !latestPlanRunQuery.data) {
+      return;
+    }
+
+    startTransition(() => {
+      const next = executionRunFromDTO(latestPlanRunQuery.data, activePlanRef.current);
+      if (next.plan) {
+        setActivePlan(next.plan);
+      }
+      setRun(next.run);
+      setApproved(true);
+    });
+  }, [latestPlanRunQuery.data, projectId]);
 
   async function generatePlan() {
     const trimmedIdea = idea.trim();
@@ -359,6 +419,12 @@ export function SpecForgeWorkbench({
       setHasPlan(true);
       setRun({ status: 'idle', selectedPRNodeIds: [], tasks: nextPlan.prNodes });
     } catch {
+      if (projectId) {
+        setPlanSource('empty');
+        setHasPlan(false);
+        setRun({ status: 'idle', selectedPRNodeIds: [], tasks: [] });
+        return;
+      }
       const fallbackPlan = demoPlanForInput(trimmedIdea, trimmedRepoId);
       setActivePlan(fallbackPlan);
       setDecisionOverrides(defaultDecisionOverrides(fallbackPlan));
@@ -370,24 +436,18 @@ export function SpecForgeWorkbench({
   }
 
   function resetIdea() {
-    const defaultRepository = connectedRepositories[0];
-    const resetRepoId =
-      initialRepositoryId?.trim() ||
-      repoIdFromURL ||
-      defaultRepository?.repository_id ||
-      demoPlan.repoProfile.repositoryId;
-    setIdea(defaultIdea);
-    setRepoIdOverride(resetRepoId);
-    const resetPlan = demoPlanForInput(defaultIdea, resetRepoId);
-    resetPlan.repoProfile.defaultBranch =
-      defaultRepository?.default_branch ?? resetPlan.repoProfile.defaultBranch;
+    const resetRepoId = initialRepositoryId?.trim() || demoPlan.repoProfile.repositoryId;
+    const resetInput = projectId ? '' : defaultIdea;
+    setIdea(resetInput);
+    setRepoId(resetRepoId);
+    const resetPlan = demoPlanForInput(resetInput || defaultIdea, resetRepoId);
     setActivePlan(resetPlan);
     setDecisionOverrides(defaultDecisionOverrides(resetPlan));
-    setSelectedExecutionNodeIds(resetPlan.prNodes.map(node => node.id));
-    setPlanSource('demo');
-    setHasPlan(true);
+    setSelectedExecutionNodeIds(projectId ? [] : resetPlan.prNodes.map(node => node.id));
+    setPlanSource(projectId ? 'empty' : 'demo');
+    setHasPlan(!projectId);
     setApproved(false);
-    setRun({ status: 'idle', selectedPRNodeIds: [], tasks: resetPlan.prNodes });
+    setRun({ status: 'idle', selectedPRNodeIds: [], tasks: projectId ? [] : resetPlan.prNodes });
   }
 
   async function approveAndStart() {
@@ -422,6 +482,9 @@ export function SpecForgeWorkbench({
         });
         const dispatched = await dispatchRun.mutateAsync({
           runId: started.run.id,
+          payload: {
+            require_runtime_ready: true,
+          },
         });
         const next = executionRunFromDTO(dispatched, approvedPlan);
         if (next.plan) {
@@ -433,6 +496,10 @@ export function SpecForgeWorkbench({
       } catch {
         // Keep the workbench usable when the API is unavailable in local web-only dev.
       }
+    }
+
+    if (projectId) {
+      return;
     }
 
     const startedAt = new Date().toISOString();
@@ -560,7 +627,12 @@ export function SpecForgeWorkbench({
           key: 'CTX',
           title: 'Analyze repos and skills',
           description: `${activePlan.repoProfile.stack.slice(0, 3).join(', ')} · ${repoId}`,
-          status: planSource === 'api' ? 'API context' : 'Demo fallback',
+          status:
+            planSource === 'api'
+              ? 'API context'
+              : planSource === 'empty'
+                ? 'Awaiting plan'
+                : 'Demo fallback',
           icon: GitBranch,
         },
       ],
@@ -575,8 +647,10 @@ export function SpecForgeWorkbench({
           id: 'plan' as const,
           key: 'PLAN',
           title: 'Approve product and tech plan',
-          description: `${activePlan.prNodes.length} PR nodes · one approval checkpoint`,
-          status: approved ? 'Approved' : 'Needs review',
+          description: hasPlan
+            ? `${activePlan.prNodes.length} PR nodes · one approval checkpoint`
+            : 'Generate a project-scoped plan to continue',
+          status: hasPlan ? (approved ? 'Approved' : 'Needs review') : 'No plan',
           icon: ScrollText,
         },
         {
@@ -584,7 +658,7 @@ export function SpecForgeWorkbench({
           key: 'PROMPT',
           title: 'Compile PR DAG and prompts',
           description: 'Check dependencies, file scope, tests, and prompt contracts.',
-          status: `${activePlan.prNodes.length} nodes`,
+          status: hasPlan ? `${activePlan.prNodes.length} nodes` : 'No plan',
           icon: GitMerge,
         },
       ],
@@ -600,7 +674,7 @@ export function SpecForgeWorkbench({
           key: 'RUN',
           title: 'Run Codex and deliver PRs',
           description: progressText,
-          status: run.status === 'idle' ? 'Not started' : run.status,
+          status: hasPlan ? (run.status === 'idle' ? 'Not started' : run.status) : 'No plan',
           icon: Play,
         },
       ],
@@ -629,7 +703,8 @@ export function SpecForgeWorkbench({
           <div>
             <h1 className="text-base font-semibold">Project command center</h1>
             <p className="text-xs text-text-muted">
-              {projectLabel ? `${projectLabel} · ` : ''}Idea to plan, prompts, Codex run, and PR delivery
+              {projectLabel ? `${projectLabel} · ` : ''}Idea to plan, prompts, Codex run, and PR
+              delivery
             </p>
           </div>
         </div>
@@ -647,16 +722,24 @@ export function SpecForgeWorkbench({
         </div>
       </header>
 
+      {!projectId && <WorkspaceProjectLaunchPanel />}
+
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle px-4">
         <Button
-          variant={selectedWorkItem === 'intake' || selectedWorkItem === 'context' ? 'secondary' : 'outline'}
+          variant={
+            selectedWorkItem === 'intake' || selectedWorkItem === 'context'
+              ? 'secondary'
+              : 'outline'
+          }
           size="sm"
           onClick={() => setSelectedWorkItem('intake')}
         >
           All work
         </Button>
         <Button
-          variant={selectedWorkItem === 'plan' || selectedWorkItem === 'dag' ? 'secondary' : 'outline'}
+          variant={
+            selectedWorkItem === 'plan' || selectedWorkItem === 'dag' ? 'secondary' : 'outline'
+          }
           size="sm"
           onClick={() => setSelectedWorkItem('plan')}
         >
@@ -675,7 +758,10 @@ export function SpecForgeWorkbench({
         <div className="min-w-0 overflow-x-auto p-3">
           <div className="grid h-full min-w-[1320px] grid-cols-6 gap-3">
             {deliveryStages.map(column => (
-              <div key={column.id} className={cn('flex min-h-0 flex-col rounded-xl p-3', column.tone)}>
+              <div
+                key={column.id}
+                className={cn('flex min-h-0 flex-col rounded-xl p-3', column.tone)}
+              >
                 <div className="flex h-8 items-center justify-between text-sm">
                   <div className="flex items-center gap-2 font-medium">
                     <CircleDot className="h-3.5 w-3.5 text-text-muted" />
@@ -738,61 +824,14 @@ export function SpecForgeWorkbench({
                   aria-label="Describe the feature CodingCTO should turn into reviewable PRs"
                   placeholder="Describe the product outcome, constraints, and implementation boundaries..."
                 />
-                <div className="space-y-2">
-                  <div className="flex items-center justify-between gap-3">
-                    <Label htmlFor="specforge-repository">Repository</Label>
-                    {selectedGitHubRepository ? (
-                      <Badge
-                        variant="outline"
-                        className="border-success/30 bg-success-subtle text-success"
-                      >
-                        GitHub connected
-                      </Badge>
-                    ) : (
-                      <Badge
-                        variant="outline"
-                        className="border-warning/30 bg-warning-subtle text-warning"
-                      >
-                        Unverified
-                      </Badge>
-                    )}
-                  </div>
-                  {connectedRepositories.length > 0 && !repositoryLocked ? (
-                    <select
-                      id="specforge-repository"
-                      value={repoId}
-                      onChange={event => setRepoIdOverride(event.target.value)}
-                      className="h-10 w-full rounded-md border border-border bg-bg-surface px-3 text-sm text-text-main outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/20"
-                    >
-                      {connectedRepositories.map(repository => (
-                        <option key={repository.repository_id} value={repository.repository_id}>
-                          {repository.github_owner}/{repository.github_repo} ·{' '}
-                          {repository.default_branch}
-                        </option>
-                      ))}
-                      {!selectedGitHubRepository && repoId.trim() ? (
-                        <option value={repoId.trim()}>{repoId.trim()} · manual</option>
-                      ) : null}
-                    </select>
-                  ) : (
-                    <Input
-                      id="specforge-repository"
-                      value={repoId}
-                      onChange={event => setRepoIdOverride(event.target.value)}
-                      aria-label="Repository ID"
-                      placeholder="Connect a GitHub repository in settings first"
-                      disabled={repositoryLocked}
-                      className="bg-bg-surface"
-                    />
-                  )}
-                  <p className="text-xs leading-5 text-text-muted">
-                    {selectedGitHubRepository
-                      ? `Splitting, branches, commits, and PRs will target ${selectedGitHubRepository.github_owner}/${selectedGitHubRepository.github_repo}.`
-                      : connectedRepositoriesQuery.isLoading
-                        ? 'Loading connected repositories...'
-                        : 'Connect the GitHub App in settings so CodingCTO can operate on the selected repository.'}
-                  </p>
-                </div>
+                <Input
+                  value={repoId}
+                  onChange={event => setRepoId(event.target.value)}
+                  aria-label="Repository ID"
+                  placeholder="Repository ID"
+                  disabled={repositoryLocked}
+                  className="bg-bg-surface"
+                />
                 <div className="flex flex-wrap gap-2">
                   <Button
                     onClick={generatePlan}
@@ -844,11 +883,21 @@ export function SpecForgeWorkbench({
                 selectedExecutionNodeIds={selectedExecutionNodeIds}
                 approved={approved}
                 isStarting={isStartingRun}
+                executionReadiness={executionReadiness}
                 onDecisionOverrideChange={(key, value) =>
                   setDecisionOverrides(current => ({ ...current, [key]: value }))
                 }
                 onExecutionNodeSelectionChange={setSelectedExecutionNodeIds}
                 onApprove={approveAndStart}
+              />
+            </DetailPanel>
+          )}
+
+          {selectedWorkItem === 'plan' && !hasPlan && (
+            <DetailPanel title="PLAN" heading="No project plan yet">
+              <EmptyProjectPlanPanel
+                isLoading={latestProjectPlanQuery.isLoading}
+                onCreate={() => setSelectedWorkItem('intake')}
               />
             </DetailPanel>
           )}
@@ -864,6 +913,15 @@ export function SpecForgeWorkbench({
             </DetailPanel>
           )}
 
+          {selectedWorkItem === 'dag' && !hasPlan && (
+            <DetailPanel title="PROMPT" heading="No prompt contract yet">
+              <EmptyProjectPlanPanel
+                isLoading={latestProjectPlanQuery.isLoading}
+                onCreate={() => setSelectedWorkItem('intake')}
+              />
+            </DetailPanel>
+          )}
+
           {selectedWorkItem === 'run' && (
             <DetailPanel title="RUN" heading="Execution and PR delivery">
               <div className="space-y-4">
@@ -873,7 +931,8 @@ export function SpecForgeWorkbench({
                   recentlyLostCount={runtimeSummary.recently_lost}
                   runtimes={runtimes}
                   isLoading={runtimesQuery.isLoading}
-                  isFallback={Boolean(runtimesQuery.isError || !runtimeDTOs?.length)}
+                  isFallback={useRuntimeFallback}
+                  readinessReason={executionReadiness.reason}
                 />
                 <ExecutionStatus
                   run={run}
@@ -911,18 +970,49 @@ function DetailPanel({
   );
 }
 
+function EmptyProjectPlanPanel({
+  isLoading,
+  onCreate,
+}: {
+  isLoading: boolean;
+  onCreate: () => void;
+}) {
+  return (
+    <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
+      <div className="flex items-start gap-3">
+        <Info className="mt-0.5 h-4 w-4 text-primary" />
+        <div>
+          <div className="text-sm font-medium">
+            {isLoading ? 'Checking for existing project plans' : 'Create a real project plan'}
+          </div>
+          <p className="mt-1 text-sm leading-6 text-text-muted">
+            Project-scoped CodingCTO no longer falls back to demo work. Generate a requirement to
+            create the first backend-backed plan, prompt contract, and execution run for this
+            project.
+          </p>
+          <Button className="mt-3" size="sm" onClick={onCreate}>
+            Open idea intake
+          </Button>
+        </div>
+      </div>
+    </div>
+  );
+}
+
 function RuntimeReadiness({
   onlineCount,
   recentlyLostCount,
   runtimes,
   isLoading,
   isFallback,
+  readinessReason,
 }: {
   onlineCount: number;
   recentlyLostCount: number;
   runtimes: ExecutorRuntime[];
   isLoading: boolean;
   isFallback: boolean;
+  readinessReason: string;
 }) {
   const sweepRuntimes = useSweepSpecForgeRuntimes();
   const sweepTasks = useSweepSpecForgeTasks();
@@ -963,11 +1053,7 @@ function RuntimeReadiness({
           <div>
             <div className="text-sm font-medium">Executor readiness</div>
             <div className="mt-1 text-sm text-text-muted">
-              {isLoading
-                ? 'Checking executor runtime heartbeats.'
-                : onlineCount > 0
-                  ? 'Approved plans can be dispatched to a healthy runtime.'
-                  : 'Execution will wait until a runtime heartbeat is online.'}
+              {isLoading ? 'Checking executor runtime heartbeats.' : readinessReason}
             </div>
           </div>
         </div>
@@ -993,13 +1079,27 @@ function RuntimeReadiness({
           {runtimes.slice(0, 3).map(runtime => (
             <div
               key={runtime.runtimeId}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-border-subtle bg-bg-subtle px-3 py-2"
+              className="flex flex-wrap items-start justify-between gap-3 rounded-lg border border-border-subtle bg-bg-subtle px-3 py-2"
             >
               <div className="min-w-0">
                 <div className="truncate text-sm font-medium">{runtime.runtimeId}</div>
                 <div className="text-xs text-text-muted">
                   {runtime.executor}
                   {runtime.hostname ? ` · ${runtime.hostname}` : ''}
+                </div>
+                <div className="mt-2 flex flex-wrap gap-1.5">
+                  {runtime.availableClis
+                    .filter(cli => cli.available)
+                    .slice(0, 3)
+                    .map(cli => (
+                      <Badge key={`${cli.command}-${cli.path ?? 'path'}`} variant="outline">
+                        {runtimeCLILabel(cli.name, cli.version)}
+                      </Badge>
+                    ))}
+                  {runtime.sandbox?.mode ? (
+                    <Badge variant="outline">sandbox: {runtime.sandbox.mode}</Badge>
+                  ) : null}
+                  <Badge variant="outline">{runtime.localSkillCount} skills</Badge>
                 </div>
               </div>
               <Badge variant="outline">{runtime.status}</Badge>
@@ -1034,6 +1134,257 @@ function RuntimeReadiness({
   );
 }
 
+function runtimeCLILabel(name: string, version?: string): string {
+  const cleanName = name.trim() || 'CLI';
+  const cleanVersion = version?.trim();
+  if (!cleanVersion) {
+    return cleanName;
+  }
+  return `${cleanName}: ${cleanVersion.replace(cleanName, '').trim() || cleanVersion}`;
+}
+
+function WorkspaceProjectLaunchPanel() {
+  const [workspaceName, setWorkspaceName] = useState('');
+  const [workspaceSlug, setWorkspaceSlug] = useState('');
+  const [workspaceDescription, setWorkspaceDescription] = useState('');
+  const [projectName, setProjectName] = useState('');
+  const [projectSlug, setProjectSlug] = useState('');
+  const [projectDescription, setProjectDescription] = useState('');
+  const [message, setMessage] = useState('');
+
+  const {
+    workspacesQuery,
+    workspaces,
+    selectedWorkspaceId: effectiveWorkspaceId,
+    selectedWorkspace,
+    setSelectedWorkspaceId,
+  } = useSelectedWorkspace();
+  const projectsQuery = useProjects(effectiveWorkspaceId);
+  const projects = projectsQuery.data?.projects ?? [];
+  const createWorkspace = useCreateWorkspace();
+  const createProject = useCreateProject(effectiveWorkspaceId);
+
+  function updateWorkspaceName(value: string) {
+    setWorkspaceName(value);
+    setWorkspaceSlug(current => current || slugFromProjectName(value));
+  }
+
+  function updateProjectName(value: string) {
+    setProjectName(value);
+    setProjectSlug(current => current || slugFromProjectName(value));
+  }
+
+  async function createNewWorkspace(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = workspaceName.trim();
+    const slug = slugFromProjectName(workspaceSlug || workspaceName);
+    if (!name || !slug) {
+      setMessage('Workspace name and slug are required.');
+      return;
+    }
+    setMessage('');
+    try {
+      const response = await createWorkspace.mutateAsync({
+        name,
+        slug,
+        description: workspaceDescription.trim(),
+      });
+      setSelectedWorkspaceId(response.workspace.workspace_id);
+      setWorkspaceName('');
+      setWorkspaceSlug('');
+      setWorkspaceDescription('');
+      setMessage(`Workspace "${response.workspace.name}" created. Create or open a project next.`);
+    } catch {
+      setMessage('Workspace could not be created. Try another slug or check backend auth.');
+    }
+  }
+
+  async function createNewProject(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    const name = projectName.trim();
+    const slug = slugFromProjectName(projectSlug || projectName);
+    if (!effectiveWorkspaceId) {
+      setMessage('Create or select a workspace before creating a project.');
+      return;
+    }
+    if (!name || !slug) {
+      setMessage('Project name and slug are required.');
+      return;
+    }
+    setMessage('');
+    try {
+      const response = await createProject.mutateAsync({
+        workspace_id: effectiveWorkspaceId,
+        name,
+        slug,
+        description: projectDescription.trim(),
+      });
+      setProjectName('');
+      setProjectSlug('');
+      setProjectDescription('');
+      setMessage(
+        `Project "${response.project.name}" created. Open it to continue with Git binding.`
+      );
+    } catch {
+      setMessage('Project could not be created. Try another slug or check the selected workspace.');
+    }
+  }
+
+  return (
+    <div className="border-b border-border-subtle bg-bg-canvas px-4 py-4">
+      <div className="grid gap-4 xl:grid-cols-[minmax(0,1fr)_minmax(320px,420px)]">
+        <Card className="border-primary/20">
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Building2 className="h-4 w-4 text-primary" />
+              Workspace setup
+            </CardTitle>
+            <CardDescription>
+              Global CodingCTO is for experiments. Enterprise work should start from a workspace and
+              project so GitHub bindings, skills, and execution history stay scoped.
+            </CardDescription>
+          </CardHeader>
+          <CardContent className="grid gap-4 lg:grid-cols-2">
+            <div className="space-y-3">
+              <Label>Select workspace</Label>
+              {workspaces.length > 0 ? (
+                <Select value={effectiveWorkspaceId} onValueChange={setSelectedWorkspaceId}>
+                  <SelectTrigger>
+                    <SelectValue placeholder="Select workspace" />
+                  </SelectTrigger>
+                  <SelectContent>
+                    {workspaces.map(workspace => (
+                      <SelectItem key={workspace.workspace_id} value={workspace.workspace_id}>
+                        {workspace.name} ({workspace.slug})
+                      </SelectItem>
+                    ))}
+                  </SelectContent>
+                </Select>
+              ) : (
+                <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
+                  No workspace yet. Create one here to unlock project flows.
+                </div>
+              )}
+              {selectedWorkspace && (
+                <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm leading-6 text-text-muted">
+                  <div className="font-medium text-text-main">{selectedWorkspace.name}</div>
+                  <div>{selectedWorkspace.description || 'No workspace description yet.'}</div>
+                  <div className="mt-1 text-xs">ID: {selectedWorkspace.workspace_id}</div>
+                </div>
+              )}
+              {projects.length > 0 && (
+                <div className="space-y-2">
+                  <div className="text-xs font-medium uppercase tracking-wide text-text-muted">
+                    Projects
+                  </div>
+                  {projects.slice(0, 4).map(project => (
+                    <div
+                      key={project.id}
+                      className="flex items-center justify-between gap-3 rounded-lg border border-border-subtle bg-bg-surface px-3 py-2 text-sm"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate font-medium">{project.name}</div>
+                        <div className="text-xs text-text-muted">{project.slug}</div>
+                      </div>
+                      <Button asChild size="sm" variant="outline">
+                        <Link href={projectSpecForgeHref(project.id)}>Open</Link>
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              )}
+            </div>
+
+            <form className="space-y-3" onSubmit={createNewWorkspace}>
+              <div className="text-sm font-medium">Create workspace</div>
+              <Input
+                value={workspaceName}
+                onChange={event => updateWorkspaceName(event.target.value)}
+                placeholder="Acme Platform"
+                aria-label="Workspace name"
+              />
+              <Input
+                value={workspaceSlug}
+                onChange={event => setWorkspaceSlug(slugFromProjectName(event.target.value))}
+                placeholder="acme-platform"
+                aria-label="Workspace slug"
+              />
+              <Textarea
+                value={workspaceDescription}
+                onChange={event => setWorkspaceDescription(event.target.value)}
+                placeholder="Who owns this product portfolio?"
+                aria-label="Workspace description"
+                rows={3}
+              />
+              <Button type="submit" disabled={createWorkspace.isPending} className="w-full">
+                {createWorkspace.isPending ? 'Creating workspace' : 'Create workspace'}
+                <ArrowRight className="ml-1.5 h-4 w-4" />
+              </Button>
+            </form>
+          </CardContent>
+        </Card>
+
+        <Card>
+          <CardHeader>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <Boxes className="h-4 w-4 text-primary" />
+              Project setup
+            </CardTitle>
+            <CardDescription>
+              Create the project boundary, then open it for repository binding and enterprise
+              CodingCTO runs.
+            </CardDescription>
+          </CardHeader>
+          <CardContent>
+            <form className="space-y-3" onSubmit={createNewProject}>
+              <Input
+                value={projectName}
+                onChange={event => updateProjectName(event.target.value)}
+                placeholder="CodingCTO"
+                aria-label="Project name"
+                disabled={!effectiveWorkspaceId}
+              />
+              <Input
+                value={projectSlug}
+                onChange={event => setProjectSlug(slugFromProjectName(event.target.value))}
+                placeholder="codingcto"
+                aria-label="Project slug"
+                disabled={!effectiveWorkspaceId}
+              />
+              <Textarea
+                value={projectDescription}
+                onChange={event => setProjectDescription(event.target.value)}
+                placeholder="What product or system does this project represent?"
+                aria-label="Project description"
+                rows={3}
+                disabled={!effectiveWorkspaceId}
+              />
+              <Button
+                type="submit"
+                disabled={!effectiveWorkspaceId || createProject.isPending}
+                className="w-full"
+              >
+                {createProject.isPending ? 'Creating project' : 'Create project'}
+                <ArrowRight className="ml-1.5 h-4 w-4" />
+              </Button>
+            </form>
+            {message && (
+              <div className="mt-3 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm leading-5 text-text-muted">
+                {message}
+              </div>
+            )}
+            {workspacesQuery.isError && (
+              <div className="mt-3 rounded-lg border border-error/30 bg-error-subtle p-3 text-sm text-error">
+                Workspace API unavailable. Sign in with backend auth and confirm the API is running.
+              </div>
+            )}
+          </CardContent>
+        </Card>
+      </div>
+    </div>
+  );
+}
+
 function RepoProfileSummary({
   repoId,
   repoProfile,
@@ -1042,7 +1393,7 @@ function RepoProfileSummary({
 }: {
   repoId: string;
   repoProfile: RepoProfile;
-  planSource: 'api' | 'demo';
+  planSource: 'api' | 'demo' | 'empty';
   onProfileSaved: (profile: RepoProfile) => void;
 }) {
   const profileQuery = useRepoProfile(repoId);
@@ -1072,7 +1423,11 @@ function RepoProfileSummary({
           variant="outline"
           className={planSource === 'api' ? statusClassName('completed') : ''}
         >
-          {planSource === 'api' ? 'API plan' : 'Demo fallback'}
+          {planSource === 'api'
+            ? 'API plan'
+            : planSource === 'empty'
+              ? 'Awaiting plan'
+              : 'Demo fallback'}
         </Badge>
       </div>
       <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-text-muted">
@@ -1663,6 +2018,7 @@ function PlanReview({
   selectedExecutionNodeIds,
   approved,
   isStarting,
+  executionReadiness,
   onDecisionOverrideChange,
   onExecutionNodeSelectionChange,
   onApprove,
@@ -1672,6 +2028,7 @@ function PlanReview({
   selectedExecutionNodeIds: string[];
   approved: boolean;
   isStarting: boolean;
+  executionReadiness: ExecutionReadiness;
   onDecisionOverrideChange: (key: string, value: string) => void;
   onExecutionNodeSelectionChange: (nodeIds: string[]) => void;
   onApprove: () => void;
@@ -1740,10 +2097,19 @@ function PlanReview({
               Select at least one PR node before starting execution.
             </p>
           )}
+          {!executionReadiness.canDispatch && (
+            <p className="rounded-md border border-warning/30 bg-warning-subtle px-3 py-2 text-sm text-warning">
+              {executionReadiness.reason}
+            </p>
+          )}
           <Button
             onClick={onApprove}
             disabled={
-              approved || isStarting || !approvalReadiness.canApprove || !canStartSelectedRange
+              approved ||
+              isStarting ||
+              !approvalReadiness.canApprove ||
+              !canStartSelectedRange ||
+              !executionReadiness.canDispatch
             }
             className="w-full justify-center"
           >

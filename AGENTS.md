@@ -2,7 +2,7 @@
 
 Instructions for AI coding agents (Claude Code, Cursor, Windsurf, Copilot, etc.) working in this monorepo.
 
-## What is CodingCTO
+## What is CodingCTO 
 
 CodingCTO is a two-halves AI-era product for turning product ideas into reviewable GitHub pull requests:
 

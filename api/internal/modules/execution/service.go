@@ -18,6 +18,7 @@ import (
 
 type Service interface {
 	StartRun(ctx context.Context, userID, planID uint, req *StartExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error)
+	GetLatestRunForPlan(ctx context.Context, planID uint) (*domain.SpecForgeExecutionBundle, error)
 	GetRun(ctx context.Context, runID uint) (*domain.SpecForgeExecutionBundle, error)
 	DispatchRun(ctx context.Context, runID uint, req *DispatchExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error)
 	CancelRun(ctx context.Context, runID uint) (*domain.SpecForgeExecutionBundle, error)
@@ -68,6 +69,10 @@ type service struct {
 
 type repoArchitectureStore interface {
 	FindLatestArchitectureSnapshotByRepositoryID(ctx context.Context, repositoryID string) (*domain.SpecForgeRepoArchitectureSnapshot, error)
+}
+
+type planRunHistoryStore interface {
+	FindLatestExecutionBundleByPlanID(ctx context.Context, planID uint) (*domain.SpecForgeExecutionBundle, error)
 }
 
 func NewService(repo domain.SpecForgeExecutionRepository, planningRepo domain.SpecForgePlanningRepository, repositoryResolver RepositoryResolver, executor CodeExecutor, worktrees WorktreeManager, preparer PRNodeBranchPreparer, deliverer PRNodeDeliverer) *service {
@@ -162,6 +167,31 @@ func (s *service) StartRun(ctx context.Context, userID, planID uint, req *StartE
 	}
 	if err := s.repo.CreateExecutionBundle(ctx, bundle); err != nil {
 		return nil, fmt.Errorf("create execution run: %w", err)
+	}
+	return attachExecutionRange(bundle), nil
+}
+
+func (s *service) GetLatestRunForPlan(ctx context.Context, planID uint) (*domain.SpecForgeExecutionBundle, error) {
+	if planID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	historyRepo, ok := s.repo.(planRunHistoryStore)
+	if !ok {
+		return nil, domain.ErrInvalidInput
+	}
+	bundle, err := historyRepo.FindLatestExecutionBundleByPlanID(ctx, planID)
+	if err != nil {
+		return nil, err
+	}
+	if bundle.Plan == nil {
+		plan, err := s.planningRepo.FindPlanBundleByPlanID(ctx, bundle.Run.PlanID)
+		if err != nil {
+			return nil, err
+		}
+		bundle.Plan, err = s.withExecutionPlanningContext(ctx, plan)
+		if err != nil {
+			return nil, err
+		}
 	}
 	return attachExecutionRange(bundle), nil
 }
@@ -430,6 +460,11 @@ func (s *service) DispatchRun(ctx context.Context, runID uint, req *DispatchExec
 	if executionRunStatusBlocksTaskExecution(bundle.Run.Status) {
 		return nil, domain.ErrConflict
 	}
+	if req != nil && req.RequireRuntimeReady {
+		if err := s.ensureRuntimeReadyForDispatch(ctx, bundle); err != nil {
+			return nil, err
+		}
+	}
 	dispatched := 0
 	now := time.Now()
 	nodes := nodeByID(bundle.Plan.PRNodes)
@@ -464,6 +499,85 @@ func (s *service) DispatchRun(ctx context.Context, runID uint, req *DispatchExec
 		}
 	}
 	return s.GetRun(ctx, runID)
+}
+
+func (s *service) ensureRuntimeReadyForDispatch(ctx context.Context, bundle *domain.SpecForgeExecutionBundle) error {
+	if bundle == nil {
+		return domain.ErrInvalidInput
+	}
+	executors := queuedTaskExecutors(bundle.Tasks)
+	if len(executors) == 0 {
+		return nil
+	}
+	for _, executor := range executors {
+		runtimes, err := s.repo.ListRuntimes(ctx, executor, domain.RuntimeStatusOnline, 20)
+		if err != nil {
+			return fmt.Errorf("list online runtimes for dispatch: %w", err)
+		}
+		if !hasDispatchReadyRuntime(executor, runtimes) {
+			return domain.ErrConflict
+		}
+	}
+	return nil
+}
+
+func queuedTaskExecutors(tasks []*domain.SpecForgeAgentTask) []string {
+	seen := map[string]struct{}{}
+	out := []string{}
+	for _, task := range tasks {
+		if task == nil || task.Status != domain.AgentTaskStatusQueued {
+			continue
+		}
+		executor := strings.TrimSpace(task.Executor)
+		if executor == "" {
+			executor = ExecutorNameCodexCLI
+		}
+		if _, ok := seen[executor]; ok {
+			continue
+		}
+		seen[executor] = struct{}{}
+		out = append(out, executor)
+	}
+	return out
+}
+
+func hasDispatchReadyRuntime(executor string, runtimes []*domain.SpecForgeRuntime) bool {
+	for _, runtime := range runtimes {
+		if runtime == nil || runtime.Status != domain.RuntimeStatusOnline {
+			continue
+		}
+		if strings.TrimSpace(runtime.Executor) != strings.TrimSpace(executor) {
+			continue
+		}
+		if !runtimeSandboxWritable(runtime.Sandbox) {
+			continue
+		}
+		if executor == ExecutorNameCodexCLI && !runtimeHasAvailableCLI(runtime, "codex") {
+			continue
+		}
+		return true
+	}
+	return false
+}
+
+func runtimeHasAvailableCLI(runtime *domain.SpecForgeRuntime, command string) bool {
+	command = strings.TrimSpace(command)
+	if runtime == nil || command == "" {
+		return false
+	}
+	for _, cli := range runtime.AvailableCLIs {
+		if cli.Available && strings.TrimSpace(cli.Command) == command {
+			return true
+		}
+	}
+	return false
+}
+
+func runtimeSandboxWritable(sandbox *domain.SpecForgeRuntimeSandbox) bool {
+	if sandbox == nil {
+		return false
+	}
+	return sandbox.Writable
 }
 
 func (s *service) CancelRun(ctx context.Context, runID uint) (*domain.SpecForgeExecutionBundle, error) {
@@ -502,13 +616,18 @@ func (s *service) HeartbeatRuntime(ctx context.Context, req *RuntimeHeartbeatReq
 		executor = ExecutorNameCodexCLI
 	}
 	runtime := &domain.SpecForgeRuntime{
-		RuntimeID:  strings.TrimSpace(req.RuntimeID),
-		Executor:   executor,
-		Status:     domain.RuntimeStatusOnline,
-		Hostname:   strings.TrimSpace(req.Hostname),
-		Version:    strings.TrimSpace(req.Version),
-		LastSeenAt: time.Now(),
+		RuntimeID:       strings.TrimSpace(req.RuntimeID),
+		Executor:        executor,
+		Status:          domain.RuntimeStatusOnline,
+		Hostname:        strings.TrimSpace(req.Hostname),
+		Version:         strings.TrimSpace(req.Version),
+		AvailableCLIs:   normalizeRuntimeCLIs(req.AvailableCLIs),
+		Sandbox:         normalizeRuntimeSandbox(req.Sandbox),
+		SkillRoots:      normalizeRuntimeSkillRoots(req.SkillRoots),
+		LocalSkillCount: req.LocalSkillCount,
+		LastSeenAt:      time.Now(),
 	}
+	runtime.CapabilitiesHash = runtimeCapabilitiesHash(runtime.AvailableCLIs, runtime.Sandbox, runtime.SkillRoots, runtime.LocalSkillCount)
 	if err := s.repo.UpsertRuntime(ctx, runtime); err != nil {
 		return nil, fmt.Errorf("upsert runtime heartbeat: %w", err)
 	}
@@ -1486,7 +1605,7 @@ func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecF
 		promptType = domain.PromptTypeImplementation
 	}
 	var b strings.Builder
-	b.WriteString("You are implementing a SpecForge PR node from an approved plan snapshot.\n\n")
+	b.WriteString("You are implementing a CodingCTO PR node from an approved plan snapshot.\n\n")
 	b.WriteString("Prompt type: " + promptType + "\n")
 	b.WriteString("PR node: " + node.NodeKey + " - " + node.Title + "\n")
 	if strings.TrimSpace(node.RepositoryID) != "" {

@@ -1,11 +1,14 @@
-export { ProjectConsole } from "./components/project-console";
-export { ProjectSpecForgeConsole } from "./components/project-specforge-console";
+export { ProjectConsole } from './components/project-console';
+export { ProjectSpecForgeConsole } from './components/project-specforge-console';
 export {
   useBindProjectRepository,
   useCreateProject,
+  useCreateWorkspace,
   useProjectContext,
   useProjects,
-} from "./hooks/use-projects";
+  useWorkspaces,
+} from './hooks/use-projects';
+export { useSelectedWorkspace } from './hooks/use-selected-workspace';
 export {
   projectService,
   type BindRepositoryPayload,
@@ -16,5 +19,5 @@ export {
   type ProjectRepositoryContextDTO,
   type ProjectRepositoryDTO,
   type ProjectSkillDTO,
-} from "./services/project-service";
-export { primaryRepositoryContext } from "./project-context";
+} from './services/project-service';
+export { primaryRepositoryContext } from './project-context';
