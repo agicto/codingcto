@@ -35,6 +35,32 @@ Project 可以绑定多个 repo。
 其他 repo 可以作为 context 参与分析。
 ```
 
+## Delivery Module Roadmap
+
+This roadmap is the working order for the long-running implementation program. Each module should
+ship as one large but reviewable PR, with English commits, PR descriptions, PR comments, and test
+reports. A module is not considered complete until it has local checks, flow coverage, UI
+verification where applicable, a self-review note, green CI, and a merge path from `dev` to `main`.
+
+| Priority | Module | Product Outcome | Engineering Scope | Required Evidence |
+|----------|--------|-----------------|-------------------|-------------------|
+| P0 | Project and repository foundation | Users can model work as Workspace -> Project -> bound repositories, with one writable primary repo and read-only context repos. | Workspace/project APIs, repository binding, Postgres migrations, project context contract, console entry points. | Kest project context flow, migration verification, browser project setup check. |
+| P0 | Repo context and skills | CodingCTO can understand repository structure, risk areas, test commands, architecture snapshots, and reusable repo/project skills. | Repo profile CRUD, architecture indexing, skill registry/runs, context aggregation, context UI. | Repo profile tests, skill tests, Kest context flow, browser CTX panel check. |
+| P0 | Plan approval and PR DAG | A requirement becomes a reviewable product/technical plan and bounded PR DAG before execution. | Requirement intake, plan snapshot, decision overrides, PR node graph, plan review UI. | Plan adapter/approval tests, Kest requirement flow, browser PLAN panel check. |
+| P0 | Prompt contract compiler | Every PR node produces versioned implementation, CI-fix, and review-feedback prompts with scope, non-goals, tests, and repo context. | Prompt compiler API, prompt preview logic, PR DAG prompt UI, prompt storage/version metadata. | Prompt preview tests, Kest prompt compile step, browser PROMPT panel check. |
+| P1 | Codex CLI execution orchestrator | Approved plans can dispatch executable tasks to local runtimes and track task lifecycle. | Runtime heartbeat, task queue/claim/result, executor readiness, run dispatch/cancel, stale-task sweeps. | Runtime unit tests, Kest runtime task flow, browser RUN panel check. |
+| P1 | GitHub delivery and CI verification | CodingCTO can prepare branches, open draft PRs, refresh CI, inspect failures, and surface auto-fix attempts. | GitHub App delivery service, branch/PR/check APIs, workflow log ingestion, fix attempt model, escalation summary. | GitHub service tests/mocks, Kest fix/escalation flow, PR delivery browser check. |
+| P1 | Guardrails and policy | Execution stays within approved repo, file scope, retry budgets, and human decision boundaries. | Repo role enforcement, PR node scope validation, auto-fix retry limits, blocked escalation rules, audit logs. | Guardrail tests, flow assertions for denied unsafe actions, browser blocker summary check. |
+| P2 | Open-source product UI polish | The console feels minimal, Swiss-style, and production-grade for a global open-source project. | Sidebar/workbench information architecture, 4px radius design pass, empty/loading/error states, responsive QA. | Browser screenshots across key flows, lint/type checks, visual self-review comment. |
+| P2 | Repo memory and learning loop | Repeated projects improve through approved decisions, merged PR summaries, and rejected feedback. | Memory tables, summary jobs, prompt injection into planner/compiler, settings UI. | Memory tests, flow coverage for saved feedback, browser settings check. |
+
+Current module boundary:
+
+- The workbench shell should own routing, high-level state, and data wiring only.
+- Feature panels should be split by business capability: context, plan, prompt contracts, execution,
+  delivery, and setup.
+- Each extraction must preserve behavior first, then the next module PR can deepen capability.
+
 ---
 
 ## 二、角色与页面清单
@@ -1386,6 +1412,49 @@ Do not copy branding, product names, UI identity, or proprietary identifiers.
 极简、低管理成本、围绕交付物。
 用户管理 Project、Plan、PR DAG、Run、PR，不管理 agent。
 默认展示摘要和下一步动作，复杂日志和证据放在可展开区域。
+```
+
+### 14.3 Open Source Module Delivery Protocol
+
+CodingCTO is a global open source project. New implementation PRs, commits, PR comments,
+test reports, screenshots, and public documentation updates must be written in English.
+
+Work should proceed as larger reviewable module PRs, not tiny cosmetic slices. Each module PR must
+finish one coherent product or architecture capability before starting the next module.
+
+Current module priority:
+
+| Priority | Module | Outcome | PR report must include |
+|----------|--------|---------|------------------------|
+| P0 | Project and Repository Foundation | Workspace/project/repository boundaries, primary vs context repo rules, and PostgreSQL-backed APIs are stable. | API commands, Kest project flow, migration status |
+| P1 | Project Console and Repository Binding UI | Users can create projects, bind repositories, and understand the current project context with minimal interaction. | Browser route, screenshot, console log status |
+| P2 | Repo Context and Skill Pipeline | Bound repositories produce repo profiles, architecture snapshots, skills, and SkillRun history that can ground plans. | Flow coverage for repo profile, architecture, skills, and project context |
+| P3 | Requirement, Plan, and Approval Contracts | Requirements produce immutable product specs, technical plans, PR DAGs, and approval snapshots. | Plan-generation flow, approval flow, evidence refs |
+| P4 | Prompt Contract and Guardrails | PR nodes compile implementation/fix/review prompts with evidence refs, scope, non-goals, tests, and hallucination guardrails. | Prompt preview, browser prompt panel, guardrail tests |
+| P5 | Codex CLI Execution Runtime | Runs can dispatch PR-node tasks to a Codex CLI runtime with isolated workspaces, logs, commits, and branch/PR delivery. | Runtime heartbeat/claim/result flow, local runner smoke test |
+| P6 | Verification and CI Auto-fix | GitHub workflow logs are classified, fix attempts are bounded, and escalation summaries are actionable. | Failed-CI fixture or live workflow evidence, bounded retry report |
+| P7 | Human Review Loop | PR comments and review changes create patch tasks and update PR-node state without user agent management. | Webhook flow, review-comment task creation, browser delivery status |
+| P8 | Multi-repo Context Guardrails | Multiple repositories can ground planning while MVP execution remains constrained to the primary repo. | Multi-repo flow, target-repo guardrail evidence |
+| P9 | Production UI Polish | The console remains minimal, Swiss-style, 4px-radius where practical, and focused on Project, Plan, PR DAG, Run, and PR delivery. | Desktop browser screenshot, interaction notes, accessibility smoke check |
+
+Every module PR must receive an English PR comment after local verification with this structure:
+
+```text
+Module outcome
+Implemented scope
+Validation
+- Local commands
+- Flow tests
+- Browser/UI verification
+Self-review
+Residual risk
+Next module
+```
+
+If a module references `multica-ai/multica`, the PR comment must say:
+
+```text
+Reference used for product and workflow ideas only. No branding, identifiers, or copied UI identity.
 ```
 
 ---
