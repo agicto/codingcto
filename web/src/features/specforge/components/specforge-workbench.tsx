@@ -1,6 +1,7 @@
 'use client';
 
 import { useEffect, useMemo, useRef, useState } from 'react';
+import { useSearchParams } from 'next/navigation';
 import {
   ArrowRight,
   CheckCircle2,
@@ -57,6 +58,7 @@ import {
   useDeliverSpecForgePRNode,
   useDispatchExecutionRun,
   useExecutionRun,
+  useGitHubRepositories,
   useGitHubWebhookEvents,
   useInferRepoProfile,
   usePrepareSpecForgePRNodeBranch,
@@ -236,9 +238,11 @@ export function SpecForgeWorkbench({
   projectLabel,
   repositoryLocked = false,
 }: SpecForgeWorkbenchProps = {}) {
+  const searchParams = useSearchParams();
   const initialRepoId = initialRepositoryId?.trim() || demoPlan.repoProfile.repositoryId;
+  const repoIdFromURL = searchParams.get('repo_id')?.trim();
   const [idea, setIdea] = useState(defaultIdea);
-  const [repoId, setRepoId] = useState(initialRepoId);
+  const [repoIdOverride, setRepoIdOverride] = useState<string | null>(null);
   const [activePlan, setActivePlan] = useState<PlanBundle>(() =>
     demoPlanForInput(defaultIdea, initialRepoId)
   );
@@ -261,6 +265,20 @@ export function SpecForgeWorkbench({
     'intake' | 'plan' | 'dag' | 'run' | 'context'
   >('intake');
   const [currentRuntimeNow] = useState(() => Date.now());
+  const connectedRepositoriesQuery = useGitHubRepositories({ workspace_id: 'default' });
+  const connectedRepositories = useMemo(
+    () => connectedRepositoriesQuery.data?.repositories ?? [],
+    [connectedRepositoriesQuery.data?.repositories]
+  );
+  const repoId =
+    repoIdOverride ||
+    initialRepositoryId?.trim() ||
+    repoIdFromURL ||
+    connectedRepositories[0]?.repository_id ||
+    demoPlan.repoProfile.repositoryId;
+  const selectedGitHubRepository = connectedRepositories.find(
+    repository => repository.repository_id === repoId.trim()
+  );
 
   const createIdea = useCreateSpecForgeIdea(repoId.trim());
   const createProjectIdea = useCreateSpecForgeProjectIdea(projectId);
@@ -352,10 +370,17 @@ export function SpecForgeWorkbench({
   }
 
   function resetIdea() {
-    const resetRepoId = initialRepositoryId?.trim() || demoPlan.repoProfile.repositoryId;
+    const defaultRepository = connectedRepositories[0];
+    const resetRepoId =
+      initialRepositoryId?.trim() ||
+      repoIdFromURL ||
+      defaultRepository?.repository_id ||
+      demoPlan.repoProfile.repositoryId;
     setIdea(defaultIdea);
-    setRepoId(resetRepoId);
+    setRepoIdOverride(resetRepoId);
     const resetPlan = demoPlanForInput(defaultIdea, resetRepoId);
+    resetPlan.repoProfile.defaultBranch =
+      defaultRepository?.default_branch ?? resetPlan.repoProfile.defaultBranch;
     setActivePlan(resetPlan);
     setDecisionOverrides(defaultDecisionOverrides(resetPlan));
     setSelectedExecutionNodeIds(resetPlan.prNodes.map(node => node.id));
@@ -713,14 +738,61 @@ export function SpecForgeWorkbench({
                   aria-label="Describe the feature CodingCTO should turn into reviewable PRs"
                   placeholder="Describe the product outcome, constraints, and implementation boundaries..."
                 />
-                <Input
-                  value={repoId}
-                  onChange={event => setRepoId(event.target.value)}
-                  aria-label="Repository ID"
-                  placeholder="Repository ID"
-                  disabled={repositoryLocked}
-                  className="bg-bg-surface"
-                />
+                <div className="space-y-2">
+                  <div className="flex items-center justify-between gap-3">
+                    <Label htmlFor="specforge-repository">Repository</Label>
+                    {selectedGitHubRepository ? (
+                      <Badge
+                        variant="outline"
+                        className="border-success/30 bg-success-subtle text-success"
+                      >
+                        GitHub connected
+                      </Badge>
+                    ) : (
+                      <Badge
+                        variant="outline"
+                        className="border-warning/30 bg-warning-subtle text-warning"
+                      >
+                        Unverified
+                      </Badge>
+                    )}
+                  </div>
+                  {connectedRepositories.length > 0 && !repositoryLocked ? (
+                    <select
+                      id="specforge-repository"
+                      value={repoId}
+                      onChange={event => setRepoIdOverride(event.target.value)}
+                      className="h-10 w-full rounded-md border border-border bg-bg-surface px-3 text-sm text-text-main outline-none transition-colors focus:border-ring focus:ring-2 focus:ring-ring/20"
+                    >
+                      {connectedRepositories.map(repository => (
+                        <option key={repository.repository_id} value={repository.repository_id}>
+                          {repository.github_owner}/{repository.github_repo} ·{' '}
+                          {repository.default_branch}
+                        </option>
+                      ))}
+                      {!selectedGitHubRepository && repoId.trim() ? (
+                        <option value={repoId.trim()}>{repoId.trim()} · manual</option>
+                      ) : null}
+                    </select>
+                  ) : (
+                    <Input
+                      id="specforge-repository"
+                      value={repoId}
+                      onChange={event => setRepoIdOverride(event.target.value)}
+                      aria-label="Repository ID"
+                      placeholder="Connect a GitHub repository in settings first"
+                      disabled={repositoryLocked}
+                      className="bg-bg-surface"
+                    />
+                  )}
+                  <p className="text-xs leading-5 text-text-muted">
+                    {selectedGitHubRepository
+                      ? `Splitting, branches, commits, and PRs will target ${selectedGitHubRepository.github_owner}/${selectedGitHubRepository.github_repo}.`
+                      : connectedRepositoriesQuery.isLoading
+                        ? 'Loading connected repositories...'
+                        : 'Connect the GitHub App in settings so CodingCTO can operate on the selected repository.'}
+                  </p>
+                </div>
                 <div className="flex flex-wrap gap-2">
                   <Button
                     onClick={generatePlan}

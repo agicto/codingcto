@@ -1,8 +1,11 @@
 package repocontext
 
 import (
+	"errors"
+
 	"github.com/gin-gonic/gin"
 	"github.com/zgiai/luas/api/internal/contracts"
+	"github.com/zgiai/luas/api/internal/domain"
 	"github.com/zgiai/luas/api/pkg/handler"
 	"github.com/zgiai/luas/api/pkg/response"
 )
@@ -67,6 +70,10 @@ func (h *Handler) InferProfile(c *gin.Context) {
 func (h *Handler) GetProfile(c *gin.Context) {
 	profile, err := h.service.GetProfile(c.Request.Context(), c.Param("repo_id"))
 	if err != nil {
+		if errors.Is(err, domain.ErrNotFound) {
+			response.Success(c, nil)
+			return
+		}
 		response.HandleError(c, "Failed to get repo profile", err)
 		return
 	}

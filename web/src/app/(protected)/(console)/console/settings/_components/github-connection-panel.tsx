@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { useCallback, useMemo, useState, type ReactNode } from 'react';
-import { useSearchParams } from 'next/navigation';
+import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
+import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowRight,
   Bot,
@@ -30,6 +30,7 @@ import { Switch } from '@/components/ui/switch';
 import { env } from '@/config/env';
 import { ROUTES } from '@/constants/routes';
 import {
+  useGitHubRepositories,
   useGitHubSettings,
   useSyncGitHubInstallation,
   useUpsertGitHubSettings,
@@ -59,7 +60,9 @@ function errorMessage(error: unknown) {
 }
 
 export function GitHubConnectionPanel() {
+  const router = useRouter();
   const searchParams = useSearchParams();
+  const syncedInstallationReturnRef = useRef<string | null>(null);
   const [workspaceId, setWorkspaceId] = useState(
     () => searchParams.get('state')?.trim() || 'default'
   );
@@ -81,6 +84,11 @@ export function GitHubConnectionPanel() {
   );
 
   const githubSettings = useGitHubSettings(workspaceId.trim() || 'default');
+  const connectedRepositoriesQuery = useGitHubRepositories({
+    workspace_id: workspaceId.trim() || 'default',
+  });
+  const connectedRepositories = connectedRepositoriesQuery.data?.repositories ?? [];
+  const connectedRepository = connectedRepositories[0];
   const upsertSettings = useUpsertGitHubSettings();
   const syncInstallation = useSyncGitHubInstallation();
   const upsertRepository = useUpsertGitHubRepository();
@@ -103,11 +111,16 @@ export function GitHubConnectionPanel() {
     Number.isFinite(normalizedInstallationId) &&
     normalizedInstallationId > 0;
   const specForgeHref = useMemo(() => {
-    if (!savedRepoId) {
+    const repoId = savedRepoId || connectedRepository?.repository_id;
+    if (!repoId) {
       return ROUTES.CONSOLE.SPECFORGE;
     }
-    return `${ROUTES.CONSOLE.SPECFORGE}?repo_id=${encodeURIComponent(savedRepoId)}`;
-  }, [savedRepoId]);
+    return `${ROUTES.CONSOLE.SPECFORGE}?repo_id=${encodeURIComponent(repoId)}`;
+  }, [connectedRepository?.repository_id, savedRepoId]);
+  const visibleRepoId = savedRepoId || connectedRepository?.repository_id || '';
+  const visibleInstallationDbId =
+    savedInstallationDbId || connectedRepository?.github_installation_id;
+
   const installURL = useMemo(() => {
     const entry = installEntry.trim();
     if (!entry) {
@@ -133,11 +146,15 @@ export function GitHubConnectionPanel() {
   }, []);
 
   const syncGitHubInstallation = useCallback(
-    async (installationIdValue: string, workspaceIdValue: string) => {
+    async (
+      installationIdValue = installationId,
+      workspaceIdValue = workspaceId,
+      options: { clearReturnParams?: boolean } = {}
+    ) => {
       const parsedInstallationId = Number(installationIdValue);
       if (!Number.isFinite(parsedInstallationId) || parsedInstallationId <= 0) {
         setMessage('Install the GitHub App first, or enter a valid installation ID.');
-        return false;
+        return;
       }
       setMessage('');
       try {
@@ -157,16 +174,38 @@ export function GitHubConnectionPanel() {
             ? 'GitHub App synced. Choose the repository to bind, then save it.'
             : 'GitHub App synced, but no accessible repositories were returned. Check the repositories selected during installation.'
         );
-        return true;
+        if (options.clearReturnParams) {
+          router.replace(`${ROUTES.CONSOLE.SETTINGS}?tab=github`, { scroll: false });
+        }
       } catch (error) {
         setMessage(
           `${errorMessage(error)} Confirm the backend has GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY configured.`
         );
-        return false;
       }
     },
-    [applyRepositoryOption, syncInstallation]
+    [applyRepositoryOption, installationId, router, syncInstallation, workspaceId]
   );
+
+  useEffect(() => {
+    const returnedInstallationId = searchParams.get('installation_id')?.trim();
+    const setupAction = searchParams.get('setup_action')?.trim();
+    const stateWorkspaceId = searchParams.get('state')?.trim();
+    const nextWorkspaceId = stateWorkspaceId || workspaceId;
+    if (!returnedInstallationId) {
+      return;
+    }
+    const syncKey = `${nextWorkspaceId}:${returnedInstallationId}:${setupAction || ''}`;
+    if (syncedInstallationReturnRef.current === syncKey) {
+      return;
+    }
+    syncedInstallationReturnRef.current = syncKey;
+    const timeoutId = window.setTimeout(() => {
+      void syncGitHubInstallation(returnedInstallationId, nextWorkspaceId, {
+        clearReturnParams: true,
+      });
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [searchParams, syncGitHubInstallation, workspaceId]);
 
   async function updateSetting<Key extends keyof GitHubSettings>(
     key: Key,
@@ -357,15 +396,36 @@ export function GitHubConnectionPanel() {
         <Card>
           <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
             <div>
-              <div className="font-medium">Repository URLs still live under the repository tab</div>
+              <div className="font-medium">
+                {connectedRepository
+                  ? `${connectedRepository.github_owner}/${connectedRepository.github_repo}`
+                  : 'No repository connected yet'}
+              </div>
               <p className="mt-1 text-sm text-text-muted">
-                Connect the GitHub App here, then bind the concrete repository for CodingCTO runs.
+                {connectedRepository
+                  ? `SpecForge will split work, create branches, and open PRs from ${connectedRepository.default_branch}.`
+                  : 'Install the GitHub App, then choose the repository CodingCTO may operate on.'}
               </p>
+              {connectedRepository ? (
+                <p className="mt-1 text-xs text-text-muted">
+                  Repository ID: {connectedRepository.repository_id}
+                </p>
+              ) : null}
             </div>
-            <Button variant="outline" onClick={focusConnectionForm} disabled={!settings.enabled}>
-              Enter repository
-              <ExternalLink className="ml-1.5 h-4 w-4" />
-            </Button>
+            <div className="flex flex-wrap gap-2">
+              <Button variant="outline" onClick={focusConnectionForm} disabled={!settings.enabled}>
+                {connectedRepository ? 'Change repository' : 'Enter repository'}
+                <ExternalLink className="ml-1.5 h-4 w-4" />
+              </Button>
+              {connectedRepository ? (
+                <Button asChild>
+                  <Link href={specForgeHref}>
+                    Open SpecForge
+                    <ArrowRight className="ml-1.5 h-4 w-4" />
+                  </Link>
+                </Button>
+              ) : null}
+            </div>
           </CardContent>
         </Card>
       </section>
@@ -525,15 +585,15 @@ export function GitHubConnectionPanel() {
             </div>
           )}
 
-          {savedRepoId && (
+          {visibleRepoId && (
             <div className="rounded-lg border border-success/30 bg-success-subtle p-3 text-sm leading-6 text-success">
               <div className="flex items-center gap-2 font-medium">
                 <CheckCircle2 className="h-4 w-4" />
-                Connected: {savedRepoId}
+                Connected: {visibleRepoId}
               </div>
-              {savedInstallationDbId ? (
+              {visibleInstallationDbId ? (
                 <div className="mt-1 text-xs">
-                  Local installation record ID: {savedInstallationDbId}
+                  Local installation record ID: {visibleInstallationDbId}
                 </div>
               ) : null}
             </div>
@@ -546,7 +606,7 @@ export function GitHubConnectionPanel() {
           >
             {isSaving ? 'Connecting' : 'Connect GitHub repository'}
           </Button>
-          {savedRepoId ? (
+          {visibleRepoId ? (
             <Button asChild variant="outline">
               <Link href={specForgeHref}>
                 Use in CodingCTO

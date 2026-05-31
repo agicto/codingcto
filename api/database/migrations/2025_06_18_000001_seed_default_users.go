@@ -3,6 +3,7 @@ package migrations
 import (
 	"github.com/zgiai/luas/api/internal/infra/migration"
 	"github.com/zgiai/luas/api/internal/modules/user"
+	"golang.org/x/crypto/bcrypt"
 	"gorm.io/gorm"
 )
 
@@ -21,10 +22,15 @@ func (m *seedDefaultUsers) Up(db *gorm.DB) error {
 	db.Model(&user.UserPO{}).Count(&count)
 
 	if count == 0 {
+		passwordHash, err := bcrypt.GenerateFromPassword([]byte("admin123"), bcrypt.DefaultCost)
+		if err != nil {
+			return err
+		}
+
 		adminUser := &user.UserPO{
 			Username: "admin",
 			Email:    "admin@example.com",
-			Password: "hashed_password_here",
+			Password: string(passwordHash),
 			Nickname: "Admin User",
 			Status:   1,
 		}
