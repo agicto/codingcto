@@ -493,6 +493,9 @@ export interface SpecForgeFixAttemptDTO {
   likely_cause: string;
   recommended_action: string;
   can_auto_fix: boolean;
+  risk_level: string;
+  action_kind: string;
+  blocked_reason?: string;
   workflow_run_id?: number;
   workflow_run_url?: string;
   conclusion?: string;
@@ -513,6 +516,9 @@ export interface SpecForgeEscalationSummaryDTO {
   latest_failure_type: string;
   latest_likely_cause: string;
   latest_action: string;
+  latest_risk_level: string;
+  latest_action_kind: string;
+  latest_blocked_reason: string;
   can_continue_auto_fix: boolean;
 }
 

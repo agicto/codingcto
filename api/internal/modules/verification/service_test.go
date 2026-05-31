@@ -35,6 +35,9 @@ func TestCreateFixAttemptAssignsAttemptNumberAndDefaults(t *testing.T) {
 	require.Equal(t, "type_error", first.FailureType)
 	require.Equal(t, "TS2322", first.CILogExcerpt)
 	require.True(t, first.CanAutoFix)
+	require.Equal(t, domain.FixAttemptRiskLow, first.RiskLevel)
+	require.Equal(t, domain.FixAttemptActionAutoFix, first.ActionKind)
+	require.Empty(t, first.BlockedReason)
 }
 
 func TestCreateFixAttemptRejectsAfterRetryLimit(t *testing.T) {
@@ -72,6 +75,41 @@ func TestCreateFixAttemptRejectsRepeatedSameFailureType(t *testing.T) {
 	})
 
 	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
+func TestCreateFixAttemptClampsHighRiskFailuresToUserDecision(t *testing.T) {
+	repo := &memoryRepo{}
+	svc := NewService(repo, nil, nil, nil)
+
+	attempt, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
+		FailureType:   "migration_failure",
+		CanAutoFix:    true,
+		RiskLevel:     domain.FixAttemptRiskLow,
+		ActionKind:    domain.FixAttemptActionAutoFix,
+		BlockedReason: "client override",
+	})
+
+	require.NoError(t, err)
+	require.False(t, attempt.CanAutoFix)
+	require.Equal(t, domain.FixAttemptRiskHigh, attempt.RiskLevel)
+	require.Equal(t, domain.FixAttemptActionUserDecision, attempt.ActionKind)
+	require.Contains(t, attempt.BlockedReason, "Migration and schema failures")
+}
+
+func TestCreateFixAttemptClassifiesFlakyFailureAsRerunPolicy(t *testing.T) {
+	repo := &memoryRepo{}
+	svc := NewService(repo, nil, nil, nil)
+
+	attempt, err := svc.CreateFixAttempt(context.Background(), 7, 42, &CreateFixAttemptRequest{
+		FailureType: "flaky_test",
+		CanAutoFix:  true,
+	})
+
+	require.NoError(t, err)
+	require.False(t, attempt.CanAutoFix)
+	require.Equal(t, domain.FixAttemptRiskMedium, attempt.RiskLevel)
+	require.Equal(t, domain.FixAttemptActionRerun, attempt.ActionKind)
+	require.Contains(t, attempt.BlockedReason, "rerun CI once")
 }
 
 func TestCreateFixAttemptAllowsSameFailureTypeAfterDifferentFailure(t *testing.T) {
@@ -212,6 +250,14 @@ func TestCreateFixAttemptFromCIClassifiesHighRiskFailureTypes(t *testing.T) {
 			require.Equal(t, tc.wantAutoFix, attempt.CanAutoFix)
 			require.Contains(t, attempt.RecommendedAction, tc.wantActionContains)
 			require.Contains(t, attempt.LikelyCause, "GitHub Actions job")
+			if tc.wantAutoFix {
+				require.Equal(t, domain.FixAttemptActionAutoFix, attempt.ActionKind)
+				require.NotEqual(t, domain.FixAttemptRiskHigh, attempt.RiskLevel)
+				require.Empty(t, attempt.BlockedReason)
+			} else {
+				require.NotEmpty(t, attempt.BlockedReason)
+				require.Contains(t, []string{domain.FixAttemptActionRerun, domain.FixAttemptActionUserDecision}, attempt.ActionKind)
+			}
 		})
 	}
 }
@@ -286,6 +332,9 @@ func TestCreateFixAttemptFromCIRecordsEscalationWhenLogsAreUnavailable(t *testin
 	require.Equal(t, "https://github.com/agicto/codingcto/actions/runs/987", attempt.WorkflowRunURL)
 	require.Equal(t, "timed_out", attempt.Conclusion)
 	require.False(t, attempt.CanAutoFix)
+	require.Equal(t, domain.FixAttemptRiskHigh, attempt.RiskLevel)
+	require.Equal(t, domain.FixAttemptActionUserDecision, attempt.ActionKind)
+	require.Contains(t, attempt.BlockedReason, "CI logs are unavailable")
 	require.Contains(t, attempt.CILogExcerpt, "Workflow run ID: 987")
 	require.Contains(t, attempt.CILogExcerpt, "Conclusion: timed_out")
 	require.Contains(t, attempt.LikelyCause, "could not read a failed job log")
@@ -332,6 +381,8 @@ func TestCreateFixAttemptFromCIPublishesQueuedAutoFixEvent(t *testing.T) {
 	require.Contains(t, published.CILogExcerpt, "TS2322")
 	require.Contains(t, published.LikelyCause, "pnpm typecheck")
 	require.NotEmpty(t, published.RecommendedAction)
+	require.Equal(t, domain.FixAttemptRiskLow, attempt.RiskLevel)
+	require.Equal(t, domain.FixAttemptActionAutoFix, attempt.ActionKind)
 }
 
 func TestVerifyPRNodeCIQueuesFixAttemptWhenRefreshFindsFailure(t *testing.T) {
@@ -459,6 +510,9 @@ func TestVerifyPRNodeCICreatesEscalationWhenFailureLogIsMissing(t *testing.T) {
 	require.Equal(t, "ci_log_unavailable", result.FixAttempt.FailureType)
 	require.Equal(t, domain.FixAttemptStatusFailed, result.FixAttempt.Status)
 	require.False(t, result.FixAttempt.CanAutoFix)
+	require.Equal(t, domain.FixAttemptRiskHigh, result.FixAttempt.RiskLevel)
+	require.Equal(t, domain.FixAttemptActionUserDecision, result.FixAttempt.ActionKind)
+	require.Contains(t, result.FixAttempt.BlockedReason, "CI logs are unavailable")
 	require.Contains(t, result.FixAttempt.CILogExcerpt, "Conclusion: failure")
 }
 
@@ -516,6 +570,9 @@ func TestHandlerCreatesEscalationAttemptWhenCILogsAreUnavailable(t *testing.T) {
 	require.Equal(t, "ci_log_unavailable", repo.attempts[0].FailureType)
 	require.Equal(t, domain.FixAttemptStatusFailed, repo.attempts[0].Status)
 	require.False(t, repo.attempts[0].CanAutoFix)
+	require.Equal(t, domain.FixAttemptRiskHigh, repo.attempts[0].RiskLevel)
+	require.Equal(t, domain.FixAttemptActionUserDecision, repo.attempts[0].ActionKind)
+	require.Contains(t, repo.attempts[0].BlockedReason, "CI logs are unavailable")
 	require.Contains(t, repo.attempts[0].CILogExcerpt, "Workflow run URL: https://github.com/agicto/codingcto/actions/runs/987")
 }
 
@@ -579,6 +636,8 @@ func TestHandlerQueuesNextFixAttemptWhenFixTaskFails(t *testing.T) {
 	require.Equal(t, domain.FixAttemptStatusFailed, repo.attempts[0].Status)
 	require.Equal(t, domain.FixAttemptStatusQueued, repo.attempts[1].Status)
 	require.Equal(t, "executor_failed", repo.attempts[1].FailureType)
+	require.Equal(t, domain.FixAttemptRiskMedium, repo.attempts[1].RiskLevel)
+	require.Equal(t, domain.FixAttemptActionAutoFix, repo.attempts[1].ActionKind)
 	require.Contains(t, repo.attempts[1].CILogExcerpt, "TestInvite")
 	require.Equal(t, repo.attempts[1].ID, queued.FixAttemptID)
 	require.Equal(t, uint(42), queued.PRNodeID)
@@ -666,6 +725,8 @@ func TestGetEscalationSummaryAllowsAutoFixBeforeLimit(t *testing.T) {
 	require.True(t, summary.CanContinueAutoFix)
 	require.Contains(t, summary.RecommendedOption, "Continue auto-fix")
 	require.Equal(t, "Patch the type guard.", summary.LatestAction)
+	require.Equal(t, domain.FixAttemptRiskLow, summary.LatestRiskLevel)
+	require.Equal(t, domain.FixAttemptActionAutoFix, summary.LatestActionKind)
 }
 
 func TestGetEscalationSummaryRequiresDecisionForNonAutoFixableLatestAttempt(t *testing.T) {
@@ -687,6 +748,9 @@ func TestGetEscalationSummaryRequiresDecisionForNonAutoFixableLatestAttempt(t *t
 	require.False(t, summary.CanContinueAutoFix)
 	require.Contains(t, summary.Reason, "cannot be fixed automatically")
 	require.Contains(t, summary.DecisionOptions, "Replan this PR node")
+	require.Equal(t, domain.FixAttemptRiskHigh, summary.LatestRiskLevel)
+	require.Equal(t, domain.FixAttemptActionUserDecision, summary.LatestActionKind)
+	require.NotEmpty(t, summary.LatestBlockedReason)
 }
 
 func TestGetEscalationSummaryRequiresDecisionAfterLimit(t *testing.T) {
