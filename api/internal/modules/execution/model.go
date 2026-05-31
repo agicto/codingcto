@@ -2,6 +2,7 @@ package execution
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/zgiai/luas/api/internal/domain"
@@ -29,6 +30,8 @@ type AgentTaskPO struct {
 	Executor      string `gorm:"size:100;not null;index"`
 	Status        string `gorm:"size:50;not null;index"`
 	PromptType    string `gorm:"size:50;not null;default:implementation;index"`
+	ProcessStatus string `gorm:"size:50;not null;default:pending;index"`
+	CurrentPhase  string `gorm:"size:100;index"`
 	RuntimeID     string `gorm:"size:100;index"`
 	AttemptNumber int    `gorm:"not null;default:1"`
 	ParentTaskID  *uint  `gorm:"index"`
@@ -40,9 +43,11 @@ type AgentTaskPO struct {
 	OutputLog     string `gorm:"type:text"`
 	ErrorLog      string `gorm:"type:text"`
 	ExitCode      *int
+	ProcessRef    string `gorm:"size:255;index"`
 	DispatchedAt  *time.Time
 	StartedAt     *time.Time
 	FinishedAt    *time.Time
+	LastProgressAt *time.Time
 	CreatedAt     time.Time
 	UpdatedAt     time.Time
 }
@@ -122,6 +127,8 @@ func newAgentTaskPO(task *domain.SpecForgeAgentTask) *AgentTaskPO {
 		Executor:      task.Executor,
 		Status:        task.Status,
 		PromptType:    taskPromptType(task),
+		ProcessStatus: normalizeProcessStatus(task.ProcessStatus),
+		CurrentPhase:  strings.TrimSpace(task.CurrentPhase),
 		RuntimeID:     task.RuntimeID,
 		AttemptNumber: task.AttemptNumber,
 		ParentTaskID:  task.ParentTaskID,
@@ -133,9 +140,11 @@ func newAgentTaskPO(task *domain.SpecForgeAgentTask) *AgentTaskPO {
 		OutputLog:     task.OutputLog,
 		ErrorLog:      task.ErrorLog,
 		ExitCode:      task.ExitCode,
+		ProcessRef:    task.ProcessRef,
 		DispatchedAt:  task.DispatchedAt,
 		StartedAt:     task.StartedAt,
 		FinishedAt:    task.FinishedAt,
+		LastProgressAt: task.LastProgressAt,
 		CreatedAt:     task.CreatedAt,
 		UpdatedAt:     task.UpdatedAt,
 	}
@@ -149,6 +158,8 @@ func (po *AgentTaskPO) toDomain() *domain.SpecForgeAgentTask {
 		Executor:      po.Executor,
 		Status:        po.Status,
 		PromptType:    taskPromptType(&domain.SpecForgeAgentTask{PromptType: po.PromptType}),
+		ProcessStatus: normalizeProcessStatus(po.ProcessStatus),
+		CurrentPhase:  strings.TrimSpace(po.CurrentPhase),
 		RuntimeID:     po.RuntimeID,
 		AttemptNumber: po.AttemptNumber,
 		ParentTaskID:  po.ParentTaskID,
@@ -160,9 +171,11 @@ func (po *AgentTaskPO) toDomain() *domain.SpecForgeAgentTask {
 		OutputLog:     po.OutputLog,
 		ErrorLog:      po.ErrorLog,
 		ExitCode:      po.ExitCode,
+		ProcessRef:    po.ProcessRef,
 		DispatchedAt:  po.DispatchedAt,
 		StartedAt:     po.StartedAt,
 		FinishedAt:    po.FinishedAt,
+		LastProgressAt: po.LastProgressAt,
 		CreatedAt:     po.CreatedAt,
 		UpdatedAt:     po.UpdatedAt,
 	}

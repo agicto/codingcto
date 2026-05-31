@@ -32,6 +32,12 @@ type RuntimeWorker struct {
 	executor CodeExecutor
 }
 
+type runtimeProgressReporter struct {
+	client RuntimeAPIClient
+	taskID uint
+	tool   string
+}
+
 type RuntimeWorkerResult struct {
 	Claimed         bool
 	TaskID          uint
@@ -134,6 +140,13 @@ func (w *RuntimeWorker) executeClaim(ctx context.Context, claim *ClaimAgentTaskR
 		Tool:    w.executor.Name(),
 		Content: "Runtime claimed task and is starting executor.",
 	})
+	if progressExecutor, ok := w.executor.(ProgressReportingExecutor); ok {
+		progressExecutor.SetProgressReporter(&runtimeProgressReporter{
+			client: w.client,
+			taskID: taskID,
+			tool:   w.executor.Name(),
+		})
+	}
 	result, runErr := w.executor.Run(ctx, ExecutionContext{
 		RunID:      fmt.Sprintf("%d", claim.Task.RunID),
 		TaskID:     taskID,
@@ -179,11 +192,25 @@ func (w *RuntimeWorker) submitResult(ctx context.Context, claim *ClaimAgentTaskR
 		RuntimeID:     w.cfg.RuntimeID,
 		SessionID:     firstNonEmpty(w.cfg.SessionID, claim.Task.SessionID),
 		Workdir:       workdir,
+		ProcessRef:    result.ProcessRef,
 		Status:        normalizeRuntimeResultStatus(result.Status, result.ExitCode),
 		Output:        result.Output,
 		Error:         result.Error,
 		ExitCode:      result.ExitCode,
 		FailureReason: failureReason,
+	})
+	return err
+}
+
+func (r *runtimeProgressReporter) OnEvent(ctx context.Context, event ExecutionProgressEvent) error {
+	if r == nil || r.client == nil || r.taskID == 0 || strings.TrimSpace(event.Type) == "" {
+		return nil
+	}
+	_, err := r.client.CreateTaskEvent(ctx, r.taskID, &CreateTaskEventRequest{
+		Type:    strings.TrimSpace(event.Type),
+		Tool:    firstNonEmpty(strings.TrimSpace(event.Tool), r.tool),
+		Content: strings.TrimSpace(event.Content),
+		Output:  strings.TrimSpace(event.Output),
 	})
 	return err
 }

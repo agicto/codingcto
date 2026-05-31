@@ -157,6 +157,7 @@ export interface SubmitTaskResultPayload {
   runtime_id?: string;
   session_id?: string;
   workdir?: string;
+  process_ref?: string;
   status: 'completed' | 'failed' | 'timeout';
   output?: string;
   error?: string;
@@ -586,11 +587,14 @@ export interface SpecForgeClaimedTaskDTO {
   pr_node_id: number;
   executor: string;
   status: string;
+  process_status?: string;
+  current_phase?: string;
   runtime_id: string;
   attempt_number: number;
   parent_task_id?: number;
   session_id?: string;
   workdir?: string;
+  process_ref?: string;
 }
 
 export interface SpecForgeClaimedPRNodeDTO {
@@ -661,6 +665,8 @@ export interface SpecForgeExecutionBundleDTO {
     pr_node_id: number;
     executor: string;
     status: string;
+    process_status?: string;
+    current_phase?: string;
     runtime_id?: string;
     attempt_number: number;
     parent_task_id?: number;
@@ -672,9 +678,11 @@ export interface SpecForgeExecutionBundleDTO {
     output_log?: string;
     error_log?: string;
     exit_code?: number;
+    process_ref?: string;
     dispatched_at?: string;
     started_at?: string;
     finished_at?: string;
+    last_progress_at?: string;
     created_at: string;
     updated_at: string;
   }>;

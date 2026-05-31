@@ -87,6 +87,11 @@ import type { SpecForgeExecutionBundleDTO } from '@/features/specforge/services/
 import { isPRNodeActive, isPRNodeDelivered } from '@/features/specforge/status';
 import type { ExecutionRun, ExecutorRuntime, PlanBundle, PRNode } from '@/features/specforge/types';
 
+const executorOptions = [
+  { value: 'codex_cli', label: 'Codex CLI' },
+  { value: 'claude_code_cli', label: 'Claude Code CLI' },
+] as const;
+
 function demoPlanForInput(idea: string, repositoryId: string): PlanBundle {
   return {
     ...demoPlan,
@@ -130,6 +135,9 @@ export function SpecForgeWorkbench({
   );
   const [hasPlan, setHasPlan] = useState(!projectId);
   const [approved, setApproved] = useState(false);
+  const [selectedExecutor, setSelectedExecutor] = useState<'codex_cli' | 'claude_code_cli'>(
+    'codex_cli'
+  );
   const [run, setRun] = useState<ExecutionRun>({
     status: 'idle',
     selectedPRNodeIds: [],
@@ -185,11 +193,11 @@ export function SpecForgeWorkbench({
     () =>
       executionReadinessForExecutor({
         runtimes,
-        executor: 'codex_cli',
+        executor: selectedExecutor,
         now: runtimeNow,
         allowFallback: useRuntimeFallback,
       }),
-    [runtimeNow, runtimes, useRuntimeFallback]
+    [runtimeNow, runtimes, selectedExecutor, useRuntimeFallback]
   );
 
   const progressText = useMemo(() => {
@@ -333,6 +341,7 @@ export function SpecForgeWorkbench({
         const started = await startRun.mutateAsync({
           planId: approvedPlan.planId ?? activePlan.planId,
           payload: {
+            executor: selectedExecutor,
             pr_node_ids: selectedPRNodeIDs,
           },
         });
@@ -675,6 +684,11 @@ export function SpecForgeWorkbench({
                   setDecisionOverrides(current => ({ ...current, [key]: value }))
                 }
                 onExecutionNodeSelectionChange={setSelectedExecutionNodeIds}
+                selectedExecutor={selectedExecutor}
+                executorOptions={executorOptions}
+                onExecutorChange={value =>
+                  setSelectedExecutor(value as 'codex_cli' | 'claude_code_cli')
+                }
                 onApprove={approveAndStart}
               />
             </DetailPanel>

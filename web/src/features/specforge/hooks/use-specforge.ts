@@ -209,11 +209,16 @@ export function useLatestPlanRun(
   });
 }
 
-export function useSpecForgeTaskEvents(taskId?: number, afterSeq?: number) {
+export function useSpecForgeTaskEvents(
+  taskId?: number,
+  afterSeq?: number,
+  options?: { refetchInterval?: number | false }
+) {
   return useQuery({
     queryKey: specForgeKeys.taskEvents(taskId ?? 0, afterSeq),
     queryFn: () => specForgeService.listTaskEvents(taskId ?? 0, afterSeq),
     enabled: Boolean(taskId),
+    refetchInterval: options?.refetchInterval,
   });
 }
 
