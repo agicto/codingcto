@@ -150,8 +150,9 @@ const messages: DashboardMessages = {
     },
   },
   projectsConsole: {
-    title: 'Projects',
-    description: 'Create workspaces, organize repositories into projects, then run CodingCTO plans, prompts, and PR execution from real backend records.',
+    eyebrow: 'Project console',
+    title: 'Organize projects into executable delivery entry points',
+    description: 'Select a workspace, shape project boundaries, then connect GitHub repositories, prompts, and PR execution into one CodingCTO flow.',
     badges: {
       enterprise: 'Enterprise workspace',
       apiUnavailable: 'API unavailable',
@@ -161,9 +162,31 @@ const messages: DashboardMessages = {
       refresh: 'Refresh',
       refreshing: 'Refreshing',
       creating: 'Creating',
+      newWorkspace: 'New workspace',
+      newProject: 'New project',
       createWorkspace: 'Create workspace',
       createProject: 'Create project',
       openCodingCTO: 'Open CodingCTO',
+      configureGitHub: 'Configure GitHub',
+    },
+    metrics: {
+      workspaces: {
+        label: 'Workspaces',
+        caption: 'Enterprise boundary',
+      },
+      projects: {
+        label: 'Projects',
+        caption: 'Selected workspace',
+      },
+      workspace: {
+        label: 'Current',
+        caption: 'Select a workspace',
+        empty: 'Not selected',
+      },
+      api: {
+        label: 'Backend',
+        caption: 'Real data source',
+      },
     },
     fields: {
       name: 'Name',
@@ -171,29 +194,55 @@ const messages: DashboardMessages = {
       description: 'Description',
     },
     workspace: {
-      title: 'Workspace',
-      description: 'Select the enterprise boundary that owns these projects.',
+      title: 'Current workspace',
+      description: 'The workspace is the shared boundary for organization, permissions, GitHub binding, and CodingCTO execution.',
       selectPlaceholder: 'Select workspace',
       empty: 'No workspace yet. Create one to unlock project and CodingCTO flows.',
       noDescription: 'No workspace description yet.',
       id: 'ID: {id}',
     },
     projects: {
+      title: 'Delivery projects',
+      description: 'Each project should bind a primary repository and become context for planning, execution, and review.',
+      count: '{count} projects',
       loading: 'Loading projects from the selected workspace...',
       emptyForWorkspace: 'No projects in this workspace yet. Create one to start repository binding.',
       selectWorkspace: 'Select or create a workspace to list projects.',
+      emptyDescription: 'After creating a project, open the CodingCTO delivery board to bind GitHub repositories and generate an execution plan.',
       noDescription: 'No description yet.',
       primaryRepoRequired: 'Primary repo required',
+      status: {
+        active: 'Active',
+        inactive: 'Inactive',
+      },
     },
     newWorkspace: {
       title: 'New workspace',
-      description: 'Create the real enterprise container before project and GitHub binding.',
+      description: 'A workspace represents an organization or business unit. Projects, repositories, and permissions belong here.',
       descriptionPlaceholder: 'Who owns this product portfolio?',
     },
     newProject: {
       title: 'New project',
-      description: 'Start with a product boundary, then bind repositories in the next step.',
+      description: 'Define the product or system boundary first, then open the project delivery board to bind GitHub repositories.',
       descriptionPlaceholder: 'What product or system does this project represent?',
+    },
+    setup: {
+      title: 'Recommended path',
+      description: 'Like a deployment platform, define resource boundaries before execution.',
+      steps: {
+        project: {
+          title: 'Create the project boundary',
+          description: 'Clarify the product, system, or code domain this project represents.',
+        },
+        github: {
+          title: 'Bind GitHub repositories',
+          description: 'Connect the primary repository and read-only context repositories.',
+        },
+        delivery: {
+          title: 'Enter CodingCTO delivery',
+          description: 'Generate plans, execution tasks, and reviewable PRs with repository context.',
+        },
+      },
     },
     messages: {
       workspaceRequired: 'Workspace name and slug are required.',

@@ -158,7 +158,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
             <ThemeToggle />
             <Button variant="ghost" isIcon className="h-8 w-8 rounded-md">
               <Bell className="h-4 w-4 text-text-subtle" />
-              <span className="sr-only">Notifications</span>
+              <span className="sr-only">{t('nav.notifications')}</span>
             </Button>
             <DropdownMenu>
               <DropdownMenuTrigger asChild>
@@ -179,7 +179,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
                         .toUpperCase() || 'CT'}
                     </AvatarFallback>
                   </Avatar>
-                  <span className="sr-only">Profile</span>
+                  <span className="sr-only">{t('nav.profile')}</span>
                 </Button>
               </DropdownMenuTrigger>
               <DropdownMenuContent align="end" className="w-56 rounded-lg p-1">

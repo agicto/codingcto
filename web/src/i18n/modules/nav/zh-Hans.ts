@@ -6,6 +6,7 @@ const messages = {
   specforge: 'CodingCTO',
   settings: '设置',
   profile: '个人资料',
+  notifications: '通知',
   analytics: '数据分析',
   styleguide: '设计规范',
 };
