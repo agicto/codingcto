@@ -21,3 +21,4 @@ Thumbs.db
 /.codex/tmp/
 /deploy/data/
 /deploy/postgres_data/
+/deploy/redis_data/
