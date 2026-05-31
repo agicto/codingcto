@@ -25,7 +25,11 @@ import {
   projectContextReadiness,
   projectOverviewDecision,
 } from '@/features/project/project-context';
-import { projectContextHref, projectSpecForgeHref } from '@/features/project/project-utils';
+import {
+  projectContextHref,
+  projectRequirementNewHref,
+  projectSpecForgeHref,
+} from '@/features/project/project-utils';
 import { useProjectContext } from '@/features/project/hooks/use-projects';
 import { useLatestPlanRun, useLatestProjectPlan } from '@/features/specforge/hooks/use-specforge';
 import type {
@@ -84,17 +88,21 @@ export function ProjectOverview({
   const contract = projectContextContract(context);
   const deliveryHref = projectSpecForgeHref(context.project.id);
   const contextHref = projectContextHref(context.project.id);
+  const requirementHref = projectRequirementNewHref(context.project.id);
   const latestPlanQuery = useLatestProjectPlan(context.project.id);
   const latestPlan = latestPlanQuery.data;
   const latestRunQuery = useLatestPlanRun(latestPlan?.implementation_plan.id, {
-    enabled: Boolean(latestPlan?.implementation_plan.id),
+    enabled: Boolean(
+      latestPlan?.implementation_plan.id && latestPlan.implementation_plan.status === 'approved'
+    ),
     refetchInterval: false,
   });
   const latestRun = latestRunQuery.data;
   const resolvedActionHref = resolveOverviewActionHref(
     decision.actionHref,
     deliveryHref,
-    contextHref
+    contextHref,
+    requirementHref
   );
   const toneClassName =
     decision.tone === 'success'
@@ -318,10 +326,14 @@ function OverviewStatusCard({
 function resolveOverviewActionHref(
   anchor: string,
   deliveryHref: string,
-  contextHref: string
+  contextHref: string,
+  requirementHref: string
 ): string {
   if (anchor === '#project-context') {
     return contextHref;
+  }
+  if (anchor === '#project-requirement') {
+    return requirementHref;
   }
   if (anchor.startsWith('#')) {
     return `${deliveryHref}${anchor}`;

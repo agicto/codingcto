@@ -4,7 +4,7 @@ import Link from 'next/link';
 import { FormEvent, useState } from 'react';
 import { useParams } from 'next/navigation';
 import { useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, RefreshCw } from 'lucide-react';
+import { ArrowRight, KeyRound, RefreshCw, ScrollText } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -29,6 +29,7 @@ import {
   projectContextContract,
   projectContextMissingEvidence,
   projectContextReadiness,
+  projectSkillContract,
 } from '@/features/project/project-context';
 import type {
   ProjectContextDTO,
@@ -95,8 +96,102 @@ export function ProjectContextPanel({ context }: { context: ProjectContextDTO })
           item => item.repository.repository_id
         )}
       />
+      <ProjectSkillContractPanel context={context} />
       <ProjectContextReadiness context={context} />
     </div>
+  );
+}
+
+function ProjectSkillContractPanel({ context }: { context: ProjectContextDTO }) {
+  const skillContract = projectSkillContract(context);
+
+  return (
+    <Card id="skill-contract" className="scroll-mt-20">
+      <CardHeader>
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ScrollText className="h-4 w-4 text-primary" />
+              Skill contract
+            </CardTitle>
+            <CardDescription className="mt-1">
+              Review the instructions that will constrain planning, PR DAG generation, and prompt
+              compilation.
+            </CardDescription>
+          </div>
+          <Badge
+            variant="outline"
+            className={
+              skillContract.canPlanWithSkills
+                ? 'border-success/30 text-success'
+                : 'border-warning/30 text-warning'
+            }
+          >
+            {skillContract.canPlanWithSkills ? 'Complete' : 'Needs skills'}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm leading-6 text-text-muted">{skillContract.summary}</p>
+        <div className="grid gap-2 text-xs sm:grid-cols-3">
+          <ReadinessMetric label="Pinned skills" value={skillContract.pinnedSkillCount} />
+          <ReadinessMetric label="Repo skills" value={skillContract.repositorySkillCount} />
+          <ReadinessMetric label="Evidence refs" value={skillContract.promptEvidenceRefs.length} />
+        </div>
+        <div className="grid gap-3 lg:grid-cols-2">
+          <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+            <div className="flex items-center gap-2 text-sm font-medium text-text-main">
+              <KeyRound className="h-4 w-4 text-primary" />
+              Effective skills
+            </div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {skillContract.effectiveSkillNames.map(name => (
+                <Badge key={name} variant="outline">
+                  {name}
+                </Badge>
+              ))}
+              {skillContract.effectiveSkillNames.length === 0 ? (
+                <span className="text-xs text-text-muted">No active skill instructions.</span>
+              ) : null}
+            </div>
+          </div>
+          <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+            <div className="text-sm font-medium text-text-main">Repositories missing skills</div>
+            <div className="mt-3 flex flex-wrap gap-2">
+              {skillContract.repositoriesMissingSkills.map(repositoryID => (
+                <Badge
+                  key={repositoryID}
+                  variant="outline"
+                  className="border-warning/30 text-warning"
+                >
+                  {repositoryID}
+                </Badge>
+              ))}
+              {skillContract.repositoriesMissingSkills.length === 0 ? (
+                <span className="text-xs text-text-muted">
+                  Every active repository has prompt instructions.
+                </span>
+              ) : null}
+            </div>
+          </div>
+        </div>
+        <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+          <div className="text-sm font-medium text-text-main">Prompt evidence refs</div>
+          <div className="mt-3 flex flex-wrap gap-2">
+            {skillContract.promptEvidenceRefs.slice(0, 10).map(ref => (
+              <Badge key={ref} variant="outline" className="font-mono text-[11px] text-text-muted">
+                {ref}
+              </Badge>
+            ))}
+            {skillContract.promptEvidenceRefs.length === 0 ? (
+              <span className="text-xs text-text-muted">
+                No skill evidence refs will be attached to compiled prompts.
+              </span>
+            ) : null}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 

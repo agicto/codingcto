@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   projectContextHref,
+  projectRequirementNewHref,
   projectSpecForgeHref,
   repositoryRoleLabel,
   slugFromProjectName,
@@ -19,6 +20,10 @@ describe('project utils', () => {
 
   it('builds project-scoped context routes', () => {
     expect(projectContextHref(42)).toBe('/console/projects/42/context');
+  });
+
+  it('builds project-scoped requirement intake routes', () => {
+    expect(projectRequirementNewHref(42)).toBe('/console/projects/42/requirements/new');
   });
 
   it('labels repository roles for scanning', () => {

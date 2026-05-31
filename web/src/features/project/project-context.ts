@@ -38,6 +38,16 @@ export interface ProjectRepositoryEvidence {
   missingEvidence: string[];
 }
 
+export interface ProjectSkillContract {
+  pinnedSkillCount: number;
+  repositorySkillCount: number;
+  effectiveSkillNames: string[];
+  promptEvidenceRefs: string[];
+  repositoriesMissingSkills: string[];
+  canPlanWithSkills: boolean;
+  summary: string;
+}
+
 export function primaryRepositoryContext(
   context?: ProjectContextDTO
 ): ProjectRepositoryContextDTO | undefined {
@@ -96,6 +106,47 @@ export function projectContextMissingEvidence(context?: ProjectContextDTO): stri
   }
 
   return projectRepositoryEvidence(context).flatMap(item => item.missingEvidence);
+}
+
+export function projectSkillContract(context?: ProjectContextDTO): ProjectSkillContract {
+  const contractSkillNames = context?.context_contract?.skill_names ?? [];
+  const repositoryContexts = context?.repository_contexts ?? [];
+  const repositorySkills = repositoryContexts.flatMap(item =>
+    (item.skills ?? [])
+      .filter(skill => skill.active)
+      .map(skill => ({
+        id: skill.id,
+        name: skill.name,
+        repositoryId: skill.repository_id || item.repository.repository_id,
+      }))
+  );
+  const effectiveSkillNames = normalizeSkillNames(
+    contractSkillNames.length > 0 ? contractSkillNames : repositorySkills.map(skill => skill.name)
+  );
+  const promptEvidenceRefs = normalizeSkillNames(
+    repositorySkills
+      .filter(skill => skill.id > 0)
+      .map(skill => `skill:${skill.id}`)
+      .concat(effectiveSkillNames.map(name => `skill_name:${name}`))
+  );
+  const repositoriesMissingSkills = repositoryContexts
+    .filter(
+      item =>
+        item.repository.active && (item.skills ?? []).filter(skill => skill.active).length === 0
+    )
+    .map(item => item.repository.repository_id);
+  const canPlanWithSkills =
+    effectiveSkillNames.length > 0 && repositoriesMissingSkills.length === 0;
+
+  return {
+    pinnedSkillCount: contractSkillNames.length,
+    repositorySkillCount: repositorySkills.length,
+    effectiveSkillNames,
+    promptEvidenceRefs,
+    repositoriesMissingSkills,
+    canPlanWithSkills,
+    summary: skillContractSummary(effectiveSkillNames.length, repositoriesMissingSkills.length),
+  };
 }
 
 export function projectContextReadiness(context?: ProjectContextDTO): ProjectContextReadiness {
@@ -175,10 +226,24 @@ export function projectOverviewDecision(context?: ProjectContextDTO): ProjectOve
     title: 'Create a requirement',
     description:
       'The project context is ready enough to turn a product change into a plan and PR DAG.',
-    actionLabel: 'Open delivery board',
-    actionHref: '#project-delivery',
+    actionLabel: 'Create requirement',
+    actionHref: '#project-requirement',
     tone: 'success',
   };
+}
+
+function normalizeSkillNames(values: string[]): string[] {
+  return Array.from(new Set(values.map(value => value.trim()).filter(Boolean)));
+}
+
+function skillContractSummary(skillCount: number, missingRepositoryCount: number) {
+  if (skillCount === 0) {
+    return 'No active skills will be injected into planning or prompt compilation.';
+  }
+  if (missingRepositoryCount > 0) {
+    return `${skillCount} skills are available, but ${missingRepositoryCount} active repositories still need explicit instructions.`;
+  }
+  return `${skillCount} skills are ready for planning, PR DAG generation, and prompt compilation.`;
 }
 
 function readinessSummary(activeRepositoryCount: number, primaryRepositoryID?: string) {
