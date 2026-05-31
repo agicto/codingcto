@@ -53,7 +53,7 @@ export async function proxyAPIRequest(request: NextRequest, path: string[]): Pro
 
 export function buildAPIURL(request: Request, path: string[]): URL {
   const sourceURL = new URL(request.url);
-  const apiTarget = process.env.LUAS_API_PROXY_TARGET ?? 'http://localhost:8025';
+  const apiTarget = process.env.LUAS_API_PROXY_TARGET ?? 'http://localhost:2010';
   const targetURL = new URL(`/v1/${path.map(encodeURIComponent).join('/')}`, apiTarget);
   targetURL.search = sourceURL.search;
   return targetURL;

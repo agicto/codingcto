@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
 
   const searchParams = request.nextUrl.searchParams;
   const repositoryId = searchParams.get('repository_id')?.trim() || '<repository-id>';
-  const apiTarget = process.env.LUAS_API_PROXY_TARGET ?? 'http://localhost:8025';
+  const apiTarget = process.env.LUAS_API_PROXY_TARGET ?? 'http://localhost:2010';
   const apiBaseURL = new URL('/v1', apiTarget).toString().replace(/\/$/, '');
   const workspaceRoot = process.cwd().replace(/\/web$/, '');
   const apiDir = `${workspaceRoot}/api`;

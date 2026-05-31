@@ -28,15 +28,21 @@ Each half has its own `AGENTS.md` with the detailed rules. Read those before edi
 
 ## Commands you might run
 
+Local development ports are fixed to avoid common conflicts:
+
+- Web: `http://localhost:2020`
+- API: `http://localhost:2010`
+- API `/v1` base URL: `http://localhost:2010/v1`
+
 ```bash
 # api/
-cd api && make wire && make run         # generate DI + start server
+cd api && make wire && make run         # generate DI + start server on :2010
 cd api && go vet ./...                  # quick correctness check
 cd api && make test                     # run Go tests
 
 # web/
 cd web && pnpm install                  # install
-cd web && pnpm dev                      # dev server with Turbopack
+cd web && pnpm dev                      # dev server with Turbopack on :2020
 cd web && pnpm type-check               # TypeScript check
 cd web && pnpm lint                     # ESLint
 ```

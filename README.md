@@ -48,7 +48,7 @@ Core product docs:
 cd api
 cp .env.example .env
 make wire     # generate DI
-make run      # start server on :8025
+make run      # start server on :2010
 ```
 
 See [api/README.md](api/README.md) for the full Go backend guide. Some internal module names still use `luas` for compatibility with the original scaffold history.
@@ -60,7 +60,7 @@ After the API has an approved plan and dispatched execution task, a local Codex 
 ```bash
 cd api
 go run ./cmd/specforge-runtime \
-  --api-base-url http://localhost:8025/v1 \
+  --api-base-url http://localhost:2010/v1 \
   --token "$SPECFORGE_RUNTIME_TOKEN" \
   --repo-dir /path/to/local/repo \
   --repository-id github_owner__repo
@@ -73,7 +73,7 @@ The runtime sends heartbeat events, claims `codex_cli` tasks, checks out the PR 
 ```bash
 cd web
 pnpm install
-pnpm dev      # start Next.js on :3000
+pnpm dev      # start Next.js on :2020
 ```
 
 See [web/README.md](web/README.md) for the full frontend guide.

@@ -24,6 +24,6 @@ COPY --from=builder /app/.env.example /app/.env
 
 ENV TZ=UTC
 
-EXPOSE 8025
+EXPOSE 2010
 
 ENTRYPOINT ["/app/luas-server"]

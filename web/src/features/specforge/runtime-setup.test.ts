@@ -5,7 +5,7 @@ import { buildRuntimeSetupCommand, runtimeSetupChecklist } from '@/features/spec
 describe('runtime setup', () => {
   it('builds a local Codex runtime command for one execution cycle', () => {
     const command = buildRuntimeSetupCommand({
-      apiBaseUrl: 'http://localhost:8025/v1',
+      apiBaseUrl: 'http://localhost:2010/v1',
       runtimeId: 'local-codex-plan-42',
       repositoryId: 'repo_123',
       repoDir: '/Users/example/codingcto',
@@ -15,7 +15,7 @@ describe('runtime setup', () => {
     expect(command).toContain('cd api');
     expect(command).toContain('export SPECFORGE_RUNTIME_TOKEN="paste-runtime-token-here"');
     expect(command).toContain('go run ./cmd/specforge-runtime');
-    expect(command).toContain('--api-base-url http://localhost:8025/v1');
+    expect(command).toContain('--api-base-url http://localhost:2010/v1');
     expect(command).toContain('--runtime-id local-codex-plan-42');
     expect(command).toContain('--repo-dir /Users/example/codingcto');
     expect(command).toContain('--repository-id repo_123');

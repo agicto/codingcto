@@ -907,12 +907,12 @@ export function SpecForgeWorkbench({
         onCreate={generatePlanFromRequirementDialog}
         onReset={resetIdea}
       />
-      <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border-subtle px-4 py-2">
+      <header className="flex min-h-14 shrink-0 flex-wrap items-center justify-between gap-3 border-b border-border-subtle px-4 py-3">
         <div className="flex items-center gap-3">
           <ListChecks className="h-4 w-4 text-primary" />
           <div>
             <h1 className="text-base font-semibold">{t('header.title')}</h1>
-            <p className="text-xs text-text-muted">
+            <p className="text-xs leading-5 text-text-muted">
               {projectLabel ? `${projectLabel} · ` : ''}
               {t('header.description')}
             </p>
@@ -931,6 +931,22 @@ export function SpecForgeWorkbench({
           </Button>
         </div>
       </header>
+
+      <section className="border-b border-border-subtle bg-bg-canvas px-4 py-3">
+        <div className="grid gap-2 text-xs text-text-subtle md:grid-cols-4">
+          {[
+            t('workflow.requirement'),
+            t('workflow.repository'),
+            t('workflow.plan'),
+            t('workflow.delivery'),
+          ].map((label, index) => (
+            <div key={label} className="rounded-[var(--radius-card)] bg-bg-surface px-3 py-2">
+              <span className="mr-2 text-text-muted">{index + 1}</span>
+              <span className="font-medium text-text-main">{label}</span>
+            </div>
+          ))}
+        </div>
+      </section>
 
       <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle px-4">
         <Button
