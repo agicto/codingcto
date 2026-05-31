@@ -17,6 +17,10 @@ export function projectOverviewHref(projectId: number): string {
   return buildRoute(ROUTES.CONSOLE.PROJECT, { projectId });
 }
 
+export function projectContextHref(projectId: number): string {
+  return buildRoute(ROUTES.CONSOLE.PROJECT_CONTEXT, { projectId });
+}
+
 export function repositoryRoleLabel(role: string): string {
   switch (role) {
     case 'primary':

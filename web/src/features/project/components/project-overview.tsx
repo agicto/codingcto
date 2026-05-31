@@ -25,7 +25,7 @@ import {
   projectContextReadiness,
   projectOverviewDecision,
 } from '@/features/project/project-context';
-import { projectSpecForgeHref } from '@/features/project/project-utils';
+import { projectContextHref, projectSpecForgeHref } from '@/features/project/project-utils';
 import { useProjectContext } from '@/features/project/hooks/use-projects';
 import { useLatestPlanRun, useLatestProjectPlan } from '@/features/specforge/hooks/use-specforge';
 import type {
@@ -83,6 +83,7 @@ export function ProjectOverview({
   const decision = projectOverviewDecision(context);
   const contract = projectContextContract(context);
   const deliveryHref = projectSpecForgeHref(context.project.id);
+  const contextHref = projectContextHref(context.project.id);
   const latestPlanQuery = useLatestProjectPlan(context.project.id);
   const latestPlan = latestPlanQuery.data;
   const latestRunQuery = useLatestPlanRun(latestPlan?.implementation_plan.id, {
@@ -90,7 +91,11 @@ export function ProjectOverview({
     refetchInterval: false,
   });
   const latestRun = latestRunQuery.data;
-  const resolvedActionHref = resolveOverviewActionHref(decision.actionHref, deliveryHref);
+  const resolvedActionHref = resolveOverviewActionHref(
+    decision.actionHref,
+    deliveryHref,
+    contextHref
+  );
   const toneClassName =
     decision.tone === 'success'
       ? 'border-success/30 bg-success-subtle text-success'
@@ -310,7 +315,14 @@ function OverviewStatusCard({
   );
 }
 
-function resolveOverviewActionHref(anchor: string, deliveryHref: string): string {
+function resolveOverviewActionHref(
+  anchor: string,
+  deliveryHref: string,
+  contextHref: string
+): string {
+  if (anchor === '#project-context') {
+    return contextHref;
+  }
   if (anchor.startsWith('#')) {
     return `${deliveryHref}${anchor}`;
   }
