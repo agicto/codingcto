@@ -21,6 +21,7 @@ type Service interface {
 	CreateProjectRequirement(ctx context.Context, userID, projectID uint, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error)
 	GenerateRequirementPlan(ctx context.Context, userID, requirementID uint, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error)
 	GetLatestPlanForProject(ctx context.Context, projectID uint) (*domain.SpecForgePlanBundle, error)
+	GetPlan(ctx context.Context, planID uint) (*domain.SpecForgePlanBundle, error)
 	GetPlanForIdea(ctx context.Context, ideaID uint) (*domain.SpecForgePlanBundle, error)
 	GetPlanForRequirement(ctx context.Context, requirementID uint) (*domain.SpecForgePlanBundle, error)
 	ApprovePlan(ctx context.Context, userID, planID uint, req *ApprovePlanRequest) (*domain.SpecForgePlanBundle, error)
@@ -206,6 +207,17 @@ func (s *service) GetPlanForIdea(ctx context.Context, ideaID uint) (*domain.Spec
 		return nil, domain.ErrInvalidInput
 	}
 	bundle, err := s.repo.FindPlanBundleByIdeaID(ctx, ideaID)
+	if err != nil {
+		return nil, err
+	}
+	return s.withRepoProfile(ctx, bundle)
+}
+
+func (s *service) GetPlan(ctx context.Context, planID uint) (*domain.SpecForgePlanBundle, error) {
+	if planID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	bundle, err := s.repo.FindPlanBundleByPlanID(ctx, planID)
 	if err != nil {
 		return nil, err
 	}
