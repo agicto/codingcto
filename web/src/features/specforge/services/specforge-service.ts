@@ -98,6 +98,7 @@ export interface StartRunPayload {
 
 export interface DispatchRunPayload {
   max_tasks?: number;
+  require_runtime_ready?: boolean;
 }
 
 export interface RuntimeHeartbeatPayload {

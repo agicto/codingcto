@@ -114,6 +114,10 @@ import {
   executionRangeReview,
   selectExecutionNode,
 } from '@/features/specforge/execution-range';
+import {
+  executionReadinessForExecutor,
+  type ExecutionReadiness,
+} from '@/features/specforge/execution-readiness';
 import type {
   CompilePromptPayload,
   SpecForgeFixAttemptDTO,
@@ -305,26 +309,39 @@ export function SpecForgeWorkbench({
   const runningCount = run.tasks.filter(task => isPRNodeActive(task.status)).length;
   const runtimesQuery = useSpecForgeRuntimes({ limit: 20 });
   const runtimeDTOs = runtimesQuery.data?.runtimes;
+  const useRuntimeFallback = !projectId && Boolean(runtimesQuery.isError || !runtimeDTOs?.length);
   const runtimes = useMemo(() => {
     if (runtimeDTOs?.length) {
       return runtimeDTOs.map(runtimeFromDTO);
     }
-    return demoRuntimes;
-  }, [runtimeDTOs]);
-  const runtimeNow = runtimeDTOs?.length ? currentRuntimeNow : demoRuntimeNow;
+    return useRuntimeFallback ? demoRuntimes : [];
+  }, [runtimeDTOs, useRuntimeFallback]);
+  const runtimeNow = runtimeDTOs?.length
+    ? currentRuntimeNow
+    : useRuntimeFallback
+      ? demoRuntimeNow
+      : currentRuntimeNow;
   const runtimeSummary = useMemo(
     () => summarizeRuntimeHealth(runtimes, runtimeNow),
     [runtimes, runtimeNow]
   );
+  const executionReadiness = useMemo(
+    () =>
+      executionReadinessForExecutor({
+        runtimes,
+        executor: 'codex_cli',
+        now: runtimeNow,
+        allowFallback: useRuntimeFallback,
+      }),
+    [runtimeNow, runtimes, useRuntimeFallback]
+  );
 
   const progressText = useMemo(() => {
     if (run.status === 'idle') {
-      return runtimeSummary.online > 0
-        ? 'Awaiting plan approval; a healthy executor is ready'
-        : 'Awaiting plan approval; no healthy executor is online';
+      return `Awaiting plan approval; ${executionReadiness.reason}`;
     }
     return `${readyCount} / ${run.tasks.length} PR nodes ready or merged`;
-  }, [readyCount, run.status, run.tasks.length, runtimeSummary.online]);
+  }, [executionReadiness.reason, readyCount, run.status, run.tasks.length]);
 
   useEffect(() => {
     activePlanRef.current = activePlan;
@@ -465,6 +482,9 @@ export function SpecForgeWorkbench({
         });
         const dispatched = await dispatchRun.mutateAsync({
           runId: started.run.id,
+          payload: {
+            require_runtime_ready: true,
+          },
         });
         const next = executionRunFromDTO(dispatched, approvedPlan);
         if (next.plan) {
@@ -863,6 +883,7 @@ export function SpecForgeWorkbench({
                 selectedExecutionNodeIds={selectedExecutionNodeIds}
                 approved={approved}
                 isStarting={isStartingRun}
+                executionReadiness={executionReadiness}
                 onDecisionOverrideChange={(key, value) =>
                   setDecisionOverrides(current => ({ ...current, [key]: value }))
                 }
@@ -910,7 +931,8 @@ export function SpecForgeWorkbench({
                   recentlyLostCount={runtimeSummary.recently_lost}
                   runtimes={runtimes}
                   isLoading={runtimesQuery.isLoading}
-                  isFallback={Boolean(runtimesQuery.isError || !runtimeDTOs?.length)}
+                  isFallback={useRuntimeFallback}
+                  readinessReason={executionReadiness.reason}
                 />
                 <ExecutionStatus
                   run={run}
@@ -983,12 +1005,14 @@ function RuntimeReadiness({
   runtimes,
   isLoading,
   isFallback,
+  readinessReason,
 }: {
   onlineCount: number;
   recentlyLostCount: number;
   runtimes: ExecutorRuntime[];
   isLoading: boolean;
   isFallback: boolean;
+  readinessReason: string;
 }) {
   const sweepRuntimes = useSweepSpecForgeRuntimes();
   const sweepTasks = useSweepSpecForgeTasks();
@@ -1029,11 +1053,7 @@ function RuntimeReadiness({
           <div>
             <div className="text-sm font-medium">Executor readiness</div>
             <div className="mt-1 text-sm text-text-muted">
-              {isLoading
-                ? 'Checking executor runtime heartbeats.'
-                : onlineCount > 0
-                  ? 'Approved plans can be dispatched to a healthy runtime.'
-                  : 'Execution will wait until a runtime heartbeat is online.'}
+              {isLoading ? 'Checking executor runtime heartbeats.' : readinessReason}
             </div>
           </div>
         </div>
@@ -1998,6 +2018,7 @@ function PlanReview({
   selectedExecutionNodeIds,
   approved,
   isStarting,
+  executionReadiness,
   onDecisionOverrideChange,
   onExecutionNodeSelectionChange,
   onApprove,
@@ -2007,6 +2028,7 @@ function PlanReview({
   selectedExecutionNodeIds: string[];
   approved: boolean;
   isStarting: boolean;
+  executionReadiness: ExecutionReadiness;
   onDecisionOverrideChange: (key: string, value: string) => void;
   onExecutionNodeSelectionChange: (nodeIds: string[]) => void;
   onApprove: () => void;
@@ -2075,10 +2097,19 @@ function PlanReview({
               Select at least one PR node before starting execution.
             </p>
           )}
+          {!executionReadiness.canDispatch && (
+            <p className="rounded-md border border-warning/30 bg-warning-subtle px-3 py-2 text-sm text-warning">
+              {executionReadiness.reason}
+            </p>
+          )}
           <Button
             onClick={onApprove}
             disabled={
-              approved || isStarting || !approvalReadiness.canApprove || !canStartSelectedRange
+              approved ||
+              isStarting ||
+              !approvalReadiness.canApprove ||
+              !canStartSelectedRange ||
+              !executionReadiness.canDispatch
             }
             className="w-full justify-center"
           >
