@@ -55,6 +55,8 @@ import {
 import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
 import type { ProjectDTO } from '@/features/project/services/project-service';
 
+const minSlugLength = 2;
+
 export function ProjectConsole() {
   const t = useT('dashboard.projectsConsole');
   const [workspaceName, setWorkspaceName] = useState('');
@@ -103,6 +105,10 @@ export function ProjectConsole() {
       setWorkspaceError(t('messages.workspaceRequired'));
       return;
     }
+    if (trimmedSlug.length < minSlugLength) {
+      setWorkspaceError(t('messages.slugInvalid'));
+      return;
+    }
 
     try {
       const response = await createWorkspace.mutateAsync({
@@ -131,6 +137,10 @@ export function ProjectConsole() {
     }
     if (!trimmedName || !trimmedSlug) {
       setFormError(t('messages.projectRequired'));
+      return;
+    }
+    if (trimmedSlug.length < minSlugLength) {
+      setFormError(t('messages.slugInvalid'));
       return;
     }
 
@@ -311,7 +321,7 @@ export function ProjectConsole() {
         </CardContent>
       </Card>
 
-      <div className="grid gap-5 lg:grid-cols-[minmax(0,1fr)_360px]">
+      <div className="grid gap-5 xl:grid-cols-[minmax(0,1fr)_420px]">
         <Card className="gap-0 overflow-hidden border-border-subtle py-0 shadow-xs">
           <CardHeader className="flex flex-col gap-3 border-b border-border-subtle bg-background/95 p-5 md:flex-row md:items-center md:justify-between">
             <div>
@@ -363,8 +373,8 @@ export function ProjectConsole() {
           </CardContent>
         </Card>
 
-        <aside className="space-y-5">
-          <Card className="gap-0 border-border-subtle py-0 shadow-xs">
+        <aside className="min-w-0 space-y-5">
+          <Card className="gap-0 overflow-hidden border-border-subtle py-0 shadow-xs">
             <CardHeader>
               <CardTitle className="flex items-center gap-2 text-base">
                 <GitPullRequest className="h-4 w-4 text-primary" />
@@ -372,17 +382,46 @@ export function ProjectConsole() {
               </CardTitle>
               <CardDescription>{t('setup.description')}</CardDescription>
             </CardHeader>
-            <CardContent className="space-y-4">
-              <SetupStep index="01" title={t('setup.steps.project.title')} description={t('setup.steps.project.description')} />
-              <SetupStep index="02" title={t('setup.steps.github.title')} description={t('setup.steps.github.description')} />
-              <SetupStep index="03" title={t('setup.steps.delivery.title')} description={t('setup.steps.delivery.description')} />
+            <CardContent className="space-y-3">
+              <SetupStep
+                index="01"
+                icon={<Boxes className="h-4 w-4" />}
+                title={t('setup.steps.project.title')}
+                description={t('setup.steps.project.description')}
+              />
+              <SetupStep
+                index="02"
+                icon={<Github className="h-4 w-4" />}
+                title={t('setup.steps.github.title')}
+                description={t('setup.steps.github.description')}
+              />
+              <SetupStep
+                index="03"
+                icon={<GitPullRequest className="h-4 w-4" />}
+                title={t('setup.steps.delivery.title')}
+                description={t('setup.steps.delivery.description')}
+              />
               <Separator />
-              <Button asChild variant="outline" className="w-full">
-                <Link href="/console/settings?tab=github">
-                  {t('actions.configureGitHub')}
-                  <Github className="ml-1.5 h-4 w-4" />
-                </Link>
-              </Button>
+              <div className="grid gap-2">
+                <Button asChild variant="outline" className="w-full justify-between">
+                  <Link href="/console/settings?tab=github">
+                    <span className="inline-flex items-center gap-2">
+                      <Github className="h-4 w-4" />
+                      {t('actions.configureGitHub')}
+                    </span>
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+                <Button asChild variant="outline" className="w-full justify-between">
+                  <Link href="/console/agents">
+                    <span className="inline-flex items-center gap-2">
+                      <Sparkles className="h-4 w-4" />
+                      {t('actions.openAgents')}
+                    </span>
+                    <ArrowRight className="h-4 w-4" />
+                  </Link>
+                </Button>
+              </div>
             </CardContent>
           </Card>
         </aside>
@@ -473,7 +512,9 @@ function WorkspaceDialogContent({
               value={workspaceSlug}
               onChange={event => onSlugChange(slugFromProjectName(event.target.value))}
               placeholder="acme-platform"
+              minLength={minSlugLength}
             />
+            <p className="text-xs leading-5 text-text-muted">{t('fields.slugHelp')}</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="workspace-description">{t('fields.description')}</Label>
@@ -551,7 +592,9 @@ function ProjectDialogContent({
               onChange={event => onSlugChange(slugFromProjectName(event.target.value))}
               placeholder="codingcto"
               disabled={!selectedWorkspaceId}
+              minLength={minSlugLength}
             />
+            <p className="text-xs leading-5 text-text-muted">{t('fields.slugHelp')}</p>
           </div>
           <div className="space-y-2">
             <Label htmlFor="project-description">{t('fields.description')}</Label>
@@ -585,19 +628,28 @@ function ProjectDialogContent({
 
 function SetupStep({
   index,
+  icon,
   title,
   description,
 }: {
   index: string;
+  icon: ReactNode;
   title: string;
   description: string;
 }) {
   return (
-    <div className="flex gap-3">
-      <div className="mt-0.5 font-mono text-xs text-text-muted">{index}</div>
-      <div>
-        <div className="text-sm font-medium text-text-main">{title}</div>
+    <div className="rounded-lg border border-border-subtle bg-bg-surface p-3">
+      <div className="flex gap-3">
+        <div className="flex h-8 w-8 shrink-0 items-center justify-center rounded-md border border-border-subtle bg-bg-subtle text-primary">
+          {icon}
+        </div>
+        <div className="min-w-0">
+        <div className="flex items-center gap-2 text-sm font-medium text-text-main">
+          <span className="font-mono text-xs text-text-muted">{index}</span>
+          <span className="break-words">{title}</span>
+        </div>
         <p className="mt-1 text-sm leading-6 text-text-muted">{description}</p>
+        </div>
       </div>
     </div>
   );

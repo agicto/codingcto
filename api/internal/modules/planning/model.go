@@ -141,6 +141,7 @@ type SkillPO struct {
 	Description  string `gorm:"type:text"`
 	Content      string `gorm:"type:text;not null"`
 	Active       bool   `gorm:"not null;default:true;index"`
+	TargetAgents string `gorm:"column:target_agents;type:text;not null;default:'[]'"`
 	CreatedBy    uint   `gorm:"not null;index"`
 	CreatedAt    time.Time
 	UpdatedAt    time.Time
@@ -349,6 +350,7 @@ func newSkillPO(skill *domain.SpecForgeSkill) *SkillPO {
 		Description:  skill.Description,
 		Content:      skill.Content,
 		Active:       skill.Active,
+		TargetAgents: encodeStrings(skill.TargetAgents),
 		CreatedBy:    skill.CreatedBy,
 		CreatedAt:    skill.CreatedAt,
 		UpdatedAt:    skill.UpdatedAt,
@@ -363,6 +365,7 @@ func (po *SkillPO) toDomain() *domain.SpecForgeSkill {
 		Description:  po.Description,
 		Content:      po.Content,
 		Active:       po.Active,
+		TargetAgents: decodeStrings(po.TargetAgents),
 		CreatedBy:    po.CreatedBy,
 		CreatedAt:    po.CreatedAt,
 		UpdatedAt:    po.UpdatedAt,

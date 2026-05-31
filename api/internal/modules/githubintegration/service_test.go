@@ -98,6 +98,144 @@ func TestUpsertRepositoryDefaultsRepositoryIDAndBranch(t *testing.T) {
 	require.Equal(t, uint(9), repository.CreatedBy)
 }
 
+func TestUpsertRepositoryCanMoveKnownInstallationRepositoryToWorkspace(t *testing.T) {
+	repo := &memoryRepo{
+		repository: &domain.Repository{
+			RepositoryID:         "github_agicto__codingcto-key",
+			WorkspaceID:          "default",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto-key",
+			DefaultBranch:        "main",
+			IsPrivate:            true,
+		},
+	}
+	tokenProvider := &fakeInstallationTokenProvider{err: fmt.Errorf("token request failed")}
+	svc := NewService(repo, nil, &fakeRepositoryClientFactory{client: &fakeRepositoryClient{}}, tokenProvider, nil)
+
+	repository, err := svc.UpsertRepository(context.Background(), 9, &UpsertRepositoryRequest{
+		RepositoryID:         "github_agicto__codingcto-key",
+		WorkspaceID:          "workspace_s_d",
+		GitHubInstallationID: 3,
+		GitHubOwner:          "agicto",
+		GitHubRepo:           "codingcto-key",
+		DefaultBranch:        "main",
+		IsPrivate:            true,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "workspace_s_d", repository.WorkspaceID)
+	require.Equal(t, int64(0), tokenProvider.installationID)
+}
+
+func TestCheckRepositoryReadinessReportsMissingIssueWriteAndTokenFailure(t *testing.T) {
+	repo := &memoryRepo{
+		installation: &domain.GitHubInstallation{
+			ID:             3,
+			WorkspaceID:    "workspace_s_d",
+			InstallationID: 136915108,
+			AccountLogin:   "agicto",
+			Permissions: map[string]string{
+				"metadata":      "read",
+				"contents":      "write",
+				"pull_requests": "write",
+				"issues":        "read",
+				"actions":       "read",
+				"statuses":      "read",
+			},
+		},
+		repository: &domain.Repository{
+			RepositoryID:         "github_agicto__codingcto-key",
+			WorkspaceID:          "workspace_s_d",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto-key",
+			DefaultBranch:        "main",
+			IsPrivate:            true,
+		},
+	}
+	svc := NewService(repo, nil, &fakeRepositoryClientFactory{client: &fakeRepositoryClient{}}, &fakeInstallationTokenProvider{err: fmt.Errorf("token request failed: Not Found")}, nil)
+
+	readiness, err := svc.CheckRepositoryReadiness(context.Background(), "github_agicto__codingcto-key")
+
+	require.NoError(t, err)
+	require.False(t, readiness.Ready)
+	require.Equal(t, "agicto", readiness.GitHubOwner)
+	require.Equal(t, "codingcto-key", readiness.GitHubRepo)
+	require.Equal(t, "error", readinessCheck(t, readiness.Checks, "permission_issues").Status)
+	require.Contains(t, readinessCheck(t, readiness.Checks, "permission_issues").Detail, "当前权限：read")
+	require.Equal(t, "error", readinessCheck(t, readiness.Checks, "installation_token").Status)
+	require.Contains(t, readinessCheck(t, readiness.Checks, "installation_token").Detail, "未找到")
+}
+
+func TestCreateIssueRequiresIssueWritePermissionBeforeToken(t *testing.T) {
+	repo := &memoryRepo{
+		installation: &domain.GitHubInstallation{
+			ID:             3,
+			WorkspaceID:    "workspace_s_d",
+			InstallationID: 136915108,
+			AccountLogin:   "agicto",
+			Permissions: map[string]string{
+				"contents":      "write",
+				"pull_requests": "write",
+				"issues":        "read",
+			},
+		},
+		repository: &domain.Repository{
+			RepositoryID:         "github_agicto__codingcto-key",
+			WorkspaceID:          "workspace_s_d",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto-key",
+			DefaultBranch:        "main",
+		},
+	}
+	tokenProvider := &fakeInstallationTokenProvider{err: fmt.Errorf("token should not be requested")}
+	svc := NewService(repo, nil, &fakeRepositoryClientFactory{client: &fakeRepositoryClient{}}, tokenProvider, nil)
+
+	issue, err := svc.CreateIssue(context.Background(), &CreateIssueRequest{
+		RepositoryID: "github_agicto__codingcto-key",
+		Title:        "Smoke test",
+	})
+
+	require.Nil(t, issue)
+	require.Error(t, err)
+	require.Contains(t, err.Error(), "issues:write")
+	require.Equal(t, int64(0), tokenProvider.installationID)
+}
+
+func TestCheckRepositoryReadinessReadyWhenRequiredChecksPass(t *testing.T) {
+	repo := &memoryRepo{
+		installation: &domain.GitHubInstallation{
+			ID:             3,
+			WorkspaceID:    "workspace_s_d",
+			InstallationID: 136915108,
+			AccountLogin:   "agicto",
+			Permissions: map[string]string{
+				"metadata":      "read",
+				"contents":      "write",
+				"pull_requests": "write",
+				"issues":        "write",
+			},
+		},
+		repository: &domain.Repository{
+			RepositoryID:         "github_agicto__codingcto-key",
+			WorkspaceID:          "workspace_s_d",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto-key",
+			DefaultBranch:        "main",
+		},
+	}
+	svc := NewService(repo, nil, &fakeRepositoryClientFactory{client: &fakeRepositoryClient{}}, &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_token"}}, nil)
+
+	readiness, err := svc.CheckRepositoryReadiness(context.Background(), "github_agicto__codingcto-key")
+
+	require.NoError(t, err)
+	require.True(t, readiness.Ready)
+	require.Equal(t, "ok", readinessCheck(t, readiness.Checks, "installation_token").Status)
+}
+
 func TestGetRepositoryReturnsStoredRepository(t *testing.T) {
 	repo := &memoryRepo{installation: &domain.GitHubInstallation{ID: 3, InstallationID: 123}}
 	client := &fakeRepositoryClient{branchRef: &GitReference{Object: GitRefObject{SHA: "develop123"}}}
@@ -1506,6 +1644,17 @@ func TestVerifyGitHubSignature(t *testing.T) {
 	require.False(t, verifyGitHubSignature("secret", body, "bad"))
 }
 
+func readinessCheck(t *testing.T, checks []GitHubReadinessCheck, key string) GitHubReadinessCheck {
+	t.Helper()
+	for _, check := range checks {
+		if check.Key == key {
+			return check
+		}
+	}
+	require.Failf(t, "missing readiness check", "key %s not found", key)
+	return GitHubReadinessCheck{}
+}
+
 type fakeRepositoryClientFactory struct {
 	token  string
 	client *fakeRepositoryClient
@@ -1518,6 +1667,9 @@ func (f *fakeRepositoryClientFactory) NewRepositoryClient(token string) (Reposit
 }
 
 type fakeRepositoryClient struct {
+	issueInput         CreateIssueInput
+	issue              *Issue
+	issueErr           error
 	input              CreatePullRequestInput
 	pr                 *PullRequest
 	err                error
@@ -1577,6 +1729,11 @@ func (c *fakeRepositoryClient) CreateBranch(ctx context.Context, owner, repo, br
 	c.createBranchName = branch
 	c.createBranchSHA = sha
 	return &GitReference{Ref: "refs/heads/" + branch, Object: GitRefObject{SHA: sha}}, c.createBranchErr
+}
+
+func (c *fakeRepositoryClient) CreateIssue(ctx context.Context, input CreateIssueInput) (*Issue, error) {
+	c.issueInput = input
+	return c.issue, c.issueErr
 }
 
 func (c *fakeRepositoryClient) CreatePullRequest(ctx context.Context, input CreatePullRequestInput) (*PullRequest, error) {

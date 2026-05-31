@@ -58,7 +58,7 @@ class HttpClient {
         const body = error.response?.data as ApiErrorBody | undefined;
 
         const apiError = new ApiError(
-          body?.message || body?.error || error.message,
+          body?.error || body?.message || error.message,
           body?.code || 'FETCH_ERROR',
           error.response?.status
         );

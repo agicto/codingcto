@@ -5,41 +5,30 @@ import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } fro
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
   ArrowRight,
-  Bot,
   CheckCircle2,
-  ExternalLink,
   Github,
   GitPullRequest,
   Link2,
   PanelRight,
+  Plus,
   SlidersHorizontal,
+  X,
 } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
+import { Button, buttonVariants } from '@/components/ui/button';
 import {
   Card,
   CardContent,
   CardDescription,
-  CardFooter,
   CardHeader,
   CardTitle,
 } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
-import { Label } from '@/components/ui/label';
-import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { env } from '@/config/env';
 import { ROUTES } from '@/constants/routes';
 import { useT } from '@/i18n';
-import { useBindProjectRepository, useProjects } from '@/features/project/hooks/use-projects';
 import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
-import { projectSpecForgeHref } from '@/features/project/project-utils';
 import {
   useGitHubRepositories,
   useGitHubSettings,
@@ -47,7 +36,9 @@ import {
   useUpsertGitHubSettings,
   useUpsertGitHubRepository,
 } from '@/features/specforge/hooks/use-specforge';
-import type { GitHubRepositoryOptionDTO } from '@/features/specforge/services/specforge-service';
+import {
+  parseGitHubRepositoryURL,
+} from '@/features/specforge/github-repositories';
 
 type GitHubSettings = {
   enabled: boolean;
@@ -63,7 +54,13 @@ const defaultSettings: GitHubSettings = {
   issuePrAutoLink: true,
 };
 
-const repositoryRoles = ['primary', 'dependency', 'docs', 'infra'] as const;
+type PendingRepository = {
+  repositoryId: string;
+  owner: string;
+  repo: string;
+  defaultBranch: string;
+  isPrivate: boolean;
+};
 
 function errorMessage(error: unknown, fallback: string) {
   if (error instanceof Error) {
@@ -72,38 +69,34 @@ function errorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
-export function GitHubConnectionPanel() {
+function repositoryIdFor(owner: string, repo: string) {
+  return `github_${owner.trim()}__${repo.trim()}`;
+}
+
+type GitHubConnectionPanelProps = {
+  mode?: 'github' | 'repositories';
+};
+
+export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanelProps) {
   const t = useT('settings.github.panel');
   const router = useRouter();
   const searchParams = useSearchParams();
   const syncedInstallationReturnRef = useRef<string | null>(null);
   const stateWorkspaceId = searchParams.get('state')?.trim() || '';
-  const [installationId, setInstallationId] = useState(
+  const [, setInstallationId] = useState(
     () => searchParams.get('installation_id')?.trim() || ''
   );
-  const [accountLogin, setAccountLogin] = useState('');
-  const [owner, setOwner] = useState('');
-  const [repo, setRepo] = useState('');
-  const [defaultBranch, setDefaultBranch] = useState('main');
-  const [isPrivate, setIsPrivate] = useState(true);
-  const [repositoryOptions, setRepositoryOptions] = useState<GitHubRepositoryOptionDTO[]>([]);
-  const [selectedRepository, setSelectedRepository] = useState('');
-  const [selectedProjectId, setSelectedProjectId] = useState('');
-  const [repositoryRole, setRepositoryRole] = useState('primary');
+  const [repositoryURL, setRepositoryURL] = useState('https://github.com/agicto/codingcto-key');
+  const [defaultBranch] = useState('main');
+  const [pendingRepositories, setPendingRepositories] = useState<PendingRepository[]>([]);
   const [savedRepoId, setSavedRepoId] = useState('');
-  const [boundProjectId, setBoundProjectId] = useState<number>();
-  const [savedInstallationDbId, setSavedInstallationDbId] = useState<number>();
   const [message, setMessage] = useState('');
-  const [installEntry, setInstallEntry] = useState(
+  const [installEntry] = useState(
     env.NEXT_PUBLIC_GITHUB_APP_INSTALL_URL || env.NEXT_PUBLIC_GITHUB_APP_SLUG || ''
   );
 
   const {
-    workspacesQuery,
-    workspaces,
     selectedWorkspaceId: workspaceId,
-    selectedWorkspace,
-    setSelectedWorkspaceId,
   } = useSelectedWorkspace(stateWorkspaceId);
   const githubSettings = useGitHubSettings(workspaceId.trim());
   const connectedRepositoriesQuery = useGitHubRepositories(
@@ -111,17 +104,36 @@ export function GitHubConnectionPanel() {
   );
   const connectedRepositories = connectedRepositoriesQuery.data?.repositories ?? [];
   const connectedRepository = connectedRepositories[0];
-  const projectsQuery = useProjects(workspaceId.trim());
-  const projects = projectsQuery.data?.projects ?? [];
+  const visibleRepositoryDrafts = [
+    ...pendingRepositories.map(repository => ({
+      id: repository.repositoryId,
+      owner: repository.owner,
+      repo: repository.repo,
+      defaultBranch: repository.defaultBranch,
+      isPending: true,
+    })),
+    ...connectedRepositories
+      .filter(
+        repository =>
+          !pendingRepositories.some(
+            pending => pending.repositoryId === repository.repository_id
+          )
+      )
+      .map(repository => ({
+        id: repository.repository_id,
+        owner: repository.github_owner,
+        repo: repository.github_repo,
+        defaultBranch: repository.default_branch,
+        isPending: false,
+      })),
+  ];
   const upsertSettings = useUpsertGitHubSettings();
   const syncInstallation = useSyncGitHubInstallation();
   const upsertRepository = useUpsertGitHubRepository();
-  const bindRepository = useBindProjectRepository(Number(selectedProjectId) || 0);
   const isSaving =
     upsertSettings.isPending ||
     syncInstallation.isPending ||
-    upsertRepository.isPending ||
-    bindRepository.isPending;
+    upsertRepository.isPending;
   const settings: GitHubSettings = {
     enabled: githubSettings.data?.enabled ?? defaultSettings.enabled,
     pullRequestSidebar:
@@ -130,26 +142,10 @@ export function GitHubConnectionPanel() {
       githubSettings.data?.co_authored_by_trailer ?? defaultSettings.coAuthoredByTrailer,
     issuePrAutoLink: githubSettings.data?.issue_pr_auto_link ?? defaultSettings.issuePrAutoLink,
   };
-  const normalizedInstallationId = Number(installationId);
-  const canSubmit =
-    workspaceId.trim() &&
-    owner.trim() &&
-    repo.trim() &&
-    Number.isFinite(normalizedInstallationId) &&
-    normalizedInstallationId > 0;
-  const specForgeHref = useMemo(() => {
-    const repoId = savedRepoId || connectedRepository?.repository_id || '';
-    if (!repoId) {
-      return ROUTES.CONSOLE.SPECFORGE;
-    }
-    if (boundProjectId) {
-      return projectSpecForgeHref(boundProjectId);
-    }
-    return `${ROUTES.CONSOLE.SPECFORGE}?repo_id=${encodeURIComponent(repoId)}`;
-  }, [boundProjectId, connectedRepository?.repository_id, savedRepoId]);
-  const visibleRepoId = savedRepoId || connectedRepository?.repository_id || '';
-  const visibleInstallationDbId =
-    savedInstallationDbId || connectedRepository?.github_installation_id;
+  const repoIdForHref = savedRepoId || connectedRepository?.repository_id || '';
+  const specForgeHref = repoIdForHref
+    ? `${ROUTES.CONSOLE.SPECFORGE}?repo_id=${encodeURIComponent(repoIdForHref)}`
+    : ROUTES.CONSOLE.SPECFORGE;
   const installURL = useMemo(() => {
     const entry = installEntry.trim();
     if (!entry) {
@@ -165,19 +161,6 @@ export function GitHubConnectionPanel() {
     const state = encodeURIComponent(workspaceId.trim());
     return `https://github.com/apps/${slug}/installations/new?state=${state}`;
   }, [installEntry, workspaceId]);
-  const repositoryRoleOptions = repositoryRoles.map(role => ({
-    value: role,
-    label: t(`roles.${role}`),
-  }));
-
-  const applyRepositoryOption = useCallback((option: GitHubRepositoryOptionDTO) => {
-    setSelectedRepository(option.full_name);
-    setOwner(option.owner);
-    setRepo(option.repo);
-    setDefaultBranch(option.default_branch || 'main');
-    setIsPrivate(option.is_private);
-  }, []);
-
   const syncGitHubInstallation = useCallback(
     async (
       installationIdValue: string,
@@ -200,12 +183,6 @@ export function GitHubConnectionPanel() {
           installation_id: parsedInstallationId,
         });
         setInstallationId(String(result.installation.installation_id));
-        setSavedInstallationDbId(result.installation.id);
-        setAccountLogin(result.installation.account_login);
-        setRepositoryOptions(result.repositories);
-        if (result.repositories[0]) {
-          applyRepositoryOption(result.repositories[0]);
-        }
         setMessage(
           result.repositories.length > 0
             ? t('messages.syncedWithRepos')
@@ -222,7 +199,7 @@ export function GitHubConnectionPanel() {
         return false;
       }
     },
-    [applyRepositoryOption, router, syncInstallation, t]
+    [router, syncInstallation, t]
   );
 
   useEffect(() => {
@@ -269,79 +246,236 @@ export function GitHubConnectionPanel() {
     }
   }
 
-  function focusConnectionForm() {
-    document.getElementById('github-repository-form')?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'start',
-    });
-  }
-
-  function focusInstallEntry() {
-    document.getElementById('github-app-install-entry')?.scrollIntoView({
-      behavior: 'smooth',
-      block: 'center',
-    });
-    window.setTimeout(() => document.getElementById('github-app-install-entry')?.focus(), 250);
-  }
-
-  async function connectRepository() {
-    if (!canSubmit) {
-      setMessage(t('messages.connectRequirements'));
-      return;
+  function addRepositoryDraft() {
+    const parsedRepository = parseGitHubRepositoryURL(repositoryURL);
+    if (!workspaceId.trim()) {
+      setMessage(t('messages.selectWorkspaceBeforeSettings'));
+      return false;
+    }
+    if (!parsedRepository) {
+      setMessage(t('messages.repositoryURLInvalid'));
+      return false;
     }
 
-    setMessage('');
-    setSavedRepoId('');
-    try {
-      let installationDbId = savedInstallationDbId;
-      if (!installationDbId) {
-        const result = await syncInstallation.mutateAsync({
-          workspace_id: workspaceId.trim(),
-          installation_id: normalizedInstallationId,
-        });
-        installationDbId = result.installation.id;
-        setSavedInstallationDbId(installationDbId);
-        setAccountLogin(result.installation.account_login);
-        setRepositoryOptions(result.repositories);
+    const repositoryId = repositoryIdFor(parsedRepository.owner, parsedRepository.repo);
+    const alreadyExists =
+      connectedRepositories.some(repository => repository.repository_id === repositoryId) ||
+      pendingRepositories.some(repository => repository.repositoryId === repositoryId);
+    if (alreadyExists) {
+      setSavedRepoId(repositoryId);
+      setRepositoryURL('');
+      setMessage(t('messages.repositoryAlreadyAdded'));
+      return true;
+    }
+
+    setPendingRepositories(current => [
+      {
+        repositoryId,
+        owner: parsedRepository.owner,
+        repo: parsedRepository.repo,
+        defaultBranch: defaultBranch.trim() || 'main',
+        isPrivate: false,
+      },
+      ...current,
+    ]);
+    setSavedRepoId(repositoryId);
+    setRepositoryURL('');
+    setMessage(t('messages.repositoryQueued'));
+    return true;
+  }
+
+  async function saveRepository(repository: PendingRepository) {
+    return upsertRepository.mutateAsync({
+      repository_id: repository.repositoryId,
+      workspace_id: workspaceId.trim(),
+      github_owner: repository.owner,
+      github_repo: repository.repo,
+      default_branch: repository.defaultBranch,
+      is_private: repository.isPrivate,
+    });
+  }
+
+  async function saveRepositoryURL() {
+    if (!workspaceId.trim()) {
+      setMessage(t('messages.selectWorkspaceBeforeSettings'));
+      return;
+    }
+    let repositoriesToSave = pendingRepositories;
+    if (repositoriesToSave.length === 0 && repositoryURL.trim()) {
+      const parsedRepository = parseGitHubRepositoryURL(repositoryURL);
+      if (!parsedRepository) {
+        setMessage(t('messages.repositoryURLInvalid'));
+        return;
       }
-
-      const repository = await upsertRepository.mutateAsync({
-        workspace_id: workspaceId.trim(),
-        github_installation_id: installationDbId,
-        github_owner: owner.trim(),
-        github_repo: repo.trim(),
-        default_branch: defaultBranch.trim() || 'main',
-        is_private: isPrivate,
-      });
-
-      setSavedRepoId(repository.repository_id);
-      setBoundProjectId(undefined);
-      setMessage(t('messages.repositoryConnected'));
-    } catch (error) {
-      setMessage(
-        `${errorMessage(error, t('messages.connectionFailed'))} ${t('messages.backendAuthHint')}`
-      );
+      repositoriesToSave = [
+        {
+          repositoryId: repositoryIdFor(parsedRepository.owner, parsedRepository.repo),
+          owner: parsedRepository.owner,
+          repo: parsedRepository.repo,
+          defaultBranch: defaultBranch.trim() || 'main',
+          isPrivate: false,
+        },
+      ];
     }
-  }
-
-  async function bindConnectedRepositoryToProject() {
-    const projectId = Number(selectedProjectId);
-    if (!savedRepoId || !Number.isFinite(projectId) || projectId <= 0) {
-      setMessage(t('messages.bindRequirements'));
+    if (repositoriesToSave.length === 0) {
+      setMessage(t('messages.noRepositoryToSave'));
       return;
     }
+
     setMessage('');
     try {
-      await bindRepository.mutateAsync({
-        repository_id: savedRepoId,
-        role: repositoryRole as 'primary' | 'dependency' | 'docs' | 'infra',
-      });
-      setBoundProjectId(projectId);
-      setMessage(t('messages.boundToProject', { repoId: savedRepoId }));
-    } catch {
-      setMessage(t('messages.bindFailed'));
+      let lastRepositoryId = '';
+      for (const repository of repositoriesToSave) {
+        const saved = await saveRepository(repository);
+        lastRepositoryId = saved.repository_id;
+      }
+      setPendingRepositories(current =>
+        current.filter(
+          pending =>
+            !repositoriesToSave.some(repository => repository.repositoryId === pending.repositoryId)
+        )
+      );
+      setRepositoryURL('');
+      setSavedRepoId(lastRepositoryId);
+      setMessage(t('messages.repositorySaved'));
+    } catch (error) {
+      setMessage(`${errorMessage(error, t('messages.connectionFailed'))} ${t('messages.backendAuthHint')}`);
     }
   }
+
+  if (mode === 'repositories') {
+    return (
+      <div className="mx-auto w-full max-w-3xl">
+        {message ? (
+          <div className="mb-3 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm leading-6 text-text-muted">
+            {message}
+          </div>
+        ) : null}
+
+        <Card>
+          <CardHeader>
+            <CardTitle>{t('simpleRepository.title')}</CardTitle>
+            <CardDescription>{t('simpleRepository.description')}</CardDescription>
+          </CardHeader>
+          <CardContent className="space-y-4">
+            <Input
+              value={repositoryURL}
+              onChange={event => setRepositoryURL(event.target.value)}
+              placeholder="https://github.com/agicto/codingcto-key"
+            />
+            <div className="flex flex-wrap items-center justify-between gap-3">
+              <Button type="button" variant="outline" onClick={addRepositoryDraft}>
+                <Plus className="h-4 w-4" />
+                {t('simpleRepository.addRepository')}
+              </Button>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-text-muted">
+                  {pendingRepositories.length > 0
+                    ? t('simpleRepository.unsaved', { count: pendingRepositories.length })
+                    : t('simpleRepository.saved')}
+                </span>
+                <Button type="button" onClick={saveRepositoryURL} disabled={upsertRepository.isPending}>
+                  {upsertRepository.isPending ? t('actions.connecting') : t('simpleRepository.save')}
+                </Button>
+              </div>
+            </div>
+
+            {visibleRepositoryDrafts.length > 0 ? (
+              <div className="space-y-2">
+                {visibleRepositoryDrafts.map(repository => (
+                  <div
+                    key={repository.id}
+                    className="flex items-center justify-between gap-3 rounded-lg border border-border-subtle bg-bg-subtle px-3 py-2 text-sm text-text-muted"
+                  >
+                    <div className="min-w-0">
+                      <div className="truncate font-medium text-text-main">
+                        {repository.owner}/{repository.repo}
+                      </div>
+                      <div className="mt-0.5 text-xs">
+                        {repository.isPending
+                          ? t('simpleRepository.pending')
+                          : repository.defaultBranch}
+                      </div>
+                    </div>
+                    {repository.isPending ? (
+                      <Button
+                        type="button"
+                        variant="ghost"
+                        size="sm"
+                        className="h-8 w-8 shrink-0"
+                        onClick={() =>
+                          setPendingRepositories(current =>
+                            current.filter(item => item.repositoryId !== repository.id)
+                          )
+                        }
+                        aria-label={t('simpleRepository.removePending')}
+                      >
+                        <X className="h-4 w-4" />
+                      </Button>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </CardContent>
+        </Card>
+      </div>
+    );
+  }
+
+  const repositoryManagementCard = (
+    <section className="space-y-3">
+      <h3 className="text-base font-semibold">{t('sections.repository')}</h3>
+      <Card>
+        <CardContent className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
+          <div className="flex gap-3">
+            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-bg-subtle">
+              {connectedRepository ? (
+                <CheckCircle2 className="h-5 w-5 text-success" />
+              ) : (
+                <GitPullRequest className="h-5 w-5" />
+              )}
+            </div>
+            <div>
+              <div className="font-medium">
+                {connectedRepository
+                  ? `${connectedRepository.github_owner}/${connectedRepository.github_repo}`
+                  : t('repositoryCta.title')}
+              </div>
+              <p className="mt-1 text-sm leading-6 text-text-muted">
+                {connectedRepository
+                  ? `${t('status.connected', { repoId: connectedRepository.repository_id })} · ${connectedRepository.default_branch}`
+                  : t('repositoryCta.description')}
+              </p>
+            </div>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Link
+              href={`${ROUTES.CONSOLE.SETTINGS}?tab=repositories`}
+              className={buttonVariants({
+                variant: 'outline',
+                className: 'inline-flex flex-row items-center gap-1.5 whitespace-nowrap',
+              })}
+            >
+              <span>{t('actions.enterRepository')}</span>
+              <ArrowRight className="h-4 w-4 shrink-0" />
+            </Link>
+            {connectedRepository ? (
+              <Link
+                href={specForgeHref}
+                className={buttonVariants({
+                  className: 'inline-flex flex-row items-center gap-1.5 whitespace-nowrap',
+                })}
+              >
+                <span>{t('actions.useInCodingCTO')}</span>
+                <ArrowRight className="h-4 w-4 shrink-0" />
+              </Link>
+            ) : null}
+          </div>
+        </CardContent>
+      </Card>
+    </section>
+  );
 
   return (
     <div className="mx-auto max-w-4xl space-y-8">
@@ -349,430 +483,119 @@ export function GitHubConnectionPanel() {
         {t('intro')}
       </p>
 
-      <Card>
-        <CardContent className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-bg-subtle">
-              <Github className="h-5 w-5" />
-            </div>
-            <div>
-              <div className="font-medium">{t('enable.title')}</div>
-              <p className="mt-1 text-sm leading-6 text-text-muted">
-                {t('enable.description')}
-              </p>
-            </div>
-          </div>
-          <Switch
-            checked={settings.enabled}
-            disabled={isSaving}
-            onCheckedChange={checked => updateSetting('enabled', checked)}
-          />
-        </CardContent>
-      </Card>
+      {message ? (
+        <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm leading-6 text-text-muted">
+          {message}
+        </div>
+      ) : null}
 
-      <section className="space-y-3">
-        <h3 className="text-base font-semibold">{t('sections.connection')}</h3>
-        <Card>
-          <CardContent className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
-            <div className="flex gap-3">
-              <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-bg-subtle">
-                <Github className="h-5 w-5" />
-              </div>
-              <div>
-                <div className="font-medium">{t('app.title')}</div>
-                <p className="mt-1 text-sm leading-6 text-text-muted">
-                  {t('app.descriptionPrefix')}{' '}
-                  <code className="rounded bg-bg-subtle px-1.5 py-0.5 text-xs">MUL-123</code>
-                  {t('app.descriptionSuffix')}
-                </p>
-              </div>
-            </div>
-            {installURL && workspaceId.trim() ? (
-              <Button asChild disabled={!settings.enabled}>
-                <a href={installURL} target="_blank" rel="noreferrer">
-                  {t('actions.installApp')}
-                </a>
-              </Button>
-            ) : (
-              <Button
-                onClick={() => {
-                  setMessage(
-                    workspaceId.trim()
-                      ? t('messages.installEntryRequired')
-                      : t('messages.selectWorkspaceBeforeInstall')
-                  );
-                  if (workspaceId.trim()) {
-                    focusInstallEntry();
-                  }
-                }}
-                disabled={!settings.enabled}
-              >
-                {t('actions.installApp')}
-              </Button>
-            )}
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-base font-semibold">{t('sections.features')}</h3>
-        <Card>
-          <CardContent className="divide-y divide-border-subtle p-0">
-            <FeatureToggle
-              icon={PanelRight}
-              title={t('features.prSidebar.title')}
-              description={t('features.prSidebar.description')}
-              checked={settings.pullRequestSidebar}
-              disabled={!settings.enabled || isSaving}
-              onCheckedChange={checked => updateSetting('pullRequestSidebar', checked)}
-            />
-            <FeatureToggle
-              icon={SlidersHorizontal}
-              title={t('features.coAuthor.title')}
-              description={
-                <>
-                  {t('features.coAuthor.descriptionPrefix')}{' '}
-                  <code className="rounded bg-bg-subtle px-1.5 py-0.5 text-xs">
-                    Co-authored-by: codingcto-agent &lt;github@codingcto.local&gt;
-                  </code>{' '}
-                  {t('features.coAuthor.descriptionSuffix')}
-                </>
-              }
-              checked={settings.coAuthoredByTrailer}
-              disabled={!settings.enabled || isSaving}
-              onCheckedChange={checked => updateSetting('coAuthoredByTrailer', checked)}
-            />
-            <FeatureToggle
-              icon={Link2}
-              title={t('features.autoLink.title')}
-              description={t('features.autoLink.description')}
-              checked={settings.issuePrAutoLink}
-              disabled={!settings.enabled || isSaving}
-              onCheckedChange={checked => updateSetting('issuePrAutoLink', checked)}
-            />
-          </CardContent>
-        </Card>
-      </section>
-
-      <section className="space-y-3">
-        <h3 className="text-base font-semibold">{t('sections.repository')}</h3>
-        <Card>
-          <CardContent className="flex flex-col gap-3 p-4 md:flex-row md:items-center md:justify-between">
-            <div>
-              <div className="font-medium">
-                {connectedRepository
-                  ? `${connectedRepository.github_owner}/${connectedRepository.github_repo}`
-                  : t('repositoryCta.title')}
-              </div>
-              <p className="mt-1 text-sm text-text-muted">
-                {connectedRepository
-                  ? `${t('status.connected', { repoId: connectedRepository.repository_id })} · ${connectedRepository.default_branch}`
-                  : t('repositoryCta.description')}
-              </p>
-            </div>
-            <div className="flex flex-wrap gap-2">
-              <Button variant="outline" onClick={focusConnectionForm} disabled={!settings.enabled}>
-                {t('actions.enterRepository')}
-                <ExternalLink className="ml-1.5 h-4 w-4" />
-              </Button>
-              {connectedRepository ? (
-                <Button asChild>
-                  <Link href={specForgeHref}>
-                    {t('actions.useInCodingCTO')}
-                    <ArrowRight className="ml-1.5 h-4 w-4" />
-                  </Link>
-                </Button>
-              ) : null}
-            </div>
-          </CardContent>
-        </Card>
-      </section>
-
-      <Card id="github-repository-form">
-        <CardHeader>
-          <CardTitle className="flex items-center gap-2">
-            <Bot className="h-5 w-5" />
-            {t('form.title')}
-          </CardTitle>
-          <CardDescription>
-            {t('form.description')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-4">
-          <div className="space-y-2">
-            <Label htmlFor="github-app-install-entry">{t('form.installEntry')}</Label>
-            <div className="flex flex-col gap-2 md:flex-row">
-              <Input
-                id="github-app-install-entry"
-                value={installEntry}
-                onChange={event => setInstallEntry(event.target.value)}
-                placeholder="codingcto or https://github.com/apps/codingcto/installations/new"
-              />
-              {installURL && workspaceId.trim() ? (
-                <Button asChild variant="outline" disabled={!settings.enabled}>
-                  <a href={installURL} target="_blank" rel="noreferrer">
-                    {t('actions.openInstallPage')}
-                    <ExternalLink className="ml-1.5 h-4 w-4" />
-                  </a>
-                </Button>
-              ) : (
-                <Button
-                  variant="outline"
-                  onClick={() => {
-                    setMessage(
-                      workspaceId.trim()
-                        ? t('messages.installEntryShort')
-                        : t('messages.selectWorkspaceBeforeInstallShort')
-                    );
-                    if (workspaceId.trim()) {
-                      focusInstallEntry();
-                    }
-                  }}
-                  disabled={!settings.enabled}
-                >
-                  {t('actions.openInstallPage')}
-                  <ExternalLink className="ml-1.5 h-4 w-4" />
-                </Button>
-              )}
-            </div>
-            <p className="text-sm leading-6 text-text-muted">
-              {t('form.installHelp')}
-            </p>
-          </div>
-
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="github-workspace">{t('form.workspace')}</Label>
-              {workspaces.length > 0 ? (
-                <Select value={workspaceId} onValueChange={setSelectedWorkspaceId}>
-                  <SelectTrigger id="github-workspace">
-                    <SelectValue placeholder={t('form.selectWorkspace')} />
-                  </SelectTrigger>
-                  <SelectContent>
-                    {workspaces.map(workspace => (
-                      <SelectItem key={workspace.workspace_id} value={workspace.workspace_id}>
-                        {workspace.name} ({workspace.slug})
-                      </SelectItem>
-                    ))}
-                  </SelectContent>
-                </Select>
-              ) : (
-                <Button asChild variant="outline" className="w-full justify-start">
-                  <Link href={ROUTES.CONSOLE.PROJECTS}>{t('actions.createWorkspaceFirst')}</Link>
-                </Button>
-              )}
-              {selectedWorkspace && (
-                <p className="text-xs leading-5 text-text-muted">
-                  {t('form.workspaceId', { id: selectedWorkspace.workspace_id })}
-                </p>
-              )}
-              {workspacesQuery.isError && (
-                <p className="text-xs leading-5 text-error">
-                  {t('messages.workspaceApiUnavailable')}
-                </p>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="github-installation">{t('form.installationId')}</Label>
-              <Input
-                id="github-installation"
-                inputMode="numeric"
-                value={installationId}
-                onChange={event => setInstallationId(event.target.value)}
-                placeholder={t('form.installationIdPlaceholder')}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="github-account">{t('form.installedAccount')}</Label>
-              <Input
-                id="github-account"
-                value={accountLogin}
-                onChange={event => setAccountLogin(event.target.value)}
-                placeholder={t('form.installedAccountPlaceholder')}
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-wrap gap-2">
-            <Button
-              type="button"
-              variant="outline"
-              onClick={() => syncGitHubInstallation(installationId, workspaceId)}
-              disabled={!settings.enabled || !installationId.trim() || isSaving}
-            >
-              {syncInstallation.isPending ? t('actions.syncing') : t('actions.syncRepos')}
-            </Button>
-          </div>
-
-          {repositoryOptions.length > 0 && (
-            <div className="space-y-2">
-              <Label htmlFor="github-repository-option">{t('form.selectRepository')}</Label>
-              <select
-                id="github-repository-option"
-                className="h-10 w-full rounded-md border border-border bg-bg-canvas px-3 text-sm"
-                value={selectedRepository}
-                onChange={event => {
-                  const option = repositoryOptions.find(
-                    candidate => candidate.full_name === event.target.value
-                  );
-                  if (option) {
-                    applyRepositoryOption(option);
-                  }
-                }}
-              >
-                {repositoryOptions.map(option => (
-                  <option key={option.full_name} value={option.full_name}>
-                    {option.full_name}
-                  </option>
-                ))}
-              </select>
-            </div>
-          )}
-
-          <div className="grid gap-4 md:grid-cols-3">
-            <div className="space-y-2">
-              <Label htmlFor="github-owner">{t('form.owner')}</Label>
-              <Input
-                id="github-owner"
-                value={owner}
-                onChange={event => setOwner(event.target.value)}
-                placeholder={t('form.ownerPlaceholder')}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="github-repo">{t('form.repo')}</Label>
-              <Input
-                id="github-repo"
-                value={repo}
-                onChange={event => setRepo(event.target.value)}
-                placeholder={t('form.repoPlaceholder')}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="github-default-branch">{t('form.defaultBranch')}</Label>
-              <Input
-                id="github-default-branch"
-                value={defaultBranch}
-                onChange={event => setDefaultBranch(event.target.value)}
-                placeholder="main"
-              />
-            </div>
-          </div>
-
-          <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-subtle bg-bg-subtle px-3 py-2">
-            <div>
-              <Label className="text-base">{t('form.privateRepo')}</Label>
-              <p className="mt-1 text-sm text-text-muted">
-                {t('form.privateRepoHelp')}
-              </p>
-            </div>
-            <Switch checked={isPrivate} onCheckedChange={setIsPrivate} />
-          </div>
-
-          {message && (
-            <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm leading-6 text-text-muted">
-              {message}
-            </div>
-          )}
-
-          {visibleRepoId && (
-            <div className="rounded-lg border border-success/30 bg-success-subtle p-3 text-sm leading-6 text-success">
-              <div className="flex items-center gap-2 font-medium">
-                <CheckCircle2 className="h-4 w-4" />
-                {t('status.connected', { repoId: visibleRepoId })}
-              </div>
-              {visibleInstallationDbId ? (
-                <div className="mt-1 text-xs">
-                  {t('status.localInstallationId', { id: visibleInstallationDbId })}
+      {mode === 'github' ? (
+        <>
+          <Card>
+            <CardContent className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
+              <div className="flex gap-3">
+                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-bg-subtle">
+                  <Github className="h-5 w-5" />
                 </div>
-              ) : null}
-            </div>
-          )}
+                <div>
+                  <div className="font-medium">{t('enable.title')}</div>
+                  <p className="mt-1 text-sm leading-6 text-text-muted">
+                    {t('enable.description')}
+                  </p>
+                </div>
+              </div>
+              <Switch
+                checked={settings.enabled}
+                disabled={isSaving}
+                onCheckedChange={checked => updateSetting('enabled', checked)}
+              />
+            </CardContent>
+          </Card>
 
-          {savedRepoId && (
-            <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3">
-              <div className="text-sm font-medium text-text-main">{t('bind.title')}</div>
-              <p className="mt-1 text-sm leading-6 text-text-muted">
-                {t('bind.description')}
-              </p>
-              <div className="mt-3 grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]">
-                <div className="space-y-2">
-                  <Label htmlFor="github-project-bind">{t('bind.project')}</Label>
-                  {projects.length > 0 ? (
-                    <Select value={selectedProjectId} onValueChange={setSelectedProjectId}>
-                      <SelectTrigger id="github-project-bind">
-                        <SelectValue placeholder={t('bind.selectProject')} />
-                      </SelectTrigger>
-                      <SelectContent>
-                        {projects.map(project => (
-                          <SelectItem key={project.id} value={String(project.id)}>
-                            {project.name} ({project.slug})
-                          </SelectItem>
-                        ))}
-                      </SelectContent>
-                    </Select>
-                  ) : (
-                    <Button asChild variant="outline" className="w-full justify-start">
-                      <Link href={ROUTES.CONSOLE.PROJECTS}>{t('actions.createProjectFirst')}</Link>
-                    </Button>
-                  )}
+          <section className="space-y-3">
+            <h3 className="text-base font-semibold">{t('sections.connection')}</h3>
+            <Card>
+              <CardContent className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
+                <div className="flex gap-3">
+                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-bg-subtle">
+                    <Github className="h-5 w-5" />
+                  </div>
+                  <div>
+                    <div className="font-medium">{t('app.title')}</div>
+                    <p className="mt-1 text-sm leading-6 text-text-muted">
+                      {t('app.descriptionPrefix')}{' '}
+                      <code className="rounded bg-bg-subtle px-1.5 py-0.5 text-xs">MUL-123</code>
+                      {t('app.descriptionSuffix')}
+                    </p>
+                  </div>
                 </div>
-                <div className="space-y-2">
-                  <Label htmlFor="github-project-role">{t('bind.role')}</Label>
-                  <Select value={repositoryRole} onValueChange={setRepositoryRole}>
-                    <SelectTrigger id="github-project-role">
-                      <SelectValue placeholder={t('bind.role')} />
-                    </SelectTrigger>
-                    <SelectContent>
-                      {repositoryRoleOptions.map(role => (
-                        <SelectItem key={role.value} value={role.value}>
-                          {role.label}
-                        </SelectItem>
-                      ))}
-                    </SelectContent>
-                  </Select>
-                </div>
-                <div className="flex items-end">
-                  <Button
-                    type="button"
-                    variant="outline"
-                    onClick={bindConnectedRepositoryToProject}
-                    disabled={!selectedProjectId || bindRepository.isPending}
-                  >
-                    {bindRepository.isPending ? t('actions.binding') : t('actions.bindToProject')}
+                {installURL && workspaceId.trim() ? (
+                  <Button asChild disabled={!settings.enabled}>
+                    <a href={installURL} target="_blank" rel="noreferrer">
+                      {t('actions.installApp')}
+                    </a>
                   </Button>
-                </div>
-              </div>
-              {projectsQuery.isError && (
-                <p className="mt-2 text-xs leading-5 text-error">
-                  {t('messages.projectsUnavailable')}
-                </p>
-              )}
-            </div>
-          )}
-        </CardContent>
-        <CardFooter className="flex flex-wrap gap-2">
-          <Button
-            onClick={connectRepository}
-            disabled={!settings.enabled || !canSubmit || isSaving}
-          >
-            {isSaving ? t('actions.connecting') : t('actions.connectRepository')}
-          </Button>
-          {visibleRepoId ? (
-            <Button asChild variant="outline">
-              <Link href={specForgeHref}>
-                {t('actions.useInCodingCTO')}
-                <ArrowRight className="ml-1.5 h-4 w-4" />
-              </Link>
-            </Button>
-          ) : (
-            <Button variant="outline" disabled>
-              {t('actions.useInCodingCTO')}
-              <ArrowRight className="ml-1.5 h-4 w-4" />
-            </Button>
-          )}
-        </CardFooter>
-      </Card>
+                ) : (
+                  <Button
+                    onClick={() => {
+                      setMessage(
+                        workspaceId.trim()
+                          ? t('messages.installEntryRequired')
+                          : t('messages.selectWorkspaceBeforeInstall')
+                      );
+                    }}
+                    disabled={!settings.enabled}
+                  >
+                    {t('actions.installApp')}
+                  </Button>
+                )}
+              </CardContent>
+            </Card>
+          </section>
+
+          <section className="space-y-3">
+            <h3 className="text-base font-semibold">{t('sections.features')}</h3>
+            <Card>
+              <CardContent className="divide-y divide-border-subtle p-0">
+                <FeatureToggle
+                  icon={PanelRight}
+                  title={t('features.prSidebar.title')}
+                  description={t('features.prSidebar.description')}
+                  checked={settings.pullRequestSidebar}
+                  disabled={!settings.enabled || isSaving}
+                  onCheckedChange={checked => updateSetting('pullRequestSidebar', checked)}
+                />
+                <FeatureToggle
+                  icon={SlidersHorizontal}
+                  title={t('features.coAuthor.title')}
+                  description={
+                    <>
+                      {t('features.coAuthor.descriptionPrefix')}{' '}
+                      <code className="rounded bg-bg-subtle px-1.5 py-0.5 text-xs">
+                        Co-authored-by: codingcto-agent &lt;github@codingcto.local&gt;
+                      </code>{' '}
+                      {t('features.coAuthor.descriptionSuffix')}
+                    </>
+                  }
+                  checked={settings.coAuthoredByTrailer}
+                  disabled={!settings.enabled || isSaving}
+                  onCheckedChange={checked => updateSetting('coAuthoredByTrailer', checked)}
+                />
+                <FeatureToggle
+                  icon={Link2}
+                  title={t('features.autoLink.title')}
+                  description={t('features.autoLink.description')}
+                  checked={settings.issuePrAutoLink}
+                  disabled={!settings.enabled || isSaving}
+                  onCheckedChange={checked => updateSetting('issuePrAutoLink', checked)}
+                />
+              </CardContent>
+            </Card>
+          </section>
+
+          {repositoryManagementCard}
+        </>
+      ) : null}
     </div>
   );
 }

@@ -92,6 +92,9 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 			"type",
 			"evidence_refs",
 		},
+		"specforge_skills": {
+			"target_agents",
+		},
 		"specforge_repo_profiles": {
 			"stack",
 			"test_commands",

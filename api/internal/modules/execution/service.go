@@ -16,6 +16,8 @@ import (
 	"github.com/zgiai/luas/api/pkg/redact"
 )
 
+const runtimeDispatchFreshness = 5 * time.Minute
+
 type Service interface {
 	StartRun(ctx context.Context, userID, planID uint, req *StartExecutionRunRequest) (*domain.SpecForgeExecutionBundle, error)
 	GetLatestRunForPlan(ctx context.Context, planID uint) (*domain.SpecForgeExecutionBundle, error)
@@ -193,6 +195,9 @@ func (s *service) GetLatestRunForPlan(ctx context.Context, planID uint) (*domain
 			return nil, err
 		}
 	}
+	if err := s.reconcileRunDeliveryStatus(ctx, bundle); err != nil {
+		return nil, err
+	}
 	return attachExecutionRange(bundle), nil
 }
 
@@ -283,6 +288,7 @@ func (s *service) createPromptForPRNode(ctx context.Context, userID uint, bundle
 	if err != nil {
 		return err
 	}
+	skills = filterExecutionSkillsForAgents(skills, executionSkillAgentKeys(promptType, parent)...)
 	text := compileRunPromptText(bundle, node, promptType, parent, skills)
 	hash := sha256.Sum256([]byte(text))
 	prompt := &domain.SpecForgeCompiledPrompt{
@@ -421,7 +427,17 @@ func (s *service) GetRun(ctx context.Context, runID uint) (*domain.SpecForgeExec
 		}
 		bundle.Plan = plan
 	}
+	if err := s.reconcileRunDeliveryStatus(ctx, bundle); err != nil {
+		return nil, err
+	}
 	return attachExecutionRange(bundle), nil
+}
+
+func (s *service) reconcileRunDeliveryStatus(ctx context.Context, bundle *domain.SpecForgeExecutionBundle) error {
+	if bundle == nil || bundle.Run == nil || bundle.Plan == nil {
+		return nil
+	}
+	return s.completeRunIfDeliveryReady(ctx, bundle, time.Now())
 }
 
 func attachExecutionRange(bundle *domain.SpecForgeExecutionBundle) *domain.SpecForgeExecutionBundle {
@@ -542,8 +558,12 @@ func queuedTaskExecutors(tasks []*domain.SpecForgeAgentTask) []string {
 }
 
 func hasDispatchReadyRuntime(executor string, runtimes []*domain.SpecForgeRuntime) bool {
+	staleBefore := time.Now().Add(-runtimeDispatchFreshness)
 	for _, runtime := range runtimes {
 		if runtime == nil || runtime.Status != domain.RuntimeStatusOnline {
+			continue
+		}
+		if runtime.LastSeenAt.IsZero() || runtime.LastSeenAt.Before(staleBefore) {
 			continue
 		}
 		if strings.TrimSpace(runtime.Executor) != strings.TrimSpace(executor) {
@@ -763,6 +783,10 @@ func (s *service) ClaimTask(ctx context.Context, runtimeID string, req *ClaimAge
 			return &ClaimAgentTaskResponse{}, nil
 		}
 		return nil, fmt.Errorf("claim agent task: %w", err)
+	}
+	if _, err := s.prepareTaskBranch(ctx, task); err != nil {
+		_, _ = s.failTaskBeforeExecutor(ctx, task, "branch_preparation_failed", err.Error())
+		return nil, fmt.Errorf("prepare claimed task branch: %w", err)
 	}
 	claim, err := s.buildClaimResponse(ctx, task)
 	if err != nil {
@@ -2162,6 +2186,9 @@ func writeExecutionSkills(b *strings.Builder, skills []*domain.SpecForgeSkill) {
 		if strings.TrimSpace(skill.Description) != "" {
 			b.WriteString(strings.TrimSpace(skill.Description) + "\n")
 		}
+		if len(skill.TargetAgents) > 0 {
+			b.WriteString("Assigned agents: " + strings.Join(skill.TargetAgents, ", ") + "\n")
+		}
 		b.WriteString(strings.TrimSpace(skill.Content) + "\n\n")
 	}
 	if !wrote {
@@ -2242,6 +2269,55 @@ func activeExecutionProjectSkills(context *domain.SpecForgeProjectContext) []*do
 		}
 	}
 	return skills
+}
+
+func executionSkillAgentKeys(promptType string, parent *domain.SpecForgeAgentTask) []string {
+	keys := []string{"execution", "codex_cli", "codex"}
+	if parent != nil && strings.TrimSpace(parent.Executor) != "" {
+		keys = append(keys, strings.TrimSpace(parent.Executor))
+	}
+	switch strings.TrimSpace(promptType) {
+	case domain.PromptTypeFix:
+		keys = append(keys, "fix")
+	case domain.PromptTypeReviewPatch:
+		keys = append(keys, "review", "review_patch")
+	default:
+		keys = append(keys, "implementation")
+	}
+	return keys
+}
+
+func filterExecutionSkillsForAgents(skills []*domain.SpecForgeSkill, agents ...string) []*domain.SpecForgeSkill {
+	out := make([]*domain.SpecForgeSkill, 0, len(skills))
+	for _, skill := range skills {
+		if executionSkillAppliesToAgents(skill, agents...) {
+			out = append(out, skill)
+		}
+	}
+	return out
+}
+
+func executionSkillAppliesToAgents(skill *domain.SpecForgeSkill, agents ...string) bool {
+	if skill == nil {
+		return false
+	}
+	targets := map[string]struct{}{}
+	for _, target := range skill.TargetAgents {
+		normalized := strings.ToLower(strings.TrimSpace(target))
+		if normalized == "" {
+			continue
+		}
+		if normalized == "*" || normalized == "all" {
+			return true
+		}
+		targets[normalized] = struct{}{}
+	}
+	for _, agent := range agents {
+		if _, ok := targets[strings.ToLower(strings.TrimSpace(agent))]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func writeExecutionPromptModeInstructions(b *strings.Builder, promptType string, parent *domain.SpecForgeAgentTask) {
@@ -2433,7 +2509,7 @@ func prNodeRequiresStatusGate(node *domain.SpecForgePRNode) bool {
 
 func prNodeStatusSatisfiesDependency(status string) bool {
 	switch status {
-	case domain.PRNodeStatusReadyForReview, domain.PRNodeStatusMerged:
+	case domain.PRNodeStatusPROpened, domain.PRNodeStatusReadyForReview, domain.PRNodeStatusMerged:
 		return true
 	default:
 		return false

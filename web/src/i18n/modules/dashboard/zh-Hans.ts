@@ -52,6 +52,7 @@ const messages = {
     badges: {
       live: '可用',
       soon: '即将上线',
+      codexReady: 'Codex 可调度',
     },
     items: {
       delivery: {
@@ -62,6 +63,10 @@ const messages = {
         title: '项目',
         description: '项目边界和仓库绑定。',
       },
+      agents: {
+        title: '智能体',
+        description: '查看本地运行的智能体，并分配可用技能。',
+      },
       review: {
         title: '评审队列',
         description: '计划审批、失败 CI 和人工评审会汇总到这里。',
@@ -70,19 +75,31 @@ const messages = {
         title: 'GitHub 设置',
         description: '安装 GitHub App、同步仓库并绑定到项目。',
       },
+      repositories: {
+        title: '代码仓库',
+        description: '管理当前工作区关联的 Git 仓库 URL。',
+      },
+      skills: {
+        title: '技能',
+        description: '管理工作区里智能体可复用的指令。',
+      },
+      settings: {
+        title: '设置',
+        description: '个人资料、偏好和工作区配置。',
+      },
     },
-    footer: 'GitHub 集成设置',
+    footer: '设置',
     workspace: {
-      title: '组织 workspace',
+      title: '组织工作区',
       description: '切换设置、GitHub 绑定、项目和 CodingCTO 交付使用的企业边界。',
       loading: '加载中...',
       createWorkspace: '创建工作区',
       current: '当前',
-      empty: '暂无 workspace。请先在下方创建。',
+      empty: '暂无工作区。请先在下方创建。',
       newWorkspace: '新建工作区',
       name: '名称',
       slug: '标识',
-      descriptionPlaceholder: '这个 workspace 由谁负责？',
+      descriptionPlaceholder: '这个工作区由谁负责？',
       creating: '创建中',
       createAndSwitch: '创建并切换',
       required: '请填写工作区名称和标识。',
@@ -90,6 +107,210 @@ const messages = {
       slugInvalid: '工作区标识至少需要 2 个字符。可以用 coding 或 cto 这类短标识。',
       created: '已创建 {name}。',
       createFailed: '工作区创建失败。请换一个标识，或检查后端登录状态。',
+    },
+  },
+  skills: {
+    title: '技能',
+    headerDescription: '工作区里任何智能体都能使用的指令。',
+    learnMore: '了解更多 →',
+    actions: {
+      new: '新建技能',
+      cancel: '取消',
+      create: '创建技能',
+      creating: '创建中',
+      import: '导入',
+      importing: '导入中',
+      importToWorkspace: '导入到工作区',
+    },
+    repository: {
+      title: '技能存储仓库',
+      description: '当前后端按仓库保存技能；这里会使用所选工作区仓库。',
+      connect: '连接仓库',
+    },
+    empty: {
+      title: '还没有技能',
+      description: '创建第一个技能，从 URL 导入，或从已连接的运行时复制。之后工作区里每个智能体都能用它。',
+      noRepository: '请先连接一个 GitHub 仓库，然后再创建工作区技能。',
+    },
+    states: {
+      loading: '加载中...',
+      noDescription: '暂无描述。',
+    },
+    badges: {
+      active: '启用',
+      inactive: '停用',
+    },
+    dialog: {
+      title: '新建技能',
+      description: '选择一种方式把技能添加到工作区。',
+    },
+    choose: {
+      manual: {
+        title: '手动创建',
+        description: '从空白 SKILL.md 开始，自己写指令。',
+      },
+      url: {
+        title: '从 URL 导入',
+        description: '从 ClawHub 或 Skills.sh 拉取已发布的技能。',
+      },
+      runtime: {
+        title: '从运行时复制',
+        description: '把本地运行时里已经装好的技能提升过来。',
+      },
+    },
+    manual: {
+      title: '手动创建',
+      description: '从空白 SKILL.md 开始写。',
+      defaultContent: '在这里写下智能体使用这个技能时必须遵守的指令。',
+    },
+    fields: {
+      name: '名称',
+      namePlaceholder: '例如：review-helper',
+      nameHint: '工作区内必须唯一。',
+      description: '描述',
+      descriptionPlaceholder: '用一句话说明这个技能适合什么时候使用。',
+      content: 'SKILL.md',
+      contentPlaceholder: '写下这个 skill 的具体指令。留空时会根据名称和描述生成一个基础 SKILL.md。',
+      active: '启用',
+      activeHint: '启用后可被智能体提示编排使用。',
+    },
+    agents: {
+      title: '分配给智能体',
+      description: '只有被选中的智能体会在 prompt 中收到这个 skill。',
+      required: '请至少选择一个智能体。',
+      all: '全部智能体',
+      summary: '{first} +{count}',
+      planning: {
+        title: '规划智能体',
+        description: '需求理解、产品计划、技术计划和 PR DAG。',
+      },
+      codex: {
+        title: 'Codex CLI',
+        description: '执行实现、修复和提交 PR 的本地运行时。',
+      },
+      review: {
+        title: '评审智能体',
+        description: '代码评审、review patch 和 CI 修复建议。',
+      },
+    },
+    url: {
+      title: '从 URL 导入',
+      description: '粘贴已发布 skill 的 URL。',
+      field: 'URL',
+      namePlaceholder: '留空时会从 URL 自动推断。',
+      descriptionPlaceholder: '给这个 URL 技能加一句工作区内的说明。',
+      importedDescription: '从 URL 导入的技能。',
+      source: '来源',
+      note: '当前会保存来源 URL 和基础元信息；远程内容抓取接入后可替换为完整导入。',
+    },
+    runtime: {
+      title: '从运行时复制',
+      description: '扫描本地运行时，把它磁盘上的 skill 提升到工作区。',
+      field: '运行时',
+      none: '暂无在线运行时',
+      unknown: 'unknown',
+      provider: 'provider',
+      noRuntime: '未发现可用运行时。',
+      unsupported: '这个 provider 暂不支持本地 skill 列表。',
+      note: '导入时会忽略软链接、不可读文件、超大文件以及超大目录。',
+    },
+    messages: {
+      saveFailed: '技能保存失败。请确认后端可用并且仓库已连接。',
+    },
+  },
+  agents: {
+    title: '智能体',
+    description: '检测正在运行的本地 runtime，以及它能在收到任务时调起的 CLI。',
+    onlineCount: '{count} 个运行时在线',
+    cliCount: '{count} 个 CLI 可用',
+    runtimeHelp: '在线的是 CodingCTO runtime，不是这些 CLI 常驻运行。Runtime 收到任务后，才会按需启动已接入调度的 CLI。',
+    actions: {
+      manageSkills: '管理技能',
+      openSkills: '打开技能',
+    },
+    list: {
+      title: '本地运行时',
+      description: '来自在线 runtime 心跳；CLI 是该 runtime 上报的本机能力。',
+    },
+    states: {
+      loading: '加载中...',
+      unknown: '未知',
+    },
+    empty: {
+      title: '没有检测到在线智能体',
+      description: '请先启动本地 CodingCTO runtime；runtime 心跳会汇报 Codex、Claude Code、Cursor 等可用 CLI。',
+      selectAgent: '请选择一个在线智能体。',
+    },
+    setup: {
+      title: '启动本地 Runtime',
+      description: '注册后需要在自己的电脑上启动一个 CodingCTO runtime。它会检测本机的 Codex、Claude Code、Cursor 等 CLI，持续心跳到平台，并在 issue 派发后领取任务执行。',
+      commandTitle: '本地启动命令',
+      commandDescription: '在你的代码仓库所在机器上执行；默认使用当前项目路径，也可以把 --repo-dir 改成目标仓库路径。',
+      copy: '复制命令',
+      copied: '已复制',
+      commandLoading: '正在生成启动命令...',
+      noRepositoryCommand: '请先绑定一个 GitHub 仓库，系统会为该仓库生成 runtime 启动命令。',
+      steps: {
+        start: {
+          label: '1. 启动',
+          value: '本地 runtime 带登录 token 连接平台。',
+        },
+        detect: {
+          label: '2. 检测',
+          value: 'runtime 检测 codex、claude、cursor-agent 等 CLI。',
+        },
+        claim: {
+          label: '3. 领取',
+          value: 'issue 生成任务后，本地 runtime claim 并执行。',
+        },
+      },
+    },
+    status: {
+      online: '在线',
+      dispatchReady: 'Runtime 可调起',
+      detectOnly: '已检测，未接入调度',
+    },
+    fields: {
+      runtime: '运行时',
+      command: '命令',
+      executor: '执行器',
+      skills: '技能',
+      lastSeen: '最近心跳',
+      hostname: '主机',
+      version: '版本',
+    },
+    tabs: {
+      activity: '动态',
+      tasks: 'Tasks',
+      skills: '技能',
+      environment: '环境变量',
+    },
+    activity: {
+      title: '当前没有进行中的工作',
+      description: '这个智能体当前没有在跑任何 task。',
+    },
+    tasks: {
+      title: '最近没有完成的 task',
+      description: '这个智能体还没有完成过任何 task。',
+    },
+    skills: {
+      title: '分配技能',
+      description: '这里决定该智能体的 prompt 会收到哪些已启用的工作区技能。',
+      assignedCount: '{count} 个已分配',
+      assigned: '已分配',
+      unassigned: '未分配',
+      active: '启用',
+      inactive: '停用',
+      noDescription: '暂无描述。',
+      empty: '这个仓库还没有技能。请先到技能页面创建或导入。',
+      noRepository: '未选择仓库',
+      noRepositoryHint: '请先连接一个 GitHub 仓库，然后再给智能体分配技能。',
+    },
+    time: {
+      justNow: '刚刚',
+      minutesAgo: '{count} 分钟前',
+      hoursAgo: '{count} 小时前',
+      daysAgo: '{count} 天前',
     },
   },
   console: {
@@ -106,7 +327,7 @@ const messages = {
       },
       delivery: {
         title: 'CodingCTO 交付',
-        description: '把需求转成计划、PR DAG、执行任务和可 review 的 GitHub PR。',
+        description: '把需求转成计划、PR DAG、执行任务和可评审的 GitHub PR。',
         action: '进入交付板',
       },
       github: {
@@ -237,7 +458,21 @@ const messages = {
         generating: '生成中',
         generatePlan: '生成计划',
         reset: '重置',
+        summaryTitle: '当前需求',
+        emptySummaryTitle: '暂无需求',
+        emptySummary: '从左侧栏新建需求后，会进入这个项目指挥台。',
       },
+    },
+    createDialog: {
+      title: '新建需求',
+      viaAgent: '通过智能体创建',
+      placeholder: '告诉智能体要做什么，例如：“让 Bohan 修一下 Web 项目里收件箱加载慢的问题”',
+      agentLabel: '执行智能体',
+      noAgent: '未检测到可执行的本地智能体',
+      repositoryRequired: '需要绑定仓库',
+      noRepositoryTitle: '当前工作区还没有绑定 GitHub 仓库',
+      noRepositoryDescription: '先进入 GitHub 设置，同步安装记录并把仓库绑定到当前工作区。',
+      create: '创建',
     },
   },
   projectsConsole: {
@@ -259,6 +494,7 @@ const messages = {
       createProject: '创建项目',
       openCodingCTO: '打开 CodingCTO',
       configureGitHub: '配置 GitHub',
+      openAgents: '查看智能体',
     },
     metrics: {
       workspaces: {
@@ -282,21 +518,22 @@ const messages = {
     fields: {
       name: '名称',
       slug: '标识',
+      slugHelp: '至少 2 个字符，仅支持小写字母、数字和连字符。',
       description: '描述',
     },
     workspace: {
       title: '当前工作区',
       description: '工作区是组织、权限、GitHub 绑定和 CodingCTO 执行的共同边界。',
-      selectPlaceholder: '选择 workspace',
-      empty: '暂无 workspace。创建后才能解锁项目和 CodingCTO 流程。',
-      noDescription: '暂无 workspace 描述。',
+      selectPlaceholder: '选择工作区',
+      empty: '暂无工作区。创建后才能解锁项目和 CodingCTO 流程。',
+      noDescription: '暂无工作区描述。',
       id: 'ID: {id}',
     },
     projects: {
       title: '交付项目',
-      description: '每个项目都应该绑定主仓库，并沉淀为后续计划、执行和 review 的上下文。',
+      description: '每个项目都应该绑定主仓库，并沉淀为后续计划、执行和评审的上下文。',
       count: '{count} 个项目',
-      loading: '正在从所选 workspace 加载项目...',
+      loading: '正在从所选工作区加载项目...',
       emptyForWorkspace: '当前工作区暂无项目。创建项目后即可开始绑定仓库。',
       selectWorkspace: '请选择或创建工作区以列出项目。',
       emptyDescription: '项目创建完成后，可进入 CodingCTO 交付板绑定 GitHub 仓库并生成执行计划。',
@@ -331,7 +568,7 @@ const messages = {
         },
         delivery: {
           title: '进入 CodingCTO 交付',
-          description: '用仓库上下文生成计划、执行任务并产出可 review 的 PR。',
+          description: '用仓库上下文生成计划、执行任务并产出可评审的 PR。',
         },
       },
     },
@@ -340,6 +577,7 @@ const messages = {
       workspaceCreateFailed: '工作区创建失败。请检查 API 连接和标识是否唯一。',
       selectWorkspaceFirst: '请先创建或选择工作区，再创建项目。',
       projectRequired: '请填写项目名称和标识。',
+      slugInvalid: '标识至少需要 2 个字符，请使用小写字母、数字或连字符。',
       projectCreateFailed: '项目创建失败。请检查 API 连接和标识是否唯一。',
     },
   },
@@ -351,7 +589,7 @@ const messages = {
       },
       loading: {
         title: '正在加载项目上下文',
-        description: '正在获取 workspace、仓库绑定、skills 和架构就绪状态，然后再启用 CodingCTO。',
+        description: '正在获取工作区、仓库绑定、技能和架构就绪状态，然后再启用 CodingCTO。',
       },
       unavailable: {
         title: '项目上下文不可用',
@@ -379,7 +617,7 @@ const messages = {
       messages: {
         repositoryRequired: '请填写仓库 ID。请先在“设置 > GitHub”连接 GitHub 仓库。',
         bound: '{role} 仓库 {repoId} 已绑定。',
-        bindFailed: '仓库无法绑定。请确认它已经在 Settings 中连接，并且属于当前 workspace。',
+        bindFailed: '仓库无法绑定。请确认它已经在设置中连接，并且属于当前工作区。',
       },
     },
     readiness: {
@@ -391,7 +629,7 @@ const messages = {
       metrics: {
         repos: '仓库',
         readOnly: '只读',
-        skills: 'Skills',
+        skills: '技能',
         warnings: '警告',
       },
       roles: {
@@ -402,12 +640,12 @@ const messages = {
       },
       repository: {
         noProfile: '暂无仓库画像。',
-        active: 'active',
-        inactive: 'inactive',
+        active: '启用',
+        inactive: '停用',
         testCommands: '{count} 个测试命令',
-        skills: '{count} 个 skills',
+        skills: '{count} 个技能',
         modules: '{count} 个模块',
-        ciWorkflows: '{count} 个 CI workflow',
+        ciWorkflows: '{count} 个 CI 工作流',
         architecture: '架构快照',
         stale: '过期',
         fresh: '最新',

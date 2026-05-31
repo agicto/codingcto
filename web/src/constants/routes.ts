@@ -22,6 +22,9 @@ export const ROUTES = {
     PROJECT: '/console/projects/:projectId',
     PROJECT_SPECFORGE: '/console/projects/:projectId/codingcto',
     SPECFORGE: '/console/codingcto',
+    AGENTS: '/console/agents',
+    AGENT: '/console/agents/:agentId',
+    SKILLS: '/console/skills',
     SETTINGS: '/console/settings',
   },
 

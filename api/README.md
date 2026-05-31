@@ -122,7 +122,7 @@ Useful flags:
 - `--sandbox workspace-write`: pass the Codex sandbox mode.
 - `--approval-policy never`: keep execution non-interactive for automation.
 
-Environment equivalents are available with `SPECFORGE_API_BASE_URL`, `SPECFORGE_RUNTIME_TOKEN`, `SPECFORGE_RUNTIME_ID`, `SPECFORGE_RUNTIME_REPO_DIR`, `SPECFORGE_RUNTIME_REPOSITORY_ID`, `CODEX_CLI_PATH`, `SPECFORGE_CODEX_SANDBOX`, `SPECFORGE_CODEX_APPROVAL_POLICY`, and `SPECFORGE_CODEX_TIMEOUT`.
+Environment equivalents are available with `SPECFORGE_API_BASE_URL`, `SPECFORGE_RUNTIME_TOKEN` (or `CODINGCTO_RUNTIME_TOKEN`), `SPECFORGE_RUNTIME_ID`, `SPECFORGE_RUNTIME_REPO_DIR`, `SPECFORGE_RUNTIME_REPOSITORY_ID`, `CODEX_CLI_PATH`, `SPECFORGE_CODEX_SANDBOX`, `SPECFORGE_CODEX_APPROVAL_POLICY`, and `SPECFORGE_CODEX_TIMEOUT`.
 
 ## Repository Layout
 
@@ -214,7 +214,7 @@ For focused work, run the affected module package first, then run the full suite
 
 - Never commit secrets.
 - Do not read or inject `.env` values into AI prompts.
-- Keep GitHub App permissions minimal.
+- Keep GitHub App permissions minimal: `metadata:read`, `contents:write`, `pull_requests:write`, and `issues:write` are required for the repository-to-issue-to-PR flow; `actions:read` and `statuses:read` are optional but recommended for CI visibility.
 - Redact tokens and sensitive logs.
 - Treat runner workspaces as isolated execution environments.
 

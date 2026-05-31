@@ -15,7 +15,7 @@ import (
 
 func main() {
 	apiBaseURL := flag.String("api-base-url", envOrDefault("SPECFORGE_API_BASE_URL", "http://localhost:8025/v1"), "CodingCTO API base URL, including /v1")
-	token := flag.String("token", os.Getenv("SPECFORGE_RUNTIME_TOKEN"), "Bearer token for runtime API access")
+	token := flag.String("token", envOrDefault("SPECFORGE_RUNTIME_TOKEN", os.Getenv("CODINGCTO_RUNTIME_TOKEN")), "Bearer token for runtime API access")
 	runtimeID := flag.String("runtime-id", envOrDefault("SPECFORGE_RUNTIME_ID", defaultRuntimeID()), "Stable runtime id")
 	repositoryID := flag.String("repository-id", os.Getenv("SPECFORGE_RUNTIME_REPOSITORY_ID"), "Optional repository id guard for claimed tasks")
 	repoDir := flag.String("repo-dir", os.Getenv("SPECFORGE_RUNTIME_REPO_DIR"), "Local repository directory used by Codex CLI")

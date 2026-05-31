@@ -54,6 +54,7 @@ const messages: DashboardMessages = {
     badges: {
       live: 'Live',
       soon: 'Soon',
+      codexReady: 'Codex ready',
     },
     items: {
       delivery: {
@@ -64,6 +65,10 @@ const messages: DashboardMessages = {
         title: 'Projects',
         description: 'Project boundaries and repository bindings.',
       },
+      agents: {
+        title: 'Agents',
+        description: 'Inspect locally running agents and assign available skills.',
+      },
       review: {
         title: 'Review Queue',
         description: 'Plan approvals, failed CI, and human review actions will appear here.',
@@ -72,8 +77,20 @@ const messages: DashboardMessages = {
         title: 'GitHub setup',
         description: 'Install the GitHub App, sync repositories, and bind them to projects.',
       },
+      repositories: {
+        title: 'Code repositories',
+        description: 'Manage Git repository URLs linked to the current workspace.',
+      },
+      skills: {
+        title: 'Skills',
+        description: 'Manage reusable agent instructions for this workspace.',
+      },
+      settings: {
+        title: 'Settings',
+        description: 'Profile, preferences, and workspace configuration.',
+      },
     },
-    footer: 'GitHub integration settings',
+    footer: 'Settings',
     workspace: {
       title: 'Organization workspace',
       description: 'Switch the enterprise boundary used by settings, GitHub binding, projects, and CodingCTO delivery.',
@@ -92,6 +109,210 @@ const messages: DashboardMessages = {
       slugInvalid: 'Workspace slug must be at least 2 characters. Try a short slug such as coding or cto.',
       created: 'Created {name}.',
       createFailed: 'Workspace could not be created. Try another slug or check backend auth.',
+    },
+  },
+  skills: {
+    title: 'Skills',
+    headerDescription: 'Instructions any agent in the workspace can use.',
+    learnMore: 'Learn more →',
+    actions: {
+      new: 'New skill',
+      cancel: 'Cancel',
+      create: 'Create skill',
+      creating: 'Creating',
+      import: 'Import',
+      importing: 'Importing',
+      importToWorkspace: 'Import to workspace',
+    },
+    repository: {
+      title: 'Skill storage repository',
+      description: 'The current backend stores skills by repository; this page uses the selected workspace repository.',
+      connect: 'Connect repository',
+    },
+    empty: {
+      title: 'No skills yet',
+      description: 'Create the first skill, import one from URL, or copy one from a connected runtime. Then every agent in the workspace can use it.',
+      noRepository: 'Connect a GitHub repository before creating workspace skills.',
+    },
+    states: {
+      loading: 'Loading...',
+      noDescription: 'No description yet.',
+    },
+    badges: {
+      active: 'active',
+      inactive: 'inactive',
+    },
+    dialog: {
+      title: 'New skill',
+      description: 'Choose how to add a skill to the workspace.',
+    },
+    choose: {
+      manual: {
+        title: 'Manual create',
+        description: 'Start from a blank SKILL.md and write the instructions yourself.',
+      },
+      url: {
+        title: 'Import from URL',
+        description: 'Pull a published skill from ClawHub or Skills.sh.',
+      },
+      runtime: {
+        title: 'Copy from runtime',
+        description: 'Promote a skill already installed in a local runtime.',
+      },
+    },
+    manual: {
+      title: 'Manual create',
+      description: 'Start from a blank SKILL.md.',
+      defaultContent: 'Write the instructions agents must follow when using this skill.',
+    },
+    fields: {
+      name: 'Name',
+      namePlaceholder: 'For example: review-helper',
+      nameHint: 'Must be unique inside the workspace.',
+      description: 'Description',
+      descriptionPlaceholder: 'Say when this skill should be used.',
+      content: 'SKILL.md',
+      contentPlaceholder: 'Write the skill instructions. If empty, a basic SKILL.md will be generated from the name and description.',
+      active: 'Enabled',
+      activeHint: 'Enabled skills can be used by agent prompt orchestration.',
+    },
+    agents: {
+      title: 'Assign to agents',
+      description: 'Only selected agents receive this skill in their prompts.',
+      required: 'Select at least one agent.',
+      all: 'All agents',
+      summary: '{first} +{count}',
+      planning: {
+        title: 'Planning agent',
+        description: 'Requirement understanding, product plan, technical plan, and PR DAG.',
+      },
+      codex: {
+        title: 'Codex CLI',
+        description: 'Local runtime for implementation, fixes, commits, and PR delivery.',
+      },
+      review: {
+        title: 'Review agent',
+        description: 'Code review, review patches, and CI repair suggestions.',
+      },
+    },
+    url: {
+      title: 'Import from URL',
+      description: 'Paste the URL for a published skill.',
+      field: 'URL',
+      namePlaceholder: 'Leave blank to infer from URL.',
+      descriptionPlaceholder: 'Add a workspace description for this URL skill.',
+      importedDescription: 'Skill imported from URL.',
+      source: 'Source',
+      note: 'This currently stores the source URL and metadata; full remote content fetch can replace it once wired.',
+    },
+    runtime: {
+      title: 'Copy from runtime',
+      description: 'Scan a local runtime and promote an on-disk skill into the workspace.',
+      field: 'Runtime',
+      none: 'No online runtime',
+      unknown: 'unknown',
+      provider: 'provider',
+      noRuntime: 'No available runtime found.',
+      unsupported: 'This provider does not support local skill listing yet.',
+      note: 'Import ignores symlinks, unreadable files, large files, and oversized directories.',
+    },
+    messages: {
+      saveFailed: 'Skill could not be saved. Confirm the backend is available and the repository is connected.',
+    },
+  },
+  agents: {
+    title: 'Agents',
+    description: 'Detect running local runtimes and the CLIs they can launch when work is assigned.',
+    onlineCount: '{count} runtimes online',
+    cliCount: '{count} CLIs available',
+    runtimeHelp: 'The CodingCTO runtime is online; these CLIs are not long-running processes. The runtime launches a wired CLI only when it receives a task.',
+    actions: {
+      manageSkills: 'Manage skills',
+      openSkills: 'Open skills',
+    },
+    list: {
+      title: 'Local runtimes',
+      description: 'Detected from online runtime heartbeats; CLIs are local capabilities reported by each runtime.',
+    },
+    states: {
+      loading: 'Loading...',
+      unknown: 'Unknown',
+    },
+    empty: {
+      title: 'No online agents detected',
+      description: 'Start a local CodingCTO runtime first. Runtime heartbeats report available CLIs such as Codex, Claude Code, and Cursor.',
+      selectAgent: 'Select an online agent.',
+    },
+    setup: {
+      title: 'Start a local runtime',
+      description: 'After registration, run a CodingCTO runtime on your machine. It detects local CLIs such as Codex, Claude Code, and Cursor, sends heartbeats to the platform, and claims work after an issue is dispatched.',
+      commandTitle: 'Local start command',
+      commandDescription: 'Run this on the machine with your checkout. It defaults to the current project path; change --repo-dir when targeting another repository.',
+      copy: 'Copy command',
+      copied: 'Copied',
+      commandLoading: 'Generating start command...',
+      noRepositoryCommand: 'Bind a GitHub repository first, then CodingCTO can generate a runtime command for it.',
+      steps: {
+        start: {
+          label: '1. Start',
+          value: 'The local runtime connects to the platform with your token.',
+        },
+        detect: {
+          label: '2. Detect',
+          value: 'The runtime detects codex, claude, cursor-agent, and other CLIs.',
+        },
+        claim: {
+          label: '3. Claim',
+          value: 'After an issue becomes work, the local runtime claims and executes it.',
+        },
+      },
+    },
+    status: {
+      online: 'online',
+      dispatchReady: 'runtime can launch',
+      detectOnly: 'detected, not wired for dispatch',
+    },
+    fields: {
+      runtime: 'Runtime',
+      command: 'Command',
+      executor: 'Executor',
+      skills: 'Skills',
+      lastSeen: 'Last seen',
+      hostname: 'Host',
+      version: 'Version',
+    },
+    tabs: {
+      activity: 'Activity',
+      tasks: 'Tasks',
+      skills: 'Skills',
+      environment: 'Environment',
+    },
+    activity: {
+      title: 'No current work',
+      description: 'This agent is not running any task right now.',
+    },
+    tasks: {
+      title: 'No completed tasks yet',
+      description: 'This agent has not completed any task yet.',
+    },
+    skills: {
+      title: 'Assign skills',
+      description: 'Choose which enabled workspace skills this agent receives in its prompt.',
+      assignedCount: '{count} assigned',
+      assigned: 'Assigned',
+      unassigned: 'Unassigned',
+      active: 'active',
+      inactive: 'inactive',
+      noDescription: 'No description yet.',
+      empty: 'This repository has no skills yet. Create or import one from the Skills page.',
+      noRepository: 'No repository selected',
+      noRepositoryHint: 'Connect a GitHub repository before assigning skills to agents.',
+    },
+    time: {
+      justNow: 'just now',
+      minutesAgo: '{count} min ago',
+      hoursAgo: '{count} hr ago',
+      daysAgo: '{count} d ago',
     },
   },
   console: {
@@ -239,7 +460,23 @@ const messages: DashboardMessages = {
         generating: 'Generating',
         generatePlan: 'Generate plan',
         reset: 'Reset',
+        summaryTitle: 'Current requirement',
+        emptySummaryTitle: 'No requirement selected',
+        emptySummary: 'Create a requirement from the left sidebar to add it to this command center.',
       },
+    },
+    createDialog: {
+      title: 'New requirement',
+      viaAgent: 'Create with agent',
+      placeholder:
+        'Tell the agent what you want, for example: "Let Bohan fix the mailbox loading issue in the web project"',
+      agentLabel: 'Execution agent',
+      noAgent: 'No executable local agent detected',
+      repositoryRequired: 'Repository required',
+      noRepositoryTitle: 'This workspace has no GitHub repository bound yet',
+      noRepositoryDescription:
+        'Configure GitHub first, sync installation records, and bind a repository to the current workspace.',
+      create: 'Create',
     },
   },
   projectsConsole: {
@@ -261,6 +498,7 @@ const messages: DashboardMessages = {
       createProject: 'Create project',
       openCodingCTO: 'Open CodingCTO',
       configureGitHub: 'Configure GitHub',
+      openAgents: 'View agents',
     },
     metrics: {
       workspaces: {
@@ -284,6 +522,7 @@ const messages: DashboardMessages = {
     fields: {
       name: 'Name',
       slug: 'Slug',
+      slugHelp: 'Use at least 2 characters: lowercase letters, numbers, or hyphens.',
       description: 'Description',
     },
     workspace: {
@@ -342,6 +581,7 @@ const messages: DashboardMessages = {
       workspaceCreateFailed: 'Workspace could not be created. Check the API connection and slug uniqueness.',
       selectWorkspaceFirst: 'Create or select a workspace before creating a project.',
       projectRequired: 'Project name and slug are required.',
+      slugInvalid: 'Slug must be at least 2 characters and use lowercase letters, numbers, or hyphens.',
       projectCreateFailed: 'Project could not be created. Check the API connection and slug uniqueness.',
     },
   },

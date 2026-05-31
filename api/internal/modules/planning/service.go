@@ -299,6 +299,7 @@ func (s *service) UpsertSkill(ctx context.Context, userID uint, repoID string, r
 		Description:  strings.TrimSpace(sanitizeSkillText(req.Description)),
 		Content:      strings.TrimSpace(sanitizeSkillText(req.Content)),
 		Active:       active,
+		TargetAgents: normalizeSkillTargetAgents(req.TargetAgents),
 		CreatedBy:    userID,
 	}
 	if skill.Name == "" || skill.Content == "" {
@@ -330,10 +331,11 @@ func (s *service) UpsertProjectSkill(ctx context.Context, userID, projectID uint
 		return nil, err
 	}
 	skill, err := s.UpsertSkill(ctx, userID, req.RepositoryID, &UpsertSkillRequest{
-		Name:        req.Name,
-		Description: req.Description,
-		Content:     req.Content,
-		Active:      req.Active,
+		Name:         req.Name,
+		Description:  req.Description,
+		Content:      req.Content,
+		Active:       req.Active,
+		TargetAgents: req.TargetAgents,
 	})
 	if err != nil {
 		return nil, err
@@ -431,10 +433,10 @@ func (s *service) activeSkillsFor(ctx context.Context, bundle *domain.SpecForgeP
 				return nil, fmt.Errorf("load active project skills: %w", err)
 			}
 			if len(projectSkills) > 0 {
-				return skillsFromProjectSkills(projectSkills), nil
+				return filterSkillsForAgents(skillsFromProjectSkills(projectSkills), "planning"), nil
 			}
 		}
-		return activeProjectSkills(bundle.ProjectContext), nil
+		return filterSkillsForAgents(activeProjectSkills(bundle.ProjectContext), "planning"), nil
 	}
 	if s.skillRepo == nil || bundle == nil || bundle.Idea == nil || strings.TrimSpace(bundle.Idea.RepositoryID) == "" {
 		return []*domain.SpecForgeSkill{}, nil
@@ -443,7 +445,7 @@ func (s *service) activeSkillsFor(ctx context.Context, bundle *domain.SpecForgeP
 	if err != nil {
 		return nil, fmt.Errorf("load active repo skills: %w", err)
 	}
-	return skills, nil
+	return filterSkillsForAgents(skills, "planning"), nil
 }
 
 func (s *service) recordPlanSkillRuns(ctx context.Context, userID uint, bundle *domain.SpecForgePlanBundle) error {
@@ -974,6 +976,9 @@ func writeSkills(b *strings.Builder, skills []*domain.SpecForgeSkill) {
 		if strings.TrimSpace(skill.Description) != "" {
 			b.WriteString(strings.TrimSpace(skill.Description) + "\n")
 		}
+		if len(skill.TargetAgents) > 0 {
+			b.WriteString("Assigned agents: " + strings.Join(skill.TargetAgents, ", ") + "\n")
+		}
 		b.WriteString(strings.TrimSpace(skill.Content) + "\n\n")
 	}
 }
@@ -1097,6 +1102,57 @@ func skillsFromProjectSkills(projectSkills []*domain.SpecForgeProjectSkill) []*d
 		skills = append(skills, projectSkill.Skill)
 	}
 	return skills
+}
+
+func normalizeSkillTargetAgents(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		agent := strings.TrimSpace(sanitizeSkillText(value))
+		if agent == "" {
+			continue
+		}
+		key := strings.ToLower(agent)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, agent)
+	}
+	return out
+}
+
+func filterSkillsForAgents(skills []*domain.SpecForgeSkill, agents ...string) []*domain.SpecForgeSkill {
+	out := make([]*domain.SpecForgeSkill, 0, len(skills))
+	for _, skill := range skills {
+		if skillAppliesToAgents(skill, agents...) {
+			out = append(out, skill)
+		}
+	}
+	return out
+}
+
+func skillAppliesToAgents(skill *domain.SpecForgeSkill, agents ...string) bool {
+	if skill == nil {
+		return false
+	}
+	targets := map[string]struct{}{}
+	for _, target := range skill.TargetAgents {
+		normalized := strings.ToLower(strings.TrimSpace(target))
+		if normalized == "" {
+			continue
+		}
+		if normalized == "*" || normalized == "all" {
+			return true
+		}
+		targets[normalized] = struct{}{}
+	}
+	for _, agent := range agents {
+		if _, ok := targets[strings.ToLower(strings.TrimSpace(agent))]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func plannedSkillRuns(userID uint, requirementID, planID, projectID *uint, bundle *domain.SpecForgePlanBundle, skills []*domain.SpecForgeSkill, now time.Time) []*domain.SpecForgeSkillRun {
