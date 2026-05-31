@@ -352,6 +352,98 @@ func TestCreateProjectRequirementRecordsSkillRunPipeline(t *testing.T) {
 	require.Len(t, planRuns, 4)
 }
 
+func TestCreateProjectRequirementIncludesArchitectureEvidence(t *testing.T) {
+	repo := &memoryRepo{}
+	profileRepo := &memoryProfileRepo{}
+	require.NoError(t, profileRepo.UpsertProfile(context.Background(), &domain.SpecForgeRepoProfile{
+		RepositoryID:  "repo_api",
+		DefaultBranch: "main",
+		Stack:         []string{"Go", "Gin"},
+		TestCommands:  []string{"go test ./..."},
+		Summary:       "API service",
+	}))
+	require.NoError(t, profileRepo.CreateArchitectureSnapshot(context.Background(), &domain.SpecForgeRepoArchitectureSnapshot{
+		RepositoryID: "repo_api",
+		CommitSHA:    "abc123",
+		Modules:      []string{"api/internal/modules/planning", "api/internal/modules/execution"},
+		Entrypoints:  []string{"api/cmd/server/main.go"},
+		CIWorkflows:  []string{".github/workflows/api.yml"},
+		Summary:      "API architecture snapshot",
+		Warnings:     []string{"No worker entrypoint detected."},
+		CreatedAt:    time.Now().UTC(),
+	}))
+	projectRepo := &memoryProjectRepo{
+		project: &domain.SpecForgeProject{ID: 77, WorkspaceID: "workspace_1", Name: "CodingCTO", Slug: "codingcto", Status: domain.ProjectStatusActive},
+		repositories: []*domain.SpecForgeProjectRepository{
+			{ID: 1, ProjectID: 77, RepositoryID: "repo_api", Role: domain.ProjectRepositoryRolePrimary, Active: true},
+		},
+	}
+	svc := NewService(repo, profileRepo, repo, projectRepo)
+
+	bundle, err := svc.CreateProjectRequirement(context.Background(), 42, 77, &CreateIdeaRequest{
+		Input: "Add architecture evidence to execution prompts",
+		Type:  "feature",
+	})
+
+	require.NoError(t, err)
+	require.NotNil(t, bundle.ProjectContext)
+	require.NotNil(t, bundle.ProjectContext.RepositoryContexts[0].ArchitectureSnapshot)
+	require.Equal(t, "abc123", bundle.ProjectContext.RepositoryContexts[0].ArchitectureSnapshot.CommitSHA)
+	require.Contains(t, bundle.Plan.EvidenceRefs, "architecture_snapshot:repo_api:abc123")
+	require.Contains(t, bundle.Plan.EvidenceRefs, "architecture_snapshot:repo_api:modules")
+	require.Contains(t, bundle.Plan.EvidenceRefs, "architecture_snapshot:repo_api:entrypoints")
+	require.Contains(t, bundle.Plan.EvidenceRefs, "architecture_snapshot:repo_api:ci_workflows")
+	require.Contains(t, bundle.Plan.EvidenceRefs, "architecture_snapshot:repo_api:warnings")
+	require.Contains(t, bundle.PRNodes[0].EvidenceRefs, "architecture_snapshot:repo_api:abc123")
+	runs, err := svc.ListSkillRunsForPlan(context.Background(), bundle.Plan.ID)
+	require.NoError(t, err)
+	require.NotEmpty(t, runs)
+	require.Contains(t, runs[0].EvidenceRefs, "architecture_snapshot:repo_api:abc123")
+
+	prompt, err := svc.CompilePrompt(context.Background(), 42, bundle.PRNodes[0].ID, &CompilePromptRequest{})
+	require.NoError(t, err)
+	require.Contains(t, prompt.EvidenceRefs, "architecture_snapshot:repo_api:abc123")
+	require.Contains(t, prompt.PromptText, "Architecture snapshot commit: abc123")
+	require.Contains(t, prompt.PromptText, "Architecture modules: api/internal/modules/planning, api/internal/modules/execution")
+	require.Contains(t, prompt.PromptText, "Architecture entrypoints: api/cmd/server/main.go")
+	require.Contains(t, prompt.PromptText, "Architecture CI workflows: .github/workflows/api.yml")
+	require.Contains(t, prompt.PromptText, "No worker entrypoint detected.")
+}
+
+func TestCompilePromptEscalatesMissingProjectArchitectureEvidence(t *testing.T) {
+	repo := &memoryRepo{}
+	profileRepo := &memoryProfileRepo{}
+	require.NoError(t, profileRepo.UpsertProfile(context.Background(), &domain.SpecForgeRepoProfile{
+		RepositoryID:  "repo_api",
+		DefaultBranch: "main",
+		Stack:         []string{"Go", "Gin"},
+		TestCommands:  []string{"go test ./..."},
+		Summary:       "API service",
+	}))
+	projectRepo := &memoryProjectRepo{
+		project: &domain.SpecForgeProject{ID: 77, WorkspaceID: "workspace_1", Name: "CodingCTO", Slug: "codingcto", Status: domain.ProjectStatusActive},
+		repositories: []*domain.SpecForgeProjectRepository{
+			{ID: 1, ProjectID: 77, RepositoryID: "repo_api", Role: domain.ProjectRepositoryRolePrimary, Active: true},
+		},
+	}
+	svc := NewService(repo, profileRepo, repo, projectRepo)
+
+	bundle, err := svc.CreateProjectRequirement(context.Background(), 42, 77, &CreateIdeaRequest{
+		Input: "Add architecture evidence to execution prompts",
+		Type:  "feature",
+	})
+	require.NoError(t, err)
+	require.True(t, bundle.ProjectContext.RepositoryContexts[0].ArchitectureStale)
+	require.Contains(t, bundle.ProjectContext.RepositoryContexts[0].ArchitectureWarnings, "Architecture snapshot has not been generated yet.")
+
+	prompt, err := svc.CompilePrompt(context.Background(), 42, bundle.PRNodes[0].ID, &CompilePromptRequest{})
+
+	require.NoError(t, err)
+	require.NotContains(t, prompt.EvidenceRefs, "architecture_snapshot:repo_api:modules")
+	require.Contains(t, prompt.PromptText, "Architecture snapshot: missing")
+	require.Contains(t, prompt.PromptText, "Architecture snapshot has not been generated yet.")
+}
+
 func TestCompilePromptInjectsActiveRepoSkills(t *testing.T) {
 	repo := &memoryRepo{}
 	svc := NewService(repo, &memoryProfileRepo{}, repo, nil)
@@ -383,27 +475,7 @@ func TestCompilePromptInjectsActiveRepoSkills(t *testing.T) {
 
 func TestCreateProjectIdeaUsesProjectContextProfilesAndSkills(t *testing.T) {
 	repo := &memoryRepo{}
-	profileRepo := &memoryProfileRepo{
-		snapshots: map[string]*domain.SpecForgeRepoArchitectureSnapshot{
-			"repo_api": {
-				RepositoryID: "repo_api",
-				CommitSHA:    "abc123",
-				Modules:      []string{"api/internal/modules/project"},
-				Entrypoints:  []string{"cmd/server/main.go"},
-				TestCommands: []string{"go test ./internal/modules/project"},
-				CIWorkflows:  []string{".github/workflows/ci.yml"},
-				CreatedAt:    time.Now(),
-			},
-			"repo_web": {
-				RepositoryID: "repo_web",
-				CommitSHA:    "def456",
-				Modules:      []string{"web/src/features/project"},
-				CIWorkflows:  []string{".github/workflows/web.yml"},
-				Warnings:     []string{"Architecture snapshot source: github_tree."},
-				CreatedAt:    time.Now(),
-			},
-		},
-	}
+	profileRepo := &memoryProfileRepo{}
 	require.NoError(t, profileRepo.UpsertProfile(context.Background(), &domain.SpecForgeRepoProfile{
 		RepositoryID:      "repo_api",
 		DefaultBranch:     "main",
@@ -457,11 +529,6 @@ func TestCreateProjectIdeaUsesProjectContextProfilesAndSkills(t *testing.T) {
 	require.Contains(t, bundle.ProjectContext.ExecutionGuardrails, "Executor must modify only repo_api; other bound repositories are read-only context.")
 	require.Contains(t, bundle.RepoProfile.Stack, "Go")
 	require.Contains(t, bundle.RepoProfile.Stack, "Next.js")
-	require.Contains(t, bundle.RepoProfile.AppStructure, "repo_api (primary) modules: api/internal/modules/project")
-	require.Contains(t, bundle.RepoProfile.AppStructure, "repo_web (dependency) modules: web/src/features/project")
-	require.Contains(t, bundle.RepoProfile.TestCommands, "go test ./internal/modules/project")
-	require.Contains(t, bundle.Plan.EvidenceRefs, "repo_architecture_snapshot:repo_api:abc123")
-	require.Contains(t, bundle.Plan.EvidenceRefs, "repo_architecture_snapshot:repo_web:def456")
 	require.Contains(t, bundle.Plan.AffectedAreas, "api/internal/modules")
 	require.Contains(t, bundle.Plan.AffectedAreas, "web/src/features")
 	require.Contains(t, bundle.ProductSpec.Assumptions, "Plan generation used project context for SpecForge across 2 active repositories; execution is limited to primary repository repo_api.")
@@ -533,23 +600,7 @@ func TestGenerateRequirementPlanCreatesNextVersionAndApprovalRejectsStalePlan(t 
 
 func TestCompilePromptInjectsProjectContextSkills(t *testing.T) {
 	repo := &memoryRepo{}
-	profileRepo := &memoryProfileRepo{
-		snapshots: map[string]*domain.SpecForgeRepoArchitectureSnapshot{
-			"repo_api": {
-				RepositoryID: "repo_api",
-				CommitSHA:    "abc123",
-				Modules:      []string{"api/internal/modules/planning"},
-				CIWorkflows:  []string{".github/workflows/ci.yml"},
-				CreatedAt:    time.Now(),
-			},
-			"repo_web": {
-				RepositoryID: "repo_web",
-				CommitSHA:    "def456",
-				Modules:      []string{"web/src/features/specforge"},
-				CreatedAt:    time.Now().Add(-25 * time.Hour),
-			},
-		},
-	}
+	profileRepo := &memoryProfileRepo{}
 	require.NoError(t, profileRepo.UpsertProfile(context.Background(), &domain.SpecForgeRepoProfile{
 		RepositoryID:  "repo_api",
 		DefaultBranch: "main",
@@ -592,13 +643,6 @@ func TestCompilePromptInjectsProjectContextSkills(t *testing.T) {
 	require.Contains(t, prompt.PromptText, "Primary repository: repo_api")
 	require.Contains(t, prompt.PromptText, "Read-only repositories: repo_web")
 	require.Contains(t, prompt.PromptText, "Executor must modify only repo_api")
-	require.Contains(t, prompt.EvidenceRefs, "repo_architecture_snapshot:repo_api:abc123")
-	require.Contains(t, prompt.EvidenceRefs, "repo_architecture_snapshot:repo_web:def456")
-	require.Contains(t, prompt.EvidenceRefs, "repo_architecture_warnings:repo_web")
-	require.Contains(t, prompt.PromptText, "architecture_snapshot: abc123")
-	require.Contains(t, prompt.PromptText, "architecture_modules: api/internal/modules/planning")
-	require.Contains(t, prompt.PromptText, "architecture_ci_workflows: .github/workflows/ci.yml")
-	require.Contains(t, prompt.PromptText, "Architecture warning: Architecture snapshot is older than 24 hours.")
 	require.Contains(t, prompt.PromptText, "Web console")
 	require.Contains(t, prompt.PromptText, "module-boundaries")
 	require.Contains(t, prompt.PromptText, "Web code talks to API over HTTP only.")
@@ -717,9 +761,9 @@ type memoryRepo struct {
 }
 
 type memoryProfileRepo struct {
-	profile   *domain.SpecForgeRepoProfile
-	profiles  map[string]*domain.SpecForgeRepoProfile
-	snapshots map[string]*domain.SpecForgeRepoArchitectureSnapshot
+	profile               *domain.SpecForgeRepoProfile
+	profiles              map[string]*domain.SpecForgeRepoProfile
+	architectureSnapshots map[string][]*domain.SpecForgeRepoArchitectureSnapshot
 }
 
 func (r *memoryProfileRepo) UpsertProfile(ctx context.Context, profile *domain.SpecForgeRepoProfile) error {
@@ -748,12 +792,25 @@ func (r *memoryProfileRepo) FindProfileByRepositoryID(ctx context.Context, repos
 	return &copied, nil
 }
 
+func (r *memoryProfileRepo) CreateArchitectureSnapshot(ctx context.Context, snapshot *domain.SpecForgeRepoArchitectureSnapshot) error {
+	copied := *snapshot
+	if copied.CreatedAt.IsZero() {
+		copied.CreatedAt = time.Now().UTC()
+	}
+	if r.architectureSnapshots == nil {
+		r.architectureSnapshots = map[string][]*domain.SpecForgeRepoArchitectureSnapshot{}
+	}
+	r.architectureSnapshots[snapshot.RepositoryID] = append(r.architectureSnapshots[snapshot.RepositoryID], &copied)
+	return nil
+}
+
 func (r *memoryProfileRepo) FindLatestArchitectureSnapshotByRepositoryID(ctx context.Context, repositoryID string) (*domain.SpecForgeRepoArchitectureSnapshot, error) {
-	snapshot, ok := r.snapshots[repositoryID]
-	if !ok {
+	snapshots := r.architectureSnapshots[repositoryID]
+	if len(snapshots) == 0 {
 		return nil, domain.ErrNotFound
 	}
-	copied := *snapshot
+	latest := snapshots[len(snapshots)-1]
+	copied := *latest
 	return &copied, nil
 }
 

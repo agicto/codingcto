@@ -1,6 +1,7 @@
 import { describe, expect, it } from 'vitest';
 
 import {
+  canStartExecutionRange,
   executionRangeReview,
   selectExecutionNode,
 } from '@/features/specforge/execution-range';
@@ -32,11 +33,17 @@ describe('execution range selection', () => {
     expect(executionRangeReview(nodes, [nodes[0].id, nodes[1].id])).toEqual([
       '执行范围审核：已选择 2 个 PR 节点，依赖已包含。',
     ]);
+    expect(canStartExecutionRange(nodes, [nodes[0].id, nodes[1].id])).toBe(true);
   });
 
   it('reports missing dependencies', () => {
     expect(executionRangeReview(nodes, [nodes[1].id])).toEqual([
       '执行范围审核：PR-002 依赖 PR-001；请包含该依赖，或移除此节点。',
     ]);
+    expect(canStartExecutionRange(nodes, [nodes[1].id])).toBe(false);
+  });
+
+  it('does not allow starting an empty execution range', () => {
+    expect(canStartExecutionRange(nodes, [])).toBe(false);
   });
 });
