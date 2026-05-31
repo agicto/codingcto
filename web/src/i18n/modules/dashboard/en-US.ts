@@ -300,6 +300,12 @@ const messages: DashboardMessages = {
       title: 'Bind GitHub repository',
       description:
         'Use the repository ID created by Settings > GitHub. Primary repositories are writable; dependency, docs, and infra repositories become read-only planning context.',
+      connectedRepositories: 'Connected repositories',
+      loadingRepositories: 'Loading repositories connected to this workspace.',
+      availableRepositories: '{count} repositories can be bound to this project.',
+      noAvailableRepositories:
+        'No unbound repositories are available. Connect a repository in GitHub setup or enter a repository ID manually.',
+      chooseRepository: 'Choose a repository',
       repositoryId: 'Repository ID',
       role: 'Role',
       binding: 'Binding',
