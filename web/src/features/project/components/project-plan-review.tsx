@@ -3,7 +3,15 @@
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { useMemo, useState } from 'react';
-import { ArrowRight, CheckCircle2, Copy, GitPullRequest, ScrollText, Terminal } from 'lucide-react';
+import {
+  ArrowRight,
+  CheckCircle2,
+  Copy,
+  GitPullRequest,
+  ScrollText,
+  ShieldAlert,
+  Terminal,
+} from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -25,6 +33,7 @@ import {
   buildRuntimeSetupCommand,
   runtimeSetupChecklist,
 } from '@/features/specforge/runtime-setup';
+import { verificationReviewForNodes } from '@/features/specforge/verification-review';
 import {
   useApproveSpecForgePlan,
   useDispatchExecutionRun,
@@ -207,6 +216,7 @@ function ProjectPlanReview({
           readyRuntimeCount={executionReadiness.healthyRuntimeCount}
           readinessReason={executionReadiness.reason}
         />
+        <VerificationReviewCard plan={plan} />
 
         {message ? (
           <Alert>
@@ -230,6 +240,84 @@ function ProjectPlanReview({
         />
       </div>
     </main>
+  );
+}
+
+function VerificationReviewCard({ plan }: { plan: PlanBundle }) {
+  const review = verificationReviewForNodes(plan.prNodes);
+  const highlightedNodes =
+    review.failedNodes.length > 0
+      ? review.failedNodes
+      : review.ciNodes.length > 0
+        ? review.ciNodes
+        : review.reviewableNodes;
+
+  return (
+    <Card className="border-border-subtle shadow-xs">
+      <CardHeader className="space-y-2">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <CardTitle className="flex items-center gap-2 text-base">
+              <ShieldAlert className="h-4 w-4 text-primary" />
+              Verification review
+            </CardTitle>
+            <CardDescription className="mt-1 leading-6">
+              {review.headline}
+            </CardDescription>
+          </div>
+          <Badge
+            variant="outline"
+            className={
+              review.state === 'blocked'
+                ? 'border-warning/30 text-warning'
+                : review.state === 'complete'
+                  ? 'border-success/30 text-success'
+                  : ''
+            }
+          >
+            {review.label}
+          </Badge>
+        </div>
+      </CardHeader>
+      <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
+        <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+          <div className="text-sm font-medium text-text-main">Next verification action</div>
+          <p className="mt-2 text-sm leading-6 text-text-muted">{review.nextAction}</p>
+          <div className="mt-3 rounded-md border border-border-subtle bg-bg-surface px-3 py-2 text-sm text-text-muted">
+            {review.autoFixBudget}
+          </div>
+        </div>
+        <div className="min-w-0 rounded-md border border-border-subtle bg-bg-subtle p-3">
+          <div className="text-sm font-medium text-text-main">Active PR node signals</div>
+          <div className="mt-3 space-y-2">
+            {highlightedNodes.slice(0, 3).map(node => (
+              <div
+                key={node.id}
+                className="rounded-md border border-border-subtle bg-bg-surface px-3 py-2"
+              >
+                <div className="flex items-center justify-between gap-2">
+                  <span className="truncate text-sm font-medium text-text-main">
+                    {node.nodeKey}: {node.title}
+                  </span>
+                  <Badge variant="outline">{node.status}</Badge>
+                </div>
+                {node.failureReason ? (
+                  <p className="mt-1 text-xs leading-5 text-text-muted">
+                    Failure: {node.failureReason}
+                  </p>
+                ) : null}
+              </div>
+            ))}
+            {highlightedNodes.length === 0 ? (
+              <p className="text-sm leading-6 text-text-muted">
+                No active CI failures or reviewable PR nodes yet. Verification starts after runtime
+                delivery opens PRs.
+              </p>
+            ) : null}
+          </div>
+        </div>
+      </CardContent>
+    </Card>
   );
 }
 
