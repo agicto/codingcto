@@ -3,7 +3,9 @@ import { describe, expect, it } from 'vitest';
 import {
   primaryRepositoryContext,
   projectContextContract,
+  projectContextMissingEvidence,
   projectOverviewDecision,
+  projectRepositoryEvidence,
   projectContextReadiness,
 } from './project-context';
 import type { ProjectContextDTO } from './services/project-service';
@@ -197,5 +199,61 @@ describe('project context', () => {
 
     expect(decision.step).toBe('create_requirement');
     expect(decision.actionHref).toBe('#project-delivery');
+  });
+
+  it('builds repository evidence rows for context review', () => {
+    const context = projectContext([
+      ['primary', true, 'repo_app'],
+      ['dependency', true, 'repo_docs'],
+    ]);
+    context.repository_contexts[0].profile = {
+      id: 1,
+      repository_id: 'repo_app',
+      default_branch: 'main',
+      stack: ['Go'],
+      test_commands: ['go test ./...'],
+      ci_provider: 'github_actions',
+      app_structure: ['api/internal'],
+      coding_conventions: [],
+      risk_areas: ['auth'],
+      summary: 'API service.',
+      source: 'manual',
+      warnings: [],
+      created_by: 1,
+      last_indexed_at: '',
+      created_at: '',
+      updated_at: '',
+    };
+    context.repository_contexts[0].skills = [
+      {
+        id: 1,
+        repository_id: 'repo_app',
+        name: 'planning-sop',
+        description: 'Planning skill.',
+        content: 'Use evidence refs.',
+        active: true,
+        created_by: 1,
+        created_at: '',
+        updated_at: '',
+      },
+    ];
+    context.repository_contexts[1].architecture_stale = true;
+
+    const evidence = projectRepositoryEvidence(context);
+
+    expect(evidence[0]).toMatchObject({
+      repositoryId: 'repo_app',
+      writable: true,
+      hasProfile: true,
+      hasArchitectureSnapshot: false,
+      skillCount: 1,
+    });
+    expect(evidence[1]).toMatchObject({
+      repositoryId: 'repo_docs',
+      writable: false,
+      architectureStale: true,
+      warningCount: 1,
+    });
+    expect(projectContextMissingEvidence(context)).toContain('repo_profile:repo_docs');
   });
 });

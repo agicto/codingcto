@@ -26,6 +26,18 @@ export interface ProjectOverviewDecision {
   tone: 'warning' | 'info' | 'success';
 }
 
+export interface ProjectRepositoryEvidence {
+  repositoryId: string;
+  role: string;
+  writable: boolean;
+  hasProfile: boolean;
+  hasArchitectureSnapshot: boolean;
+  architectureStale: boolean;
+  skillCount: number;
+  warningCount: number;
+  missingEvidence: string[];
+}
+
 export function primaryRepositoryContext(
   context?: ProjectContextDTO
 ): ProjectRepositoryContextDTO | undefined {
@@ -45,6 +57,45 @@ export function projectContextContract(
   context?: ProjectContextDTO
 ): ProjectContextContractDTO | undefined {
   return context?.context_contract;
+}
+
+export function projectRepositoryEvidence(
+  context?: ProjectContextDTO
+): ProjectRepositoryEvidence[] {
+  return (context?.repository_contexts ?? []).map(item => {
+    const repositoryId = item.repository.repository_id;
+    const missingEvidence = [
+      !item.profile ? `repo_profile:${repositoryId}` : '',
+      !item.architecture_snapshot ? `architecture_snapshot:${repositoryId}` : '',
+      item.skills.length === 0 ? `skills:${repositoryId}` : '',
+    ].filter(Boolean);
+    const warningCount =
+      (item.warnings?.length ?? 0) +
+      (item.architecture_warnings?.length ?? 0) +
+      (item.profile?.warnings?.length ?? 0) +
+      (item.architecture_stale ? 1 : 0);
+
+    return {
+      repositoryId,
+      role: item.repository.role,
+      writable: item.repository.active && item.repository.role === 'primary',
+      hasProfile: Boolean(item.profile),
+      hasArchitectureSnapshot: Boolean(item.architecture_snapshot),
+      architectureStale: item.architecture_stale,
+      skillCount: item.skills.length,
+      warningCount,
+      missingEvidence,
+    };
+  });
+}
+
+export function projectContextMissingEvidence(context?: ProjectContextDTO): string[] {
+  const contractMissingEvidence = context?.context_contract?.missing_evidence ?? [];
+  if (contractMissingEvidence.length > 0) {
+    return contractMissingEvidence;
+  }
+
+  return projectRepositoryEvidence(context).flatMap(item => item.missingEvidence);
 }
 
 export function projectContextReadiness(context?: ProjectContextDTO): ProjectContextReadiness {
