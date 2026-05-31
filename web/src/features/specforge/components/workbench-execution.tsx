@@ -10,6 +10,7 @@ import {
   GitPullRequest,
   RotateCcw,
   ScrollText,
+  ShieldAlert,
   Terminal,
 } from 'lucide-react';
 
@@ -23,13 +24,22 @@ import {
   useCreateReviewPatchTask,
   useRetryExecutionTask,
   useSpecForgeTaskEvents,
+  useVerifySpecForgePRNodeCI,
 } from '@/features/specforge/hooks/use-specforge';
+import {
+  ciReviewActionFromResponse,
+  type CIReviewAction,
+} from '@/features/specforge/ci-review-actions';
+import { prNodeFromDTO } from '@/features/specforge/plan-adapter';
 import {
   nextBlockedNode,
   nextReviewableNode,
   summarizeDeliveryRun,
 } from '@/features/specforge/delivery-status';
-import type { SpecForgeExecutionBundleDTO, SpecForgeTaskEventDTO } from '@/features/specforge/services/specforge-service';
+import type {
+  SpecForgeExecutionBundleDTO,
+  SpecForgeTaskEventDTO,
+} from '@/features/specforge/services/specforge-service';
 import type { ExecutionRun, PRNode } from '@/features/specforge/types';
 import { statusClassName, statusLabel } from '@/features/specforge/components/workbench-utils';
 
@@ -129,16 +139,20 @@ function DeliveryMetric({
 
 export function ExecutionStatus({
   run,
+  repositoryId,
   isCancelling,
   onAdvance,
   onCancel,
   onExecutionBundle,
+  onPRNodeUpdate,
 }: {
   run: ExecutionRun;
+  repositoryId: string;
   isCancelling: boolean;
   onAdvance: () => void;
   onCancel: () => void;
   onExecutionBundle: (bundle: SpecForgeExecutionBundleDTO) => void;
+  onPRNodeUpdate: (node: PRNode) => void;
 }) {
   const canAdvance = run.status === 'running';
   const canCancel = run.status === 'queued' || run.status === 'running' || run.status === 'blocked';
@@ -148,11 +162,17 @@ export function ExecutionStatus({
   const retryTask = useRetryExecutionTask();
   const completeTask = useCompleteExecutionTask();
   const createReviewPatchTask = useCreateReviewPatchTask();
+  const verifyCI = useVerifySpecForgePRNodeCI();
+  const [ciReviewActions, setCIReviewActions] = useState<Record<string, CIReviewAction>>({});
+  const [ciReviewActionNodeId, setCIReviewActionNodeId] = useState<string>();
   const selectedTaskId = selectedTask?.taskId;
   const taskEventsQuery = useSpecForgeTaskEvents(selectedTaskId);
   const taskEvents = taskEventsQuery.data?.events ?? [];
   const isTaskActionPending =
-    retryTask.isPending || completeTask.isPending || createReviewPatchTask.isPending;
+    retryTask.isPending ||
+    completeTask.isPending ||
+    createReviewPatchTask.isPending ||
+    verifyCI.isPending;
   const blockedRecoverableTasks = run.tasks.filter(
     task => task.status === 'failed' || task.status === 'cancelled'
   );
@@ -197,6 +217,35 @@ export function ExecutionStatus({
       );
     } finally {
       setTaskActionId(undefined);
+    }
+  }
+
+  async function reviewTaskCI(task: PRNode) {
+    const prNodeId = Number(task.id);
+    if (!repositoryId || !Number.isFinite(prNodeId) || prNodeId <= 0) {
+      setTaskActionError('CI review requires a persisted repository and PR node.');
+      return;
+    }
+
+    setTaskActionError('');
+    setCIReviewActionNodeId(task.id);
+    try {
+      const result = await verifyCI.mutateAsync({
+        prNodeId,
+        payload: { repository_id: repositoryId },
+      });
+      const updated = prNodeFromDTO(result.pr_node);
+      onPRNodeUpdate(updated);
+      setCIReviewActions(current => ({
+        ...current,
+        [task.id]: ciReviewActionFromResponse(result),
+      }));
+    } catch {
+      setTaskActionError(
+        'CI review requires GitHub App access and a workflow run for this PR node.'
+      );
+    } finally {
+      setCIReviewActionNodeId(undefined);
     }
   }
 
@@ -273,6 +322,15 @@ export function ExecutionStatus({
                 <Button
                   variant="outline"
                   size="sm"
+                  onClick={() => reviewTaskCI(task)}
+                  disabled={isTaskActionPending || !['blocked', 'failed', 'ci_running'].includes(task.status)}
+                >
+                  {verifyCI.isPending && ciReviewActionNodeId === task.id ? 'Reviewing' : 'Review CI'}
+                  <ShieldAlert className="ml-1.5 h-4 w-4" />
+                </Button>
+                <Button
+                  variant="outline"
+                  size="sm"
                   onClick={() => retryExecutionTask(task)}
                   disabled={
                     isTaskActionPending ||
@@ -300,6 +358,7 @@ export function ExecutionStatus({
               task.errorLog ||
               task.outputLog ||
               task.logsUrl) && <TaskDiagnostics task={task} />}
+            {ciReviewActions[task.id] && <CIReviewActionPanel action={ciReviewActions[task.id]} />}
           </div>
         ))}
         {selectedTask && (
@@ -418,6 +477,52 @@ function TaskDiagnostics({ task }: { task: PRNode }) {
   );
 }
 
+function CIReviewActionPanel({ action }: { action: CIReviewAction }) {
+  const toneClassName =
+    action.tone === 'warning'
+      ? 'border-warning/30 bg-warning-subtle text-warning'
+      : action.tone === 'success'
+        ? 'border-success/30 bg-success-subtle text-success'
+        : action.tone === 'info'
+          ? 'border-info/30 bg-info-subtle text-info'
+          : 'border-border-subtle bg-bg-subtle text-text-muted';
+
+  return (
+    <div className={cn('rounded-lg border p-3 text-sm leading-6', toneClassName)}>
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <div className="font-medium text-text-main">{action.headline}</div>
+        <Badge variant="outline">{action.label}</Badge>
+      </div>
+      <p className="mt-2">{action.nextAction}</p>
+      <div className="mt-3 flex flex-wrap gap-2">
+        {action.fixAttempt ? (
+          <>
+            <Badge variant="outline">attempt {action.fixAttempt.attempt_number}</Badge>
+            <Badge variant="outline">{action.fixAttempt.risk_level} risk</Badge>
+            <Badge variant="outline">{action.fixAttempt.action_kind}</Badge>
+          </>
+        ) : null}
+        {action.escalationSummary ? (
+          <Badge variant="outline">
+            {action.escalationSummary.attempts_used}/{action.escalationSummary.max_attempts}{' '}
+            attempts
+          </Badge>
+        ) : null}
+      </div>
+      {action.fixAttempt?.blocked_reason ? (
+        <p className="mt-2 rounded-md border border-border-subtle bg-bg-surface px-3 py-2 text-xs leading-5 text-text-muted">
+          Guardrail: {action.fixAttempt.blocked_reason}
+        </p>
+      ) : null}
+      {action.escalationSummary?.latest_blocked_reason ? (
+        <p className="mt-2 rounded-md border border-border-subtle bg-bg-surface px-3 py-2 text-xs leading-5 text-text-muted">
+          Guardrail: {action.escalationSummary.latest_blocked_reason}
+        </p>
+      ) : null}
+    </div>
+  );
+}
+
 function TaskEventPanel({
   task,
   events,
@@ -531,4 +636,3 @@ function TaskEventRow({ event }: { event: SpecForgeTaskEventDTO }) {
     </div>
   );
 }
-
