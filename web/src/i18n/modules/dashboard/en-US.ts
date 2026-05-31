@@ -88,6 +88,8 @@ const messages: DashboardMessages = {
       creating: 'Creating',
       createAndSwitch: 'Create and switch',
       required: 'Workspace name and slug are required.',
+      nameInvalid: 'Workspace name must be at least 2 characters.',
+      slugInvalid: 'Workspace slug must be at least 2 characters. Try a short slug such as coding or cto.',
       created: 'Created {name}.',
       createFailed: 'Workspace could not be created. Try another slug or check backend auth.',
     },

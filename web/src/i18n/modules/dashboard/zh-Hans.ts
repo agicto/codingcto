@@ -86,6 +86,8 @@ const messages = {
       creating: '创建中',
       createAndSwitch: '创建并切换',
       required: '请填写工作区名称和标识。',
+      nameInvalid: '工作区名称至少需要 2 个字符。',
+      slugInvalid: '工作区标识至少需要 2 个字符。可以用 coding 或 cto 这类短标识。',
       created: '已创建 {name}。',
       createFailed: '工作区创建失败。请换一个标识，或检查后端登录状态。',
     },

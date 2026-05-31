@@ -234,8 +234,16 @@ function WorkspaceSwitcher() {
     event.preventDefault();
     const name = workspaceName.trim();
     const slug = slugFromProjectName(workspaceSlug || workspaceName);
-    if (!name || !slug) {
+    if (name.length < 2) {
+      setMessage(t('nameInvalid'));
+      return;
+    }
+    if (!slug) {
       setMessage(t('required'));
+      return;
+    }
+    if (slug.length < 2) {
+      setMessage(t('slugInvalid'));
       return;
     }
     setMessage('');
@@ -325,6 +333,8 @@ function WorkspaceSwitcher() {
               value={workspaceName}
               onChange={event => handleWorkspaceName(event.target.value)}
               placeholder="Acme Platform"
+              minLength={2}
+              maxLength={120}
             />
           </div>
           <div className="space-y-1.5">
@@ -334,6 +344,8 @@ function WorkspaceSwitcher() {
               value={workspaceSlug}
               onChange={event => setWorkspaceSlug(slugFromProjectName(event.target.value))}
               placeholder="acme-platform"
+              minLength={2}
+              maxLength={100}
             />
           </div>
           <Textarea
