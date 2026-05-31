@@ -8,6 +8,7 @@ const messages: NavMessages = {
   specforge: 'CodingCTO',
   settings: 'Settings',
   profile: 'Profile',
+  notifications: 'Notifications',
   analytics: 'Analytics',
   styleguide: 'Styleguide',
 };
