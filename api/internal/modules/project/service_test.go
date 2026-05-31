@@ -367,14 +367,15 @@ func (s *memoryGitHubRepositoryStore) FindRepositoryByRepositoryID(_ context.Con
 }
 
 func (s *memoryGitHubRepositoryStore) ListRepositoriesByWorkspaceID(_ context.Context, workspaceID string) ([]*domain.Repository, error) {
-	var repositories []*domain.Repository
+	out := make([]*domain.Repository, 0, len(s.repositories))
 	for _, repository := range s.repositories {
-		if repository.WorkspaceID == workspaceID {
-			copied := *repository
-			repositories = append(repositories, &copied)
+		if repository.WorkspaceID != workspaceID {
+			continue
 		}
+		copied := *repository
+		out = append(out, &copied)
 	}
-	return repositories, nil
+	return out, nil
 }
 
 func (s *memoryGitHubRepositoryStore) UpsertInstallation(context.Context, *domain.GitHubInstallation) error {
