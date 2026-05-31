@@ -15,6 +15,17 @@ export interface ProjectContextReadiness {
   nextAction: string;
 }
 
+export type ProjectOverviewStepID = 'bind_repository' | 'review_context' | 'create_requirement';
+
+export interface ProjectOverviewDecision {
+  step: ProjectOverviewStepID;
+  title: string;
+  description: string;
+  actionLabel: string;
+  actionHref: string;
+  tone: 'warning' | 'info' | 'success';
+}
+
 export function primaryRepositoryContext(
   context?: ProjectContextDTO
 ): ProjectRepositoryContextDTO | undefined {
@@ -79,6 +90,43 @@ export function projectContextReadiness(context?: ProjectContextDTO): ProjectCon
       primaryRepository?.repository.repository_id
     ),
     nextAction: readinessNextAction(Boolean(primaryRepository), warningCount, skillCount),
+  };
+}
+
+export function projectOverviewDecision(context?: ProjectContextDTO): ProjectOverviewDecision {
+  const readiness = projectContextReadiness(context);
+  if (!readiness.hasPrimaryRepository) {
+    return {
+      step: 'bind_repository',
+      title: 'Bind a primary repository',
+      description:
+        'CodingCTO needs one writable primary repository before it can generate or execute a plan.',
+      actionLabel: 'Bind repository',
+      actionHref: '#repository-binding',
+      tone: 'warning',
+    };
+  }
+
+  if (readiness.warningCount > 0 || readiness.skillCount === 0) {
+    return {
+      step: 'review_context',
+      title: 'Review project context',
+      description:
+        'Repo profiles, architecture snapshots, skills, and warnings should be reviewed before plan approval.',
+      actionLabel: 'Review context',
+      actionHref: '#project-context',
+      tone: 'info',
+    };
+  }
+
+  return {
+    step: 'create_requirement',
+    title: 'Create a requirement',
+    description:
+      'The project context is ready enough to turn a product change into a plan and PR DAG.',
+    actionLabel: 'Open delivery board',
+    actionHref: '#project-delivery',
+    tone: 'success',
   };
 }
 
