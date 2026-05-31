@@ -1614,6 +1614,7 @@ func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecF
 	b.WriteString("Goal:\n" + strings.TrimSpace(node.Goal) + "\n\n")
 	writeRunPromptContract(&b, bundle, node, promptType, parent, skills)
 	writeExecutionPromptModeInstructions(&b, promptType, parent)
+	writeExecutionSkillApplicationProtocol(&b, skills)
 	if bundle != nil && bundle.ProductSpec != nil {
 		writeExecutionList(&b, "Product goals", bundle.ProductSpec.Goals)
 		writeExecutionList(&b, "Product acceptance criteria", bundle.ProductSpec.AcceptanceCriteria)
@@ -1636,6 +1637,18 @@ func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecF
 	b.WriteString("- Run the listed test commands before submitting the result.\n")
 	b.WriteString("- Prepare a PR description with summary, scope, non-goals, tests, risks, and dependencies.\n")
 	return b.String()
+}
+
+func writeExecutionSkillApplicationProtocol(b *strings.Builder, skills []*domain.SpecForgeSkill) {
+	b.WriteString("Skill application protocol:\n")
+	if len(activeExecutionSkills(skills)) == 0 {
+		b.WriteString("- No active repository skills were available for this execution task; do not invent skill rules.\n\n")
+		return
+	}
+	b.WriteString("- Before editing files, translate every repository skill below into concrete constraints for this PR node.\n")
+	b.WriteString("- Apply those constraints together with acceptance criteria, non-goals, and dependency guardrails.\n")
+	b.WriteString("- If a skill conflicts with approved plan evidence or repository evidence, stop and submit a blocker summary.\n")
+	b.WriteString("- In the task result, include skills_applied with the skill names used and the evidence refs that supported the decision.\n\n")
 }
 
 func writeRunPromptContract(b *strings.Builder, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, promptType string, parent *domain.SpecForgeAgentTask, skills []*domain.SpecForgeSkill) {
@@ -2192,25 +2205,29 @@ func writeExecutionRepoProfile(b *strings.Builder, bundle *domain.SpecForgePlanB
 
 func writeExecutionSkills(b *strings.Builder, skills []*domain.SpecForgeSkill) {
 	b.WriteString("Repository skills:\n")
-	if len(skills) == 0 {
+	activeSkills := activeExecutionSkills(skills)
+	if len(activeSkills) == 0 {
 		b.WriteString("- None\n\n")
 		return
 	}
-	wrote := false
-	for _, skill := range skills {
-		if skill == nil || strings.TrimSpace(skill.Name) == "" || strings.TrimSpace(skill.Content) == "" {
-			continue
-		}
-		wrote = true
+	for _, skill := range activeSkills {
 		b.WriteString("## " + strings.TrimSpace(skill.Name) + "\n")
 		if strings.TrimSpace(skill.Description) != "" {
 			b.WriteString(strings.TrimSpace(skill.Description) + "\n")
 		}
 		b.WriteString(strings.TrimSpace(skill.Content) + "\n\n")
 	}
-	if !wrote {
-		b.WriteString("- None\n\n")
+}
+
+func activeExecutionSkills(skills []*domain.SpecForgeSkill) []*domain.SpecForgeSkill {
+	out := make([]*domain.SpecForgeSkill, 0, len(skills))
+	for _, skill := range skills {
+		if skill == nil || strings.TrimSpace(skill.Name) == "" || strings.TrimSpace(skill.Content) == "" {
+			continue
+		}
+		out = append(out, skill)
 	}
+	return out
 }
 
 func synthesizedExecutionProjectProfile(context *domain.SpecForgeProjectContext, primaryRepoID string) *domain.SpecForgeRepoProfile {
