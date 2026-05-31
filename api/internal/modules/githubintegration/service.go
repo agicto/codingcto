@@ -169,7 +169,11 @@ func (s *service) GetRepository(ctx context.Context, repositoryID string) (*doma
 }
 
 func (s *service) ListRepositories(ctx context.Context, workspaceID string) ([]*domain.Repository, error) {
-	return s.repo.ListRepositoriesByWorkspaceID(ctx, strings.TrimSpace(workspaceID))
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.repo.ListRepositoriesByWorkspaceID(ctx, workspaceID)
 }
 
 func (s *service) GetSettings(ctx context.Context, workspaceID string) (*domain.GitHubSettings, error) {

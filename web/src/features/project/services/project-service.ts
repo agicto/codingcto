@@ -166,4 +166,10 @@ export const projectService = {
       payload,
       config
     ),
+
+  unbindRepository: (projectId: number, repositoryId: string, config?: RequestConfig) =>
+    request.delete<void>(
+      `/projects/${projectId}/repositories/${encodeURIComponent(repositoryId)}`,
+      config
+    ),
 };

@@ -41,6 +41,7 @@ import { useBindProjectRepository, useProjects } from '@/features/project/hooks/
 import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
 import { projectSpecForgeHref } from '@/features/project/project-utils';
 import {
+  useGitHubRepositories,
   useGitHubSettings,
   useSyncGitHubInstallation,
   useUpsertGitHubSettings,
@@ -103,6 +104,8 @@ export function GitHubConnectionPanel() {
     setSelectedWorkspaceId,
   } = useSelectedWorkspace(stateWorkspaceId);
   const githubSettings = useGitHubSettings(workspaceId.trim());
+  const connectedRepositoriesQuery = useGitHubRepositories({ workspace_id: workspaceId.trim() });
+  const connectedRepositories = connectedRepositoriesQuery.data?.repositories ?? [];
   const projectsQuery = useProjects(workspaceId.trim());
   const projects = projectsQuery.data?.projects ?? [];
   const upsertSettings = useUpsertGitHubSettings();
@@ -632,6 +635,66 @@ export function GitHubConnectionPanel() {
                 </div>
               ) : null}
             </div>
+          )}
+
+          {workspaceId.trim() && (
+            <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3">
+              <div className="text-sm font-medium text-text-main">
+                {t('connectedRepositories.title')}
+              </div>
+              <p className="mt-1 text-sm leading-6 text-text-muted">
+                {t('connectedRepositories.description')}
+              </p>
+              {connectedRepositoriesQuery.isFetching ? (
+                <div className="mt-3 rounded-lg border border-border-subtle bg-bg-surface p-3 text-sm text-text-muted">
+                  {t('connectedRepositories.loading')}
+                </div>
+              ) : connectedRepositories.length > 0 ? (
+                <div className="mt-3 divide-y divide-border-subtle rounded-lg border border-border-subtle bg-bg-surface">
+                  {connectedRepositories.map(repository => (
+                    <div
+                      key={repository.repository_id}
+                      className="flex flex-col gap-3 p-3 md:flex-row md:items-center md:justify-between"
+                    >
+                      <div className="min-w-0">
+                        <div className="truncate text-sm font-medium text-text-main">
+                          {repository.github_owner}/{repository.github_repo}
+                        </div>
+                        <div className="mt-1 truncate font-mono text-xs text-text-muted">
+                          {repository.repository_id} · {repository.default_branch}
+                        </div>
+                      </div>
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        onClick={() => {
+                          setSavedRepoId(repository.repository_id);
+                          setSavedInstallationDbId(repository.github_installation_id);
+                          setOwner(repository.github_owner);
+                          setRepo(repository.github_repo);
+                          setDefaultBranch(repository.default_branch || 'main');
+                          setIsPrivate(repository.is_private);
+                          setMessage(t('messages.repositorySelected'));
+                        }}
+                      >
+                        {t('actions.selectRepository')}
+                      </Button>
+                    </div>
+                  ))}
+                </div>
+              ) : (
+                <div className="mt-3 rounded-lg border border-dashed border-border-subtle bg-bg-surface p-3 text-sm leading-6 text-text-muted">
+                  {t('connectedRepositories.empty')}
+                </div>
+              )}
+            </div>
+          )}
+
+          {connectedRepositoriesQuery.isError && (
+            <p className="text-xs leading-5 text-error">
+              {t('messages.repositoriesUnavailable')}
+            </p>
           )}
 
           {savedRepoId && (

@@ -247,7 +247,7 @@ export interface GitHubRepositoryDTO {
 }
 
 export interface ListGitHubRepositoriesParams {
-  workspace_id?: string;
+  workspace_id: string;
 }
 
 export interface ListGitHubRepositoriesDTO {
@@ -692,13 +692,11 @@ export const specForgeService = {
     ),
 
   listGitHubRepositories: (
-    params?: ListGitHubRepositoriesParams,
+    params: ListGitHubRepositoriesParams,
     config?: RequestConfig
   ) => {
     const search = new URLSearchParams();
-    if (params?.workspace_id) {
-      search.set("workspace_id", params.workspace_id);
-    }
+    search.set('workspace_id', params.workspace_id);
     const suffix = search.toString() ? `?${search.toString()}` : "";
     return request.get<ListGitHubRepositoriesDTO>(`/github/repositories${suffix}`, config);
   },

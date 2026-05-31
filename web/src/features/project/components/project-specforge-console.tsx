@@ -19,7 +19,12 @@ import {
 } from '@/components/ui/select';
 import { SpecForgeWorkbench } from '@/features/specforge';
 import { useT } from '@/i18n';
-import { useBindProjectRepository, useProjectContext } from '@/features/project/hooks/use-projects';
+import {
+  useBindProjectRepository,
+  useProjectContext,
+  useUnbindProjectRepository,
+} from '@/features/project/hooks/use-projects';
+import { useGitHubRepositories } from '@/features/specforge/hooks/use-specforge';
 import {
   primaryRepositoryContext,
   projectContextReadiness,
@@ -39,6 +44,7 @@ export function ProjectSpecForgeConsole() {
   const selectedRepository = primaryRepositoryContext(context);
   const repositoryId = selectedRepository?.repository.repository_id;
   const hasProjectContext = Boolean(context);
+  const workspaceId = context?.project.workspace_id ?? '';
 
   if (!validProjectId) {
     return (
@@ -72,17 +78,24 @@ export function ProjectSpecForgeConsole() {
   return (
     <div>
       <ProjectContextReadiness context={context} />
-      {!repositoryId ? (
-        <div className="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
+      <div className="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
+        {!repositoryId ? (
           <Alert>
             <AlertTitle>{t('primaryRequired.title')}</AlertTitle>
             <AlertDescription>
               {t('primaryRequired.description')}
             </AlertDescription>
           </Alert>
-          <ProjectRepositoryBindPanel projectId={projectId} />
-        </div>
-      ) : (
+        ) : null}
+        <ProjectRepositoryBindPanel
+          projectId={projectId}
+          workspaceId={workspaceId}
+          boundRepositoryIds={(context?.repository_contexts ?? []).map(
+            item => item.repository.repository_id
+          )}
+        />
+      </div>
+      {repositoryId ? (
         <SpecForgeWorkbench
           key={repositoryId}
           projectId={validProjectId}
@@ -90,7 +103,7 @@ export function ProjectSpecForgeConsole() {
           projectLabel={context?.project.name}
           repositoryLocked
         />
-      )}
+      ) : null}
     </div>
   );
 }
@@ -121,9 +134,24 @@ function ProjectScopedState({
   );
 }
 
-function ProjectRepositoryBindPanel({ projectId }: { projectId: number }) {
+function ProjectRepositoryBindPanel({
+  projectId,
+  workspaceId,
+  boundRepositoryIds = [],
+}: {
+  projectId: number;
+  workspaceId: string;
+  boundRepositoryIds?: string[];
+}) {
   const t = useT('dashboard.projectDelivery.bindPanel');
   const bindRepository = useBindProjectRepository(projectId);
+  const repositoriesQuery = useGitHubRepositories({ workspace_id: workspaceId });
+  const repositories = repositoriesQuery.data?.repositories ?? [];
+  const availableRepositories = repositories.filter(
+    repository => !boundRepositoryIds.includes(repository.repository_id)
+  );
+  const allConnectedRepositoriesBound =
+    repositories.length > 0 && availableRepositories.length === 0;
   const [repositoryId, setRepositoryId] = useState('');
   const [role, setRole] = useState('primary');
   const [message, setMessage] = useState('');
@@ -169,12 +197,53 @@ function ProjectRepositoryBindPanel({ projectId }: { projectId: number }) {
         >
           <div className="space-y-2">
             <Label htmlFor="project-repository-id">{t('repositoryId')}</Label>
-            <Input
-              id="project-repository-id"
-              value={repositoryId}
-              onChange={event => setRepositoryId(event.target.value)}
-              placeholder="github_multica_ai__multica"
-            />
+            {repositories.length > 0 ? (
+              <Select
+                value={repositoryId}
+                onValueChange={setRepositoryId}
+                disabled={allConnectedRepositoriesBound}
+              >
+                <SelectTrigger id="project-repository-id">
+                  <SelectValue
+                    placeholder={
+                      allConnectedRepositoriesBound
+                        ? t('allRepositoriesBound')
+                        : t('selectRepository')
+                    }
+                  />
+                </SelectTrigger>
+                <SelectContent>
+                  {availableRepositories.map(repository => (
+                    <SelectItem key={repository.repository_id} value={repository.repository_id}>
+                      {repository.github_owner}/{repository.github_repo} ({repository.default_branch})
+                    </SelectItem>
+                  ))}
+                </SelectContent>
+              </Select>
+            ) : (
+              <Input
+                id="project-repository-id"
+                value={repositoryId}
+                onChange={event => setRepositoryId(event.target.value)}
+                placeholder="github_multica_ai__multica"
+              />
+            )}
+            {repositoriesQuery.isFetching && (
+              <p className="text-xs leading-5 text-text-muted">{t('loadingRepositories')}</p>
+            )}
+            {!repositoriesQuery.isFetching && repositories.length === 0 && (
+              <p className="text-xs leading-5 text-text-muted">
+                {t('emptyRepositories')}{' '}
+                <Link href="/console/settings?tab=github" className="text-primary hover:underline">
+                  {t('connectRepository')}
+                </Link>
+              </p>
+            )}
+            {!repositoriesQuery.isFetching &&
+              repositories.length > 0 &&
+              availableRepositories.length === 0 && (
+                <p className="text-xs leading-5 text-text-muted">{t('allRepositoriesBound')}</p>
+              )}
           </div>
           <div className="space-y-2">
             <Label htmlFor="project-repository-role">{t('role')}</Label>
@@ -192,7 +261,14 @@ function ProjectRepositoryBindPanel({ projectId }: { projectId: number }) {
             </Select>
           </div>
           <div className="flex items-end">
-            <Button type="submit" disabled={bindRepository.isPending || !repositoryId.trim()}>
+            <Button
+              type="submit"
+              disabled={
+                bindRepository.isPending ||
+                allConnectedRepositoriesBound ||
+                !repositoryId.trim()
+              }
+            >
               {bindRepository.isPending ? t('binding') : t('submit')}
             </Button>
           </div>
@@ -211,6 +287,24 @@ function ProjectContextReadiness({ context }: { context?: ProjectContextDTO }) {
   const t = useT('dashboard.projectDelivery.readiness');
   const readiness = projectContextReadiness(context);
   const repositories = context?.repository_contexts ?? [];
+  const unbindRepository = useUnbindProjectRepository(context?.project.id ?? 0);
+  const [message, setMessage] = useState('');
+
+  async function handleUnbind(repositoryContext: ProjectRepositoryContextDTO) {
+    if (repositoryContext.repository.role === 'primary') {
+      setMessage(t('repository.primaryRemoveBlocked'));
+      return;
+    }
+    setMessage('');
+    try {
+      await unbindRepository.mutateAsync(repositoryContext.repository.repository_id);
+      setMessage(
+        t('repository.removed', { repoId: repositoryContext.repository.repository_id })
+      );
+    } catch {
+      setMessage(t('repository.removeFailed'));
+    }
+  }
 
   return (
     <section className="mx-auto w-full max-w-7xl px-4 pt-6 md:px-8">
@@ -267,8 +361,15 @@ function ProjectContextReadiness({ context }: { context?: ProjectContextDTO }) {
                 key={repositoryContext.repository.repository_id}
                 repositoryContext={repositoryContext}
                 t={t}
+                onUnbind={() => handleUnbind(repositoryContext)}
+                unbinding={unbindRepository.isPending}
               />
             ))}
+          </div>
+        )}
+        {message && (
+          <div className="mt-3 rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 text-xs leading-5 text-text-muted">
+            {message}
           </div>
         )}
       </div>
@@ -288,9 +389,13 @@ function ReadinessMetric({ label, value }: { label: string; value: number }) {
 function ProjectRepositoryCard({
   repositoryContext,
   t,
+  onUnbind,
+  unbinding,
 }: {
   repositoryContext: ProjectRepositoryContextDTO;
   t: (key: string, values?: Record<string, string | number | Date>) => string;
+  onUnbind: () => void;
+  unbinding: boolean;
 }) {
   const {
     repository,
@@ -321,6 +426,18 @@ function ProjectRepositoryCard({
           <Badge variant="outline">
             {repository.active ? t('repository.active') : t('repository.inactive')}
           </Badge>
+          {repository.role !== 'primary' ? (
+            <Button
+              type="button"
+              variant="ghost"
+              size="sm"
+              className="h-6 px-2 text-xs text-text-muted hover:text-text-main"
+              disabled={unbinding}
+              onClick={onUnbind}
+            >
+              {unbinding ? t('repository.removing') : t('repository.remove')}
+            </Button>
+          ) : null}
         </div>
       </div>
       <div className="mt-3 flex flex-wrap gap-2">
