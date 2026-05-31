@@ -170,22 +170,39 @@ func TestStartRunHydratesProjectContextInCompiledPrompt(t *testing.T) {
 			},
 		},
 	}
-	profileRepo := &memoryExecutionProfileRepo{profiles: map[string]*domain.SpecForgeRepoProfile{
-		"repo_api": {
-			RepositoryID:  "repo_api",
-			DefaultBranch: "main",
-			Stack:         []string{"Go", "Gin"},
-			TestCommands:  []string{"go test ./..."},
-			Summary:       "API service",
+	profileRepo := &memoryExecutionProfileRepo{
+		profiles: map[string]*domain.SpecForgeRepoProfile{
+			"repo_api": {
+				RepositoryID:  "repo_api",
+				DefaultBranch: "main",
+				Stack:         []string{"Go", "Gin"},
+				TestCommands:  []string{"go test ./..."},
+				Summary:       "API service",
+			},
+			"repo_web": {
+				RepositoryID:  "repo_web",
+				DefaultBranch: "main",
+				Stack:         []string{"Next.js", "React"},
+				TestCommands:  []string{"pnpm type-check"},
+				Summary:       "Web console",
+			},
 		},
-		"repo_web": {
-			RepositoryID:  "repo_web",
-			DefaultBranch: "main",
-			Stack:         []string{"Next.js", "React"},
-			TestCommands:  []string{"pnpm type-check"},
-			Summary:       "Web console",
+		snapshots: map[string]*domain.SpecForgeRepoArchitectureSnapshot{
+			"repo_api": {
+				RepositoryID: "repo_api",
+				CommitSHA:    "abc123",
+				Modules:      []string{"api/internal/modules/execution"},
+				CIWorkflows:  []string{".github/workflows/ci.yml"},
+				CreatedAt:    time.Now(),
+			},
+			"repo_web": {
+				RepositoryID: "repo_web",
+				CommitSHA:    "def456",
+				Modules:      []string{"web/src/features/specforge"},
+				CreatedAt:    time.Now().Add(-25 * time.Hour),
+			},
 		},
-	}}
+	}
 	projectRepo := &memoryExecutionProjectRepo{
 		project: &domain.SpecForgeProject{ID: projectID, WorkspaceID: "ws_1", Name: "SpecForge", Slug: "specforge", Status: domain.ProjectStatusActive},
 		repositories: []*domain.SpecForgeProjectRepository{
@@ -195,6 +212,7 @@ func TestStartRunHydratesProjectContextInCompiledPrompt(t *testing.T) {
 	}
 	svc := NewService(&memoryExecutionRepo{}, planningRepo, nil, nil, nil, nil, nil)
 	svc.profileRepo = profileRepo
+	svc.architectureRepo = profileRepo
 	svc.projectRepo = projectRepo
 
 	_, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
@@ -209,6 +227,13 @@ func TestStartRunHydratesProjectContextInCompiledPrompt(t *testing.T) {
 	require.Contains(t, prompt, "Project: SpecForge")
 	require.Contains(t, prompt, "Repository repo_api (primary)")
 	require.Contains(t, prompt, "Repository repo_web (dependency)")
+	require.Contains(t, planningRepo.prompts[0].EvidenceRefs, "repo_architecture_snapshot:repo_api:abc123")
+	require.Contains(t, planningRepo.prompts[0].EvidenceRefs, "repo_architecture_snapshot:repo_web:def456")
+	require.Contains(t, planningRepo.prompts[0].EvidenceRefs, "repo_architecture_warnings:repo_web")
+	require.Contains(t, prompt, "architecture_snapshot: abc123")
+	require.Contains(t, prompt, "architecture_modules: api/internal/modules/execution")
+	require.Contains(t, prompt, "architecture_ci_workflows: .github/workflows/ci.yml")
+	require.Contains(t, prompt, "Architecture warning: Architecture snapshot is older than 24 hours.")
 	require.Contains(t, prompt, "Web console")
 	require.Contains(t, prompt, "pnpm type-check")
 	require.Contains(t, prompt, "SpecForge planning SOP")
@@ -2761,7 +2786,8 @@ func (r *memoryPlanningRepo) ListSkillsByRepositoryID(ctx context.Context, repos
 }
 
 type memoryExecutionProfileRepo struct {
-	profiles map[string]*domain.SpecForgeRepoProfile
+	profiles  map[string]*domain.SpecForgeRepoProfile
+	snapshots map[string]*domain.SpecForgeRepoArchitectureSnapshot
 }
 
 func (r *memoryExecutionProfileRepo) UpsertProfile(ctx context.Context, profile *domain.SpecForgeRepoProfile) error {
@@ -2778,6 +2804,14 @@ func (r *memoryExecutionProfileRepo) FindProfileByRepositoryID(ctx context.Conte
 		return nil, domain.ErrNotFound
 	}
 	copied := *r.profiles[repositoryID]
+	return &copied, nil
+}
+
+func (r *memoryExecutionProfileRepo) FindLatestArchitectureSnapshotByRepositoryID(ctx context.Context, repositoryID string) (*domain.SpecForgeRepoArchitectureSnapshot, error) {
+	if r.snapshots == nil || r.snapshots[repositoryID] == nil {
+		return nil, domain.ErrNotFound
+	}
+	copied := *r.snapshots[repositoryID]
 	return &copied, nil
 }
 

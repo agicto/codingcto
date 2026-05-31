@@ -33,11 +33,16 @@ type Service interface {
 }
 
 type service struct {
-	repo         domain.SpecForgePlanningRepository
-	profileRepo  domain.SpecForgeRepoProfileRepository
-	skillRepo    domain.SpecForgeSkillRepository
-	pipelineRepo domain.SpecForgeSkillPipelineRepository
-	projectRepo  domain.SpecForgeProjectRepositoryStore
+	repo             domain.SpecForgePlanningRepository
+	profileRepo      domain.SpecForgeRepoProfileRepository
+	architectureRepo repoArchitectureStore
+	skillRepo        domain.SpecForgeSkillRepository
+	pipelineRepo     domain.SpecForgeSkillPipelineRepository
+	projectRepo      domain.SpecForgeProjectRepositoryStore
+}
+
+type repoArchitectureStore interface {
+	FindLatestArchitectureSnapshotByRepositoryID(ctx context.Context, repositoryID string) (*domain.SpecForgeRepoArchitectureSnapshot, error)
 }
 
 func NewService(repo domain.SpecForgePlanningRepository, profileRepo domain.SpecForgeRepoProfileRepository, skillRepo domain.SpecForgeSkillRepository, projectRepo domain.SpecForgeProjectRepositoryStore) *service {
@@ -45,7 +50,11 @@ func NewService(repo domain.SpecForgePlanningRepository, profileRepo domain.Spec
 	if repo, ok := skillRepo.(domain.SpecForgeSkillPipelineRepository); ok {
 		pipelineRepo = repo
 	}
-	return &service{repo: repo, profileRepo: profileRepo, skillRepo: skillRepo, pipelineRepo: pipelineRepo, projectRepo: projectRepo}
+	var architectureRepo repoArchitectureStore
+	if repo, ok := profileRepo.(repoArchitectureStore); ok {
+		architectureRepo = repo
+	}
+	return &service{repo: repo, profileRepo: profileRepo, architectureRepo: architectureRepo, skillRepo: skillRepo, pipelineRepo: pipelineRepo, projectRepo: projectRepo}
 }
 
 func (s *service) CreateIdea(ctx context.Context, userID uint, repoID string, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error) {
@@ -536,6 +545,21 @@ func (s *service) projectContextFor(ctx context.Context, projectID uint) (*domai
 			}
 			context.Skills = skills
 		}
+		if s.architectureRepo != nil {
+			snapshot, err := s.architectureRepo.FindLatestArchitectureSnapshotByRepositoryID(ctx, repository.RepositoryID)
+			if err != nil {
+				if !errors.Is(err, domain.ErrNotFound) {
+					return nil, fmt.Errorf("load project repo architecture snapshot: %w", err)
+				}
+				context.ArchitectureStale = true
+				context.ArchitectureWarnings = append(context.ArchitectureWarnings, "Architecture snapshot has not been generated yet.")
+			} else {
+				context.ArchitectureSnapshot = snapshot
+				stale, reasons := domain.SpecForgeRepoArchitectureSnapshotStaleness(snapshot, time.Now())
+				context.ArchitectureStale = stale
+				context.ArchitectureWarnings = append(context.ArchitectureWarnings, reasons...)
+			}
+		}
 		contexts = append(contexts, context)
 	}
 	context := &domain.SpecForgeProjectContext{
@@ -682,6 +706,33 @@ func writeProjectEvidenceRefs(b *strings.Builder, context *domain.SpecForgeProje
 				b.WriteString("  - profile.stack: " + strings.Join(stack, ", ") + "\n")
 			}
 		}
+		writePromptArchitectureEvidence(b, repoContext)
+	}
+}
+
+func writePromptArchitectureEvidence(b *strings.Builder, repoContext *domain.SpecForgeProjectRepositoryContext) {
+	if repoContext == nil {
+		return
+	}
+	if repoContext.ArchitectureSnapshot == nil {
+		if len(repoContext.ArchitectureWarnings) > 0 {
+			b.WriteString("  - architecture_snapshot: missing\n")
+			b.WriteString("  - architecture_warnings: " + strings.Join(normalizePlanList(repoContext.ArchitectureWarnings), "; ") + "\n")
+		}
+		return
+	}
+	snapshot := repoContext.ArchitectureSnapshot
+	b.WriteString("  - architecture_snapshot: " + strings.TrimSpace(snapshot.CommitSHA) + "\n")
+	modules := normalizePlanList(snapshot.Modules)
+	if len(modules) > 0 {
+		b.WriteString("  - architecture_modules: " + strings.Join(modules, ", ") + "\n")
+	}
+	workflows := normalizePlanList(snapshot.CIWorkflows)
+	if len(workflows) > 0 {
+		b.WriteString("  - architecture_ci_workflows: " + strings.Join(workflows, ", ") + "\n")
+	}
+	if repoContext.ArchitectureStale || len(repoContext.ArchitectureWarnings) > 0 {
+		b.WriteString("  - architecture_warnings: " + strings.Join(normalizePlanList(repoContext.ArchitectureWarnings), "; ") + "\n")
 	}
 }
 
@@ -834,6 +885,20 @@ func writeProjectContext(b *strings.Builder, context *domain.SpecForgeProjectCon
 				b.WriteString("  - Warning: " + strings.TrimSpace(warning) + "\n")
 			}
 		}
+		if repoContext.ArchitectureSnapshot != nil {
+			b.WriteString("  - Architecture snapshot: " + strings.TrimSpace(repoContext.ArchitectureSnapshot.CommitSHA) + "\n")
+			if len(repoContext.ArchitectureSnapshot.Modules) > 0 {
+				b.WriteString("  - Modules: " + strings.Join(normalizePlanList(repoContext.ArchitectureSnapshot.Modules), ", ") + "\n")
+			}
+			if len(repoContext.ArchitectureSnapshot.CIWorkflows) > 0 {
+				b.WriteString("  - CI workflows: " + strings.Join(normalizePlanList(repoContext.ArchitectureSnapshot.CIWorkflows), ", ") + "\n")
+			}
+		}
+		for _, warning := range repoContext.ArchitectureWarnings {
+			if strings.TrimSpace(warning) != "" {
+				b.WriteString("  - Architecture warning: " + strings.TrimSpace(warning) + "\n")
+			}
+		}
 	}
 	b.WriteString("\n")
 }
@@ -926,6 +991,14 @@ func synthesizedProjectProfile(context *domain.SpecForgeProjectContext, primaryR
 		profile.CodingConventions = append(profile.CodingConventions, repoContext.Profile.CodingConventions...)
 		profile.RiskAreas = append(profile.RiskAreas, repoContext.Profile.RiskAreas...)
 		profile.Warnings = append(profile.Warnings, repoContext.Profile.Warnings...)
+		if repoContext.ArchitectureSnapshot != nil {
+			profile.AppStructure = append(profile.AppStructure, prefixedArchitectureValues(prefix, "modules", repoContext.ArchitectureSnapshot.Modules)...)
+			profile.AppStructure = append(profile.AppStructure, prefixedArchitectureValues(prefix, "entrypoints", repoContext.ArchitectureSnapshot.Entrypoints)...)
+			profile.TestCommands = append(profile.TestCommands, repoContext.ArchitectureSnapshot.TestCommands...)
+			profile.RiskAreas = append(profile.RiskAreas, repoContext.ArchitectureSnapshot.RiskAreas...)
+			profile.Warnings = append(profile.Warnings, repoContext.ArchitectureSnapshot.Warnings...)
+		}
+		profile.Warnings = append(profile.Warnings, repoContext.ArchitectureWarnings...)
 	}
 	profile.Stack = normalizePlanList(profile.Stack)
 	profile.TestCommands = normalizePlanList(profile.TestCommands)
@@ -934,6 +1007,18 @@ func synthesizedProjectProfile(context *domain.SpecForgeProjectContext, primaryR
 	profile.RiskAreas = normalizePlanList(profile.RiskAreas)
 	profile.Warnings = normalizePlanList(profile.Warnings)
 	return profile
+}
+
+func prefixedArchitectureValues(prefix string, label string, values []string) []string {
+	values = normalizePlanList(values)
+	if len(values) == 0 {
+		return []string{}
+	}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		out = append(out, prefix+" "+label+": "+value)
+	}
+	return out
 }
 
 func activeProjectSkills(context *domain.SpecForgeProjectContext) []*domain.SpecForgeSkill {
@@ -1111,6 +1196,12 @@ func projectContextEvidenceRefs(context *domain.SpecForgeProjectContext) []strin
 		refs = append(refs, "project_repository:"+repositoryID+":role:"+strings.TrimSpace(repoContext.Repository.Role))
 		if repoContext.Profile != nil {
 			refs = append(refs, "repo_profile:"+repositoryID)
+		}
+		if repoContext.ArchitectureSnapshot != nil {
+			refs = append(refs, "repo_architecture_snapshot:"+repositoryID+":"+strings.TrimSpace(repoContext.ArchitectureSnapshot.CommitSHA))
+		}
+		if len(repoContext.ArchitectureWarnings) > 0 {
+			refs = append(refs, "repo_architecture_warnings:"+repositoryID)
 		}
 	}
 	return refs

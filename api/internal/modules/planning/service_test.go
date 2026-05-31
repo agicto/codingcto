@@ -383,7 +383,27 @@ func TestCompilePromptInjectsActiveRepoSkills(t *testing.T) {
 
 func TestCreateProjectIdeaUsesProjectContextProfilesAndSkills(t *testing.T) {
 	repo := &memoryRepo{}
-	profileRepo := &memoryProfileRepo{}
+	profileRepo := &memoryProfileRepo{
+		snapshots: map[string]*domain.SpecForgeRepoArchitectureSnapshot{
+			"repo_api": {
+				RepositoryID: "repo_api",
+				CommitSHA:    "abc123",
+				Modules:      []string{"api/internal/modules/project"},
+				Entrypoints:  []string{"cmd/server/main.go"},
+				TestCommands: []string{"go test ./internal/modules/project"},
+				CIWorkflows:  []string{".github/workflows/ci.yml"},
+				CreatedAt:    time.Now(),
+			},
+			"repo_web": {
+				RepositoryID: "repo_web",
+				CommitSHA:    "def456",
+				Modules:      []string{"web/src/features/project"},
+				CIWorkflows:  []string{".github/workflows/web.yml"},
+				Warnings:     []string{"Architecture snapshot source: github_tree."},
+				CreatedAt:    time.Now(),
+			},
+		},
+	}
 	require.NoError(t, profileRepo.UpsertProfile(context.Background(), &domain.SpecForgeRepoProfile{
 		RepositoryID:      "repo_api",
 		DefaultBranch:     "main",
@@ -437,6 +457,11 @@ func TestCreateProjectIdeaUsesProjectContextProfilesAndSkills(t *testing.T) {
 	require.Contains(t, bundle.ProjectContext.ExecutionGuardrails, "Executor must modify only repo_api; other bound repositories are read-only context.")
 	require.Contains(t, bundle.RepoProfile.Stack, "Go")
 	require.Contains(t, bundle.RepoProfile.Stack, "Next.js")
+	require.Contains(t, bundle.RepoProfile.AppStructure, "repo_api (primary) modules: api/internal/modules/project")
+	require.Contains(t, bundle.RepoProfile.AppStructure, "repo_web (dependency) modules: web/src/features/project")
+	require.Contains(t, bundle.RepoProfile.TestCommands, "go test ./internal/modules/project")
+	require.Contains(t, bundle.Plan.EvidenceRefs, "repo_architecture_snapshot:repo_api:abc123")
+	require.Contains(t, bundle.Plan.EvidenceRefs, "repo_architecture_snapshot:repo_web:def456")
 	require.Contains(t, bundle.Plan.AffectedAreas, "api/internal/modules")
 	require.Contains(t, bundle.Plan.AffectedAreas, "web/src/features")
 	require.Contains(t, bundle.ProductSpec.Assumptions, "Plan generation used project context for SpecForge across 2 active repositories; execution is limited to primary repository repo_api.")
@@ -508,7 +533,23 @@ func TestGenerateRequirementPlanCreatesNextVersionAndApprovalRejectsStalePlan(t 
 
 func TestCompilePromptInjectsProjectContextSkills(t *testing.T) {
 	repo := &memoryRepo{}
-	profileRepo := &memoryProfileRepo{}
+	profileRepo := &memoryProfileRepo{
+		snapshots: map[string]*domain.SpecForgeRepoArchitectureSnapshot{
+			"repo_api": {
+				RepositoryID: "repo_api",
+				CommitSHA:    "abc123",
+				Modules:      []string{"api/internal/modules/planning"},
+				CIWorkflows:  []string{".github/workflows/ci.yml"},
+				CreatedAt:    time.Now(),
+			},
+			"repo_web": {
+				RepositoryID: "repo_web",
+				CommitSHA:    "def456",
+				Modules:      []string{"web/src/features/specforge"},
+				CreatedAt:    time.Now().Add(-25 * time.Hour),
+			},
+		},
+	}
 	require.NoError(t, profileRepo.UpsertProfile(context.Background(), &domain.SpecForgeRepoProfile{
 		RepositoryID:  "repo_api",
 		DefaultBranch: "main",
@@ -551,6 +592,13 @@ func TestCompilePromptInjectsProjectContextSkills(t *testing.T) {
 	require.Contains(t, prompt.PromptText, "Primary repository: repo_api")
 	require.Contains(t, prompt.PromptText, "Read-only repositories: repo_web")
 	require.Contains(t, prompt.PromptText, "Executor must modify only repo_api")
+	require.Contains(t, prompt.EvidenceRefs, "repo_architecture_snapshot:repo_api:abc123")
+	require.Contains(t, prompt.EvidenceRefs, "repo_architecture_snapshot:repo_web:def456")
+	require.Contains(t, prompt.EvidenceRefs, "repo_architecture_warnings:repo_web")
+	require.Contains(t, prompt.PromptText, "architecture_snapshot: abc123")
+	require.Contains(t, prompt.PromptText, "architecture_modules: api/internal/modules/planning")
+	require.Contains(t, prompt.PromptText, "architecture_ci_workflows: .github/workflows/ci.yml")
+	require.Contains(t, prompt.PromptText, "Architecture warning: Architecture snapshot is older than 24 hours.")
 	require.Contains(t, prompt.PromptText, "Web console")
 	require.Contains(t, prompt.PromptText, "module-boundaries")
 	require.Contains(t, prompt.PromptText, "Web code talks to API over HTTP only.")
@@ -669,8 +717,9 @@ type memoryRepo struct {
 }
 
 type memoryProfileRepo struct {
-	profile  *domain.SpecForgeRepoProfile
-	profiles map[string]*domain.SpecForgeRepoProfile
+	profile   *domain.SpecForgeRepoProfile
+	profiles  map[string]*domain.SpecForgeRepoProfile
+	snapshots map[string]*domain.SpecForgeRepoArchitectureSnapshot
 }
 
 func (r *memoryProfileRepo) UpsertProfile(ctx context.Context, profile *domain.SpecForgeRepoProfile) error {
@@ -696,6 +745,15 @@ func (r *memoryProfileRepo) FindProfileByRepositoryID(ctx context.Context, repos
 		return nil, domain.ErrNotFound
 	}
 	copied := *r.profile
+	return &copied, nil
+}
+
+func (r *memoryProfileRepo) FindLatestArchitectureSnapshotByRepositoryID(ctx context.Context, repositoryID string) (*domain.SpecForgeRepoArchitectureSnapshot, error) {
+	snapshot, ok := r.snapshots[repositoryID]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	copied := *snapshot
 	return &copied, nil
 }
 
