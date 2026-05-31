@@ -1,6 +1,11 @@
 import { describe, expect, it } from 'vitest';
 
-import { projectSpecForgeHref, repositoryRoleLabel, slugFromProjectName } from './project-utils';
+import {
+  projectContextHref,
+  projectSpecForgeHref,
+  repositoryRoleLabel,
+  slugFromProjectName,
+} from './project-utils';
 
 describe('project utils', () => {
   it('builds stable slugs from project names', () => {
@@ -10,6 +15,10 @@ describe('project utils', () => {
 
   it('builds project-scoped CodingCTO routes', () => {
     expect(projectSpecForgeHref(42)).toBe('/console/projects/42/codingcto');
+  });
+
+  it('builds project-scoped context routes', () => {
+    expect(projectContextHref(42)).toBe('/console/projects/42/context');
   });
 
   it('labels repository roles for scanning', () => {
