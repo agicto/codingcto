@@ -62,17 +62,6 @@ make wire
 make run
 ```
 
-For browser-driven local development without a local PostgreSQL password, run the API against
-SQLite:
-
-```bash
-make migrate-sqlite
-make dev-sqlite
-```
-
-This creates `tmp/luas-dev.sqlite`, disables optional AI/tracing/log sinks, and keeps production
-configuration validation unchanged.
-
 Default local endpoints:
 
 - Home: `http://localhost:8025/`

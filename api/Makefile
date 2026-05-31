@@ -3,17 +3,6 @@ SERVER_BINARY=server
 OUTPUT_DIR=bin
 GOBIN ?= $(shell go env GOPATH)/bin
 WIRE ?= $(shell command -v wire 2>/dev/null || echo $(GOBIN)/wire)
-LOCAL_DB_PATH ?= tmp/luas-dev.sqlite
-
-LOCAL_DEV_ENV = APP_ENV=development \
-	APP_DEBUG=true \
-	DB_ENABLED=true \
-	DB_DRIVER=sqlite \
-	DB_NAME=$(LOCAL_DB_PATH) \
-	JWT_SECRET=local-dev-secret-change-before-production \
-	AI_ENABLED=false \
-	TRACING_ENABLED=false \
-	LOG_CH_ENABLED=false
 
 # Version information
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -34,7 +23,7 @@ else
 	PATH_SEP=/
 endif
 
-.PHONY: all build build-server build-all clean test test-kest cover lint lint-fix generate wire docs mock dev dev-sqlite run air server migrate migrate-sqlite seed tidy update vuln setup install build-windows build-linux build-darwin build-all-platforms build-prod help
+.PHONY: all build build-server build-all clean test test-kest cover lint lint-fix generate wire docs mock dev run air server migrate seed tidy update vuln setup install build-windows build-linux build-darwin build-all-platforms build-prod help
 
 # Default target
 all: lint test build
@@ -173,11 +162,6 @@ mock:
 dev:
 	go run cmd/server/main.go
 
-# Run development server with a local SQLite database.
-dev-sqlite:
-	@$(MKDIR) $(dir $(LOCAL_DB_PATH))
-	$(LOCAL_DEV_ENV) go run cmd/server/main.go
-
 # Run development server (README-compatible alias)
 run: dev
 
@@ -201,11 +185,6 @@ ifeq ($(OS),Windows_NT)
 else
 	@if [ -f $(OUTPUT_DIR)/$(BINARY_NAME) ]; then ./$(OUTPUT_DIR)/$(BINARY_NAME) migrate; else go run cmd/luas/main.go migrate; fi
 endif
-
-migrate-sqlite:
-	@echo "Running migrations against local SQLite..."
-	@$(MKDIR) $(dir $(LOCAL_DB_PATH))
-	$(LOCAL_DEV_ENV) go run cmd/luas/main.go migrate
 
 migrate-fresh:
 	@echo "Running fresh migrations..."
@@ -280,7 +259,6 @@ help:
 	@echo ""
 	@echo "Development Commands:"
 	@echo "  make dev                - Run development server"
-	@echo "  make dev-sqlite         - Run development server with local SQLite"
 	@echo "  make server             - Run server (alias for dev)"
 	@echo "  make air                - Run with hot reload (Air)"
 	@echo "  make test               - Run tests"
@@ -298,7 +276,6 @@ help:
 	@echo ""
 	@echo "Database Commands:"
 	@echo "  make migrate            - Run database migrations"
-	@echo "  make migrate-sqlite     - Run migrations against local SQLite"
 	@echo "  make migrate-fresh      - Fresh migration (drop & recreate)"
 	@echo "  make migrate-rollback   - Rollback last migration"
 	@echo "  make seed               - Run database seeders"
