@@ -366,6 +366,18 @@ func (s *memoryGitHubRepositoryStore) FindRepositoryByRepositoryID(_ context.Con
 	return &copied, nil
 }
 
+func (s *memoryGitHubRepositoryStore) ListRepositoriesByWorkspaceID(_ context.Context, workspaceID string) ([]*domain.Repository, error) {
+	out := make([]*domain.Repository, 0, len(s.repositories))
+	for _, repository := range s.repositories {
+		if repository.WorkspaceID != workspaceID {
+			continue
+		}
+		copied := *repository
+		out = append(out, &copied)
+	}
+	return out, nil
+}
+
 func (s *memoryGitHubRepositoryStore) UpsertInstallation(context.Context, *domain.GitHubInstallation) error {
 	return errors.New("not implemented")
 }

@@ -1769,6 +1769,14 @@ func (r *memoryRepo) FindRepositoryByRepositoryID(ctx context.Context, repositor
 	return &copied, nil
 }
 
+func (r *memoryRepo) ListRepositoriesByWorkspaceID(ctx context.Context, workspaceID string) ([]*domain.Repository, error) {
+	if r.repository == nil || (workspaceID != "" && r.repository.WorkspaceID != workspaceID) {
+		return []*domain.Repository{}, nil
+	}
+	copied := *r.repository
+	return []*domain.Repository{&copied}, nil
+}
+
 func (r *memoryRepo) UpsertSettings(ctx context.Context, settings *domain.GitHubSettings) error {
 	if r.settings == nil {
 		r.nextID++

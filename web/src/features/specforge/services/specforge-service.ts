@@ -246,6 +246,14 @@ export interface GitHubRepositoryDTO {
   updated_at: string;
 }
 
+export interface ListGitHubRepositoriesParams {
+  workspace_id?: string;
+}
+
+export interface ListGitHubRepositoriesDTO {
+  repositories: GitHubRepositoryDTO[];
+}
+
 export interface GitHubSettingsPayload {
   workspace_id: string;
   enabled?: boolean;
@@ -683,6 +691,18 @@ export const specForgeService = {
       payload
     ),
 
+  listGitHubRepositories: (
+    params?: ListGitHubRepositoriesParams,
+    config?: RequestConfig
+  ) => {
+    const search = new URLSearchParams();
+    if (params?.workspace_id) {
+      search.set("workspace_id", params.workspace_id);
+    }
+    const suffix = search.toString() ? `?${search.toString()}` : "";
+    return request.get<ListGitHubRepositoriesDTO>(`/github/repositories${suffix}`, config);
+  },
+
   getGitHubRepository: (repoId: string, config?: RequestConfig) =>
     request.get<GitHubRepositoryDTO>(`/repositories/${repoId}`, config),
 
@@ -702,7 +722,7 @@ export const specForgeService = {
     ),
 
   getRepoProfile: (repoId: string, config?: RequestConfig) =>
-    request.get<SpecForgeRepoProfileDTO>(`/repositories/${repoId}/profile`, config),
+    request.get<SpecForgeRepoProfileDTO | null>(`/repositories/${repoId}/profile`, config),
 
   inferRepoProfile: (repoId: string, payload: InferRepoProfilePayload) =>
     request.post<SpecForgeRepoProfileDTO, InferRepoProfilePayload>(

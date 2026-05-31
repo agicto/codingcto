@@ -20,6 +20,7 @@ type Service interface {
 	GetInstallation(ctx context.Context, id uint) (*domain.GitHubInstallation, error)
 	UpsertRepository(ctx context.Context, userID uint, req *UpsertRepositoryRequest) (*domain.Repository, error)
 	GetRepository(ctx context.Context, repositoryID string) (*domain.Repository, error)
+	ListRepositories(ctx context.Context, workspaceID string) ([]*domain.Repository, error)
 	GetSettings(ctx context.Context, workspaceID string) (*domain.GitHubSettings, error)
 	UpsertSettings(ctx context.Context, userID uint, req *UpsertSettingsRequest) (*domain.GitHubSettings, error)
 	ListRepositoryTree(ctx context.Context, req *ListRepositoryTreeRequest) (*RepositoryTreeSnapshot, error)
@@ -165,6 +166,10 @@ func (s *service) GetRepository(ctx context.Context, repositoryID string) (*doma
 		return nil, domain.ErrInvalidInput
 	}
 	return s.repo.FindRepositoryByRepositoryID(ctx, strings.TrimSpace(repositoryID))
+}
+
+func (s *service) ListRepositories(ctx context.Context, workspaceID string) ([]*domain.Repository, error) {
+	return s.repo.ListRepositoriesByWorkspaceID(ctx, strings.TrimSpace(workspaceID))
 }
 
 func (s *service) GetSettings(ctx context.Context, workspaceID string) (*domain.GitHubSettings, error) {
