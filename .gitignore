@@ -16,3 +16,8 @@ Thumbs.db
 # Build artifacts that escape per-half scope
 /tmp/
 /dist/
+
+# Local runtime and verification artifacts
+/.codex/tmp/
+/deploy/data/
+/deploy/postgres_data/
