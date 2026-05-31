@@ -666,6 +666,8 @@ body.data.pr_node_id == {{pr_node_id}}
 body.data.failure_type == "type_error"
 body.data.workflow_run_id == {{run_id}}
 body.data.can_auto_fix == true
+body.data.risk_level == "low"
+body.data.action_kind == "auto_fix"
 ```
 
 ```step
@@ -703,6 +705,8 @@ body.data.attempts_used == 1
 body.data.max_attempts == 3
 body.data.can_continue_auto_fix == true
 body.data.latest_failure_type == "type_error"
+body.data.latest_risk_level == "low"
+body.data.latest_action_kind == "auto_fix"
 ```
 
 ```edge

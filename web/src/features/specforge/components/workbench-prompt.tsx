@@ -159,6 +159,9 @@ export function PRDag({
         likely_cause: 'CI diagnostics require a GitHub workflow run for this PR node.',
         recommended_action: 'Run CI for the branch, then inspect the failed job logs.',
         can_auto_fix: false,
+        risk_level: 'high',
+        action_kind: 'user_decision',
+        blocked_reason: 'No live CI log is available, so CodingCTO cannot safely patch code.',
         created_by: 0,
         created_at: new Date().toISOString(),
         updated_at: new Date().toISOString(),
@@ -398,6 +401,8 @@ export function PRDag({
                       <Badge variant="outline">run {attempt.workflow_run_id}</Badge>
                     ) : null}
                     {attempt.conclusion && <Badge variant="outline">{attempt.conclusion}</Badge>}
+                    <Badge variant="outline">{attempt.risk_level} risk</Badge>
+                    <Badge variant="outline">{attempt.action_kind}</Badge>
                     <Badge variant="outline">{attempt.status}</Badge>
                   </div>
                 </div>
@@ -405,6 +410,11 @@ export function PRDag({
                 <p className="mt-2 text-sm leading-6 text-text-main">
                   {attempt.recommended_action}
                 </p>
+                {attempt.blocked_reason ? (
+                  <p className="mt-2 rounded-md border border-border-subtle bg-bg-surface px-3 py-2 text-xs leading-5 text-text-muted">
+                    Guardrail: {attempt.blocked_reason}
+                  </p>
+                ) : null}
               </div>
             ))}
             {fixAttemptsQuery.isError && (
@@ -463,6 +473,21 @@ function EscalationSummary({ summary }: { summary: SpecForgeEscalationSummaryDTO
       {summary.latest_likely_cause && (
         <p className="mt-2 leading-6">Latest cause: {summary.latest_likely_cause}</p>
       )}
+      {(summary.latest_risk_level || summary.latest_action_kind) && (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {summary.latest_risk_level ? (
+            <Badge variant="outline">{summary.latest_risk_level} risk</Badge>
+          ) : null}
+          {summary.latest_action_kind ? (
+            <Badge variant="outline">{summary.latest_action_kind}</Badge>
+          ) : null}
+        </div>
+      )}
+      {summary.latest_blocked_reason ? (
+        <p className="mt-3 rounded-md border border-border-subtle bg-bg-surface px-3 py-2 text-xs leading-5">
+          Guardrail: {summary.latest_blocked_reason}
+        </p>
+      ) : null}
       {summary.decision_options.length > 0 && (
         <div className="mt-3 flex flex-wrap gap-2">
           {summary.decision_options.map(option => (
