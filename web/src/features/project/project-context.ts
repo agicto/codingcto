@@ -1,4 +1,8 @@
-import type { ProjectContextDTO, ProjectRepositoryContextDTO } from './services/project-service';
+import type {
+  ProjectContextContractDTO,
+  ProjectContextDTO,
+  ProjectRepositoryContextDTO,
+} from './services/project-service';
 
 export interface ProjectContextReadiness {
   hasPrimaryRepository: boolean;
@@ -24,6 +28,12 @@ export function primaryRepositoryContext(
       (!context.primary_repository_id ||
         item.repository.repository_id === context.primary_repository_id)
   );
+}
+
+export function projectContextContract(
+  context?: ProjectContextDTO
+): ProjectContextContractDTO | undefined {
+  return context?.context_contract;
 }
 
 export function projectContextReadiness(context?: ProjectContextDTO): ProjectContextReadiness {

@@ -93,7 +93,8 @@ const messages = {
   console: {
     eyebrow: '企业交付工作台',
     title: '今天需要关注什么',
-    description: '从这里进入项目、GitHub 绑定和 CodingCTO 交付板。首页只保留真实业务入口，不再展示开发脚手架。',
+    description:
+      '从这里进入项目、GitHub 绑定和 CodingCTO 交付板。首页只保留真实业务入口，不再展示开发脚手架。',
     openDelivery: '打开交付板',
     openProjects: '查看项目',
     cards: {
@@ -129,7 +130,8 @@ const messages = {
   deliveryEntry: {
     eyebrow: 'CodingCTO 交付',
     title: '从项目开始，而不是从空白提示词开始',
-    description: '企业级执行需要工作区、项目、GitHub 仓库、代码上下文和权限边界。全局交付页只做入口，真实执行请进入项目交付板。',
+    description:
+      '企业级执行需要工作区、项目、GitHub 仓库、代码上下文和权限边界。全局交付页只做入口，真实执行请进入项目交付板。',
     primaryAction: '打开项目',
     githubAction: '配置 GitHub',
     cards: {
@@ -150,7 +152,8 @@ const messages = {
   projectsConsole: {
     eyebrow: '项目控制台',
     title: '把项目组织成可执行的交付入口',
-    description: '选择工作区，整理项目边界，再把 GitHub 仓库、提示词和 PR 执行连接到同一条 CodingCTO 流程。',
+    description:
+      '选择工作区，整理项目边界，再把 GitHub 仓库、提示词和 PR 执行连接到同一条 CodingCTO 流程。',
     badges: {
       enterprise: '企业工作区',
       apiUnavailable: 'API 不可用',
@@ -262,17 +265,20 @@ const messages = {
       },
       unavailable: {
         title: '项目上下文不可用',
-        description: '这里不会再从空上下文启动 CodingCTO。请刷新项目、检查后端登录状态，或从项目页重新创建项目。',
+        description:
+          '这里不会再从空上下文启动 CodingCTO。请刷新项目、检查后端登录状态，或从项目页重新创建项目。',
         action: '返回项目',
       },
     },
     primaryRequired: {
       title: '先绑定主仓库才能开始规划',
-      description: 'CodingCTO 可以读取依赖、文档和基础设施仓库作为上下文，但执行写入只会发生在当前主仓库。',
+      description:
+        'CodingCTO 可以读取依赖、文档和基础设施仓库作为上下文，但执行写入只会发生在当前主仓库。',
     },
     bindPanel: {
       title: '绑定 GitHub 仓库',
-      description: '使用“设置 > GitHub”创建的仓库 ID。主仓库可写入；依赖、文档和基础设施仓库会作为只读规划上下文。',
+      description:
+        '使用“设置 > GitHub”创建的仓库 ID。主仓库可写入；依赖、文档和基础设施仓库会作为只读规划上下文。',
       repositoryId: '仓库 ID',
       role: '角色',
       binding: '绑定中',
@@ -300,6 +306,12 @@ const messages = {
         readOnly: '只读',
         skills: 'Skills',
         warnings: '警告',
+      },
+      contract: {
+        title: '上下文契约',
+        execution: '执行仓库',
+        skills: 'Active skills',
+        missingEvidence: '缺失证据',
       },
       roles: {
         primary: '主仓库',
