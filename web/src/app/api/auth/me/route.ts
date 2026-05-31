@@ -7,6 +7,7 @@ import {
 import { ErrorCode } from '@/http/codes';
 
 export async function GET() {
+  const backendAuthEnabled = process.env.LUAS_AUTH_BACKEND_ENABLED === 'true';
   if (process.env.LUAS_AUTH_BACKEND_ENABLED === 'true') {
     const payload = await getSessionPayload();
     if (!payload?.apiAccessToken) {
@@ -39,6 +40,10 @@ export async function GET() {
   return NextResponse.json({
     data: {
       user,
+      session: {
+        mode: backendAuthEnabled ? 'backend' : 'mock',
+        projectApiReady: backendAuthEnabled,
+      },
     },
   });
 }
