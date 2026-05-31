@@ -3,7 +3,16 @@
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { FormEvent, useMemo, useState, type ReactNode } from 'react';
-import { ArrowRight, GitBranch, ListChecks, ScrollText, Sparkles } from 'lucide-react';
+import {
+  ArrowRight,
+  GitBranch,
+  Lightbulb,
+  ListChecks,
+  ScrollText,
+  ShieldCheck,
+  Sparkles,
+  Workflow,
+} from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -23,7 +32,7 @@ import {
   primaryRepositoryContext,
   projectContextReadiness,
 } from '@/features/project/project-context';
-import { projectContextHref, projectSpecForgeHref } from '@/features/project/project-utils';
+import { projectContextHref, projectPlanHref } from '@/features/project/project-utils';
 import type { ProjectContextDTO } from '@/features/project/services/project-service';
 import { useCreateSpecForgeProjectIdea } from '@/features/specforge/hooks/use-specforge';
 
@@ -54,6 +63,38 @@ const requirementTypes: Array<{ value: RequirementType; label: string; descripti
     value: 'test',
     label: 'Test',
     description: 'Coverage or verification work for an existing system behavior.',
+  },
+];
+
+const requirementExamples: Array<{
+  label: string;
+  input: string;
+  constraints: string;
+  type: RequirementType;
+}> = [
+  {
+    label: 'Team invite flow',
+    input:
+      'Add team invite support. Workspace admins can invite users by email, invited users accept through a link, pending invites can be revoked, and invite tokens expire after 7 days.',
+    constraints:
+      'Non-goals: billing role changes and Slack notifications. Tests should cover admin-only invite creation, expired tokens, duplicate pending invites, and revoke behavior.',
+    type: 'feature',
+  },
+  {
+    label: 'Billing sync fix',
+    input:
+      'Fix billing usage sync so failed provider callbacks are retried and the workspace usage page never shows stale totals after a successful retry.',
+    constraints:
+      'Keep provider secrets out of logs. Add regression coverage for retry classification and final usage totals.',
+    type: 'bugfix',
+  },
+  {
+    label: 'Permission helper',
+    input:
+      'Refactor workspace permission checks into one reusable helper for API routes and keep existing behavior unchanged.',
+    constraints:
+      'Non-goals: no UI changes and no schema changes. Run existing auth and workspace tests after the refactor.',
+    type: 'refactor',
   },
 ];
 
@@ -105,10 +146,33 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
   const [constraints, setConstraints] = useState('');
   const [message, setMessage] = useState('');
   const canSubmit = Boolean(input.trim() && readiness.hasPrimaryRepository);
+  const readinessTone = !readiness.hasPrimaryRepository
+    ? 'warning'
+    : readiness.warningCount > 0 || readiness.skillCount === 0
+      ? 'caution'
+      : 'ready';
+  const readinessLabel =
+    readinessTone === 'ready'
+      ? 'Planning ready'
+      : readinessTone === 'caution'
+        ? 'Ready with warnings'
+        : 'Primary repo required';
+  const submitHelper = !readiness.hasPrimaryRepository
+    ? 'Bind one active primary repository before generating a plan.'
+    : !input.trim()
+      ? 'Describe the product change to generate a reviewable plan.'
+      : 'CodingCTO will generate the plan for review. No code runs before approval.';
   const selectedType = useMemo(
     () => requirementTypes.find(item => item.value === requirementType) ?? requirementTypes[0],
     [requirementType]
   );
+
+  function applyExample(example: (typeof requirementExamples)[number]) {
+    setInput(example.input);
+    setConstraints(example.constraints);
+    setRequirementType(example.type);
+    setMessage('');
+  }
 
   async function submitRequirement(event: FormEvent<HTMLFormElement>) {
     event.preventDefault();
@@ -133,7 +197,7 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
         input: composedInput,
         type: requirementType,
       });
-      const planHref = `${projectSpecForgeHref(context.project.id)}#project-delivery`;
+      const planHref = projectPlanHref(context.project.id, bundle.implementation_plan.id);
       setMessage(
         `Created requirement ${bundle.requirement?.id ?? bundle.idea.requirement_id ?? bundle.idea.id} and generated plan ${bundle.implementation_plan.id}.`
       );
@@ -152,12 +216,14 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
             <Badge
               variant="outline"
               className={
-                readiness.hasPrimaryRepository
+                readinessTone === 'ready'
                   ? 'border-success/30 text-success'
+                  : readinessTone === 'caution'
+                    ? 'border-warning/30 text-warning'
                   : 'border-warning/30 text-warning'
               }
             >
-              {readiness.hasPrimaryRepository ? 'Planning ready' : 'Primary repo required'}
+              {readinessLabel}
             </Badge>
           </div>
           <h1 className="mt-3 text-2xl font-semibold tracking-tight text-text-main">
@@ -171,7 +237,29 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
 
         <form className="mt-5 space-y-4" onSubmit={submitRequirement}>
           <div className="space-y-2">
-            <Label htmlFor="requirement-input">Product change</Label>
+            <div className="flex flex-wrap items-end justify-between gap-2">
+              <div>
+                <Label htmlFor="requirement-input">Product change</Label>
+                <p className="mt-1 text-xs leading-5 text-text-muted">
+                  A strong input names the outcome, business rules, non-goals, and verification
+                  expectations.
+                </p>
+              </div>
+              <div className="flex flex-wrap gap-1.5">
+                {requirementExamples.map(example => (
+                  <Button
+                    key={example.label}
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    onClick={() => applyExample(example)}
+                  >
+                    <Lightbulb className="mr-1.5 h-3.5 w-3.5" />
+                    {example.label}
+                  </Button>
+                ))}
+              </div>
+            </div>
             <Textarea
               id="requirement-input"
               value={input}
@@ -182,7 +270,7 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
           </div>
           <div className="grid gap-4 md:grid-cols-[240px_minmax(0,1fr)]">
             <div className="space-y-2">
-              <Label htmlFor="requirement-type">Mode</Label>
+              <Label htmlFor="requirement-type">Requirement type</Label>
               <Select
                 value={requirementType}
                 onValueChange={value => setRequirementType(value as RequirementType)}
@@ -201,7 +289,9 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
               <p className="text-xs leading-5 text-text-muted">{selectedType.description}</p>
             </div>
             <div className="space-y-2">
-              <Label htmlFor="requirement-constraints">Constraints</Label>
+              <Label htmlFor="requirement-constraints">
+                Constraints, non-goals, and test expectations
+              </Label>
               <Textarea
                 id="requirement-constraints"
                 value={constraints}
@@ -211,6 +301,23 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
               />
             </div>
           </div>
+          <div className="grid gap-2 rounded-md border border-border-subtle bg-bg-subtle p-3 text-sm md:grid-cols-3">
+            <NextStep
+              icon={<ScrollText className="h-4 w-4" />}
+              title="Plan"
+              description="Product plan, technical plan, and assumptions."
+            />
+            <NextStep
+              icon={<Workflow className="h-4 w-4" />}
+              title="PR DAG"
+              description="Large but reviewable implementation slices."
+            />
+            <NextStep
+              icon={<ShieldCheck className="h-4 w-4" />}
+              title="Approval"
+              description="Execution waits until a human approves the plan."
+            />
+          </div>
           {message ? (
             <div className="rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 text-sm leading-5 text-text-muted">
               {message}
@@ -218,13 +325,14 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
           ) : null}
           <div className="flex flex-wrap gap-2">
             <Button type="submit" disabled={!canSubmit || createRequirement.isPending}>
-              {createRequirement.isPending ? 'Generating plan' : 'Generate plan'}
+              {createRequirement.isPending ? 'Generating plan' : 'Generate plan for review'}
               <ArrowRight className="ml-1.5 h-4 w-4" />
             </Button>
             <Button asChild type="button" variant="outline">
               <Link href={projectContextHref(context.project.id)}>Review context</Link>
             </Button>
           </div>
+          <p className="text-xs leading-5 text-text-muted">{submitHelper}</p>
         </form>
       </section>
 
@@ -248,6 +356,12 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
           caption={`${readiness.activeRepositoryCount} repos · ${readiness.skillCount} skills · ${readiness.warningCount} warnings`}
         />
         <ContextCard
+          icon={<Workflow className="h-4 w-4" />}
+          title="Plan inputs"
+          value="Context drives every generated artifact"
+          caption="Repo profiles, architecture snapshots, skills, and guardrails will be used for the product plan, technical plan, PR DAG, and prompts."
+        />
+        <ContextCard
           icon={<ScrollText className="h-4 w-4" />}
           title="Human checkpoint"
           value="Plan approval remains required"
@@ -263,6 +377,26 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
         ) : null}
       </aside>
     </main>
+  );
+}
+
+function NextStep({
+  icon,
+  title,
+  description,
+}: {
+  icon: ReactNode;
+  title: string;
+  description: string;
+}) {
+  return (
+    <div className="flex min-w-0 items-start gap-2">
+      <div className="mt-0.5 text-text-muted">{icon}</div>
+      <div className="min-w-0">
+        <div className="font-medium text-text-main">{title}</div>
+        <p className="mt-0.5 text-xs leading-5 text-text-muted">{description}</p>
+      </div>
+    </div>
   );
 }
 
