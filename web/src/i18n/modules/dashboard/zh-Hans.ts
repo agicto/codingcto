@@ -167,6 +167,7 @@ const messages = {
       newProject: '新建项目',
       createWorkspace: '创建工作区',
       createProject: '创建项目',
+      openProject: '打开项目',
       openCodingCTO: '打开 CodingCTO',
       configureGitHub: '配置 GitHub',
     },

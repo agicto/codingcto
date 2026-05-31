@@ -3,6 +3,7 @@ import { describe, expect, it } from 'vitest';
 import {
   primaryRepositoryContext,
   projectContextContract,
+  projectOverviewDecision,
   projectContextReadiness,
 } from './project-context';
 import type { ProjectContextDTO } from './services/project-service';
@@ -157,5 +158,44 @@ describe('project context', () => {
     expect(readiness.nextAction).toBe(
       'Review repository context warnings before approving execution.'
     );
+  });
+
+  it('routes the project overview to repository binding before a primary repo exists', () => {
+    const decision = projectOverviewDecision(projectContext([['dependency', true, 'repo_docs']]));
+
+    expect(decision.step).toBe('bind_repository');
+    expect(decision.actionHref).toBe('#repository-binding');
+  });
+
+  it('routes the project overview to context review when warnings are present', () => {
+    const context = projectContext([['primary', true, 'repo_app']]);
+    context.repository_contexts[0].architecture_warnings = ['Architecture snapshot missing.'];
+
+    const decision = projectOverviewDecision(context);
+
+    expect(decision.step).toBe('review_context');
+    expect(decision.actionHref).toBe('#project-context');
+  });
+
+  it('routes the project overview to delivery when context is ready', () => {
+    const context = projectContext([['primary', true, 'repo_app']]);
+    context.repository_contexts[0].skills = [
+      {
+        id: 1,
+        repository_id: 'repo_app',
+        name: 'planning-sop',
+        description: 'Planning skill.',
+        content: 'Use evidence refs.',
+        active: true,
+        created_by: 1,
+        created_at: '',
+        updated_at: '',
+      },
+    ];
+
+    const decision = projectOverviewDecision(context);
+
+    expect(decision.step).toBe('create_requirement');
+    expect(decision.actionHref).toBe('#project-delivery');
   });
 });

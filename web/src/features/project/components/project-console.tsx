@@ -43,10 +43,7 @@ import { Separator } from '@/components/ui/separator';
 import { Textarea } from '@/components/ui/textarea';
 import { cn } from '@/utils';
 import { useT } from '@/i18n';
-import {
-  projectSpecForgeHref,
-  slugFromProjectName,
-} from '@/features/project/project-utils';
+import { projectOverviewHref, slugFromProjectName } from '@/features/project/project-utils';
 import {
   useCreateProject,
   useCreateWorkspace,
@@ -247,7 +244,9 @@ export function ProjectConsole() {
               </div>
               <div className="min-w-0">
                 <div className="text-sm font-semibold text-text-main">{t('workspace.title')}</div>
-                <p className="mt-1 text-sm leading-6 text-text-muted">{t('workspace.description')}</p>
+                <p className="mt-1 text-sm leading-6 text-text-muted">
+                  {t('workspace.description')}
+                </p>
               </div>
             </div>
             <div className="flex flex-col gap-2 sm:flex-row md:min-w-[420px]">
@@ -297,7 +296,9 @@ export function ProjectConsole() {
                 <div className="min-w-0">
                   <span className="font-medium text-text-main">{selectedWorkspace.name}</span>
                   <span className="mx-2 text-text-muted">/</span>
-                  <span className="font-mono text-xs text-text-muted">{selectedWorkspace.slug}</span>
+                  <span className="font-mono text-xs text-text-muted">
+                    {selectedWorkspace.slug}
+                  </span>
                 </div>
                 <div className="font-mono text-xs text-text-muted">
                   {t('workspace.id', { id: selectedWorkspace.workspace_id })}
@@ -373,9 +374,21 @@ export function ProjectConsole() {
               <CardDescription>{t('setup.description')}</CardDescription>
             </CardHeader>
             <CardContent className="space-y-4">
-              <SetupStep index="01" title={t('setup.steps.project.title')} description={t('setup.steps.project.description')} />
-              <SetupStep index="02" title={t('setup.steps.github.title')} description={t('setup.steps.github.description')} />
-              <SetupStep index="03" title={t('setup.steps.delivery.title')} description={t('setup.steps.delivery.description')} />
+              <SetupStep
+                index="01"
+                title={t('setup.steps.project.title')}
+                description={t('setup.steps.project.description')}
+              />
+              <SetupStep
+                index="02"
+                title={t('setup.steps.github.title')}
+                description={t('setup.steps.github.description')}
+              />
+              <SetupStep
+                index="03"
+                title={t('setup.steps.delivery.title')}
+                description={t('setup.steps.delivery.description')}
+              />
               <Separator />
               <Button asChild variant="outline" className="w-full">
                 <Link href="/console/settings?tab=github">
@@ -569,11 +582,7 @@ function ProjectDialogContent({
               {formError}
             </div>
           )}
-          <Button
-            type="submit"
-            className="w-full"
-            disabled={!selectedWorkspaceId || isPending}
-          >
+          <Button type="submit" className="w-full" disabled={!selectedWorkspaceId || isPending}>
             {isPending ? t('actions.creating') : t('actions.createProject')}
             <ArrowRight className="ml-1.5 h-4 w-4" />
           </Button>
@@ -641,9 +650,13 @@ function ProjectRow({
           </div>
         </div>
       </div>
-      <Button asChild variant="outline" className="shrink-0 md:opacity-85 md:transition-opacity md:group-hover:opacity-100">
-        <Link href={projectSpecForgeHref(project.id)}>
-          {t('actions.openCodingCTO')}
+      <Button
+        asChild
+        variant="outline"
+        className="shrink-0 md:opacity-85 md:transition-opacity md:group-hover:opacity-100"
+      >
+        <Link href={projectOverviewHref(project.id)}>
+          {t('actions.openProject')}
           <GitPullRequest className="ml-1.5 h-4 w-4" />
         </Link>
       </Button>
