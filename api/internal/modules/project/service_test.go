@@ -51,6 +51,14 @@ func TestServiceProjectRepositoryFlow(t *testing.T) {
 	require.Equal(t, 0, contextBundle.Readiness.ReadOnlyRepositoryCount)
 	require.Equal(t, 0, contextBundle.Readiness.SkillCount)
 	require.Equal(t, "Add project or repo skills to reduce prompt ambiguity.", contextBundle.Readiness.NextAction)
+	require.NotNil(t, contextBundle.ContextContract)
+	require.Equal(t, "project_context_contract_v1", contextBundle.ContextContract.Version)
+	require.Equal(t, "repo_1", contextBundle.ContextContract.PrimaryRepositoryID)
+	require.Equal(t, "repo_1", contextBundle.ContextContract.ExecutionRepositoryID)
+	require.Contains(t, contextBundle.ContextContract.MissingEvidence, "repo_profile:repo_1")
+	require.Contains(t, contextBundle.ContextContract.MissingEvidence, "architecture_snapshot:repo_1")
+	require.Contains(t, contextBundle.ContextContract.PromptGuardrails, "Missing context evidence must be treated as uncertainty, not inferred as fact.")
+	require.Contains(t, contextBundle.ContextContract.PromptGuardrails, "No active project skills are pinned; planner and executor must rediscover local conventions before changing code.")
 }
 
 func TestServiceProjectContextIncludesRepoProfilesAndSkills(t *testing.T) {
@@ -154,6 +162,22 @@ func TestServiceProjectContextIncludesRepoProfilesAndSkills(t *testing.T) {
 	require.Equal(t, contextBundle.ExecutionGuardrails, contextBundle.Readiness.Guardrails)
 	require.Contains(t, contextBundle.Readiness.Summary, "repo_1")
 	require.Equal(t, "Review repository context warnings before approving execution.", contextBundle.Readiness.NextAction)
+	require.NotNil(t, contextBundle.ContextContract)
+	require.Equal(t, "project_context_contract_v1", contextBundle.ContextContract.Version)
+	require.Equal(t, []string{"repo_2"}, contextBundle.ContextContract.ReadOnlyRepositoryIDs)
+	require.Equal(t, []string{"module-boundaries"}, contextBundle.ContextContract.SkillNames)
+	require.Contains(t, contextBundle.ContextContract.MissingEvidence, "repo_profile:repo_2")
+	require.Contains(t, contextBundle.ContextContract.MissingEvidence, "architecture_snapshot:repo_2")
+	require.Len(t, contextBundle.ContextContract.Repositories, 2)
+	repoOneContract := projectRepoContractByRepositoryID(contextBundle.ContextContract, "repo_1")
+	require.NotNil(t, repoOneContract)
+	require.True(t, repoOneContract.Writable)
+	require.Contains(t, repoOneContract.Stack, "Go")
+	require.Contains(t, repoOneContract.TestCommands, "go test ./...")
+	require.Contains(t, repoOneContract.ArchitectureModules, "api/internal/modules/project")
+	repoTwoContract := projectRepoContractByRepositoryID(contextBundle.ContextContract, "repo_2")
+	require.NotNil(t, repoTwoContract)
+	require.False(t, repoTwoContract.Writable)
 }
 
 func TestServiceProjectContextReadinessRequiresPrimaryRepository(t *testing.T) {
@@ -551,6 +575,18 @@ func projectRepoContextByRepositoryID(bundle *domain.SpecForgeProjectContext, re
 	for _, context := range bundle.RepositoryContexts {
 		if context.Repository.RepositoryID == repositoryID {
 			return context
+		}
+	}
+	return nil
+}
+
+func projectRepoContractByRepositoryID(contract *domain.SpecForgeProjectContextContract, repositoryID string) *domain.SpecForgeRepositoryContextContractFragment {
+	if contract == nil {
+		return nil
+	}
+	for _, fragment := range contract.Repositories {
+		if fragment.RepositoryID == repositoryID {
+			return fragment
 		}
 	}
 	return nil

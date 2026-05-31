@@ -1,6 +1,6 @@
 ```flow
 @flow id=specforge-project-context
-@name SpecForge Project Context Flow
+@name CodingCTO Project Context Flow
 @version 1.0
 @tags specforge, project, repo-context
 @env local
@@ -48,6 +48,26 @@ token = data.access_token
 [Asserts]
 status == 200
 body.data.access_token exists
+```
+
+```step
+@id workspace
+@name Create Workspace
+
+POST /v1/workspaces
+Content-Type: application/json
+Authorization: Bearer {{token}}
+
+{
+  "workspace_id": "workspace_{{run_id}}",
+  "name": "CodingCTO Flow Workspace",
+  "slug": "codingcto-flow-workspace-{{run_id}}",
+  "description": "Workspace for the Kest project context flow"
+}
+
+[Asserts]
+status == 201
+body.data.workspace.workspace_id == "workspace_{{run_id}}"
 ```
 
 ```step
@@ -144,7 +164,7 @@ Authorization: Bearer {{token}}
   "app_structure": ["api/internal/modules", "web/src/features"],
   "coding_conventions": ["Keep API and web contracts explicit."],
   "risk_areas": ["auth", "database migrations"],
-  "summary": "Primary app repository for SpecForge project context flow.",
+  "summary": "Primary app repository for CodingCTO project context flow.",
   "source": "kest_flow"
 }
 
@@ -258,8 +278,8 @@ Authorization: Bearer {{token}}
 
 {
   "workspace_id": "workspace_{{run_id}}",
-  "name": "SpecForge Flow",
-  "slug": "specforge-flow-{{run_id}}",
+  "name": "CodingCTO Flow",
+  "slug": "codingcto-flow-{{run_id}}",
   "description": "Kest project context flow"
 }
 
@@ -364,6 +384,11 @@ body.data.context.execution_repository_id == "{{repo_id}}"
 body.data.context.read_only_repository_ids.0 == "{{dependency_repo_id}}"
 body.data.context.execution_guardrails.0 exists
 body.data.context.repository_contexts.1.profile.summary exists
+body.data.context.context_contract.version == "project_context_contract_v1"
+body.data.context.context_contract.primary_repository_id == "{{repo_id}}"
+body.data.context.context_contract.read_only_repository_ids.0 == "{{dependency_repo_id}}"
+body.data.context.context_contract.skill_names.0 == "module-boundaries"
+body.data.context.context_contract.missing_evidence.0 exists
 ```
 
 ```step
@@ -397,6 +422,8 @@ body.data.project_context.project.name exists
 body.data.project_context.primary_repository_id == "{{repo_id}}"
 body.data.project_context.execution_repository_id == "{{repo_id}}"
 body.data.project_context.read_only_repository_ids.0 == "{{dependency_repo_id}}"
+body.data.project_context.context_contract.version == "project_context_contract_v1"
+body.data.project_context.context_contract.primary_repository_id == "{{repo_id}}"
 body.data.repo_profile.stack.0 exists
 body.data.product_spec.assumptions.0 exists
 body.data.pr_nodes.0.id exists
@@ -669,6 +696,12 @@ body.data.latest_failure_type == "type_error"
 
 ```edge
 @from login
+@to workspace
+@on success
+```
+
+```edge
+@from workspace
 @to installation
 @on success
 ```

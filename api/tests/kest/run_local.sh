@@ -4,7 +4,6 @@ set -euo pipefail
 
 ROOT_DIR="$(cd "$(dirname "${BASH_SOURCE[0]}")/../.." && pwd)"
 TMP_DIR="${ROOT_DIR}/tmp/kest"
-DB_PATH="${TMP_DIR}/luas-kest.sqlite"
 SERVER_LOG="${TMP_DIR}/server.log"
 KEST_CONFIG_PATH="${ROOT_DIR}/.kest/config.yaml"
 KEST_CONFIG_BACKUP="${TMP_DIR}/config.yaml.bak"
@@ -12,6 +11,12 @@ RUN_ID="$(date +%s)"
 SERVER_PID=""
 PORT=""
 BASE_URL=""
+DB_HOST="${KEST_DB_HOST:-localhost}"
+DB_PORT="${KEST_DB_PORT:-5432}"
+DB_NAME="${KEST_DB_NAME:-luas}"
+DB_USERNAME="${KEST_DB_USERNAME:-luas_user}"
+DB_PASSWORD="${KEST_DB_PASSWORD:-luas_pass}"
+RESET_DB="${KEST_RESET_DB:-false}"
 
 pick_port() {
   if [[ -n "${SERVER_PORT:-}" ]]; then
@@ -75,13 +80,37 @@ cleanup() {
 trap cleanup EXIT
 
 mkdir -p "${TMP_DIR}"
-rm -f "${DB_PATH}" "${SERVER_LOG}"
+rm -f "${SERVER_LOG}"
 
 PORT="$(pick_port)"
 BASE_URL="http://127.0.0.1:${PORT}"
 
 if ! command -v kest >/dev/null 2>&1; then
   echo "kest is not installed or not in PATH" >&2
+  exit 1
+fi
+
+if ! command -v psql >/dev/null 2>&1; then
+  echo "psql is required for PostgreSQL-backed Kest flow tests" >&2
+  exit 1
+fi
+
+if ! PGPASSWORD="${DB_PASSWORD}" psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USERNAME}" -d postgres -tAc "SELECT 1" >/dev/null; then
+  echo "PostgreSQL is not available for Kest flow tests at ${DB_HOST}:${DB_PORT}" >&2
+  exit 1
+fi
+
+if [[ ! "${DB_NAME}" =~ ^[A-Za-z0-9_][A-Za-z0-9_-]*$ ]]; then
+  echo "KEST_DB_NAME may only contain letters, numbers, underscores, and hyphens" >&2
+  exit 1
+fi
+
+if [[ "${RESET_DB}" == "true" ]]; then
+  PGPASSWORD="${DB_PASSWORD}" psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USERNAME}" -d postgres -tAc "SELECT pg_terminate_backend(pid) FROM pg_stat_activity WHERE datname = '${DB_NAME}' AND pid <> pg_backend_pid();" >/dev/null
+  PGPASSWORD="${DB_PASSWORD}" dropdb -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USERNAME}" --if-exists "${DB_NAME}"
+  PGPASSWORD="${DB_PASSWORD}" createdb -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USERNAME}" "${DB_NAME}"
+elif ! PGPASSWORD="${DB_PASSWORD}" psql -h "${DB_HOST}" -p "${DB_PORT}" -U "${DB_USERNAME}" -d "${DB_NAME}" -tAc "SELECT 1" >/dev/null; then
+  echo "PostgreSQL database ${DB_NAME} is not available; create it or run with KEST_RESET_DB=true using a role that can create databases" >&2
   exit 1
 fi
 
@@ -92,8 +121,14 @@ COMMON_ENV=(
   SERVER_MODE=release
   SERVER_PORT="${PORT}"
   DB_ENABLED=true
-  DB_DRIVER=sqlite
-  DB_NAME="${DB_PATH}"
+  DB_DRIVER=postgres
+  DB_HOST="${DB_HOST}"
+  DB_PORT="${DB_PORT}"
+  DB_NAME="${DB_NAME}"
+  DB_USERNAME="${DB_USERNAME}"
+  DB_PASSWORD="${DB_PASSWORD}"
+  DB_SSLMODE=disable
+  DB_TIMEZONE=UTC
   JWT_SECRET=kest-test-secret
   AI_ENABLED=false
   TRACING_ENABLED=false

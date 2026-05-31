@@ -2056,6 +2056,7 @@ func writeExecutionProjectContext(b *strings.Builder, bundle *domain.SpecForgePl
 	context := bundle.ProjectContext
 	b.WriteString("Project context:\n")
 	b.WriteString("- Project: " + strings.TrimSpace(context.Project.Name) + "\n")
+	writeExecutionProjectContextContract(b, context.ContextContract)
 	if strings.TrimSpace(context.PrimaryRepositoryID) != "" {
 		b.WriteString("- Primary repository: " + strings.TrimSpace(context.PrimaryRepositoryID) + "\n")
 	}
@@ -2088,6 +2089,49 @@ func writeExecutionProjectContext(b *strings.Builder, bundle *domain.SpecForgePl
 		writeExecutionArchitectureContext(b, repoContext)
 	}
 	b.WriteString("\n")
+}
+
+func writeExecutionProjectContextContract(b *strings.Builder, contract *domain.SpecForgeProjectContextContract) {
+	if contract == nil {
+		return
+	}
+	b.WriteString("- Context contract: " + contract.Version + "\n")
+	if strings.TrimSpace(contract.PrimaryRepositoryID) != "" {
+		b.WriteString("  - contract.primary_repository_id: " + strings.TrimSpace(contract.PrimaryRepositoryID) + "\n")
+	}
+	if len(contract.ReadOnlyRepositoryIDs) > 0 {
+		b.WriteString("  - contract.read_only_repository_ids: " + strings.Join(normalizeExecutionList(contract.ReadOnlyRepositoryIDs), ", ") + "\n")
+	}
+	if len(contract.SkillNames) > 0 {
+		b.WriteString("  - contract.active_skills: " + strings.Join(normalizeExecutionList(contract.SkillNames), ", ") + "\n")
+	}
+	if len(contract.MissingEvidence) > 0 {
+		b.WriteString("  - contract.missing_evidence: " + strings.Join(normalizeExecutionList(contract.MissingEvidence), ", ") + "\n")
+	}
+	for _, guardrail := range normalizeExecutionList(contract.PromptGuardrails) {
+		b.WriteString("  - contract.guardrail: " + guardrail + "\n")
+	}
+	for _, repository := range contract.Repositories {
+		if repository == nil {
+			continue
+		}
+		b.WriteString("  - contract.repository: " + repository.RepositoryID + " role=" + repository.Role)
+		if repository.Writable {
+			b.WriteString(" writable=true")
+		} else {
+			b.WriteString(" writable=false")
+		}
+		b.WriteString("\n")
+		if len(repository.TestCommands) > 0 {
+			b.WriteString("    - contract.repository_tests: " + strings.Join(normalizeExecutionList(repository.TestCommands), ", ") + "\n")
+		}
+		if len(repository.RiskAreas) > 0 {
+			b.WriteString("    - contract.repository_risks: " + strings.Join(normalizeExecutionList(repository.RiskAreas), ", ") + "\n")
+		}
+		if repository.ArchitectureSnapshotCommit != "" {
+			b.WriteString("    - contract.architecture_snapshot_commit: " + compactExecutionLine(repository.ArchitectureSnapshotCommit) + "\n")
+		}
+	}
 }
 
 func writeExecutionArchitectureContext(b *strings.Builder, repoContext *domain.SpecForgeProjectRepositoryContext) {
