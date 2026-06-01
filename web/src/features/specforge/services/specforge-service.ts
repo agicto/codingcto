@@ -281,7 +281,7 @@ export interface GitHubRepositoryDTO {
 }
 
 export interface ListGitHubRepositoriesParams {
-  workspace_id: string;
+  workspace_id?: string;
 }
 
 export interface ListGitHubRepositoriesDTO {
@@ -528,8 +528,8 @@ export interface SpecForgeFixAttemptDTO {
   likely_cause: string;
   recommended_action: string;
   can_auto_fix: boolean;
-  risk_level: string;
-  action_kind: string;
+  risk_level?: string;
+  action_kind?: string;
   blocked_reason?: string;
   workflow_run_id?: number;
   workflow_run_url?: string;
@@ -741,10 +741,15 @@ export const specForgeService = {
       payload
     ),
 
-  listGitHubRepositories: (params: ListGitHubRepositoriesParams, config?: RequestConfig) => {
+  listGitHubRepositories: (
+    params?: ListGitHubRepositoriesParams,
+    config?: RequestConfig
+  ) => {
     const search = new URLSearchParams();
-    search.set('workspace_id', params.workspace_id);
-    const suffix = search.toString() ? `?${search.toString()}` : '';
+    if (params?.workspace_id) {
+      search.set("workspace_id", params.workspace_id);
+    }
+    const suffix = search.toString() ? `?${search.toString()}` : "";
     return request.get<ListGitHubRepositoriesDTO>(`/github/repositories${suffix}`, config);
   },
 

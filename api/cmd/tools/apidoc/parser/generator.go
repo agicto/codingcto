@@ -21,7 +21,7 @@ type APIConfig struct {
 // LoadAPIConfig loads API configuration from environment
 func LoadAPIConfig() APIConfig {
 	return APIConfig{
-		LocalURL:   getEnvOrDefault("API_BASE_URL_LOCAL", "http://localhost:8025/api/v1"),
+		LocalURL:   getEnvOrDefault("API_BASE_URL_LOCAL", "http://localhost:2010/api/v1"),
 		DevURL:     getEnvOrDefault("API_BASE_URL_DEV", ""),
 		StagingURL: getEnvOrDefault("API_BASE_URL_STAGING", ""),
 		ProdURL:    getEnvOrDefault("API_BASE_URL_PROD", ""),

@@ -37,7 +37,7 @@ type RuntimeHTTPClient struct {
 func NewRuntimeHTTPClient(cfg RuntimeHTTPClientConfig) *RuntimeHTTPClient {
 	baseURL := strings.TrimRight(strings.TrimSpace(cfg.BaseURL), "/")
 	if baseURL == "" {
-		baseURL = "http://localhost:8025/v1"
+		baseURL = "http://localhost:2010/v1"
 	}
 	client := cfg.HTTPClient
 	if client == nil {

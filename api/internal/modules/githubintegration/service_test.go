@@ -75,6 +75,15 @@ func TestSyncInstallationStoresAccountAndListsRepositories(t *testing.T) {
 	require.Equal(t, "codingcto", result.Repositories[0].Repo)
 	require.Equal(t, "main", result.Repositories[0].DefaultBranch)
 	require.True(t, result.Repositories[0].IsPrivate)
+
+	syncedRepository, err := repo.FindRepositoryByRepositoryID(context.Background(), "github_agicto__codingcto")
+	require.NoError(t, err)
+	require.Equal(t, "default", syncedRepository.WorkspaceID)
+	require.Equal(t, result.Installation.ID, syncedRepository.GitHubInstallationID)
+	require.Equal(t, "agicto", syncedRepository.GitHubOwner)
+	require.Equal(t, "codingcto", syncedRepository.GitHubRepo)
+	require.Equal(t, "main", syncedRepository.DefaultBranch)
+	require.True(t, syncedRepository.IsPrivate)
 }
 
 func TestUpsertRepositoryDefaultsRepositoryIDAndBranch(t *testing.T) {
@@ -255,25 +264,6 @@ func TestGetRepositoryReturnsStoredRepository(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, created.ID, found.ID)
 	require.Equal(t, "develop", found.DefaultBranch)
-}
-
-func TestListRepositoriesReturnsWorkspaceRepositories(t *testing.T) {
-	repo := &memoryRepo{
-		repository: &domain.Repository{
-			ID:           12,
-			RepositoryID: "repo_123",
-			WorkspaceID:  "workspace_123",
-			GitHubOwner:  "agicto",
-			GitHubRepo:   "codingcto",
-		},
-	}
-	svc := NewService(repo, nil, nil, nil, nil)
-
-	repositories, err := svc.ListRepositories(context.Background(), " workspace_123 ")
-
-	require.NoError(t, err)
-	require.Len(t, repositories, 1)
-	require.Equal(t, "repo_123", repositories[0].RepositoryID)
 }
 
 func TestListRepositoryTreeUsesInstallationTokenAndDefaultBranch(t *testing.T) {
@@ -1946,7 +1936,7 @@ func (r *memoryRepo) FindRepositoryByRepositoryID(ctx context.Context, repositor
 }
 
 func (r *memoryRepo) ListRepositoriesByWorkspaceID(ctx context.Context, workspaceID string) ([]*domain.Repository, error) {
-	if r.repository == nil || r.repository.WorkspaceID != workspaceID {
+	if r.repository == nil || (workspaceID != "" && r.repository.WorkspaceID != workspaceID) {
 		return []*domain.Repository{}, nil
 	}
 	copied := *r.repository

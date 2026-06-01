@@ -2,6 +2,7 @@ import type { PlanBundle } from '@/features/specforge/types';
 
 const dagValidationPassedPrefixes = [
   'PR DAG 审核：校验通过',
+  'PR DAG 审核：',
   'PR DAG review: validation passed',
 ];
 

@@ -110,16 +110,32 @@ func (s *service) SyncInstallation(ctx context.Context, userID uint, req *SyncIn
 		if repoName == "" {
 			repoName = strings.TrimSpace(repository.Name)
 		}
+		defaultBranch := defaultText(strings.TrimSpace(repository.DefaultBranch), "main")
 		options = append(options, GitHubRepositoryOption{
 			ID:            repository.ID,
 			Name:          repository.Name,
 			FullName:      repository.FullName,
 			Owner:         owner,
 			Repo:          repoName,
-			DefaultBranch: defaultText(strings.TrimSpace(repository.DefaultBranch), "main"),
+			DefaultBranch: defaultBranch,
 			IsPrivate:     repository.Private,
 			HTMLURL:       repository.HTMLURL,
 		})
+		if owner == "" || repoName == "" {
+			continue
+		}
+		if err := s.repo.UpsertRepository(ctx, &domain.Repository{
+			RepositoryID:         fmt.Sprintf("github_%s__%s", owner, repoName),
+			WorkspaceID:          installation.WorkspaceID,
+			GitHubInstallationID: installation.ID,
+			GitHubOwner:          owner,
+			GitHubRepo:           repoName,
+			DefaultBranch:        defaultBranch,
+			IsPrivate:            repository.Private,
+			CreatedBy:            userID,
+		}); err != nil {
+			return nil, fmt.Errorf("sync github repository: %w", err)
+		}
 	}
 	return &SyncInstallationResponse{Installation: installation, Repositories: options}, nil
 }

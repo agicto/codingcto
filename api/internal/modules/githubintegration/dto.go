@@ -20,7 +20,7 @@ type UpsertRepositoryRequest struct {
 }
 
 type ListRepositoriesRequest struct {
-	WorkspaceID string `form:"workspace_id" binding:"required,max=255"`
+	WorkspaceID string `form:"workspace_id" binding:"omitempty,max=255"`
 }
 
 type ListRepositoriesResponse struct {

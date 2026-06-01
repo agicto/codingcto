@@ -4,8 +4,8 @@
   "description": "CodingCTO web console for GitHub-native PRD-to-PR automation.",
   "private": true,
   "scripts": {
-    "dev": "next dev --turbopack",
-    "dev:custom": "node ./scripts/next-runner.mjs dev --turbopack",
+    "dev": "next dev --turbopack -p 2020",
+    "dev:custom": "cross-env PORT=2020 node ./scripts/next-runner.mjs dev --turbopack",
     "build": "cross-env BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA=true next build",
     "build:quiet": "cross-env BASELINE_BROWSER_MAPPING_IGNORE_OLD_DATA=true next build",
     "start": "pnpm exec next start",
