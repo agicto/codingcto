@@ -377,7 +377,7 @@ const messages = {
     header: {
       title: '项目指挥台',
       description: '从需求到计划、提示词、Codex 执行和 PR 交付',
-      activeRuns: '{count} 个运行中',
+      activeRuns: '{count} 个执行中节点',
       analyzeRepo: '分析仓库',
       manualPlan: '手动计划',
       pipeline: '流水线',
@@ -704,6 +704,94 @@ const messages = {
         bound: '{role} 仓库 {repoId} 已绑定。',
         bindFailed: '仓库无法绑定。请确认它已经在设置中连接，并且属于当前工作区。',
       },
+    },
+    e2e: {
+      title: '端到端试跑',
+      description: '用当前仓库跑一遍真实交付链路：创建 Issue、生成计划、调用本地 Codex，并打开 PR。',
+      defaultIssueTitle: 'CodingCTO 端到端试跑：记录一次自动化交付',
+      defaultIssueBody:
+        '请添加一个 .codingcto/e2e-smoke.md 文件，用中文记录本次试跑已完成：创建 GitHub Issue、生成计划、调用本地 Codex CLI、提交代码并创建 PR。请保持改动很小，只提交这个说明文件。',
+      issueTitleLabel: '试跑 Issue 标题',
+      issueBodyLabel: '试跑 Issue 内容',
+      readiness: {
+        title: '运行前检查',
+        description: '检查 GitHub App 安装、仓库权限和访问令牌，确认能创建 Issue、推送分支并打开 PR。',
+        error: '暂时读不到检查结果，请确认 API 服务正常，并重新登录后再试。',
+        checkingRepository: '正在检查当前主仓库...',
+        noChecks: '还有运行前检查未通过，请先处理后再试。',
+        status: {
+          ready: '准备就绪',
+          blocked: '需处理',
+          checking: '检查中',
+        },
+      },
+      button: {
+        running: '试跑进行中...',
+        blocked: '先处理检查项',
+        start: '开始端到端试跑',
+      },
+      timeline: {
+        title: '执行时间线',
+        empty: '开始后会实时显示每一步进展：仓库检查、Issue、计划、派发、Codex 执行和 PR。',
+      },
+      steps: {
+        repository: {
+          title: '检查仓库绑定',
+        },
+        issue: {
+          title: '创建 GitHub Issue',
+        },
+        plan: {
+          title: '生成执行计划',
+          detail: '生成 {count} 个 PR 节点',
+        },
+        approve: {
+          title: '确认计划',
+          detail: '计划 #{id} 已确认',
+        },
+        run: {
+          title: '启动执行',
+        },
+        dispatch: {
+          title: '派发给本地运行器',
+        },
+        codexWaiting: {
+          title: '等待 Codex 执行',
+          detail: '任务已派发，等待本地运行器认领后调用 Codex CLI。',
+        },
+        codexDone: {
+          title: 'Codex 执行完成',
+          detail: '本地运行器已完成代码修改、提交并推送分支。',
+        },
+        pr: {
+          title: '创建 GitHub Pull Request',
+          detail: 'PR #{number}',
+          missing: '任务已完成，但没有返回 PR 链接。',
+        },
+        error: {
+          title: '流程中断',
+        },
+      },
+      errors: {
+        noRepository: '当前项目还没有绑定主仓库，请先完成仓库配置。',
+        noExecutableNode: '计划里没有可执行的 PR 节点。',
+        noDispatchedTask: '还没有派发出可执行任务，请确认本地运行器在线。',
+        codexFailed: 'Codex CLI 执行失败。',
+        flowFailed: '试跑中断，请查看上一步状态后重试。',
+        timeout: '本地运行器还没有完成任务。请确认运行器仍在运行，并查看智能体页面的心跳状态。',
+      },
+      stepStatus: {
+        running: '进行中',
+        success: '完成',
+        error: '失败',
+        pending: '等待',
+      },
+      checkStatus: {
+        ok: '通过',
+        warning: '提醒',
+        error: '缺失',
+      },
+      linkLabel: '查看详情',
     },
     readiness: {
       projectScoped: '项目级',

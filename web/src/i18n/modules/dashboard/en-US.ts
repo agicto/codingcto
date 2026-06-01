@@ -387,7 +387,7 @@ const messages: DashboardMessages = {
     header: {
       title: 'Project command center',
       description: 'Idea to plan, prompts, Codex run, and PR delivery',
-      activeRuns: '{count} active runs',
+      activeRuns: '{count} active PR nodes',
       analyzeRepo: 'Analyze repo',
       manualPlan: 'Manual plan',
       pipeline: 'Pipeline',
@@ -736,6 +736,98 @@ const messages: DashboardMessages = {
         bindFailed:
           'Repository could not be bound. Confirm it was connected in Settings and belongs to this workspace.',
       },
+    },
+    e2e: {
+      title: 'End-to-end trial run',
+      description:
+        'Run the real delivery path for this repository: create an Issue, generate a plan, call local Codex, and open a PR.',
+      defaultIssueTitle: 'CodingCTO end-to-end trial: record one automated delivery',
+      defaultIssueBody:
+        'Please add a .codingcto/e2e-smoke.md file that records this trial run completed GitHub Issue creation, plan generation, local Codex CLI execution, code commit, and PR creation. Keep the change very small and only submit this note file.',
+      issueTitleLabel: 'Trial Issue title',
+      issueBodyLabel: 'Trial Issue body',
+      readiness: {
+        title: 'Preflight checks',
+        description:
+          'Check GitHub App installation, repository permissions, and access tokens before creating Issues, pushing branches, and opening PRs.',
+        error: 'Could not load preflight checks. Confirm the API is running, sign in again, and retry.',
+        checkingRepository: 'Checking the current primary repository...',
+        noChecks: 'Some preflight checks have not passed yet. Resolve them before retrying.',
+        status: {
+          ready: 'Ready',
+          blocked: 'Needs attention',
+          checking: 'Checking',
+        },
+      },
+      button: {
+        running: 'Trial running...',
+        blocked: 'Resolve checks first',
+        start: 'Start end-to-end trial',
+      },
+      timeline: {
+        title: 'Execution timeline',
+        empty:
+          'After starting, progress appears here: repository checks, Issue, plan, dispatch, Codex execution, and PR.',
+      },
+      steps: {
+        repository: {
+          title: 'Check repository binding',
+        },
+        issue: {
+          title: 'Create GitHub Issue',
+        },
+        plan: {
+          title: 'Generate execution plan',
+          detail: 'Generated {count} PR nodes',
+        },
+        approve: {
+          title: 'Confirm plan',
+          detail: 'Plan #{id} confirmed',
+        },
+        run: {
+          title: 'Start execution',
+        },
+        dispatch: {
+          title: 'Dispatch to local runner',
+        },
+        codexWaiting: {
+          title: 'Waiting for Codex',
+          detail: 'Task dispatched. Waiting for the local runner to claim it and call Codex CLI.',
+        },
+        codexDone: {
+          title: 'Codex completed',
+          detail: 'The local runner changed code, committed, and pushed the branch.',
+        },
+        pr: {
+          title: 'Create GitHub Pull Request',
+          detail: 'PR #{number}',
+          missing: 'The task completed, but no PR link was returned.',
+        },
+        error: {
+          title: 'Flow interrupted',
+        },
+      },
+      errors: {
+        noRepository: 'This project has no primary repository yet. Finish repository setup first.',
+        noExecutableNode: 'The plan did not produce an executable PR node.',
+        noDispatchedTask: 'No executable task was dispatched. Confirm the local runner is online.',
+        codexFailed: 'Codex CLI execution failed.',
+        flowFailed: 'The trial was interrupted. Check the previous step and retry.',
+        timeout:
+          'The local runner has not completed the task yet. Confirm the runner is still running and check the agent heartbeat page.',
+      },
+      stepStatus: {
+        running: 'Running',
+        success: 'Done',
+        error: 'Failed',
+        pending: 'Waiting',
+      },
+      checkStatus: {
+        ok: 'Passed',
+        warning: 'Warning',
+        error: 'Missing',
+      },
+      linkLabel: 'View details',
     },
     readiness: {
       projectScoped: 'Project scoped',

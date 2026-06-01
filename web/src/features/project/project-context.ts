@@ -149,7 +149,9 @@ export function projectSkillContract(context?: ProjectContextDTO): ProjectSkillC
   };
 }
 
-export function projectContextReadiness(context?: ProjectContextDTO): ProjectContextReadiness {
+export function projectContextReadiness(context?: ProjectContextDTO, locale = 'zh-Hans'): ProjectContextReadiness {
+  const localize = (text?: string) => localizeProjectContextText(text, locale);
+
   if (context?.readiness) {
     return {
       hasPrimaryRepository: context.readiness.has_primary_repository,
@@ -158,10 +160,10 @@ export function projectContextReadiness(context?: ProjectContextDTO): ProjectCon
       skillCount: context.readiness.skill_count,
       warningCount: context.readiness.warning_count,
       guardrails: (context.readiness.guardrails ?? context.execution_guardrails ?? []).map(
-        localizeProjectContextText
+        localize
       ),
-      summary: localizeProjectContextText(context.readiness.summary),
-      nextAction: localizeProjectContextText(context.readiness.next_action),
+      summary: localize(context.readiness.summary),
+      nextAction: localize(context.readiness.next_action),
     };
   }
 
@@ -180,7 +182,7 @@ export function projectContextReadiness(context?: ProjectContextDTO): ProjectCon
       (item.profile?.warnings?.length ?? 0),
     0
   );
-  const guardrails = (context?.execution_guardrails ?? []).map(localizeProjectContextText);
+  const guardrails = (context?.execution_guardrails ?? []).map(localize);
 
   return {
     hasPrimaryRepository: Boolean(primaryRepository),
@@ -189,14 +191,17 @@ export function projectContextReadiness(context?: ProjectContextDTO): ProjectCon
     skillCount,
     warningCount,
     guardrails,
-    summary: readinessSummary(activeRepositories.length, primaryRepository?.repository.repository_id),
-    nextAction: readinessNextAction(Boolean(primaryRepository), warningCount, skillCount),
+    summary: localize(readinessSummary(activeRepositories.length, primaryRepository?.repository.repository_id)),
+    nextAction: localize(readinessNextAction(Boolean(primaryRepository), warningCount, skillCount)),
   };
 }
 
-export function localizeProjectContextText(text?: string) {
+export function localizeProjectContextText(text?: string, locale = 'zh-Hans') {
   if (!text) {
     return '';
+  }
+  if (!locale.startsWith('zh')) {
+    return text;
   }
 
   let next = text;

@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { getTranslations } from 'next-intl/server';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent } from '@/components/ui/card';
 import { Badge } from '@/components/ui/badge';
@@ -18,7 +19,10 @@ import {
  * CodingCTO homepage
  * Unified design language with Auth and Console sections
  */
-export default function HomePage() {
+export default async function HomePage() {
+  const t = await getTranslations('site');
+  const features = featuresData(t);
+
   return (
     <div className="flex flex-col">
       {/* Hero Section - with glow effects like Auth */}
@@ -50,34 +54,33 @@ export default function HomePage() {
             {/* Badge */}
             <Badge variant="secondary" className="mb-6 px-4 py-1.5 text-sm font-medium">
               <Sparkles className="mr-1.5 h-3.5 w-3.5" />
-              GitHub-native PRD-to-PR Automation
+              {t('hero.eyebrow')}
             </Badge>
 
             {/* Title */}
             <h1 className="text-4xl font-bold tracking-tight md:text-5xl lg:text-6xl">
-              Turn Product Ideas{' '}
+              {t('hero.titlePrefix')}{' '}
               <span className="bg-linear-to-r from-primary to-primary-deeper bg-clip-text text-transparent">
-                into Pull Requests
+                {t('hero.titleHighlight')}
               </span>
             </h1>
 
             {/* Description */}
             <p className="mt-6 text-lg text-text-muted md:text-xl max-w-2xl mx-auto">
-              CodingCTO analyzes repositories, generates plans and PR DAGs, compiles scoped
-              prompts, and drives review-ready GitHub pull requests.
+              {t('hero.description')}
             </p>
 
             {/* CTA Buttons */}
             <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
               <Link href="/register">
                 <Button size="lg" className="h-12 px-8 gap-2 shadow-button-primary">
-                  Get Started
+                  {t('hero.getStarted')}
                   <ArrowRight className="h-4 w-4" />
                 </Button>
               </Link>
               <Link href="/console">
                 <Button variant="outline" size="lg" className="h-12 px-8">
-                  View Demo
+                  {t('hero.viewDemo')}
                 </Button>
               </Link>
             </div>
@@ -90,15 +93,15 @@ export default function HomePage() {
         <div className="container">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-              Everything You Need
+              {t('features.title')}
             </h2>
             <p className="mt-4 text-text-muted max-w-2xl mx-auto">
-              A focused product-engineering workflow for planning, execution, verification, and review.
+              {t('features.description')}
             </p>
           </div>
 
           <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
-            {featuresData.map((feature, index) => (
+            {features.map((feature, index) => (
               <Card 
                 key={index} 
                 className="group bg-bg-surface border-border/50 hover:shadow-premium hover:-translate-y-1 transition-all duration-300"
@@ -123,10 +126,10 @@ export default function HomePage() {
         <div className="container">
           <div className="text-center mb-12">
             <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
-              Modern Tech Stack
+              {t('stack.title')}
             </h2>
             <p className="mt-4 text-text-muted">
-              Built with the latest technologies for optimal developer experience.
+              {t('stack.description')}
             </p>
           </div>
 
@@ -154,15 +157,15 @@ export default function HomePage() {
 
         <div className="container relative text-center text-white">
           <h2 className="text-3xl font-bold tracking-tight md:text-4xl lg:text-5xl">
-            Ready to Build?
+            {t('cta.title')}
           </h2>
           <p className="mt-4 text-white/80 max-w-xl mx-auto md:text-lg">
-            Describe a feature, review the plan, and let CodingCTO prepare the pull requests.
+            {t('cta.description')}
           </p>
           <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
             <Link href="/register">
               <Button size="lg" variant="secondary" className="h-12 px-8 gap-2">
-                Get Started Free
+                {t('cta.getStarted')}
                 <ArrowRight className="h-4 w-4" />
               </Button>
             </Link>
@@ -176,7 +179,7 @@ export default function HomePage() {
                 variant="outline" 
                 className="h-12 px-8 bg-transparent border-white/30 text-white hover:bg-white/10 hover:text-white"
               >
-                View on GitHub
+                {t('cta.viewGitHub')}
               </Button>
             </a>
           </div>
@@ -187,25 +190,27 @@ export default function HomePage() {
 }
 
 // Features data
-const featuresData = [
+type SiteTranslator = Awaited<ReturnType<typeof getTranslations>>;
+
+const featuresData = (t: SiteTranslator) => [
   {
-    title: 'Authentication',
-    description: 'Workspace access for project, repository, and execution workflows.',
+    title: t('features.items.auth.title'),
+    description: t('features.items.auth.description'),
     icon: Shield,
   },
   {
-    title: 'Admin Console',
-    description: 'A delivery console for projects, plans, execution runs, and pull requests.',
+    title: t('features.items.console.title'),
+    description: t('features.items.console.description'),
     icon: Terminal,
   },
   {
-    title: 'Internationalization',
-    description: 'Repository context, skill instructions, and evidence-backed prompt inputs.',
+    title: t('features.items.context.title'),
+    description: t('features.items.context.description'),
     icon: Globe,
   },
   {
-    title: 'Premium UI',
-    description: 'Bounded CI repair attempts, escalation summaries, and review loops.',
+    title: t('features.items.review.title'),
+    description: t('features.items.review.description'),
     icon: Palette,
   },
 ];

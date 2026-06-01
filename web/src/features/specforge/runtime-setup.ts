@@ -36,19 +36,18 @@ export function runtimeSetupChecklist({
   readyRuntimeCount: number;
 }): string[] {
   if (readyRuntimeCount > 0) {
-    const runtimeLabel = readyRuntimeCount === 1 ? 'runtime is' : 'runtimes are';
     return [
-      `${readyRuntimeCount} writable Codex ${runtimeLabel} online.`,
-      `Runtime repository guard should match ${repositoryId}.`,
-      'Approve & Start can dispatch selected PR nodes.',
+      `${readyRuntimeCount} 个可写的 Codex 运行器在线。`,
+      `运行器的仓库保护应匹配 ${repositoryId}。`,
+      '确认计划后，可以派发已选择的 PR 节点。',
     ];
   }
 
   return [
-    'Create a runtime token for a signed-in CodingCTO user.',
-    `Run the runtime from this repository and point it at ${repositoryId}.`,
-    'Keep Codex CLI installed and authenticated in the runtime shell.',
-    'Return here after the runtime heartbeat appears online.',
+    '为已登录的 CodingCTO 用户创建运行器令牌。',
+    `在本仓库启动运行器，并指向 ${repositoryId}。`,
+    '确认运行器所在终端已安装并登录 Codex CLI。',
+    '等运行器心跳显示在线后，再回到这里继续。',
   ];
 }
 

@@ -91,7 +91,18 @@ function Button({
   children,
   ...props
 }: ButtonProps) {
-  const Comp = asChild ? Slot : "button"
+  const { disabled, onClick, type, ...restProps } = props
+  const isDisabled = disabled || loading
+  const contentClassName = cn(
+    "inline-flex items-center gap-2",
+    isIcon ? "justify-center" : "justify-inherit"
+  )
+  const buttonClassName = cn(
+    buttonVariants({ variant, size, isIcon, className }),
+    noScale ? "interactive-no-scale" : "interactive",
+    loading && "relative pointer-events-none",
+    asChild && isDisabled && "pointer-events-none"
+  )
 
   const spinnerSize = cn(
     "animate-spin shrink-0",
@@ -101,22 +112,42 @@ function Button({
 
   const spinner = <Loader2 className={spinnerSize} />
 
+  if (asChild) {
+    return (
+      <Slot
+        {...restProps}
+        data-slot="button"
+        aria-disabled={isDisabled || undefined}
+        tabIndex={isDisabled ? -1 : undefined}
+        className={buttonClassName}
+        {...(isDisabled || onClick
+          ? {
+              onClick: (event: React.MouseEvent<HTMLElement>) => {
+                if (isDisabled) {
+                  event.preventDefault()
+                  event.stopPropagation()
+                  return
+                }
+                onClick?.(event as React.MouseEvent<HTMLButtonElement>)
+              },
+            }
+          : {})}
+      >
+        {children}
+      </Slot>
+    )
+  }
+
   return (
-    <Comp
+    <button
       data-slot="button"
-      disabled={props.disabled || loading}
-      className={cn(
-        buttonVariants({ variant, size, isIcon, className }),
-        // Conditionally apply interactive class based on noScale
-        noScale ? "interactive-no-scale" : "interactive",
-        loading && "relative pointer-events-none"
-      )}
-      {...props}
+      disabled={isDisabled}
+      type={type}
+      className={buttonClassName}
+      onClick={onClick}
+      {...restProps}
     >
-      <span className={cn(
-        "inline-flex items-center gap-2",
-        isIcon ? "justify-center" : "justify-inherit"
-      )}>
+      <span className={contentClassName}>
         {/* Left Slot: Show spinner if loading and position is left */}
         {iconPosition === "left" && (
           loading ? spinner : icon
@@ -130,7 +161,7 @@ function Button({
           loading ? spinner : icon
         )}
       </span>
-    </Comp>
+    </button>
   )
 }
 

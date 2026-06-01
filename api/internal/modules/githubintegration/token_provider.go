@@ -7,6 +7,7 @@ import (
 	"os"
 	"strconv"
 	"strings"
+	"time"
 )
 
 var errGitHubAppConfigMissing = errors.New("github app token provider config missing")
@@ -27,7 +28,9 @@ func (defaultInstallationTokenProvider) InstallationToken(ctx context.Context, i
 	if err != nil {
 		return nil, err
 	}
-	return client.InstallationToken(ctx, installationID)
+	return withGitHubAppRetry(ctx, func() (*InstallationToken, error) {
+		return client.InstallationToken(ctx, installationID)
+	})
 }
 
 func (defaultInstallationTokenProvider) Installation(ctx context.Context, installationID int64) (*GitHubAppInstallation, error) {
@@ -35,7 +38,31 @@ func (defaultInstallationTokenProvider) Installation(ctx context.Context, instal
 	if err != nil {
 		return nil, err
 	}
-	return client.Installation(ctx, installationID)
+	return withGitHubAppRetry(ctx, func() (*GitHubAppInstallation, error) {
+		return client.Installation(ctx, installationID)
+	})
+}
+
+func withGitHubAppRetry[T any](ctx context.Context, fn func() (T, error)) (T, error) {
+	var zero T
+	var lastErr error
+	for attempt := 0; attempt < 6; attempt++ {
+		if attempt > 0 {
+			timer := time.NewTimer(time.Duration(attempt) * 500 * time.Millisecond)
+			select {
+			case <-ctx.Done():
+				timer.Stop()
+				return zero, ctx.Err()
+			case <-timer.C:
+			}
+		}
+		value, err := fn()
+		if err == nil {
+			return value, nil
+		}
+		lastErr = err
+	}
+	return zero, lastErr
 }
 
 func newGitHubAppClientFromEnv() (*GitHubAppClient, error) {
