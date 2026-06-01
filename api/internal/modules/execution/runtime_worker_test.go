@@ -186,6 +186,8 @@ func (e *fakeRuntimeExecutor) Name() string {
 	return ExecutorNameCodexCLI
 }
 
+func (e *fakeRuntimeExecutor) SetProgressReporter(reporter ProgressReporter) {}
+
 func (e *fakeRuntimeExecutor) Prepare(ctx context.Context, execContext ExecutionContext) error {
 	return nil
 }

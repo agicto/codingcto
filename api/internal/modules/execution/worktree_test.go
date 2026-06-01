@@ -61,6 +61,46 @@ func TestLocalGitWorktreeManagerClonesMissingMirror(t *testing.T) {
 	require.Equal(t, "git", runner.specs[2].Executable)
 }
 
+func TestLocalGitWorktreeManagerFallsBackToHeadWhenRemoteBranchMissing(t *testing.T) {
+	root := t.TempDir()
+	mirrorDir := filepath.Join(root, "mirrors", "repo-123.git")
+	require.NoError(t, os.MkdirAll(mirrorDir, 0o755))
+	runner := &captureRunner{
+		results: []CommandResult{
+			{ExitCode: 0},
+			{ExitCode: 0},
+			{ExitCode: 0},
+			{Stderr: "fatal: invalid reference: origin/specforge/pr-001", ExitCode: 128},
+			{ExitCode: 0},
+		},
+		errs: []error{
+			nil,
+			nil,
+			nil,
+			nil,
+			nil,
+		},
+	}
+	manager := NewLocalGitWorktreeManager(LocalGitWorktreeManagerConfig{RootDir: root}, runner)
+
+	worktree, err := manager.PrepareWorktree(context.Background(), WorktreeRequest{
+		Repository: &domain.Repository{
+			RepositoryID: "repo/123",
+			GitHubOwner:  "agicto",
+			GitHubRepo:   "codingcto",
+		},
+		BranchName: "specforge/pr-001",
+		RunID:      9,
+		TaskID:     10,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, filepath.Join(root, "worktrees", "run-9-task-10-specforge-pr-001"), worktree.Path)
+	require.Len(t, runner.specs, 5)
+	require.Equal(t, []string{"worktree", "add", "--force", "-B", "specforge/pr-001", worktree.Path, "origin/specforge/pr-001"}, runner.specs[3].Args)
+	require.Equal(t, []string{"worktree", "add", "--force", "-B", "specforge/pr-001", worktree.Path, "HEAD"}, runner.specs[4].Args)
+}
+
 func TestLocalGitWorktreeManagerRejectsInvalidInput(t *testing.T) {
 	manager := NewLocalGitWorktreeManager(LocalGitWorktreeManagerConfig{RootDir: t.TempDir()}, &captureRunner{})
 

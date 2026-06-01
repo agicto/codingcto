@@ -47,15 +47,16 @@ export interface PRNode {
   githubPrUrl?: string;
   headSha?: string;
   executor?: string;
-  runtimeId?: string;
-  sessionId?: string;
-  workdir?: string;
+  processStatus?: string;
+  currentPhase?: string;
   attemptNumber?: number;
   fixAttemptId?: number;
   failureReason?: string;
   logsUrl?: string;
   outputLog?: string;
   errorLog?: string;
+  processRef?: string;
+  lastProgressAt?: string;
   status:
     | 'planned'
     | 'queued'
