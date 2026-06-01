@@ -75,7 +75,7 @@ export async function POST(request: Request) {
 }
 
 async function loginWithBackend(email: string, password: string) {
-  const apiTarget = process.env.LUAS_API_PROXY_TARGET ?? 'http://localhost:8025';
+  const apiTarget = process.env.LUAS_API_PROXY_TARGET ?? 'http://localhost:2010';
   const response = await fetch(`${apiTarget}/v1/login`, {
     method: 'POST',
     headers: {

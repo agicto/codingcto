@@ -295,6 +295,7 @@ func newCodexCLIExecutor(cfg CodexCLIExecutorConfig, runner CommandRunner) *cliE
 					strings.EqualFold(strings.TrimSpace(cfg.ApprovalPolicy), "never") {
 					args = append(args, "--dangerously-bypass-approvals-and-sandbox")
 				} else {
+					args = append([]string{"--ask-for-approval", cfg.ApprovalPolicy}, args...)
 					args = append(args, "--sandbox", cfg.SandboxMode)
 				}
 				args = append(args, "--skip-git-repo-check")

@@ -13,7 +13,7 @@ import { cva, type VariantProps } from "class-variance-authority"
 import { cn } from "@/utils"
 
 const textareaVariants = cva(
-  "placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground flex min-h-[80px] w-full rounded-lg px-3 py-2 text-base shadow-xs transition-all disabled:cursor-not-allowed disabled:opacity-50 md:text-sm input-depth focus-border resize-none",
+  "placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground flex min-h-[80px] w-full rounded-[var(--radius-field)] px-3 py-2 text-base shadow-none transition-all disabled:cursor-not-allowed disabled:opacity-50 md:text-sm input-depth focus-border resize-none",
   {
     variants: {
       variant: {

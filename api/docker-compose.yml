@@ -8,10 +8,10 @@ services:
     container_name: luas-api
     restart: always
     ports:
-      - "8025:8025"
+      - "2010:2010"
     environment:
       - APP_ENV=production
-      - SERVER_PORT=8025
+      - SERVER_PORT=2010
       - DB_DRIVER=postgres
       - DB_HOST=luas-db
       - DB_PORT=5432

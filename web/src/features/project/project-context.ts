@@ -69,9 +69,7 @@ export function projectContextContract(
   return context?.context_contract;
 }
 
-export function projectRepositoryEvidence(
-  context?: ProjectContextDTO
-): ProjectRepositoryEvidence[] {
+export function projectRepositoryEvidence(context?: ProjectContextDTO): ProjectRepositoryEvidence[] {
   return (context?.repository_contexts ?? []).map(item => {
     const repositoryId = item.repository.repository_id;
     const missingEvidence = [
@@ -157,9 +155,11 @@ export function projectContextReadiness(context?: ProjectContextDTO): ProjectCon
       readOnlyRepositoryCount: context.readiness.read_only_repository_count,
       skillCount: context.readiness.skill_count,
       warningCount: context.readiness.warning_count,
-      guardrails: context.readiness.guardrails ?? context.execution_guardrails ?? [],
-      summary: context.readiness.summary,
-      nextAction: context.readiness.next_action,
+      guardrails: (context.readiness.guardrails ?? context.execution_guardrails ?? []).map(
+        localizeProjectContextText
+      ),
+      summary: localizeProjectContextText(context.readiness.summary),
+      nextAction: localizeProjectContextText(context.readiness.next_action),
     };
   }
 
@@ -178,7 +178,7 @@ export function projectContextReadiness(context?: ProjectContextDTO): ProjectCon
       (item.profile?.warnings?.length ?? 0),
     0
   );
-  const guardrails = context?.execution_guardrails ?? [];
+  const guardrails = (context?.execution_guardrails ?? []).map(localizeProjectContextText);
 
   return {
     hasPrimaryRepository: Boolean(primaryRepository),
@@ -187,10 +187,7 @@ export function projectContextReadiness(context?: ProjectContextDTO): ProjectCon
     skillCount,
     warningCount,
     guardrails,
-    summary: readinessSummary(
-      activeRepositories.length,
-      primaryRepository?.repository.repository_id
-    ),
+    summary: readinessSummary(activeRepositories.length, primaryRepository?.repository.repository_id),
     nextAction: readinessNextAction(Boolean(primaryRepository), warningCount, skillCount),
   };
 }
@@ -232,6 +229,59 @@ export function projectOverviewDecision(context?: ProjectContextDTO): ProjectOve
   };
 }
 
+export function localizeProjectContextText(text?: string) {
+  if (!text) {
+    return '';
+  }
+
+  let next = text;
+  const replacements: Array<[RegExp, string]> = [
+    [/^No active repositories are bound to this project yet\.$/, '当前项目还没有绑定启用中的仓库。'],
+    [
+      /^(\d+) active repositories are bound, but none is the primary execution repository\.$/,
+      '已绑定 $1 个启用中的仓库，但还没有主执行仓库。',
+    ],
+    [
+      /^Execution will modify (.+); other active repositories are read-only planning context\.$/,
+      '执行只会修改 $1；其他启用仓库仅作为只读规划上下文。',
+    ],
+    [/^Review repository context warnings before approving execution\.$/, '审批执行前请先查看仓库上下文警告。'],
+    [/^Bind one active primary repository before generating a plan\.$/, '生成计划前请先绑定一个启用的主仓库。'],
+    [/^Add project or repo skills to reduce prompt ambiguity\.$/, '添加项目或仓库技能，减少提示词歧义。'],
+    [/^Generate a requirement plan from this project context\.$/, '基于当前项目上下文生成需求计划。'],
+    [/^MVP execution is primary-repository only\.$/, '当前 MVP 仅支持主仓库执行。'],
+    [
+      /^Planner may read dependency, docs, and infra repositories as context\.$/,
+      '规划器可以读取依赖、文档和基础设施仓库作为上下文。',
+    ],
+    [
+      /^Executor must modify only (.+); other bound repositories are read-only context\.$/,
+      '执行器只能修改 $1；其他已绑定仓库是只读上下文。',
+    ],
+    [
+      /^Project currently has (\d+) active repositories bound; maximum supported is (\d+)\.$/,
+      '当前项目已绑定 $1 个启用仓库；最多支持 $2 个。',
+    ],
+    [/^Repo profile has not been generated yet\.$/, '仓库画像尚未生成。'],
+  ];
+
+  for (const [pattern, replacement] of replacements) {
+    next = next.replace(pattern, replacement);
+  }
+
+  return next;
+}
+
+function readinessSummary(activeRepositoryCount: number, primaryRepositoryID?: string) {
+  if (!activeRepositoryCount) {
+    return 'No active repositories are bound to this project yet.';
+  }
+  if (!primaryRepositoryID) {
+    return `${activeRepositoryCount} active repositories are bound, but none is the primary execution repository.`;
+  }
+  return `Execution will modify ${primaryRepositoryID}; other active repositories are read-only planning context.`;
+}
+
 function normalizeSkillNames(values: string[]): string[] {
   return Array.from(new Set(values.map(value => value.trim()).filter(Boolean)));
 }
@@ -244,16 +294,6 @@ function skillContractSummary(skillCount: number, missingRepositoryCount: number
     return `${skillCount} skills are available, but ${missingRepositoryCount} active repositories still need explicit instructions.`;
   }
   return `${skillCount} skills are ready for planning, PR DAG generation, and prompt compilation.`;
-}
-
-function readinessSummary(activeRepositoryCount: number, primaryRepositoryID?: string) {
-  if (!activeRepositoryCount) {
-    return 'No active repositories are bound to this project yet.';
-  }
-  if (!primaryRepositoryID) {
-    return `${activeRepositoryCount} active repositories are bound, but none is the primary execution repository.`;
-  }
-  return `Execution will modify ${primaryRepositoryID}; other active repositories are read-only planning context.`;
 }
 
 function readinessNextAction(

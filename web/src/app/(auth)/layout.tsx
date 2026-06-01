@@ -1,10 +1,15 @@
 'use client';
 
-import { PropsWithChildren } from 'react';
+import { type CSSProperties, type PropsWithChildren } from 'react';
 import { Zap, Shield, Layers, Headphones } from 'lucide-react';
 import { Logo } from '@/components/ui/icons';
 import { LanguageSwitcher } from '@/components/common';
 import { useT } from '@/i18n';
+
+const lightLogoStyle = {
+  '--logo-ink': '#00143d',
+  '--logo-blue': '#1163ff',
+} as CSSProperties;
 
 /**
  * Auth layout with enhanced decorative left panel
@@ -55,13 +60,9 @@ export default function AuthLayout({ children }: PropsWithChildren) {
         <div className="relative z-10 flex flex-col justify-center h-full px-10 xl:px-16 text-white">
           {/* Logo with glow effect */}
           <div className="flex items-center gap-3 mb-10">
-            <div className="relative">
-              <div className="absolute inset-0 bg-white/30 rounded-xl blur-xl scale-150" />
-              <div className="relative flex h-14 w-14 items-center justify-center rounded-xl bg-white/20 backdrop-blur-sm border border-white/20 shadow-lg">
-                <Logo className="h-8 w-8 text-white" />
-              </div>
+            <div className="rounded-xl bg-white px-4 py-2 shadow-lg">
+              <Logo className="h-7 w-auto" style={lightLogoStyle} />
             </div>
-            <span className="text-2xl font-bold tracking-tight drop-shadow-lg">CodingCTO</span>
           </div>
           
           {/* Hero Text */}
@@ -122,10 +123,7 @@ export default function AuthLayout({ children }: PropsWithChildren) {
           {/* Mobile Logo */}
           <div className="lg:hidden mb-6 flex flex-col items-center space-y-3">
             <div className="flex items-center space-x-3">
-              <Logo className="h-9 w-9 text-primary" />
-              <span className="text-2xl font-bold bg-linear-to-r from-primary to-primary-deeper bg-clip-text text-transparent">
-                CodingCTO
-              </span>
+              <Logo className="h-8 w-auto" />
             </div>
             <p className="text-center text-sm text-muted-foreground max-w-xs">
               {t('auth.heroSubtitle')}

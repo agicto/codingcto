@@ -16,7 +16,7 @@ import { DatePicker } from "./date-picker"
 import { cn } from "@/utils"
 
 const inputVariants = cva(
-  "file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground flex h-9 w-full min-w-0 rounded-lg px-3 py-1 text-base shadow-xs transition-all file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:cursor-not-allowed disabled:opacity-50 md:text-sm input-depth focus-border",
+  "file:text-foreground placeholder:text-muted-foreground selection:bg-primary selection:text-primary-foreground flex h-10 w-full min-w-0 rounded-[var(--radius-field)] px-3 py-1 text-base shadow-none transition-all file:inline-flex file:h-7 file:border-0 file:bg-transparent file:text-sm file:font-medium disabled:cursor-not-allowed disabled:opacity-50 md:text-sm input-depth focus-border",
   {
     variants: {
       variant: {

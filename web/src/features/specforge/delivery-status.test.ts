@@ -48,8 +48,8 @@ describe('delivery status summary', () => {
     expect(summary.active).toBe(1);
     expect(summary.waiting).toBe(1);
     expect(summary.progressPercent).toBe(33);
-    expect(summary.headline).toBe('1 of 3 PR nodes are ready for review.');
-    expect(summary.nextAction).toContain('Review PR-001');
+    expect(summary.headline).toBe('1 / 3 个 PR 节点已可评审。');
+    expect(summary.nextAction).toContain('评审 PR-001');
   });
 
   it('prioritizes blocked nodes over reviewable nodes', () => {
@@ -72,8 +72,8 @@ describe('delivery status summary', () => {
 
     expect(nextBlockedNode([reviewable, blocked])).toBe(blocked);
     expect(nextReviewableNode([reviewable, blocked])).toBe(reviewable);
-    expect(summary.headline).toBe('Delivery is blocked and needs a decision.');
-    expect(summary.nextAction).toBe('Resolve PR-002: Add API');
+    expect(summary.headline).toBe('交付已阻塞，需要做出决策。');
+    expect(summary.nextAction).toBe('处理 PR-002：Add API');
   });
 
   it('reports completion when every selected node is delivered', () => {
@@ -87,7 +87,7 @@ describe('delivery status summary', () => {
     expect(summary.ready).toBe(2);
     expect(summary.merged).toBe(1);
     expect(summary.progressPercent).toBe(100);
-    expect(summary.headline).toBe('All selected PR nodes are ready for review.');
-    expect(summary.nextAction).toBe('Review and merge the delivered GitHub pull requests.');
+    expect(summary.headline).toBe('所有选中的 PR 节点都已可评审。');
+    expect(summary.nextAction).toBe('评审并合并已交付的 GitHub Pull Request。');
   });
 });

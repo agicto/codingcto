@@ -6,12 +6,14 @@ import { activeFixAttemptPollMs, hasActiveFixAttempt } from '@/features/specforg
 import {
   type ApprovePlanPayload,
   type CompilePromptPayload,
+  type CreateGitHubIssuePayload,
   type ClaimTaskPayload,
   type CreateFixAttemptFromCIPayload,
   type CreateReviewPatchTaskPayload,
   type CreateTaskEventPayload,
   type CreateIdeaPayload,
   type DispatchRunPayload,
+  type ExecuteTaskPayload,
   type GitHubSettingsPayload,
   type InferRepoProfilePayload,
   type ListGitHubRepositoriesParams,
@@ -80,10 +82,12 @@ export const specForgeKeys = {
       params?.repository_full_name ?? '',
       params?.limit ?? 50,
     ] as const,
+  githubRepositories: (params?: ListGitHubRepositoriesParams) =>
+    [...specForgeKeys.all, "github-repositories", params?.workspace_id ?? ""] as const,
   githubRepository: (repoId: string) =>
     [...specForgeKeys.all, 'github-repository', repoId] as const,
-  githubRepositories: (workspaceId: string) =>
-    [...specForgeKeys.all, 'github-repositories', workspaceId] as const,
+  githubRepositoryReadiness: (repoId: string) =>
+    [...specForgeKeys.all, 'github-repository-readiness', repoId] as const,
   githubSettings: (workspaceId: string) =>
     [...specForgeKeys.all, 'github-settings', workspaceId] as const,
 };
@@ -265,6 +269,12 @@ export function useGitHubWebhookEvents(params?: ListGitHubWebhookEventsParams) {
   });
 }
 
+export function useCreateGitHubIssue() {
+  return useMutation({
+    mutationFn: (payload: CreateGitHubIssuePayload) => specForgeService.createGitHubIssue(payload),
+  });
+}
+
 export function useGitHubRepository(repoId: string) {
   return useQuery({
     queryKey: specForgeKeys.githubRepository(repoId),
@@ -274,13 +284,19 @@ export function useGitHubRepository(repoId: string) {
   });
 }
 
-export function useGitHubRepositories(params?: ListGitHubRepositoriesParams) {
-  const workspaceId = params?.workspace_id ?? '';
+export function useGitHubRepositoryReadiness(repoId?: string) {
   return useQuery({
-    queryKey: specForgeKeys.githubRepositories(workspaceId),
-    queryFn: () =>
-      specForgeService.listGitHubRepositories({ workspace_id: workspaceId }, silentQueryConfig),
-    enabled: Boolean(workspaceId),
+    queryKey: specForgeKeys.githubRepositoryReadiness(repoId ?? ''),
+    queryFn: () => specForgeService.getGitHubRepositoryReadiness(repoId ?? '', silentQueryConfig),
+    enabled: Boolean(repoId),
+    meta: silentQueryMeta,
+  });
+}
+
+export function useGitHubRepositories(params?: ListGitHubRepositoriesParams) {
+  return useQuery({
+    queryKey: specForgeKeys.githubRepositories(params),
+    queryFn: () => specForgeService.listGitHubRepositories(params, silentQueryConfig),
     meta: silentQueryMeta,
   });
 }
@@ -330,10 +346,13 @@ export function useUpsertGitHubRepository() {
       specForgeService.upsertGitHubRepository(payload),
     onSuccess: repository => {
       queryClient.invalidateQueries({
-        queryKey: specForgeKeys.githubRepositories(repository.workspace_id),
+        queryKey: specForgeKeys.githubRepositories({ workspace_id: repository.workspace_id }),
       });
       queryClient.invalidateQueries({
         queryKey: specForgeKeys.githubRepository(repository.repository_id),
+      });
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubRepositoryReadiness(repository.repository_id),
       });
       queryClient.invalidateQueries({
         queryKey: specForgeKeys.repoProfile(repository.repository_id),
@@ -584,6 +603,19 @@ export function useSubmitExecutionTaskResult() {
       specForgeService.submitTaskResult(taskId, payload),
     onSuccess: bundle => {
       queryClient.setQueryData(specForgeKeys.run(bundle.run.id), bundle);
+    },
+  });
+}
+
+export function useExecuteExecutionTask() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({ taskId, payload }: { taskId: number; payload: ExecuteTaskPayload }) =>
+      specForgeService.executeTask(taskId, payload),
+    onSuccess: bundle => {
+      queryClient.setQueryData(specForgeKeys.run(bundle.run.id), bundle);
+      queryClient.setQueryData(specForgeKeys.latestPlanRun(bundle.run.plan_id), bundle);
     },
   });
 }

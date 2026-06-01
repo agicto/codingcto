@@ -10,9 +10,13 @@ LOCAL_PG_USER ?= luas_user
 LOCAL_PG_PASSWORD ?= luas_pass
 LOCAL_PG_ADMIN_DB ?= postgres
 LOCAL_PG_ADMIN_USER ?= postgres
+LOCAL_API_PORT ?= 2010
 
 LOCAL_PG_ENV = APP_ENV=development \
 	APP_DEBUG=true \
+	APP_URL=http://localhost:$(LOCAL_API_PORT) \
+	SERVER_PORT=$(LOCAL_API_PORT) \
+	CORS_ALLOW_ORIGINS=http://localhost:2020 \
 	DB_ENABLED=true \
 	DB_DRIVER=postgres \
 	DB_HOST=$(LOCAL_PG_HOST) \
@@ -183,7 +187,7 @@ mock:
 
 # Run development server
 dev:
-	go run cmd/server/main.go
+	APP_URL=http://localhost:$(LOCAL_API_PORT) SERVER_PORT=$(LOCAL_API_PORT) CORS_ALLOW_ORIGINS=http://localhost:2020 go run cmd/server/main.go
 
 # Run development server against the local PostgreSQL service from docker-compose.
 dev-pg: db-check

@@ -75,4 +75,26 @@ describe('executionReadinessForExecutor', () => {
 
     expect(result.canDispatch).toBe(true);
   });
+
+  it('allows a non-codex executor when its runtime is online and writable', () => {
+    const result = executionReadinessForExecutor({
+      runtimes: [
+        runtime({
+          executor: 'claude_cli',
+          availableClis: [{ name: 'Claude Code', command: 'claude', available: true }],
+          sandbox: {
+            provider: 'claude_cli',
+            mode: 'workspace-write',
+            networkAccess: true,
+            writable: true,
+          },
+        }),
+      ],
+      executor: 'claude_cli',
+      now,
+      allowFallback: false,
+    });
+
+    expect(result.canDispatch).toBe(true);
+  });
 });

@@ -40,6 +40,7 @@ func TestCodexCLIExecutorBuildsNonInteractiveCommand(t *testing.T) {
 	require.Equal(t, "Implement PR-001", runner.spec.Stdin)
 	require.Equal(t, map[string]string{"CODEX_HOME": "/tmp/codex-home"}, runner.spec.Env)
 	require.Equal(t, []string{
+		"--ask-for-approval", "never",
 		"exec",
 		"--json",
 		"--cd", "/tmp/repo",

@@ -37,6 +37,11 @@ describe('plan decision overrides', () => {
         goal: node.goal.replace(/invite|invitation/gi, 'export'),
       })),
     };
+    plan.prNodes = plan.prNodes.map((node) => ({
+      ...node,
+      title: node.title.replace(/邀请/g, '导出'),
+      goal: node.goal.replace(/邀请/g, '导出'),
+    }));
 
     expect(defaultDecisionOverrides(plan)).toEqual({
       execution_scope: 'single_repo',

@@ -273,7 +273,7 @@ We use `zod` to valid environment variables at runtime. If a required variable i
 | Variable | Required | Default | Description |
 |----------|----------|---------|-------------|
 | `NEXT_PUBLIC_API_URL` | No | `/api` | Base URL for API requests. |
-| `NEXT_PUBLIC_APP_URL` | No | `http://localhost:3000` | Absolute site URL for metadata, sitemap, and robots. |
+| `NEXT_PUBLIC_APP_URL` | No | `http://localhost:2020` | Absolute site URL for metadata, sitemap, and robots. |
 | `NEXT_PUBLIC_GA_MEASUREMENT_ID` | No | - | Google Analytics ID. |
 | `NODE_ENV` | No | `development` | App environment (`development` \| `production` \| `test`). |
 
@@ -531,6 +531,8 @@ Error codes follow the format `[CATEGORY]_[DESCRIPTION]`.
 - Generate `.sh` or `.md` files unless explicitly requested
 
 ## Quick Reference
+
+Local web development uses `http://localhost:2020` by default and proxies backend calls to `http://localhost:2010`.
 
 | Action | Command |
 |--------|---------|

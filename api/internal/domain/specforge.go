@@ -214,6 +214,7 @@ type SpecForgeSkill struct {
 	Description  string    `json:"description"`
 	Content      string    `json:"content"`
 	Active       bool      `json:"active"`
+	TargetAgents []string  `json:"target_agents,omitempty"`
 	CreatedBy    uint      `json:"created_by"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`

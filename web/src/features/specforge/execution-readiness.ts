@@ -47,10 +47,17 @@ export function executionReadinessForExecutor({
 }
 
 function runtimeCanDispatch(runtime: ExecutorRuntime, executor: string, now: number) {
-  return (
-    runtime.executor === executor &&
-    deriveRuntimeHealth(runtime, now) === 'online' &&
-    Boolean(runtime.sandbox?.writable) &&
-    runtime.availableClis.some(cli => cli.command === 'codex' && cli.available)
-  );
+  if (
+    runtime.executor !== executor ||
+    deriveRuntimeHealth(runtime, now) !== 'online' ||
+    !runtime.sandbox?.writable
+  ) {
+    return false;
+  }
+
+  if (executor === 'codex_cli') {
+    return runtime.availableClis.some(cli => cli.command === 'codex' && cli.available);
+  }
+
+  return true;
 }

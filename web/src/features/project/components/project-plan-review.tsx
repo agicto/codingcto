@@ -757,7 +757,7 @@ function RuntimeSetupCard({
   const [copyMessage, setCopyMessage] = useState('');
   const runtimeId = `local-codex-plan-${plan.planId ?? 'draft'}`;
   const command = buildRuntimeSetupCommand({
-    apiBaseUrl: 'http://localhost:8025/v1',
+    apiBaseUrl: 'http://localhost:2010/v1',
     runtimeId,
     repositoryId: plan.repoProfile.repositoryId,
     repoDir: '/path/to/local/repo',

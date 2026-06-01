@@ -3,14 +3,14 @@ import { describe, expect, it } from "vitest";
 import { isPRNodeActive, isPRNodeDelivered } from "@/features/specforge/status";
 
 describe("SpecForge PR node status helpers", () => {
-  it("treats ready and merged PR nodes as delivered", () => {
+  it("treats opened, ready, and merged PR nodes as delivered", () => {
     expect(isPRNodeDelivered("completed")).toBe(true);
+    expect(isPRNodeDelivered("pr_opened")).toBe(true);
     expect(isPRNodeDelivered("ready_for_review")).toBe(true);
     expect(isPRNodeDelivered("merged")).toBe(true);
   });
 
-  it("does not treat in-flight PR lifecycle states as delivered", () => {
-    expect(isPRNodeDelivered("pr_opened")).toBe(false);
+  it("does not treat active or blocked PR lifecycle states as delivered", () => {
     expect(isPRNodeDelivered("ci_running")).toBe(false);
     expect(isPRNodeDelivered("blocked")).toBe(false);
   });

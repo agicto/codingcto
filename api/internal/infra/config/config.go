@@ -183,14 +183,14 @@ func Load() (*Config, error) {
 			Name:      env.Get("APP_NAME", "CodingCTO"),
 			Env:       env.Get("APP_ENV", "development"),
 			Debug:     env.GetBool("APP_DEBUG", true),
-			URL:       env.Get("APP_URL", "http://localhost:8025"),
+			URL:       env.Get("APP_URL", "http://localhost:2010"),
 			Key:       env.Get("APP_KEY", ""),
 			JWTSecret: env.Get("JWT_SECRET", ""),
 			JWTExpire: time.Duration(expireDays) * 24 * time.Hour,
 		},
 		Server: ServerConfig{
 			Host:         env.Get("SERVER_HOST", ""),
-			Port:         env.GetInt("SERVER_PORT", 8025),
+			Port:         env.GetInt("SERVER_PORT", 2010),
 			Mode:         env.Get("SERVER_MODE", env.Get("GIN_MODE", "debug")),
 			ReadTimeout:  env.GetInt("SERVER_READ_TIMEOUT", 60),
 			WriteTimeout: env.GetInt("SERVER_WRITE_TIMEOUT", 60),
@@ -242,7 +242,7 @@ func Load() (*Config, error) {
 			// Default to localhost-only. Production should set CORS_ALLOW_ORIGINS
 			// explicitly to a comma-separated list. "*" is rejected by validate()
 			// whenever AllowCredentials is true (browsers reject the combo anyway).
-			AllowOrigins:     env.GetSlice("CORS_ALLOW_ORIGINS", []string{"http://localhost:3000"}),
+			AllowOrigins:     env.GetSlice("CORS_ALLOW_ORIGINS", []string{"http://localhost:2020"}),
 			AllowMethods:     env.GetSlice("CORS_ALLOW_METHODS", []string{"GET", "POST", "PUT", "DELETE", "OPTIONS"}),
 			AllowHeaders:     env.GetSlice("CORS_ALLOW_HEADERS", []string{"Origin", "Content-Type", "Accept", "Authorization", "X-Request-ID"}),
 			ExposeHeaders:    env.GetSlice("CORS_EXPOSE_HEADERS", []string{"Content-Length", "X-Request-ID"}),
