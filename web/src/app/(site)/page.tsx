@@ -1,21 +1,13 @@
 import Link from 'next/link';
-import type { LucideIcon } from 'lucide-react';
+import Image from 'next/image';
 import {
   ArrowRight,
   Bot,
-  Boxes,
   CheckCircle2,
-  ClipboardList,
-  Code2,
-  Database,
   FileCheck2,
   GitPullRequestArrow,
-  Layers3,
-  Network,
   Play,
-  ShieldCheck,
   Sparkles,
-  UsersRound,
 } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -30,37 +22,24 @@ const metrics = [
   ['24/7', 'AI Engineering'],
 ];
 
-const experts = [
+const expertImages = [
   {
     title: 'Product Expert',
-    detail: 'Turns requirements into clear, actionable product specifications.',
-    icon: UsersRound,
+    src: '/landing/product-expert.png',
   },
   {
     title: 'Architecture Expert',
-    detail: 'Designs scalable solutions aligned with your systems.',
-    icon: Network,
+    src: '/landing/architecture-expert.png',
   },
   {
     title: 'QA Expert',
-    detail: 'Defines test strategy and ensures quality at every step.',
-    icon: ShieldCheck,
+    src: '/landing/qa-expert.png',
   },
   {
     title: 'Code Review Expert',
-    detail: 'Reviews code for quality, security, and best practices.',
-    icon: Code2,
+    src: '/landing/code-review-expert.png',
   },
 ];
-
-const intelligenceItems = [
-  ['Architecture', 'Service structure & boundaries', Layers3],
-  ['Database', 'Schemas & relationships', Database],
-  ['API', 'Endpoints & contracts', Network],
-  ['Dependencies', 'Libraries & versions', Boxes],
-  ['Standards', 'Conventions & best practices', ClipboardList],
-  ['Test Coverage', 'Current coverage & gaps', FileCheck2],
-] satisfies Array<[string, string, LucideIcon]>;
 
 const qualityChecks = [
   ['API Tests', 'All endpoints verified'],
@@ -82,8 +61,8 @@ export default function HomePage() {
         description="CodingCTO gives each project a product, architecture, QA, and review layer before agents write code."
       >
         <div className="grid gap-5 md:grid-cols-4">
-          {experts.map(expert => (
-            <InfoCard key={expert.title} icon={expert.icon} title={expert.title} detail={expert.detail} />
+          {expertImages.map(expert => (
+            <ExpertImageCard key={expert.title} src={expert.src} title={expert.title} />
           ))}
         </div>
       </FeatureSection>
@@ -233,55 +212,15 @@ function HeroSection() {
 
 function HeroMachine() {
   return (
-    <div className="relative min-h-[540px] overflow-hidden lg:overflow-visible">
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(17,99,255,0.06)_1px,transparent_1px),linear-gradient(90deg,rgba(17,99,255,0.06)_1px,transparent_1px)] bg-[size:38px_38px] [transform:perspective(900px)_rotateX(58deg)_rotateZ(-8deg)_translateY(84px)]" />
-      <div className="absolute left-1/2 top-[67%] h-28 w-[560px] -translate-x-1/2 -skew-x-6 rounded-[28px] border border-[#c6dcff] bg-white/72 shadow-[0_28px_70px_rgba(17,99,255,0.2)]" />
-      <div className="absolute left-1/2 top-[51%] h-56 w-72 -translate-x-1/2 -translate-y-1/2 rounded-[30px] border border-white/80 bg-white/56 shadow-[0_38px_90px_rgba(17,99,255,0.25),inset_0_1px_0_rgba(255,255,255,0.95)] backdrop-blur-xl">
-        <div className="absolute inset-3 rounded-[24px] border border-[#d9e7ff] bg-[linear-gradient(145deg,rgba(255,255,255,0.9),rgba(222,237,255,0.48))]" />
-        <div className="absolute inset-0 flex items-center justify-center">
-          <Logo className="h-10 w-auto" />
-        </div>
-      </div>
-      <div className="absolute left-1/2 top-[68%] h-36 w-96 -translate-x-1/2 rounded-[50%] border border-[#88b8ff]" />
-      <div className="absolute left-1/2 top-[71%] size-20 -translate-x-1/2 rounded-full bg-[#1163ff]/20 blur-2xl" />
-
-      <FloatingExpert className="left-0 top-16" icon={UsersRound} title="Product Expert" detail="Requirements Strategy" />
-      <FloatingExpert className="left-3 top-48" icon={Network} title="Architecture Expert" detail="System Design" />
-      <FloatingExpert className="right-0 top-24" icon={ShieldCheck} title="QA Expert" detail="Quality Assurance" />
-      <FloatingExpert className="right-6 top-60" icon={Code2} title="Code Review Expert" detail="Code Quality" />
-
-      <svg className="absolute inset-0 h-full w-full" viewBox="0 0 760 540" fill="none" aria-hidden="true">
-        <path d="M180 112 C260 112 268 210 352 210" stroke="#1163ff" strokeDasharray="4 4" strokeOpacity="0.5" />
-        <path d="M192 240 C270 240 278 250 352 250" stroke="#1163ff" strokeDasharray="4 4" strokeOpacity="0.5" />
-        <path d="M405 220 C492 220 515 135 605 135" stroke="#1163ff" strokeDasharray="4 4" strokeOpacity="0.5" />
-        <path d="M405 260 C500 260 520 300 592 300" stroke="#1163ff" strokeDasharray="4 4" strokeOpacity="0.5" />
-      </svg>
-    </div>
-  );
-}
-
-function FloatingExpert({
-  className,
-  icon: Icon,
-  title,
-  detail,
-}: {
-  className: string;
-  icon: LucideIcon;
-  title: string;
-  detail: string;
-}) {
-  return (
-    <div
-      className={`absolute z-10 flex w-56 items-center gap-3 rounded-lg border border-[#dbe7ff] bg-white/78 p-4 shadow-[0_18px_45px_rgba(17,99,255,0.1)] backdrop-blur-xl ${className}`}
-    >
-      <span className="flex size-10 shrink-0 items-center justify-center rounded-lg bg-[#eef5ff] text-[#1163ff]">
-        <Icon className="size-5" />
-      </span>
-      <span>
-        <span className="block text-sm font-semibold text-[#07143d]">{title}</span>
-        <span className="mt-1 block text-xs text-[#506187]">{detail}</span>
-      </span>
+    <div className="relative overflow-hidden lg:overflow-visible">
+      <Image
+        src="/landing/hero-cto-machine.png"
+        alt="CodingCTO orchestration engine"
+        width={1448}
+        height={1086}
+        priority
+        className="h-auto w-full scale-110 object-contain lg:scale-125"
+      />
     </div>
   );
 }
@@ -315,75 +254,28 @@ function FeatureSection({
   );
 }
 
-function InfoCard({ icon: Icon, title, detail }: { icon: LucideIcon; title: string; detail: string }) {
+function ExpertImageCard({ src, title }: { src: string; title: string }) {
   return (
-    <div className="min-h-52 rounded-lg border border-[#dbe7ff] bg-[#fbfdff] p-7 shadow-[0_16px_42px_rgba(17,99,255,0.05)]">
-      <Icon className="size-8 text-[#1163ff]" />
-      <h3 className="mt-8 text-base font-semibold text-[#07143d]">{title}</h3>
-      <p className="mt-4 text-sm leading-6 text-[#506187]">{detail}</p>
-    </div>
+    <Image
+      src={src}
+      alt={title}
+      width={1122}
+      height={1402}
+      className="h-auto w-full rounded-lg object-contain"
+    />
   );
 }
 
 function RepositoryIntelligence() {
   return (
-    <div className="rounded-lg border border-[#dbe7ff] bg-[#fbfdff] p-5 shadow-[0_18px_55px_rgba(17,99,255,0.06)]">
-      <div className="grid gap-5 lg:grid-cols-[140px_220px_1fr] lg:items-center">
-        <div className="rounded-lg border border-[#dbe7ff] bg-white p-5 text-center">
-          <Database className="mx-auto size-8 text-[#1163ff]" />
-          <div className="mt-4 text-sm font-semibold">Repository</div>
-          <div className="mt-3 inline-flex items-center gap-2 rounded-full bg-[#ecfff3] px-3 py-1 text-xs font-medium text-[#169447]">
-            <span className="size-2 rounded-full bg-[#25b85b]" />
-            Live Analysis
-          </div>
-        </div>
-        <div className="space-y-2">
-          {intelligenceItems.map(([title, detail, Icon]) => (
-            <div key={title} className="flex items-center gap-3 rounded-md border border-[#dbe7ff] bg-white px-3 py-2">
-              <Icon className="size-4 text-[#1163ff]" />
-              <div>
-                <div className="text-xs font-semibold">{title}</div>
-                <div className="text-[11px] text-[#617193]">{detail}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-        <div className="grid min-h-72 grid-cols-[0.72fr_1fr] gap-5 rounded-lg border border-[#dbe7ff] bg-white p-5">
-          <div className="rounded-md border border-[#dbe7ff] bg-[#f8fbff] p-4">
-            <div className="mb-3 flex gap-1">
-              <span className="size-2 rounded-full bg-[#dbe7ff]" />
-              <span className="size-2 rounded-full bg-[#dbe7ff]" />
-              <span className="size-2 rounded-full bg-[#dbe7ff]" />
-            </div>
-            {Array.from({ length: 8 }).map((_, index) => (
-              <div key={index} className="mb-3 h-2 rounded-full bg-[#dbe7ff]" style={{ width: `${88 - index * 6}%` }} />
-            ))}
-          </div>
-          <div className="relative rounded-md border border-[#dbe7ff] bg-[#fbfdff]">
-            <NetworkLine className="left-[18%] top-[30%]" />
-            <NetworkLine className="left-[55%] top-[18%]" />
-            <NetworkLine className="left-[42%] top-[62%]" />
-            <NetworkBox className="left-[12%] top-[42%]" icon={Database} />
-            <NetworkBox className="left-[52%] top-[36%]" icon={UsersRound} />
-            <NetworkBox className="right-[10%] top-[16%]" icon={Sparkles} />
-            <NetworkBox className="right-[18%] bottom-[16%]" icon={FileCheck2} />
-          </div>
-        </div>
-      </div>
-    </div>
+    <Image
+      src="/landing/repository-intelligence.png"
+      alt="Repository intelligence analysis"
+      width={1448}
+      height={1086}
+      className="h-auto w-full rounded-lg object-contain"
+    />
   );
-}
-
-function NetworkBox({ className, icon: Icon }: { className: string; icon: LucideIcon }) {
-  return (
-    <div className={`absolute flex size-14 items-center justify-center rounded-md border border-[#dbe7ff] bg-white text-[#9ab7e8] ${className}`}>
-      <Icon className="size-5" />
-    </div>
-  );
-}
-
-function NetworkLine({ className }: { className: string }) {
-  return <span className={`absolute size-2 rounded-full bg-[#8db8ff] shadow-[0_0_0_5px_rgba(17,99,255,0.08)] ${className}`} />;
 }
 
 function ExecutionPlan() {
@@ -516,42 +408,13 @@ function QualityReview() {
 
 function ProductionPr() {
   return (
-    <div className="rounded-lg border border-[#dbe7ff] bg-white p-6 shadow-[0_16px_42px_rgba(17,99,255,0.05)]">
-      <div className="grid gap-5 lg:grid-cols-[1.4fr_0.8fr]">
-        <div>
-          <div className="flex flex-wrap items-center gap-3">
-            <GitPullRequestArrow className="size-5 text-[#1163ff]" />
-            <h3 className="text-2xl font-semibold">#128 Add team-based billing</h3>
-            <span className="rounded-md bg-[#ecfff3] px-3 py-1 text-xs font-semibold text-[#169447]">
-              Ready to Merge
-            </span>
-          </div>
-          <div className="mt-3 text-sm text-[#506187]">feat/billing-team</div>
-          <div className="mt-7 grid gap-3 md:grid-cols-4">
-            {['Tests Passed', 'Code Reviewed', 'Security Checked', 'Ready To Merge'].map(item => (
-              <div key={item} className="rounded-md border border-[#dbe7ff] bg-[#fbfdff] p-4">
-                <CheckCircle2 className="size-5 text-[#28a957]" />
-                <div className="mt-3 text-sm font-semibold">{item}</div>
-                <div className="mt-1 text-xs text-[#506187]">All checks passed</div>
-              </div>
-            ))}
-          </div>
-        </div>
-        <div className="rounded-lg border border-[#dbe7ff] bg-[#fbfdff] p-5 text-sm">
-          {[
-            ['Author', '@engineer'],
-            ['Reviewers', '@review-bot, @cto-agent'],
-            ['Labels', 'feature, billing'],
-            ['Milestone', 'v1.4.0'],
-          ].map(([label, value]) => (
-            <div key={label} className="flex justify-between border-b border-[#edf3ff] py-3 last:border-b-0">
-              <span className="text-[#506187]">{label}</span>
-              <span className="font-semibold">{value}</span>
-            </div>
-          ))}
-        </div>
-      </div>
-    </div>
+    <Image
+      src="/landing/production-pr.png"
+      alt="Production-ready pull request"
+      width={1586}
+      height={992}
+      className="h-auto w-full rounded-lg object-contain"
+    />
   );
 }
 
