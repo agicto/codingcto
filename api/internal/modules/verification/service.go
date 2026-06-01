@@ -39,6 +39,13 @@ type service struct {
 	eventBus      *events.EventBus
 }
 
+type failurePolicy struct {
+	RiskLevel     string
+	ActionKind    string
+	BlockedReason string
+	CanAutoFix    bool
+}
+
 func NewService(repo domain.SpecForgeVerificationRepository, ciRefresher PRNodeCIRefresher, failureReader CIFailureReader, eventBus *events.EventBus) *service {
 	return &service{repo: repo, ciRefresher: ciRefresher, failureReader: failureReader, eventBus: eventBus}
 }
@@ -172,6 +179,28 @@ func (s *service) CreateFixAttempt(ctx context.Context, userID, prNodeID uint, r
 	if consecutiveFailureTypeCount(attempts, failureType) >= maxConsecutiveFixAttemptsPerFailureType {
 		return nil, domain.ErrConflict
 	}
+	policy := policyForFailureType(failureType)
+	canAutoFix := req.CanAutoFix
+	if !policy.CanAutoFix {
+		canAutoFix = false
+	}
+	riskLevel := strings.TrimSpace(req.RiskLevel)
+	if riskLevel == "" {
+		riskLevel = policy.RiskLevel
+	}
+	actionKind := strings.TrimSpace(req.ActionKind)
+	if actionKind == "" {
+		actionKind = policy.ActionKind
+	}
+	blockedReason := strings.TrimSpace(req.BlockedReason)
+	if blockedReason == "" && !canAutoFix {
+		blockedReason = policy.BlockedReason
+	}
+	if !policy.CanAutoFix {
+		riskLevel = policy.RiskLevel
+		actionKind = policy.ActionKind
+		blockedReason = policy.BlockedReason
+	}
 	status := strings.TrimSpace(req.Status)
 	if status == "" {
 		status = domain.FixAttemptStatusQueued
@@ -185,7 +214,10 @@ func (s *service) CreateFixAttempt(ctx context.Context, userID, prNodeID uint, r
 		Confidence:        req.Confidence,
 		LikelyCause:       strings.TrimSpace(req.LikelyCause),
 		RecommendedAction: strings.TrimSpace(req.RecommendedAction),
-		CanAutoFix:        req.CanAutoFix,
+		CanAutoFix:        canAutoFix,
+		RiskLevel:         riskLevel,
+		ActionKind:        actionKind,
+		BlockedReason:     blockedReason,
 		WorkflowRunID:     req.WorkflowRunID,
 		WorkflowRunURL:    strings.TrimSpace(req.WorkflowRunURL),
 		Conclusion:        strings.TrimSpace(req.Conclusion),
@@ -380,6 +412,9 @@ func (s *service) createMissingCILogAttempt(ctx context.Context, userID, prNodeI
 		LikelyCause:       fmt.Sprintf("GitHub Actions completed with %s, but CodingCTO could not read a failed job log.", conclusion),
 		RecommendedAction: "Open the workflow run in GitHub, inspect the failed or incomplete job, then decide whether to retry auto-fix with a narrower prompt or replan this PR node.",
 		CanAutoFix:        false,
+		RiskLevel:         domain.FixAttemptRiskHigh,
+		ActionKind:        domain.FixAttemptActionUserDecision,
+		BlockedReason:     "CI logs are unavailable, so CodingCTO cannot safely generate an automatic patch.",
 		WorkflowRunID:     req.WorkflowRunID,
 		WorkflowRunURL:    req.WorkflowRunURL,
 		Conclusion:        conclusion,
@@ -454,6 +489,9 @@ func buildEscalationSummary(prNodeID uint, attempts []*domain.SpecForgeFixAttemp
 		summary.LatestFailureType = strings.TrimSpace(latest.FailureType)
 		summary.LatestLikelyCause = strings.TrimSpace(latest.LikelyCause)
 		summary.LatestAction = strings.TrimSpace(latest.RecommendedAction)
+		summary.LatestRiskLevel = strings.TrimSpace(latest.RiskLevel)
+		summary.LatestActionKind = strings.TrimSpace(latest.ActionKind)
+		summary.LatestBlockedReason = strings.TrimSpace(latest.BlockedReason)
 	}
 	if latest != nil && !latest.CanAutoFix {
 		summary.Status = "needs_user_decision"
@@ -547,14 +585,65 @@ func recommendedAction(failure *githubintegration.PRNodeFailureLog) string {
 }
 
 func canAutoFix(failure *githubintegration.PRNodeFailureLog) bool {
-	failureType := classifyFailureType(failure)
-	switch failureType {
+	return policyForFailureType(classifyFailureType(failure)).CanAutoFix
+}
+
+func policyForFailureType(failureType string) failurePolicy {
+	switch strings.TrimSpace(failureType) {
 	case "lint_failure", "type_error", "unit_test_failure":
-		return true
-	case "missing_dependency":
-		return true
+		return failurePolicy{
+			RiskLevel:  domain.FixAttemptRiskLow,
+			ActionKind: domain.FixAttemptActionAutoFix,
+			CanAutoFix: true,
+		}
+	case "missing_dependency", "executor_failed", "fix_task_failed":
+		return failurePolicy{
+			RiskLevel:  domain.FixAttemptRiskMedium,
+			ActionKind: domain.FixAttemptActionAutoFix,
+			CanAutoFix: true,
+		}
+	case "flaky_test":
+		return failurePolicy{
+			RiskLevel:     domain.FixAttemptRiskMedium,
+			ActionKind:    domain.FixAttemptActionRerun,
+			BlockedReason: "The failure looks flaky or timed out; rerun CI once before asking Codex to patch code.",
+			CanAutoFix:    false,
+		}
+	case "migration_failure":
+		return failurePolicy{
+			RiskLevel:     domain.FixAttemptRiskHigh,
+			ActionKind:    domain.FixAttemptActionUserDecision,
+			BlockedReason: "Migration and schema failures can change persisted data and require human review before patching.",
+			CanAutoFix:    false,
+		}
+	case "auth_permission_failure":
+		return failurePolicy{
+			RiskLevel:     domain.FixAttemptRiskHigh,
+			ActionKind:    domain.FixAttemptActionUserDecision,
+			BlockedReason: "Auth and permission failures may indicate a product decision mismatch or security boundary issue.",
+			CanAutoFix:    false,
+		}
+	case "product_mismatch":
+		return failurePolicy{
+			RiskLevel:     domain.FixAttemptRiskHigh,
+			ActionKind:    domain.FixAttemptActionUserDecision,
+			BlockedReason: "The implementation appears misaligned with the approved plan or acceptance criteria.",
+			CanAutoFix:    false,
+		}
+	case "ci_log_unavailable":
+		return failurePolicy{
+			RiskLevel:     domain.FixAttemptRiskHigh,
+			ActionKind:    domain.FixAttemptActionUserDecision,
+			BlockedReason: "CI logs are unavailable, so CodingCTO cannot safely generate an automatic patch.",
+			CanAutoFix:    false,
+		}
 	default:
-		return false
+		return failurePolicy{
+			RiskLevel:     domain.FixAttemptRiskMedium,
+			ActionKind:    domain.FixAttemptActionUserDecision,
+			BlockedReason: "The failure type is not specific enough for a bounded automatic fix.",
+			CanAutoFix:    false,
+		}
 	}
 }
 

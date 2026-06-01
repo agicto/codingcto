@@ -6,6 +6,7 @@ export {
   useCreateWorkspace,
   useProjectContext,
   useProjects,
+  useUnbindProjectRepository,
   useWorkspaces,
 } from './hooks/use-projects';
 export { useSelectedWorkspace } from './hooks/use-selected-workspace';

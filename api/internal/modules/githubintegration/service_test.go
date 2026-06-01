@@ -257,6 +257,25 @@ func TestGetRepositoryReturnsStoredRepository(t *testing.T) {
 	require.Equal(t, "develop", found.DefaultBranch)
 }
 
+func TestListRepositoriesReturnsWorkspaceRepositories(t *testing.T) {
+	repo := &memoryRepo{
+		repository: &domain.Repository{
+			ID:           12,
+			RepositoryID: "repo_123",
+			WorkspaceID:  "workspace_123",
+			GitHubOwner:  "agicto",
+			GitHubRepo:   "codingcto",
+		},
+	}
+	svc := NewService(repo, nil, nil, nil, nil)
+
+	repositories, err := svc.ListRepositories(context.Background(), " workspace_123 ")
+
+	require.NoError(t, err)
+	require.Len(t, repositories, 1)
+	require.Equal(t, "repo_123", repositories[0].RepositoryID)
+}
+
 func TestListRepositoryTreeUsesInstallationTokenAndDefaultBranch(t *testing.T) {
 	repo := &memoryRepo{
 		installation: &domain.GitHubInstallation{ID: 3, InstallationID: 123},
@@ -1927,7 +1946,7 @@ func (r *memoryRepo) FindRepositoryByRepositoryID(ctx context.Context, repositor
 }
 
 func (r *memoryRepo) ListRepositoriesByWorkspaceID(ctx context.Context, workspaceID string) ([]*domain.Repository, error) {
-	if r.repository == nil || (workspaceID != "" && r.repository.WorkspaceID != workspaceID) {
+	if r.repository == nil || r.repository.WorkspaceID != workspaceID {
 		return []*domain.Repository{}, nil
 	}
 	copied := *r.repository

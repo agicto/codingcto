@@ -11,6 +11,16 @@ const (
 	FixAttemptStatusFailed  = "failed"
 )
 
+const (
+	FixAttemptRiskLow    = "low"
+	FixAttemptRiskMedium = "medium"
+	FixAttemptRiskHigh   = "high"
+
+	FixAttemptActionAutoFix      = "auto_fix"
+	FixAttemptActionRerun        = "rerun_workflow"
+	FixAttemptActionUserDecision = "user_decision"
+)
+
 // SpecForgeFixAttempt records a CI/spec failure diagnosis and repair attempt.
 type SpecForgeFixAttempt struct {
 	ID                uint      `json:"id"`
@@ -23,6 +33,9 @@ type SpecForgeFixAttempt struct {
 	LikelyCause       string    `json:"likely_cause"`
 	RecommendedAction string    `json:"recommended_action"`
 	CanAutoFix        bool      `json:"can_auto_fix"`
+	RiskLevel         string    `json:"risk_level"`
+	ActionKind        string    `json:"action_kind"`
+	BlockedReason     string    `json:"blocked_reason,omitempty"`
 	WorkflowRunID     int64     `json:"workflow_run_id,omitempty"`
 	WorkflowRunURL    string    `json:"workflow_run_url,omitempty"`
 	Conclusion        string    `json:"conclusion,omitempty"`

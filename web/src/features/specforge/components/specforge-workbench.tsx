@@ -2761,6 +2761,8 @@ function PRDag({
         attempt_number: 1,
         status: 'queued',
         confidence: 0.7,
+        risk_level: 'low',
+        action_kind: 'user_decision',
         likely_cause: 'CI 诊断需要这个 PR 节点对应的 GitHub workflow 运行记录。',
         recommended_action: '先为分支运行 CI，再查看失败任务日志。',
         can_auto_fix: false,

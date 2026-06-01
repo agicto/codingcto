@@ -1,6 +1,14 @@
 import { describe, expect, it } from 'vitest';
 
-import { primaryRepositoryContext, projectContextReadiness } from './project-context';
+import {
+  primaryRepositoryContext,
+  projectContextContract,
+  projectContextMissingEvidence,
+  projectOverviewDecision,
+  projectRepositoryEvidence,
+  projectContextReadiness,
+  projectSkillContract,
+} from './project-context';
 import type { ProjectContextDTO } from './services/project-service';
 
 function projectContext(
@@ -105,11 +113,39 @@ describe('project context', () => {
     expect(readiness.nextAction).toBe('Server next action.');
   });
 
+  it('exposes the server-provided context contract', () => {
+    const context = projectContext([
+      ['dependency', true, 'repo_sdk'],
+      ['primary', true, 'repo_app'],
+    ]);
+    context.context_contract = {
+      version: 'project_context_contract_v1',
+      project_id: 1,
+      project_name: 'SpecForge',
+      primary_repository_id: 'repo_app',
+      execution_repository_id: 'repo_app',
+      read_only_repository_ids: ['repo_sdk'],
+      active_repository_count: 2,
+      skill_names: ['planning-sop'],
+      missing_evidence: ['architecture_snapshot:repo_sdk'],
+      prompt_guardrails: ['Executor must modify only repo_app.'],
+    };
+
+    const contract = projectContextContract(context);
+
+    expect(contract?.version).toBe('project_context_contract_v1');
+    expect(contract?.primary_repository_id).toBe('repo_app');
+    expect(contract?.read_only_repository_ids).toEqual(['repo_sdk']);
+    expect(contract?.missing_evidence).toEqual(['architecture_snapshot:repo_sdk']);
+  });
+
   it('asks for a primary repo before planning when none is active', () => {
     const readiness = projectContextReadiness(projectContext([['dependency', true, 'repo_docs']]));
 
     expect(readiness.hasPrimaryRepository).toBe(false);
-    expect(readiness.nextAction).toBe('Bind one active primary repository before generating a plan.');
+    expect(readiness.nextAction).toBe(
+      'Bind one active primary repository before generating a plan.'
+    );
   });
 
   it('counts architecture warnings in fallback readiness', () => {
@@ -122,6 +158,140 @@ describe('project context', () => {
     const readiness = projectContextReadiness(context);
 
     expect(readiness.warningCount).toBe(1);
-    expect(readiness.nextAction).toBe('Review repository context warnings before approving execution.');
+    expect(readiness.nextAction).toBe(
+      'Review repository context warnings before approving execution.'
+    );
+  });
+
+  it('routes the project overview to repository binding before a primary repo exists', () => {
+    const decision = projectOverviewDecision(projectContext([['dependency', true, 'repo_docs']]));
+
+    expect(decision.step).toBe('bind_repository');
+    expect(decision.actionHref).toBe('#repository-binding');
+  });
+
+  it('routes the project overview to context review when warnings are present', () => {
+    const context = projectContext([['primary', true, 'repo_app']]);
+    context.repository_contexts[0].architecture_warnings = ['Architecture snapshot missing.'];
+
+    const decision = projectOverviewDecision(context);
+
+    expect(decision.step).toBe('review_context');
+    expect(decision.actionHref).toBe('#project-context');
+  });
+
+  it('routes the project overview to requirement intake when context is ready', () => {
+    const context = projectContext([['primary', true, 'repo_app']]);
+    context.repository_contexts[0].skills = [
+      {
+        id: 1,
+        repository_id: 'repo_app',
+        name: 'planning-sop',
+        description: 'Planning skill.',
+        content: 'Use evidence refs.',
+        active: true,
+        created_by: 1,
+        created_at: '',
+        updated_at: '',
+      },
+    ];
+
+    const decision = projectOverviewDecision(context);
+
+    expect(decision.step).toBe('create_requirement');
+    expect(decision.actionHref).toBe('#project-requirement');
+  });
+
+  it('builds repository evidence rows for context review', () => {
+    const context = projectContext([
+      ['primary', true, 'repo_app'],
+      ['dependency', true, 'repo_docs'],
+    ]);
+    context.repository_contexts[0].profile = {
+      id: 1,
+      repository_id: 'repo_app',
+      default_branch: 'main',
+      stack: ['Go'],
+      test_commands: ['go test ./...'],
+      ci_provider: 'github_actions',
+      app_structure: ['api/internal'],
+      coding_conventions: [],
+      risk_areas: ['auth'],
+      summary: 'API service.',
+      source: 'manual',
+      warnings: [],
+      created_by: 1,
+      last_indexed_at: '',
+      created_at: '',
+      updated_at: '',
+    };
+    context.repository_contexts[0].skills = [
+      {
+        id: 1,
+        repository_id: 'repo_app',
+        name: 'planning-sop',
+        description: 'Planning skill.',
+        content: 'Use evidence refs.',
+        active: true,
+        created_by: 1,
+        created_at: '',
+        updated_at: '',
+      },
+    ];
+    context.repository_contexts[1].architecture_stale = true;
+
+    const evidence = projectRepositoryEvidence(context);
+
+    expect(evidence[0]).toMatchObject({
+      repositoryId: 'repo_app',
+      writable: true,
+      hasProfile: true,
+      hasArchitectureSnapshot: false,
+      skillCount: 1,
+    });
+    expect(evidence[1]).toMatchObject({
+      repositoryId: 'repo_docs',
+      writable: false,
+      architectureStale: true,
+      warningCount: 1,
+    });
+    expect(projectContextMissingEvidence(context)).toContain('repo_profile:repo_docs');
+  });
+
+  it('summarizes the effective skill contract for prompt compilation', () => {
+    const context = projectContext([
+      ['primary', true, 'repo_app'],
+      ['dependency', true, 'repo_docs'],
+    ]);
+    context.repository_contexts[0].skills = [
+      {
+        id: 7,
+        repository_id: 'repo_app',
+        name: 'service-layer',
+        description: 'Use service layer.',
+        content: 'API routes must call services.',
+        active: true,
+        created_by: 1,
+        created_at: '',
+        updated_at: '',
+      },
+    ];
+    context.context_contract = {
+      version: 'project_context_contract_v1',
+      project_id: 1,
+      project_name: 'SpecForge',
+      active_repository_count: 2,
+      skill_names: ['service-layer'],
+      prompt_guardrails: [],
+      missing_evidence: [],
+    };
+
+    const contract = projectSkillContract(context);
+
+    expect(contract.effectiveSkillNames).toEqual(['service-layer']);
+    expect(contract.promptEvidenceRefs).toContain('skill:7');
+    expect(contract.promptEvidenceRefs).toContain('skill_name:service-layer');
+    expect(contract.repositoriesMissingSkills).toEqual(['repo_docs']);
+    expect(contract.canPlanWithSkills).toBe(false);
   });
 });

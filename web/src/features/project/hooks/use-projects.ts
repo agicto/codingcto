@@ -83,3 +83,16 @@ export function useBindProjectRepository(projectId: number) {
     },
   });
 }
+
+export function useUnbindProjectRepository(projectId: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (repositoryId: string) =>
+      projectService.unbindRepository(projectId, repositoryId, silentQueryConfig),
+    meta: silentQueryMeta,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
+    },
+  });
+}

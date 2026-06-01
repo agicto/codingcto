@@ -75,7 +75,6 @@ describe('executionReadinessForExecutor', () => {
 
     expect(result.canDispatch).toBe(true);
   });
-
   it('allows a non-codex executor when its runtime is online and writable', () => {
     const result = executionReadinessForExecutor({
       runtimes: [

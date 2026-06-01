@@ -496,7 +496,10 @@ func (s *service) DispatchRun(ctx context.Context, runID uint, req *DispatchExec
 			return nil, err
 		}
 		task.Status = domain.AgentTaskStatusDispatched
+		task.ProcessStatus = domain.AgentProcessStatusPending
+		task.CurrentPhase = "dispatched"
 		task.DispatchedAt = &now
+		task.LastProgressAt = &now
 		if task.AttemptNumber == 0 {
 			task.AttemptNumber = 1
 		}
@@ -1114,6 +1117,8 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 	}
 	now := time.Now()
 	task.Status = domain.AgentTaskStatusRunning
+	task.ProcessStatus = domain.AgentProcessStatusRunning
+	task.CurrentPhase = "claim_accepted"
 	if runtimeID := strings.TrimSpace(req.RuntimeID); runtimeID != "" {
 		task.RuntimeID = runtimeID
 	}
@@ -1129,6 +1134,7 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 	if task.StartedAt == nil {
 		task.StartedAt = &now
 	}
+	task.LastProgressAt = &now
 	if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
 		return nil, fmt.Errorf("mark agent task running: %w", err)
 	}
@@ -1204,6 +1210,11 @@ func (s *service) SubmitTaskResult(ctx context.Context, taskID uint, req *Submit
 	if workdir := strings.TrimSpace(req.Workdir); workdir != "" {
 		task.Workdir = workdir
 	}
+	if processRef := strings.TrimSpace(req.ProcessRef); processRef != "" {
+		task.ProcessRef = processRef
+	}
+	now := time.Now()
+	task.LastProgressAt = &now
 	result := &ExecutionResult{
 		Status:   strings.TrimSpace(req.Status),
 		Output:   strings.TrimSpace(req.Output),
@@ -1234,6 +1245,11 @@ func (s *service) CreateTaskEvent(ctx context.Context, taskID uint, req *CreateT
 	}
 	if err := s.repo.CreateTaskEvent(ctx, event); err != nil {
 		return nil, fmt.Errorf("create task event: %w", err)
+	}
+	if updated := applyTaskEventProgress(task, event); updated {
+		if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
+			return nil, fmt.Errorf("sync task progress from event: %w", err)
+		}
 	}
 	return event, nil
 }
@@ -1437,9 +1453,12 @@ func (s *service) finalizeTaskResult(ctx context.Context, task *domain.SpecForge
 	task.ErrorLog = redact.Text(result.Error)
 	task.ExitCode = &result.ExitCode
 	task.FinishedAt = &finishedAt
+	task.LastProgressAt = &finishedAt
 	if runErr != nil || result.Status != "completed" || result.ExitCode != 0 {
 		task.Status = domain.AgentTaskStatusFailed
 		task.FailureReason = executionFailureReason(result, runErr)
+		task.ProcessStatus = processStatusForResult(result, runErr)
+		task.CurrentPhase = "finished_with_error"
 		if strings.TrimSpace(failureReasonOverride) != "" {
 			task.FailureReason = strings.TrimSpace(failureReasonOverride)
 		}
@@ -1447,9 +1466,13 @@ func (s *service) finalizeTaskResult(ctx context.Context, task *domain.SpecForge
 		if err := s.deliverTaskPR(ctx, task); err != nil {
 			task.Status = domain.AgentTaskStatusFailed
 			task.FailureReason = "pr_delivery_failed"
+			task.ProcessStatus = domain.AgentProcessStatusFailed
+			task.CurrentPhase = "pr_delivery_failed"
 			task.ErrorLog = appendLogLine(task.ErrorLog, err.Error())
 		} else {
 			task.Status = domain.AgentTaskStatusCompleted
+			task.ProcessStatus = domain.AgentProcessStatusCompleted
+			task.CurrentPhase = "completed"
 		}
 	}
 	if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
@@ -1605,18 +1628,98 @@ func appendLogLine(existing, line string) string {
 	return existing + "\n" + line
 }
 
+func normalizeProcessStatus(value string) string {
+	value = strings.TrimSpace(value)
+	switch value {
+	case domain.AgentProcessStatusPending,
+		domain.AgentProcessStatusPreparing,
+		domain.AgentProcessStatusRunning,
+		domain.AgentProcessStatusCompleted,
+		domain.AgentProcessStatusFailed,
+		domain.AgentProcessStatusTimedOut,
+		domain.AgentProcessStatusCancelled,
+		domain.AgentProcessStatusLost:
+		return value
+	default:
+		return domain.AgentProcessStatusPending
+	}
+}
+
+func applyTaskEventProgress(task *domain.SpecForgeAgentTask, event *domain.SpecForgeTaskEvent) bool {
+	if task == nil || event == nil {
+		return false
+	}
+	updated := false
+	now := event.CreatedAt
+	if now.IsZero() {
+		now = time.Now()
+	}
+	task.LastProgressAt = &now
+	updated = true
+
+	switch strings.TrimSpace(event.Type) {
+	case "runtime_claimed":
+		if task.Status == domain.AgentTaskStatusDispatched {
+			task.Status = domain.AgentTaskStatusRunning
+		}
+		task.ProcessStatus = domain.AgentProcessStatusPreparing
+		task.CurrentPhase = "runtime_claimed"
+	case "executor_started":
+		task.ProcessStatus = domain.AgentProcessStatusRunning
+		task.CurrentPhase = "executor_started"
+		if strings.TrimSpace(event.Content) != "" {
+			task.ProcessRef = strings.TrimSpace(event.Content)
+		}
+	case "executor_preparing_repo":
+		task.ProcessStatus = domain.AgentProcessStatusPreparing
+		task.CurrentPhase = "preparing_repo"
+	case "executor_phase_changed":
+		task.ProcessStatus = domain.AgentProcessStatusRunning
+		if strings.TrimSpace(event.Content) != "" {
+			task.CurrentPhase = strings.TrimSpace(event.Content)
+		}
+	case "executor_stdout":
+		task.ProcessStatus = domain.AgentProcessStatusRunning
+		task.CurrentPhase = "streaming_output"
+		if strings.TrimSpace(event.Output) != "" {
+			task.OutputLog = appendLogLine(task.OutputLog, event.Output)
+		}
+	case "executor_stderr":
+		task.ProcessStatus = domain.AgentProcessStatusRunning
+		task.CurrentPhase = "streaming_output"
+		if strings.TrimSpace(event.Output) != "" {
+			task.ErrorLog = appendLogLine(task.ErrorLog, event.Output)
+		}
+	case "executor_heartbeat":
+		if task.ProcessStatus == domain.AgentProcessStatusPending {
+			task.ProcessStatus = domain.AgentProcessStatusRunning
+		}
+		if strings.TrimSpace(event.Content) != "" {
+			task.CurrentPhase = strings.TrimSpace(event.Content)
+		}
+	case "executor_result":
+		task.CurrentPhase = "executor_finished"
+	}
+	return updated
+}
+
 func buildInitialTasks(nodes []*domain.SpecForgePRNode, executor string) []*domain.SpecForgeAgentTask {
 	tasks := make([]*domain.SpecForgeAgentTask, 0, len(nodes))
 	for _, node := range nodes {
 		status := domain.AgentTaskStatusQueued
+		processStatus := domain.AgentProcessStatusPending
+		currentPhase := "awaiting_dispatch"
 		if len(node.DependsOn) > 0 {
 			status = domain.AgentTaskStatusWaiting
+			currentPhase = "awaiting_dependencies"
 		}
 		tasks = append(tasks, &domain.SpecForgeAgentTask{
 			PRNodeID:      node.ID,
 			Executor:      executor,
 			Status:        status,
 			PromptType:    domain.PromptTypeImplementation,
+			ProcessStatus: processStatus,
+			CurrentPhase:  currentPhase,
 			AttemptNumber: 1,
 		})
 	}
@@ -1638,6 +1741,7 @@ func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecF
 	b.WriteString("Goal:\n" + strings.TrimSpace(node.Goal) + "\n\n")
 	writeRunPromptContract(&b, bundle, node, promptType, parent, skills)
 	writeExecutionPromptModeInstructions(&b, promptType, parent)
+	writeExecutionSkillApplicationProtocol(&b, skills)
 	if bundle != nil && bundle.ProductSpec != nil {
 		writeExecutionList(&b, "Product goals", bundle.ProductSpec.Goals)
 		writeExecutionList(&b, "Product acceptance criteria", bundle.ProductSpec.AcceptanceCriteria)
@@ -1660,6 +1764,18 @@ func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecF
 	b.WriteString("- Run the listed test commands before submitting the result.\n")
 	b.WriteString("- Prepare a PR description with summary, scope, non-goals, tests, risks, and dependencies.\n")
 	return b.String()
+}
+
+func writeExecutionSkillApplicationProtocol(b *strings.Builder, skills []*domain.SpecForgeSkill) {
+	b.WriteString("Skill application protocol:\n")
+	if len(activeExecutionSkills(skills)) == 0 {
+		b.WriteString("- No active repository skills were available for this execution task; do not invent skill rules.\n\n")
+		return
+	}
+	b.WriteString("- Before editing files, translate every repository skill below into concrete constraints for this PR node.\n")
+	b.WriteString("- Apply those constraints together with acceptance criteria, non-goals, and dependency guardrails.\n")
+	b.WriteString("- If a skill conflicts with approved plan evidence or repository evidence, stop and submit a blocker summary.\n")
+	b.WriteString("- In the task result, include skills_applied with the skill names used and the evidence refs that supported the decision.\n\n")
 }
 
 func writeRunPromptContract(b *strings.Builder, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, promptType string, parent *domain.SpecForgeAgentTask, skills []*domain.SpecForgeSkill) {
@@ -2080,6 +2196,7 @@ func writeExecutionProjectContext(b *strings.Builder, bundle *domain.SpecForgePl
 	context := bundle.ProjectContext
 	b.WriteString("Project context:\n")
 	b.WriteString("- Project: " + strings.TrimSpace(context.Project.Name) + "\n")
+	writeExecutionProjectContextContract(b, context.ContextContract)
 	if strings.TrimSpace(context.PrimaryRepositoryID) != "" {
 		b.WriteString("- Primary repository: " + strings.TrimSpace(context.PrimaryRepositoryID) + "\n")
 	}
@@ -2112,6 +2229,49 @@ func writeExecutionProjectContext(b *strings.Builder, bundle *domain.SpecForgePl
 		writeExecutionArchitectureContext(b, repoContext)
 	}
 	b.WriteString("\n")
+}
+
+func writeExecutionProjectContextContract(b *strings.Builder, contract *domain.SpecForgeProjectContextContract) {
+	if contract == nil {
+		return
+	}
+	b.WriteString("- Context contract: " + contract.Version + "\n")
+	if strings.TrimSpace(contract.PrimaryRepositoryID) != "" {
+		b.WriteString("  - contract.primary_repository_id: " + strings.TrimSpace(contract.PrimaryRepositoryID) + "\n")
+	}
+	if len(contract.ReadOnlyRepositoryIDs) > 0 {
+		b.WriteString("  - contract.read_only_repository_ids: " + strings.Join(normalizeExecutionList(contract.ReadOnlyRepositoryIDs), ", ") + "\n")
+	}
+	if len(contract.SkillNames) > 0 {
+		b.WriteString("  - contract.active_skills: " + strings.Join(normalizeExecutionList(contract.SkillNames), ", ") + "\n")
+	}
+	if len(contract.MissingEvidence) > 0 {
+		b.WriteString("  - contract.missing_evidence: " + strings.Join(normalizeExecutionList(contract.MissingEvidence), ", ") + "\n")
+	}
+	for _, guardrail := range normalizeExecutionList(contract.PromptGuardrails) {
+		b.WriteString("  - contract.guardrail: " + guardrail + "\n")
+	}
+	for _, repository := range contract.Repositories {
+		if repository == nil {
+			continue
+		}
+		b.WriteString("  - contract.repository: " + repository.RepositoryID + " role=" + repository.Role)
+		if repository.Writable {
+			b.WriteString(" writable=true")
+		} else {
+			b.WriteString(" writable=false")
+		}
+		b.WriteString("\n")
+		if len(repository.TestCommands) > 0 {
+			b.WriteString("    - contract.repository_tests: " + strings.Join(normalizeExecutionList(repository.TestCommands), ", ") + "\n")
+		}
+		if len(repository.RiskAreas) > 0 {
+			b.WriteString("    - contract.repository_risks: " + strings.Join(normalizeExecutionList(repository.RiskAreas), ", ") + "\n")
+		}
+		if repository.ArchitectureSnapshotCommit != "" {
+			b.WriteString("    - contract.architecture_snapshot_commit: " + compactExecutionLine(repository.ArchitectureSnapshotCommit) + "\n")
+		}
+	}
 }
 
 func writeExecutionArchitectureContext(b *strings.Builder, repoContext *domain.SpecForgeProjectRepositoryContext) {
@@ -2172,16 +2332,12 @@ func writeExecutionRepoProfile(b *strings.Builder, bundle *domain.SpecForgePlanB
 
 func writeExecutionSkills(b *strings.Builder, skills []*domain.SpecForgeSkill) {
 	b.WriteString("Repository skills:\n")
-	if len(skills) == 0 {
+	activeSkills := activeExecutionSkills(skills)
+	if len(activeSkills) == 0 {
 		b.WriteString("- None\n\n")
 		return
 	}
-	wrote := false
-	for _, skill := range skills {
-		if skill == nil || strings.TrimSpace(skill.Name) == "" || strings.TrimSpace(skill.Content) == "" {
-			continue
-		}
-		wrote = true
+	for _, skill := range activeSkills {
 		b.WriteString("## " + strings.TrimSpace(skill.Name) + "\n")
 		if strings.TrimSpace(skill.Description) != "" {
 			b.WriteString(strings.TrimSpace(skill.Description) + "\n")
@@ -2191,9 +2347,17 @@ func writeExecutionSkills(b *strings.Builder, skills []*domain.SpecForgeSkill) {
 		}
 		b.WriteString(strings.TrimSpace(skill.Content) + "\n\n")
 	}
-	if !wrote {
-		b.WriteString("- None\n\n")
+}
+
+func activeExecutionSkills(skills []*domain.SpecForgeSkill) []*domain.SpecForgeSkill {
+	out := make([]*domain.SpecForgeSkill, 0, len(skills))
+	for _, skill := range skills {
+		if skill == nil || strings.TrimSpace(skill.Name) == "" || strings.TrimSpace(skill.Content) == "" {
+			continue
+		}
+		out = append(out, skill)
 	}
+	return out
 }
 
 func synthesizedExecutionProjectProfile(context *domain.SpecForgeProjectContext, primaryRepoID string) *domain.SpecForgeRepoProfile {
@@ -2749,6 +2913,9 @@ func markTaskFailed(task *domain.SpecForgeAgentTask, reason, detail string, exit
 	task.ErrorLog = appendLogLine(task.ErrorLog, detail)
 	task.ExitCode = &exitCode
 	task.FinishedAt = &now
+	task.LastProgressAt = &now
+	task.ProcessStatus = domain.AgentProcessStatusFailed
+	task.CurrentPhase = "failed"
 }
 
 func executionFailureReason(result *ExecutionResult, runErr error) string {
@@ -2759,6 +2926,16 @@ func executionFailureReason(result *ExecutionResult, runErr error) string {
 		return "executor_error"
 	}
 	return "executor_failed"
+}
+
+func processStatusForResult(result *ExecutionResult, runErr error) string {
+	if result != nil && strings.TrimSpace(result.Status) == "timeout" {
+		return domain.AgentProcessStatusTimedOut
+	}
+	if runErr != nil || (result != nil && result.ExitCode != 0) {
+		return domain.AgentProcessStatusFailed
+	}
+	return domain.AgentProcessStatusCompleted
 }
 
 func toClaimedAgentTask(task *domain.SpecForgeAgentTask) *ClaimedAgentTask {
@@ -2772,12 +2949,15 @@ func toClaimedAgentTask(task *domain.SpecForgeAgentTask) *ClaimedAgentTask {
 		Executor:      task.Executor,
 		Status:        task.Status,
 		PromptType:    taskPromptType(task),
+		ProcessStatus: normalizeProcessStatus(task.ProcessStatus),
+		CurrentPhase:  strings.TrimSpace(task.CurrentPhase),
 		RuntimeID:     task.RuntimeID,
 		AttemptNumber: task.AttemptNumber,
 		ParentTaskID:  task.ParentTaskID,
 		FixAttemptID:  task.FixAttemptID,
 		SessionID:     task.SessionID,
 		Workdir:       task.Workdir,
+		ProcessRef:    task.ProcessRef,
 	}
 }
 

@@ -53,6 +53,7 @@ export const specForgeKeys = {
   projectSkills: (projectId: number) =>
     [...specForgeKeys.all, 'project-skills', projectId] as const,
   planSkillRuns: (planId: number) => [...specForgeKeys.all, 'plan-skill-runs', planId] as const,
+  plan: (planId: number) => [...specForgeKeys.all, 'plan', planId] as const,
   ideaPlan: (ideaId: number) => [...specForgeKeys.all, 'idea-plan', ideaId] as const,
   latestProjectPlan: (projectId: number) =>
     [...specForgeKeys.all, 'latest-project-plan', projectId] as const,
@@ -82,7 +83,7 @@ export const specForgeKeys = {
       params?.limit ?? 50,
     ] as const,
   githubRepositories: (params?: ListGitHubRepositoriesParams) =>
-    [...specForgeKeys.all, "github-repositories", params?.workspace_id ?? ""] as const,
+    [...specForgeKeys.all, 'github-repositories', params?.workspace_id ?? ''] as const,
   githubRepository: (repoId: string) =>
     [...specForgeKeys.all, 'github-repository', repoId] as const,
   githubRepositoryReadiness: (repoId: string) =>
@@ -169,6 +170,15 @@ export function usePlanForIdea(ideaId?: number) {
   });
 }
 
+export function useSpecForgePlan(planId?: number) {
+  return useQuery({
+    queryKey: specForgeKeys.plan(planId ?? 0),
+    queryFn: () => specForgeService.getPlan(planId ?? 0, silentQueryConfig),
+    enabled: Boolean(planId),
+    meta: silentQueryMeta,
+  });
+}
+
 export function useLatestProjectPlan(projectId?: number) {
   return useQuery({
     queryKey: specForgeKeys.latestProjectPlan(projectId ?? 0),
@@ -203,11 +213,16 @@ export function useLatestPlanRun(
   });
 }
 
-export function useSpecForgeTaskEvents(taskId?: number, afterSeq?: number) {
+export function useSpecForgeTaskEvents(
+  taskId?: number,
+  afterSeq?: number,
+  options?: { refetchInterval?: number | false }
+) {
   return useQuery({
     queryKey: specForgeKeys.taskEvents(taskId ?? 0, afterSeq),
     queryFn: () => specForgeService.listTaskEvents(taskId ?? 0, afterSeq),
     enabled: Boolean(taskId),
+    refetchInterval: options?.refetchInterval,
   });
 }
 
@@ -279,9 +294,12 @@ export function useGitHubRepositoryReadiness(repoId?: string) {
 }
 
 export function useGitHubRepositories(params?: ListGitHubRepositoriesParams) {
+  const workspaceId = params?.workspace_id ?? '';
   return useQuery({
-    queryKey: specForgeKeys.githubRepositories(params),
-    queryFn: () => specForgeService.listGitHubRepositories(params, silentQueryConfig),
+    queryFn: () =>
+      specForgeService.listGitHubRepositories({ workspace_id: workspaceId }, silentQueryConfig),
+    enabled: Boolean(workspaceId),
+    queryKey: specForgeKeys.githubRepositories({ workspace_id: workspaceId }),
     meta: silentQueryMeta,
   });
 }

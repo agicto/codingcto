@@ -1,4 +1,8 @@
-import type { ProjectContextDTO, ProjectRepositoryContextDTO } from './services/project-service';
+import type {
+  ProjectContextContractDTO,
+  ProjectContextDTO,
+  ProjectRepositoryContextDTO,
+} from './services/project-service';
 
 export interface ProjectContextReadiness {
   hasPrimaryRepository: boolean;
@@ -9,6 +13,39 @@ export interface ProjectContextReadiness {
   guardrails: string[];
   summary: string;
   nextAction: string;
+}
+
+export type ProjectOverviewStepID = 'bind_repository' | 'review_context' | 'create_requirement';
+
+export interface ProjectOverviewDecision {
+  step: ProjectOverviewStepID;
+  title: string;
+  description: string;
+  actionLabel: string;
+  actionHref: string;
+  tone: 'warning' | 'info' | 'success';
+}
+
+export interface ProjectRepositoryEvidence {
+  repositoryId: string;
+  role: string;
+  writable: boolean;
+  hasProfile: boolean;
+  hasArchitectureSnapshot: boolean;
+  architectureStale: boolean;
+  skillCount: number;
+  warningCount: number;
+  missingEvidence: string[];
+}
+
+export interface ProjectSkillContract {
+  pinnedSkillCount: number;
+  repositorySkillCount: number;
+  effectiveSkillNames: string[];
+  promptEvidenceRefs: string[];
+  repositoriesMissingSkills: string[];
+  canPlanWithSkills: boolean;
+  summary: string;
 }
 
 export function primaryRepositoryContext(
@@ -24,6 +61,92 @@ export function primaryRepositoryContext(
       (!context.primary_repository_id ||
         item.repository.repository_id === context.primary_repository_id)
   );
+}
+
+export function projectContextContract(
+  context?: ProjectContextDTO
+): ProjectContextContractDTO | undefined {
+  return context?.context_contract;
+}
+
+export function projectRepositoryEvidence(
+  context?: ProjectContextDTO
+): ProjectRepositoryEvidence[] {
+  return (context?.repository_contexts ?? []).map(item => {
+    const repositoryId = item.repository.repository_id;
+    const missingEvidence = [
+      !item.profile ? `repo_profile:${repositoryId}` : '',
+      !item.architecture_snapshot ? `architecture_snapshot:${repositoryId}` : '',
+      item.skills.length === 0 ? `skills:${repositoryId}` : '',
+    ].filter(Boolean);
+    const warningCount =
+      (item.warnings?.length ?? 0) +
+      (item.architecture_warnings?.length ?? 0) +
+      (item.profile?.warnings?.length ?? 0) +
+      (item.architecture_stale ? 1 : 0);
+
+    return {
+      repositoryId,
+      role: item.repository.role,
+      writable: item.repository.active && item.repository.role === 'primary',
+      hasProfile: Boolean(item.profile),
+      hasArchitectureSnapshot: Boolean(item.architecture_snapshot),
+      architectureStale: item.architecture_stale,
+      skillCount: item.skills.length,
+      warningCount,
+      missingEvidence,
+    };
+  });
+}
+
+export function projectContextMissingEvidence(context?: ProjectContextDTO): string[] {
+  const contractMissingEvidence = context?.context_contract?.missing_evidence ?? [];
+  if (contractMissingEvidence.length > 0) {
+    return contractMissingEvidence;
+  }
+
+  return projectRepositoryEvidence(context).flatMap(item => item.missingEvidence);
+}
+
+export function projectSkillContract(context?: ProjectContextDTO): ProjectSkillContract {
+  const contractSkillNames = context?.context_contract?.skill_names ?? [];
+  const repositoryContexts = context?.repository_contexts ?? [];
+  const repositorySkills = repositoryContexts.flatMap(item =>
+    (item.skills ?? [])
+      .filter(skill => skill.active)
+      .map(skill => ({
+        id: skill.id,
+        name: skill.name,
+        repositoryId: skill.repository_id || item.repository.repository_id,
+      }))
+  );
+  const effectiveSkillNames = normalizeSkillNames(
+    contractSkillNames.length > 0 ? contractSkillNames : repositorySkills.map(skill => skill.name)
+  );
+  const promptEvidenceRefs = normalizeSkillNames(
+    repositorySkills
+      .filter(skill => skill.id > 0)
+      .map(skill => `skill:${skill.id}`)
+      .concat(effectiveSkillNames.map(name => `skill_name:${name}`))
+  );
+  const repositoriesMissingSkills = repositoryContexts
+    .filter(
+      item =>
+        item.repository.active && (item.skills ?? []).filter(skill => skill.active).length === 0
+    )
+    .map(item => item.repository.repository_id);
+  const canPlanWithSkills =
+    effectiveSkillNames.length > 0 && repositoriesMissingSkills.length === 0;
+
+  return {
+    pinnedSkillCount: contractSkillNames.length,
+    repositorySkillCount: repositorySkills.length,
+    effectiveSkillNames,
+    promptEvidenceRefs,
+    repositoriesMissingSkills,
+    canPlanWithSkills,
+    summary: skillContractSummary(effectiveSkillNames.length, repositoriesMissingSkills.length),
+  };
 }
 
 export function projectContextReadiness(context?: ProjectContextDTO): ProjectContextReadiness {
@@ -112,6 +235,57 @@ export function localizeProjectContextText(text?: string) {
   }
 
   return next;
+}
+
+export function projectOverviewDecision(context?: ProjectContextDTO): ProjectOverviewDecision {
+  const readiness = projectContextReadiness(context);
+  if (!readiness.hasPrimaryRepository) {
+    return {
+      step: 'bind_repository',
+      title: 'Bind a primary repository',
+      description:
+        'CodingCTO needs one writable primary repository before it can generate or execute a plan.',
+      actionLabel: 'Bind repository',
+      actionHref: '#repository-binding',
+      tone: 'warning',
+    };
+  }
+
+  if (readiness.warningCount > 0 || readiness.skillCount === 0) {
+    return {
+      step: 'review_context',
+      title: 'Review project context',
+      description:
+        'Repo profiles, architecture snapshots, skills, and warnings should be reviewed before plan approval.',
+      actionLabel: 'Review context',
+      actionHref: '#project-context',
+      tone: 'info',
+    };
+  }
+
+  return {
+    step: 'create_requirement',
+    title: 'Create a requirement',
+    description:
+      'The project context is ready enough to turn a product change into a plan and PR DAG.',
+    actionLabel: 'Create requirement',
+    actionHref: '#project-requirement',
+    tone: 'success',
+  };
+}
+
+function normalizeSkillNames(values: string[]): string[] {
+  return Array.from(new Set(values.map(value => value.trim()).filter(Boolean)));
+}
+
+function skillContractSummary(skillCount: number, missingRepositoryCount: number) {
+  if (skillCount === 0) {
+    return 'No active skills will be injected into planning or prompt compilation.';
+  }
+  if (missingRepositoryCount > 0) {
+    return `${skillCount} skills are available, but ${missingRepositoryCount} active repositories still need explicit instructions.`;
+  }
+  return `${skillCount} skills are ready for planning, PR DAG generation, and prompt compilation.`;
 }
 
 function readinessSummary(activeRepositoryCount: number, primaryRepositoryID?: string) {

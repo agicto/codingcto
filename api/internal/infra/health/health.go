@@ -4,7 +4,6 @@ import (
 	"context"
 	"net/http"
 	"sync"
-	"syscall"
 	"time"
 
 	"github.com/gin-gonic/gin"
@@ -273,16 +272,14 @@ func RedisChecker(pingFunc func(ctx context.Context) error) Checker {
 // DiskSpace creates a disk space checker
 func DiskSpace(path string, minBytes uint64) Checker {
 	return func(ctx context.Context) CheckResult {
-		var stat syscall.Statfs_t
-		if err := syscall.Statfs(path, &stat); err != nil {
+		available, total, err := diskSpaceStats(path)
+		if err != nil {
 			return CheckResult{
 				Status:  StatusDown,
 				Message: "failed to get disk stats",
 			}
 		}
 
-		available := stat.Bavail * uint64(stat.Bsize)
-		total := stat.Blocks * uint64(stat.Bsize)
 		used := total - available
 		usedPercent := float64(used) / float64(total) * 100
 

@@ -66,6 +66,10 @@ export async function POST(request: Request) {
   return NextResponse.json({
     data: {
       user,
+      session: {
+        mode: 'mock',
+        projectApiReady: false,
+      },
     },
   });
 }
@@ -108,6 +112,10 @@ async function loginWithBackend(email: string, password: string) {
   return NextResponse.json({
     data: {
       user,
+      session: {
+        mode: 'backend',
+        projectApiReady: true,
+      },
     },
   });
 }

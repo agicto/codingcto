@@ -316,7 +316,8 @@ const messages = {
   console: {
     eyebrow: '企业交付工作台',
     title: '今天需要关注什么',
-    description: '从这里进入项目、GitHub 绑定和 CodingCTO 交付板。首页只保留真实业务入口，不再展示开发脚手架。',
+    description:
+      '从这里进入项目、GitHub 绑定和 CodingCTO 交付板。首页只保留真实业务入口，不再展示开发脚手架。',
     openDelivery: '打开交付板',
     openProjects: '查看项目',
     cards: {
@@ -352,7 +353,8 @@ const messages = {
   deliveryEntry: {
     eyebrow: 'CodingCTO 交付',
     title: '从项目开始，而不是从空白提示词开始',
-    description: '企业级执行需要工作区、项目、GitHub 仓库、代码上下文和权限边界。全局交付页只做入口，真实执行请进入项目交付板。',
+    description:
+      '企业级执行需要工作区、项目、GitHub 仓库、代码上下文和权限边界。全局交付页只做入口，真实执行请进入项目交付板。',
     primaryAction: '打开项目',
     githubAction: '配置 GitHub',
     cards: {
@@ -477,8 +479,9 @@ const messages = {
   },
   projectsConsole: {
     eyebrow: '项目控制台',
-    title: '把项目组织成可执行的交付入口',
-    description: '选择工作区，整理项目边界，再把 GitHub 仓库、提示词和 PR 执行连接到同一条 CodingCTO 流程。',
+    title: '设置一个交付项目',
+    description:
+      '先创建一个 workspace、一个项目和一个主 GitHub 仓库，再进入 CodingCTO 交付。',
     badges: {
       enterprise: '企业工作区',
       apiUnavailable: 'API 不可用',
@@ -492,9 +495,12 @@ const messages = {
       newProject: '新建项目',
       createWorkspace: '创建工作区',
       createProject: '创建项目',
+      openProject: '打开项目',
       openCodingCTO: '打开 CodingCTO',
       configureGitHub: '配置 GitHub',
       openAgents: '查看智能体',
+      signInBackend: '使用后端登录',
+      cancel: '取消',
     },
     metrics: {
       workspaces: {
@@ -527,7 +533,18 @@ const messages = {
       selectPlaceholder: '选择工作区',
       empty: '暂无工作区。创建后才能解锁项目和 CodingCTO 流程。',
       noDescription: '暂无工作区描述。',
+      selected: 'Workspace：{name}',
       id: 'ID: {id}',
+    },
+    backendGate: {
+      title: '需要后端登录状态',
+      description:
+        '项目、仓库和执行数据来自 CodingCTO API。当前浏览器只登录了控制台，但没有后端 API token，因此不能把 workspace 数据当成可信结果。',
+      localHint:
+        '本地开发请启用 LUAS_AUTH_BACKEND_ENABLED=true，并使用已 seed 的后端用户登录。',
+      emptyTitle: 'Workspace 数据不可用',
+      emptyDescription:
+        '这是认证或 API 连接问题，不是 workspace 为空。请先恢复后端登录状态，再创建项目。',
     },
     projects: {
       title: '交付项目',
@@ -538,7 +555,7 @@ const messages = {
       selectWorkspace: '请选择或创建工作区以列出项目。',
       emptyDescription: '项目创建完成后，可进入 CodingCTO 交付板绑定 GitHub 仓库并生成执行计划。',
       noDescription: '暂无描述。',
-      primaryRepoRequired: '需要主仓库',
+      primaryRepoRequired: '查看仓库上下文',
       status: {
         active: '活跃',
         inactive: '停用',
@@ -555,30 +572,90 @@ const messages = {
       descriptionPlaceholder: '这个项目代表哪个产品或系统？',
     },
     setup: {
-      title: '推荐路径',
-      description: '像部署平台一样，先把资源边界建清楚，再进入执行。',
+      title: '设置路径',
+      description: '按顺序完成设置。每一步都会解锁下一步动作。',
+      nextAction: '下一步',
+      actions: {
+        backend: '重新建立后端登录',
+        workspace: '创建第一个 workspace',
+        project: '创建交付项目',
+        github: '打开项目交付',
+      },
       steps: {
+        workspace: {
+          title: 'Workspace',
+          description: '组织、权限、仓库和执行的共同边界。',
+        },
         project: {
-          title: '创建项目边界',
-          description: '明确这个项目代表的产品、系统或代码域。',
+          title: '项目',
+          description: 'CodingCTO 会围绕这个产品或系统边界进行规划。',
         },
         github: {
-          title: '绑定 GitHub 仓库',
-          description: '把主仓库和只读上下文仓库连接到项目。',
+          title: 'GitHub 仓库',
+          description: '绑定可写入的主仓库，然后生成计划和 PR。',
         },
         delivery: {
           title: '进入 CodingCTO 交付',
           description: '用仓库上下文生成计划、执行任务并产出可评审的 PR。',
         },
+        repository: {
+          title: 'GitHub 仓库',
+          description: '绑定可写入的主仓库，然后生成计划和 PR。',
+        },
+      },
+    },
+    wizard: {
+      title: '引导式设置',
+      description: '在一个入口完成交付前置上下文：workspace、项目和可写入的主仓库。',
+      status: {
+        workspace: '需要 workspace',
+        project: '需要项目',
+        repository: '需要仓库',
+        complete: '可创建需求',
+      },
+      workspace: {
+        title: '选择工作区边界',
+        description: '工作区承载 GitHub 访问、权限，以及后续会生成 PR 的所有项目。',
+      },
+      project: {
+        title: '选择交付项目',
+        description: '项目是 CodingCTO 分析代码、生成 PRD、拆任务、生成 prompt 和写代码的产品边界。',
+        selectLabel: '交付项目',
+        selectPlaceholder: '选择项目',
+        selected: '项目：{name}',
+        empty: '尚未选择交付项目。',
+      },
+      repository: {
+        title: '绑定主仓库',
+        description: '主仓库是唯一可写入的执行目标。其他仓库后续可以作为只读上下文加入。',
+        project: '项目：{name}',
+        loading: '正在加载已连接的 GitHub 仓库...',
+        connectedCount: '已连接 {count} 个仓库',
+        emptyTitle: '还没有连接仓库',
+        emptyDescription: '请先在设置中连接或同步 GitHub，然后回到这里绑定主仓库。',
+        allBound: '所有已连接仓库都已绑定到这个项目。请打开项目上下文页面检查角色。',
+        selectLabel: '主仓库',
+        selectPlaceholder: '选择已连接仓库',
+        bindPrimary: '绑定为主仓库',
+      },
+      complete: {
+        title: '交付上下文已就绪',
+        description: '现在可以提交产品想法，生成 PRD 和技术方案，再编译 prompt 进入执行。',
+        ready: '{name} 已经绑定可写主仓库。',
+        startRequirement: '创建需求',
       },
     },
     messages: {
       workspaceRequired: '请填写工作区名称和标识。',
       workspaceCreateFailed: '工作区创建失败。请检查 API 连接和标识是否唯一。',
       selectWorkspaceFirst: '请先创建或选择工作区，再创建项目。',
+      selectProjectFirst: '请先创建或选择项目，再绑定仓库。',
       projectRequired: '请填写项目名称和标识。',
       slugInvalid: '标识至少需要 2 个字符，请使用小写字母、数字或连字符。',
       projectCreateFailed: '项目创建失败。请检查 API 连接和标识是否唯一。',
+      repositoryRequired: '请先选择一个已连接的 GitHub 仓库。',
+      repositoryBound: '主仓库 {repoId} 已绑定到这个项目。',
+      repositoryBindFailed: '仓库绑定失败。请确认仓库属于当前 workspace 后重试。',
     },
   },
   projectDelivery: {
@@ -593,18 +670,26 @@ const messages = {
       },
       unavailable: {
         title: '项目上下文不可用',
-        description: '这里不会再从空上下文启动 CodingCTO。请刷新项目、检查后端登录状态，或从项目页重新创建项目。',
+        description:
+          '这里不会再从空上下文启动 CodingCTO。请刷新项目、检查后端登录状态，或从项目页重新创建项目。',
         action: '返回项目',
       },
     },
     primaryRequired: {
       title: '先绑定主仓库才能开始规划',
-      description: 'CodingCTO 可以读取依赖、文档和基础设施仓库作为上下文，但执行写入只会发生在当前主仓库。',
+      description:
+        'CodingCTO 可以读取依赖、文档和基础设施仓库作为上下文，但执行写入只会发生在当前主仓库。',
     },
     bindPanel: {
       title: '绑定 GitHub 仓库',
-      description: '使用“设置 > GitHub”创建的仓库 ID。主仓库可写入；依赖、文档和基础设施仓库会作为只读规划上下文。',
-      repositoryId: '仓库 ID',
+      description:
+        '选择“设置 > GitHub”已连接的仓库。主仓库可写入；依赖、文档和基础设施仓库会作为只读规划上下文。',
+      repositoryId: 'GitHub 仓库',
+      selectRepository: '选择已连接仓库',
+      loadingRepositories: '正在加载已连接仓库...',
+      emptyRepositories: '当前工作区还没有已连接仓库。',
+      allRepositoriesBound: '当前工作区可用的 GitHub 仓库都已经绑定到这个项目。',
+      connectRepository: '去连接 GitHub',
       role: '角色',
       binding: '绑定中',
       submit: '绑定仓库',
@@ -632,6 +717,12 @@ const messages = {
         skills: '技能',
         warnings: '警告',
       },
+      contract: {
+        title: '上下文契约',
+        execution: '执行仓库',
+        skills: 'Active skills',
+        missingEvidence: '缺失证据',
+      },
       roles: {
         primary: '主仓库',
         dependency: '依赖',
@@ -651,6 +742,11 @@ const messages = {
         fresh: '最新',
         missing: '缺失',
         generateSnapshot: '请先生成架构快照，再审批执行。',
+        remove: '移除',
+        removing: '移除中',
+        removed: '仓库 {repoId} 已从项目上下文移除。',
+        removeFailed: '仓库无法移除。请刷新后重试。',
+        primaryRemoveBlocked: '主仓库不能直接移除。请先绑定另一个主仓库或调整项目执行边界。',
       },
     },
   },

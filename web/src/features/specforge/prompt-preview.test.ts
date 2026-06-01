@@ -10,6 +10,8 @@ describe('buildPromptPreview', () => {
     expect(prompt).toContain('You are implementing PR-001');
     expect(prompt).toContain('Goal:');
     expect(prompt).toContain('Grounded prompt contract:');
+    expect(prompt).toContain('Skill application protocol:');
+    expect(prompt).toContain('skills_applied');
     expect(prompt).toContain('Evidence refs:');
     expect(prompt).toContain('Scope guardrails:');
     expect(prompt).toContain('PR DAG guardrails:');
