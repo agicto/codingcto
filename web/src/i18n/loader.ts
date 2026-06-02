@@ -11,6 +11,7 @@ export const AVAILABLE_MODULES = [
   'metadata',
   'dashboard',
   'test',
+  'site',
 ] as const;
 
 export type ModuleName = (typeof AVAILABLE_MODULES)[number];
@@ -57,6 +58,10 @@ const moduleRegistry: ModuleRegistry = {
   test: {
     'zh-Hans': () => import('./modules/test/zh-Hans'),
     'en-US': () => import('./modules/test/en-US'),
+  },
+  site: {
+    'zh-Hans': () => import('./modules/site/zh-Hans'),
+    'en-US': () => import('./modules/site/en-US'),
   },
 };
 

@@ -198,12 +198,27 @@ func (w *RuntimeWorker) submitResult(ctx context.Context, claim *ClaimAgentTaskR
 		Workdir:       workdir,
 		ProcessRef:    result.ProcessRef,
 		Status:        normalizeRuntimeResultStatus(result.Status, result.ExitCode),
-		Output:        result.Output,
-		Error:         result.Error,
+		Output:        trimRuntimeResultField(result.Output),
+		Error:         trimRuntimeResultField(result.Error),
 		ExitCode:      result.ExitCode,
 		FailureReason: failureReason,
 	})
 	return err
+}
+
+func trimRuntimeResultField(value string) string {
+	const maxResultFieldBytes = 200000
+	if len(value) <= maxResultFieldBytes {
+		return value
+	}
+	const marker = "\n\n[... output truncated by CodingCTO runtime ...]\n\n"
+	keep := maxResultFieldBytes - len(marker)
+	if keep <= 0 {
+		return value[:maxResultFieldBytes]
+	}
+	head := keep / 2
+	tail := keep - head
+	return value[:head] + marker + value[len(value)-tail:]
 }
 
 func (r *runtimeProgressReporter) OnEvent(ctx context.Context, event ExecutionProgressEvent) error {

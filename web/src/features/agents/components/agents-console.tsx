@@ -194,12 +194,13 @@ export function AgentsConsole({ selectedAgentId }: AgentsConsoleProps) {
             <p className="hidden truncate text-xs text-text-muted md:block">{t('description')}</p>
           </div>
         </div>
-        <Button asChild variant="outline" size="sm">
-          <Link href={ROUTES.CONSOLE.SKILLS}>
-            <BookOpen className="h-4 w-4" />
-            {t('actions.manageSkills')}
-          </Link>
-        </Button>
+        <Link
+          href={ROUTES.CONSOLE.SKILLS}
+          className="focus-ring inline-flex h-8 shrink-0 items-center gap-2 whitespace-nowrap rounded-[4px] border border-border-subtle bg-bg-surface px-3 text-xs font-medium text-text-main shadow-xs transition-colors hover:bg-bg-subtle hover:text-primary"
+        >
+          <BookOpen className="h-4 w-4" />
+          <span>{t('actions.manageSkills')}</span>
+        </Link>
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-8">
@@ -457,12 +458,14 @@ function AgentDetail({
             </div>
           </div>
         </div>
-        <Button asChild variant="outline" size="sm" className="self-start">
-          <Link href={ROUTES.CONSOLE.SKILLS}>
-            <ExternalLink className="h-4 w-4" />
-            {t('actions.openSkills')}
-          </Link>
-        </Button>
+        <Link
+          href={ROUTES.CONSOLE.SKILLS}
+          className="focus-ring inline-flex h-9 shrink-0 items-center gap-2 self-start whitespace-nowrap rounded-[4px] border border-border-subtle bg-bg-surface px-3 text-sm font-medium text-text-main shadow-xs transition-colors hover:bg-bg-subtle hover:text-primary"
+        >
+          <BookOpen className="h-4 w-4" />
+          <span>{t('actions.manageSkills')}</span>
+          <ExternalLink className="h-3.5 w-3.5 text-text-muted" />
+        </Link>
       </div>
 
       <Tabs defaultValue="skills" className="min-h-0 flex-1 gap-0">

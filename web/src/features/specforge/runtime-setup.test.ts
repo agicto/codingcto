@@ -38,9 +38,9 @@ describe('runtime setup', () => {
   it('summarizes runtime setup before and after readiness', () => {
     expect(
       runtimeSetupChecklist({ repositoryId: 'repo_123', readyRuntimeCount: 0 })
-    ).toContain('Keep Codex CLI installed and authenticated in the runtime shell.');
+    ).toContain('确认运行器所在终端已安装并登录 Codex CLI。');
     expect(
       runtimeSetupChecklist({ repositoryId: 'repo_123', readyRuntimeCount: 2 })
-    ).toContain('2 writable Codex runtimes are online.');
+    ).toContain('2 个可写的 Codex 运行器在线。');
   });
 });

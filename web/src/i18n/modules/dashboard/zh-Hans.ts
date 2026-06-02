@@ -316,7 +316,8 @@ const messages = {
   console: {
     eyebrow: '企业交付工作台',
     title: '今天需要关注什么',
-    description: '从这里进入项目、GitHub 绑定和 CodingCTO 交付板。首页只保留真实业务入口，不再展示开发脚手架。',
+    description:
+      '从这里进入项目、GitHub 绑定和 CodingCTO 交付板。首页只保留真实业务入口，不再展示开发脚手架。',
     openDelivery: '打开交付板',
     openProjects: '查看项目',
     cards: {
@@ -352,7 +353,8 @@ const messages = {
   deliveryEntry: {
     eyebrow: 'CodingCTO 交付',
     title: '从项目开始，而不是从空白提示词开始',
-    description: '企业级执行需要工作区、项目、GitHub 仓库、代码上下文和权限边界。全局交付页只做入口，真实执行请进入项目交付板。',
+    description:
+      '企业级执行需要工作区、项目、GitHub 仓库、代码上下文和权限边界。全局交付页只做入口，真实执行请进入项目交付板。',
     primaryAction: '打开项目',
     githubAction: '配置 GitHub',
     cards: {
@@ -373,23 +375,17 @@ const messages = {
   specForge: {
     demoIdea: '添加团队邀请流程。工作区管理员可以通过邮箱邀请成员，受邀用户通过安全链接接受邀请。',
     header: {
-      title: 'PR 交付流程',
-      description: '把一个需求变成可审批计划、Codex 执行和可评审 PR',
-      activeRuns: '{count} 个运行中',
-      analyzeRepo: '仓库上下文',
-      manualPlan: '计划评审',
-      pipeline: 'PR 流程',
-    },
-    workflow: {
-      requirement: '写清需求',
-      repository: '读取仓库上下文',
-      plan: '审批计划',
-      delivery: '执行并交付 PR',
+      title: '项目指挥台',
+      description: '从需求到计划、提示词、Codex 执行和 PR 交付',
+      activeRuns: '{count} 个执行中节点',
+      analyzeRepo: '分析仓库',
+      manualPlan: '手动计划',
+      pipeline: '流水线',
     },
     tabs: {
-      allWork: '需求',
+      allWork: '全部工作',
       plans: '计划',
-      runs: '执行',
+      runs: '运行',
     },
     progress: {
       awaiting: '等待计划审批；{reason}',
@@ -414,15 +410,15 @@ const messages = {
     },
     stages: {
       intake: {
-        title: '需求',
+        title: '需求录入',
         empty: '等待需求',
-        itemTitle: '写清需求',
+        itemTitle: '捕获产品意图',
         itemDescription: '描述功能目标、约束和验收边界。',
       },
       context: {
-        title: '仓库',
+        title: '仓库理解',
         empty: '未选择仓库',
-        itemTitle: '读取仓库上下文',
+        itemTitle: '分析仓库和技能',
       },
       planning: {
         title: '计划',
@@ -437,7 +433,7 @@ const messages = {
       execution: {
         title: '执行',
         empty: '尚未开始运行',
-        itemTitle: '运行 Codex',
+        itemTitle: '运行 Codex 并交付 PR',
       },
       delivery: {
         title: 'PR 交付',
@@ -483,8 +479,9 @@ const messages = {
   },
   projectsConsole: {
     eyebrow: '项目控制台',
-    title: '项目',
-    description: '创建项目，补一句描述；准备好之后再进入项目连接仓库。',
+    title: '设置一个交付项目',
+    description:
+      '先创建一个 workspace、一个项目和一个主 GitHub 仓库，再进入 CodingCTO 交付。',
     badges: {
       enterprise: '企业工作区',
       apiUnavailable: 'API 不可用',
@@ -498,10 +495,12 @@ const messages = {
       newProject: '新建项目',
       createWorkspace: '创建工作区',
       createProject: '创建项目',
-      openCodingCTO: '打开 CodingCTO',
       openProject: '打开项目',
+      openCodingCTO: '打开 CodingCTO',
       configureGitHub: '配置 GitHub',
       openAgents: '查看智能体',
+      signInBackend: '使用后端登录',
+      cancel: '取消',
     },
     metrics: {
       workspaces: {
@@ -534,18 +533,29 @@ const messages = {
       selectPlaceholder: '选择工作区',
       empty: '暂无工作区。创建后才能解锁项目和 CodingCTO 流程。',
       noDescription: '暂无工作区描述。',
+      selected: 'Workspace：{name}',
       id: 'ID: {id}',
+    },
+    backendGate: {
+      title: '需要后端登录状态',
+      description:
+        '项目、仓库和执行数据来自 CodingCTO API。当前浏览器只登录了控制台，但没有后端 API token，因此不能把 workspace 数据当成可信结果。',
+      localHint:
+        '本地开发请启用 LUAS_AUTH_BACKEND_ENABLED=true，并使用已 seed 的后端用户登录。',
+      emptyTitle: 'Workspace 数据不可用',
+      emptyDescription:
+        '这是认证或 API 连接问题，不是 workspace 为空。请先恢复后端登录状态，再创建项目。',
     },
     projects: {
       title: '交付项目',
       description: '每个项目都应该绑定主仓库，并沉淀为后续计划、执行和评审的上下文。',
       count: '{count} 个项目',
-      loading: '正在加载项目...',
-      emptyForWorkspace: '暂无项目。创建项目后即可开始绑定仓库。',
-      selectWorkspace: '暂无项目。',
-      emptyDescription: '项目创建完成后，可进入项目绑定 GitHub 仓库并生成执行计划。',
+      loading: '正在从所选工作区加载项目...',
+      emptyForWorkspace: '当前工作区暂无项目。创建项目后即可开始绑定仓库。',
+      selectWorkspace: '请选择或创建工作区以列出项目。',
+      emptyDescription: '项目创建完成后，可进入 CodingCTO 交付板绑定 GitHub 仓库并生成执行计划。',
       noDescription: '暂无描述。',
-      primaryRepoRequired: '需要主仓库',
+      primaryRepoRequired: '查看仓库上下文',
       status: {
         active: '活跃',
         inactive: '停用',
@@ -559,40 +569,93 @@ const messages = {
     newProject: {
       title: '新建项目',
       description: '先定义产品或系统边界，再进入项目交付板绑定 GitHub 仓库。',
-      titlePlaceholder: '项目标题',
       descriptionPlaceholder: '这个项目代表哪个产品或系统？',
-      statusPlanned: 'Planned',
-      noPriority: 'No priority',
-      ownerLead: 'Lead',
-      repositories: 'Repos',
     },
     setup: {
-      title: '推荐路径',
-      description: '像部署平台一样，先把资源边界建清楚，再进入执行。',
+      title: '设置路径',
+      description: '按顺序完成设置。每一步都会解锁下一步动作。',
+      nextAction: '下一步',
+      actions: {
+        backend: '重新建立后端登录',
+        workspace: '创建第一个 workspace',
+        project: '创建交付项目',
+        github: '打开项目交付',
+      },
       steps: {
+        workspace: {
+          title: 'Workspace',
+          description: '组织、权限、仓库和执行的共同边界。',
+        },
         project: {
-          title: '创建项目边界',
-          description: '明确这个项目代表的产品、系统或代码域。',
+          title: '项目',
+          description: 'CodingCTO 会围绕这个产品或系统边界进行规划。',
         },
         github: {
-          title: '绑定 GitHub 仓库',
-          description: '把主仓库和只读上下文仓库连接到项目。',
+          title: 'GitHub 仓库',
+          description: '绑定可写入的主仓库，然后生成计划和 PR。',
         },
         delivery: {
           title: '进入 CodingCTO 交付',
           description: '用仓库上下文生成计划、执行任务并产出可评审的 PR。',
         },
+        repository: {
+          title: 'GitHub 仓库',
+          description: '绑定可写入的主仓库，然后生成计划和 PR。',
+        },
+      },
+    },
+    wizard: {
+      title: '引导式设置',
+      description: '在一个入口完成交付前置上下文：workspace、项目和可写入的主仓库。',
+      status: {
+        workspace: '需要 workspace',
+        project: '需要项目',
+        repository: '需要仓库',
+        complete: '可创建需求',
+      },
+      workspace: {
+        title: '选择工作区边界',
+        description: '工作区承载 GitHub 访问、权限，以及后续会生成 PR 的所有项目。',
+      },
+      project: {
+        title: '选择交付项目',
+        description: '项目是 CodingCTO 分析代码、生成 PRD、拆任务、生成 prompt 和写代码的产品边界。',
+        selectLabel: '交付项目',
+        selectPlaceholder: '选择项目',
+        selected: '项目：{name}',
+        empty: '尚未选择交付项目。',
+      },
+      repository: {
+        title: '绑定主仓库',
+        description: '主仓库是唯一可写入的执行目标。其他仓库后续可以作为只读上下文加入。',
+        project: '项目：{name}',
+        loading: '正在加载已连接的 GitHub 仓库...',
+        connectedCount: '已连接 {count} 个仓库',
+        emptyTitle: '还没有连接仓库',
+        emptyDescription: '请先在设置中连接或同步 GitHub，然后回到这里绑定主仓库。',
+        allBound: '所有已连接仓库都已绑定到这个项目。请打开项目上下文页面检查角色。',
+        selectLabel: '主仓库',
+        selectPlaceholder: '选择已连接仓库',
+        bindPrimary: '绑定为主仓库',
+      },
+      complete: {
+        title: '交付上下文已就绪',
+        description: '现在可以提交产品想法，生成 PRD 和技术方案，再编译 prompt 进入执行。',
+        ready: '{name} 已经绑定可写主仓库。',
+        startRequirement: '创建需求',
       },
     },
     messages: {
       workspaceRequired: '请填写工作区名称和标识。',
       workspaceCreateFailed: '工作区创建失败。请检查 API 连接和标识是否唯一。',
-      projectSpaceCreateFailed: '项目暂时还没准备好。请检查 API 连接后重试。',
-      selectWorkspaceFirst: '项目正在准备中，请稍后重试。',
-      projectUnauthorized: '创建项目需要后端登录态。请退出后重新登录，再重试。',
+      selectWorkspaceFirst: '请先创建或选择工作区，再创建项目。',
+      selectProjectFirst: '请先创建或选择项目，再绑定仓库。',
       projectRequired: '请填写项目名称和标识。',
       slugInvalid: '标识至少需要 2 个字符，请使用小写字母、数字或连字符。',
       projectCreateFailed: '项目创建失败。请检查 API 连接和标识是否唯一。',
+      repositoryRequired: '请先选择一个已连接的 GitHub 仓库。',
+      repositoryBound: '主仓库 {repoId} 已绑定到这个项目。',
+      repositoryBindFailed: '仓库绑定失败。请确认仓库属于当前 workspace 后重试。',
     },
   },
   projectDelivery: {
@@ -607,23 +670,26 @@ const messages = {
       },
       unavailable: {
         title: '项目上下文不可用',
-        description: '这里不会再从空上下文启动 CodingCTO。请刷新项目、检查后端登录状态，或从项目页重新创建项目。',
+        description:
+          '这里不会再从空上下文启动 CodingCTO。请刷新项目、检查后端登录状态，或从项目页重新创建项目。',
         action: '返回项目',
       },
     },
     primaryRequired: {
       title: '先绑定主仓库才能开始规划',
-      description: 'CodingCTO 可以读取依赖、文档和基础设施仓库作为上下文，但执行写入只会发生在当前主仓库。',
+      description:
+        'CodingCTO 可以读取依赖、文档和基础设施仓库作为上下文，但执行写入只会发生在当前主仓库。',
     },
     bindPanel: {
       title: '绑定 GitHub 仓库',
-      description: '使用“设置 > GitHub”创建的仓库 ID。主仓库可写入；依赖、文档和基础设施仓库会作为只读规划上下文。',
-      repositoryId: '仓库 ID',
-      selectRepository: '选择仓库',
-      allRepositoriesBound: '已连接的仓库都已绑定。',
+      description:
+        '选择“设置 > GitHub”已连接的仓库。主仓库可写入；依赖、文档和基础设施仓库会作为只读规划上下文。',
+      repositoryId: 'GitHub 仓库',
+      selectRepository: '选择已连接仓库',
       loadingRepositories: '正在加载已连接仓库...',
-      emptyRepositories: '还没有连接 GitHub 仓库。',
-      connectRepository: '连接 GitHub',
+      emptyRepositories: '当前工作区还没有已连接仓库。',
+      allRepositoriesBound: '当前工作区可用的 GitHub 仓库都已经绑定到这个项目。',
+      connectRepository: '去连接 GitHub',
       role: '角色',
       binding: '绑定中',
       submit: '绑定仓库',
@@ -639,6 +705,94 @@ const messages = {
         bindFailed: '仓库无法绑定。请确认它已经在设置中连接，并且属于当前工作区。',
       },
     },
+    e2e: {
+      title: '端到端试跑',
+      description: '用当前仓库跑一遍真实交付链路：创建 Issue、生成计划、调用本地 Codex，并打开 PR。',
+      defaultIssueTitle: 'CodingCTO 端到端试跑：记录一次自动化交付',
+      defaultIssueBody:
+        '请添加一个 .codingcto/e2e-smoke.md 文件，用中文记录本次试跑已完成：创建 GitHub Issue、生成计划、调用本地 Codex CLI、提交代码并创建 PR。请保持改动很小，只提交这个说明文件。',
+      issueTitleLabel: '试跑 Issue 标题',
+      issueBodyLabel: '试跑 Issue 内容',
+      readiness: {
+        title: '运行前检查',
+        description: '检查 GitHub App 安装、仓库权限和访问令牌，确认能创建 Issue、推送分支并打开 PR。',
+        error: '暂时读不到检查结果，请确认 API 服务正常，并重新登录后再试。',
+        checkingRepository: '正在检查当前主仓库...',
+        noChecks: '还有运行前检查未通过，请先处理后再试。',
+        status: {
+          ready: '准备就绪',
+          blocked: '需处理',
+          checking: '检查中',
+        },
+      },
+      button: {
+        running: '试跑进行中...',
+        blocked: '先处理检查项',
+        start: '开始端到端试跑',
+      },
+      timeline: {
+        title: '执行时间线',
+        empty: '开始后会实时显示每一步进展：仓库检查、Issue、计划、派发、Codex 执行和 PR。',
+      },
+      steps: {
+        repository: {
+          title: '检查仓库绑定',
+        },
+        issue: {
+          title: '创建 GitHub Issue',
+        },
+        plan: {
+          title: '生成执行计划',
+          detail: '生成 {count} 个 PR 节点',
+        },
+        approve: {
+          title: '确认计划',
+          detail: '计划 #{id} 已确认',
+        },
+        run: {
+          title: '启动执行',
+        },
+        dispatch: {
+          title: '派发给本地运行器',
+        },
+        codexWaiting: {
+          title: '等待 Codex 执行',
+          detail: '任务已派发，等待本地运行器认领后调用 Codex CLI。',
+        },
+        codexDone: {
+          title: 'Codex 执行完成',
+          detail: '本地运行器已完成代码修改、提交并推送分支。',
+        },
+        pr: {
+          title: '创建 GitHub Pull Request',
+          detail: 'PR #{number}',
+          missing: '任务已完成，但没有返回 PR 链接。',
+        },
+        error: {
+          title: '流程中断',
+        },
+      },
+      errors: {
+        noRepository: '当前项目还没有绑定主仓库，请先完成仓库配置。',
+        noExecutableNode: '计划里没有可执行的 PR 节点。',
+        noDispatchedTask: '还没有派发出可执行任务，请确认本地运行器在线。',
+        codexFailed: 'Codex CLI 执行失败。',
+        flowFailed: '试跑中断，请查看上一步状态后重试。',
+        timeout: '本地运行器还没有完成任务。请确认运行器仍在运行，并查看智能体页面的心跳状态。',
+      },
+      stepStatus: {
+        running: '进行中',
+        success: '完成',
+        error: '失败',
+        pending: '等待',
+      },
+      checkStatus: {
+        ok: '通过',
+        warning: '提醒',
+        error: '缺失',
+      },
+      linkLabel: '查看详情',
+    },
     readiness: {
       projectScoped: '项目级',
       primaryReady: '主仓库已就绪',
@@ -650,6 +804,12 @@ const messages = {
         readOnly: '只读',
         skills: '技能',
         warnings: '警告',
+      },
+      contract: {
+        title: '上下文契约',
+        execution: '执行仓库',
+        skills: 'Active skills',
+        missingEvidence: '缺失证据',
       },
       roles: {
         primary: '主仓库',
@@ -670,6 +830,11 @@ const messages = {
         fresh: '最新',
         missing: '缺失',
         generateSnapshot: '请先生成架构快照，再审批执行。',
+        remove: '移除',
+        removing: '移除中',
+        removed: '仓库 {repoId} 已从项目上下文移除。',
+        removeFailed: '仓库无法移除。请刷新后重试。',
+        primaryRemoveBlocked: '主仓库不能直接移除。请先绑定另一个主仓库或调整项目执行边界。',
       },
     },
   },

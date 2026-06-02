@@ -28,8 +28,8 @@ describe('verificationReviewForNodes', () => {
     const review = verificationReviewForNodes([node({ status: 'planned' })]);
 
     expect(review.state).toBe('ready');
-    expect(review.label).toBe('Guarded');
-    expect(review.nextAction).toContain('refresh CI');
+    expect(review.label).toBe('待验证');
+    expect(review.nextAction).toContain('刷新 CI');
   });
 
   it('prioritizes blocked nodes and exposes remaining fix budget', () => {
@@ -47,8 +47,8 @@ describe('verificationReviewForNodes', () => {
 
     expect(review.state).toBe('blocked');
     expect(review.headline).toContain('PR-001');
-    expect(review.nextAction).toContain('type error failure');
-    expect(review.autoFixBudget).toContain('1 of 3');
+    expect(review.nextAction).toContain('type error');
+    expect(review.autoFixBudget).toContain('1 / 3');
   });
 
   it('tracks CI running and reviewable nodes separately', () => {
@@ -67,6 +67,6 @@ describe('verificationReviewForNodes', () => {
     ]);
 
     expect(review.state).toBe('complete');
-    expect(review.headline).toContain('completed verification');
+    expect(review.headline).toContain('完成验证');
   });
 });

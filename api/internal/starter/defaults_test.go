@@ -66,7 +66,7 @@ func TestDefaultManifestsRegisterDefaultAssets(t *testing.T) {
 	assert.Contains(t, migrations, "2026_05_30_000025_add_evidence_refs_to_specforge_planning")
 	assert.Contains(t, migrations, "2026_05_31_000027_add_specforge_runtime_capabilities")
 	assert.Contains(t, migrations, "2026_05_31_000028_add_target_agents_to_specforge_skills")
-	assert.Contains(t, migrations, "2026_05_31_000028_add_task_progress_fields_to_specforge_agent_tasks")
+	assert.Contains(t, migrations, "2026_05_31_000028_add_policy_metadata_to_specforge_fix_attempts")
 
 	seeders := registry.Seeders()
 	require.Len(t, seeders, 1)

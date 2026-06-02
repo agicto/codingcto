@@ -143,9 +143,7 @@ describe('project context', () => {
     const readiness = projectContextReadiness(projectContext([['dependency', true, 'repo_docs']]));
 
     expect(readiness.hasPrimaryRepository).toBe(false);
-    expect(readiness.nextAction).toBe(
-      'Bind one active primary repository before generating a plan.'
-    );
+    expect(readiness.nextAction).toBe('生成计划前请先绑定一个启用的主仓库。');
   });
 
   it('counts architecture warnings in fallback readiness', () => {
@@ -158,9 +156,7 @@ describe('project context', () => {
     const readiness = projectContextReadiness(context);
 
     expect(readiness.warningCount).toBe(1);
-    expect(readiness.nextAction).toBe(
-      'Review repository context warnings before approving execution.'
-    );
+    expect(readiness.nextAction).toBe('审批执行前请先查看仓库上下文警告。');
   });
 
   it('routes the project overview to repository binding before a primary repo exists', () => {

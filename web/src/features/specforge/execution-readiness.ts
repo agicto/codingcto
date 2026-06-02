@@ -27,7 +27,7 @@ export function executionReadinessForExecutor({
     return {
       canDispatch: true,
       healthyRuntimeCount: healthyRuntimes.length,
-      reason: 'A writable runtime with Codex CLI is online.',
+      reason: '已有可写的 Codex CLI 运行器在线。',
     };
   }
 
@@ -35,14 +35,14 @@ export function executionReadinessForExecutor({
     return {
       canDispatch: true,
       healthyRuntimeCount: 0,
-      reason: 'Demo mode can simulate execution without a live runtime.',
+      reason: '演示模式可在没有本地运行器时模拟执行。',
     };
   }
 
   return {
     canDispatch: false,
     healthyRuntimeCount: 0,
-    reason: 'Start a CodingCTO runtime with Codex CLI before dispatching this plan.',
+    reason: '请先启动带 Codex CLI 的 CodingCTO 运行器，再派发这个计划。',
   };
 }
 

@@ -1741,6 +1741,7 @@ func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecF
 	b.WriteString("Goal:\n" + strings.TrimSpace(node.Goal) + "\n\n")
 	writeRunPromptContract(&b, bundle, node, promptType, parent, skills)
 	writeExecutionPromptModeInstructions(&b, promptType, parent)
+	writeExecutionSkillApplicationProtocol(&b, skills)
 	if bundle != nil && bundle.ProductSpec != nil {
 		writeExecutionList(&b, "Product goals", bundle.ProductSpec.Goals)
 		writeExecutionList(&b, "Product acceptance criteria", bundle.ProductSpec.AcceptanceCriteria)
@@ -1763,6 +1764,18 @@ func compileRunPromptText(bundle *domain.SpecForgePlanBundle, node *domain.SpecF
 	b.WriteString("- Run the listed test commands before submitting the result.\n")
 	b.WriteString("- Prepare a PR description with summary, scope, non-goals, tests, risks, and dependencies.\n")
 	return b.String()
+}
+
+func writeExecutionSkillApplicationProtocol(b *strings.Builder, skills []*domain.SpecForgeSkill) {
+	b.WriteString("Skill application protocol:\n")
+	if len(activeExecutionSkills(skills)) == 0 {
+		b.WriteString("- No active repository skills were available for this execution task; do not invent skill rules.\n\n")
+		return
+	}
+	b.WriteString("- Before editing files, translate every repository skill below into concrete constraints for this PR node.\n")
+	b.WriteString("- Apply those constraints together with acceptance criteria, non-goals, and dependency guardrails.\n")
+	b.WriteString("- If a skill conflicts with approved plan evidence or repository evidence, stop and submit a blocker summary.\n")
+	b.WriteString("- In the task result, include skills_applied with the skill names used and the evidence refs that supported the decision.\n\n")
 }
 
 func writeRunPromptContract(b *strings.Builder, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, promptType string, parent *domain.SpecForgeAgentTask, skills []*domain.SpecForgeSkill) {
@@ -2183,6 +2196,7 @@ func writeExecutionProjectContext(b *strings.Builder, bundle *domain.SpecForgePl
 	context := bundle.ProjectContext
 	b.WriteString("Project context:\n")
 	b.WriteString("- Project: " + strings.TrimSpace(context.Project.Name) + "\n")
+	writeExecutionProjectContextContract(b, context.ContextContract)
 	if strings.TrimSpace(context.PrimaryRepositoryID) != "" {
 		b.WriteString("- Primary repository: " + strings.TrimSpace(context.PrimaryRepositoryID) + "\n")
 	}
@@ -2215,6 +2229,49 @@ func writeExecutionProjectContext(b *strings.Builder, bundle *domain.SpecForgePl
 		writeExecutionArchitectureContext(b, repoContext)
 	}
 	b.WriteString("\n")
+}
+
+func writeExecutionProjectContextContract(b *strings.Builder, contract *domain.SpecForgeProjectContextContract) {
+	if contract == nil {
+		return
+	}
+	b.WriteString("- Context contract: " + contract.Version + "\n")
+	if strings.TrimSpace(contract.PrimaryRepositoryID) != "" {
+		b.WriteString("  - contract.primary_repository_id: " + strings.TrimSpace(contract.PrimaryRepositoryID) + "\n")
+	}
+	if len(contract.ReadOnlyRepositoryIDs) > 0 {
+		b.WriteString("  - contract.read_only_repository_ids: " + strings.Join(normalizeExecutionList(contract.ReadOnlyRepositoryIDs), ", ") + "\n")
+	}
+	if len(contract.SkillNames) > 0 {
+		b.WriteString("  - contract.active_skills: " + strings.Join(normalizeExecutionList(contract.SkillNames), ", ") + "\n")
+	}
+	if len(contract.MissingEvidence) > 0 {
+		b.WriteString("  - contract.missing_evidence: " + strings.Join(normalizeExecutionList(contract.MissingEvidence), ", ") + "\n")
+	}
+	for _, guardrail := range normalizeExecutionList(contract.PromptGuardrails) {
+		b.WriteString("  - contract.guardrail: " + guardrail + "\n")
+	}
+	for _, repository := range contract.Repositories {
+		if repository == nil {
+			continue
+		}
+		b.WriteString("  - contract.repository: " + repository.RepositoryID + " role=" + repository.Role)
+		if repository.Writable {
+			b.WriteString(" writable=true")
+		} else {
+			b.WriteString(" writable=false")
+		}
+		b.WriteString("\n")
+		if len(repository.TestCommands) > 0 {
+			b.WriteString("    - contract.repository_tests: " + strings.Join(normalizeExecutionList(repository.TestCommands), ", ") + "\n")
+		}
+		if len(repository.RiskAreas) > 0 {
+			b.WriteString("    - contract.repository_risks: " + strings.Join(normalizeExecutionList(repository.RiskAreas), ", ") + "\n")
+		}
+		if repository.ArchitectureSnapshotCommit != "" {
+			b.WriteString("    - contract.architecture_snapshot_commit: " + compactExecutionLine(repository.ArchitectureSnapshotCommit) + "\n")
+		}
+	}
 }
 
 func writeExecutionArchitectureContext(b *strings.Builder, repoContext *domain.SpecForgeProjectRepositoryContext) {
@@ -2275,16 +2332,12 @@ func writeExecutionRepoProfile(b *strings.Builder, bundle *domain.SpecForgePlanB
 
 func writeExecutionSkills(b *strings.Builder, skills []*domain.SpecForgeSkill) {
 	b.WriteString("Repository skills:\n")
-	if len(skills) == 0 {
+	activeSkills := activeExecutionSkills(skills)
+	if len(activeSkills) == 0 {
 		b.WriteString("- None\n\n")
 		return
 	}
-	wrote := false
-	for _, skill := range skills {
-		if skill == nil || strings.TrimSpace(skill.Name) == "" || strings.TrimSpace(skill.Content) == "" {
-			continue
-		}
-		wrote = true
+	for _, skill := range activeSkills {
 		b.WriteString("## " + strings.TrimSpace(skill.Name) + "\n")
 		if strings.TrimSpace(skill.Description) != "" {
 			b.WriteString(strings.TrimSpace(skill.Description) + "\n")
@@ -2294,9 +2347,17 @@ func writeExecutionSkills(b *strings.Builder, skills []*domain.SpecForgeSkill) {
 		}
 		b.WriteString(strings.TrimSpace(skill.Content) + "\n\n")
 	}
-	if !wrote {
-		b.WriteString("- None\n\n")
+}
+
+func activeExecutionSkills(skills []*domain.SpecForgeSkill) []*domain.SpecForgeSkill {
+	out := make([]*domain.SpecForgeSkill, 0, len(skills))
+	for _, skill := range skills {
+		if skill == nil || strings.TrimSpace(skill.Name) == "" || strings.TrimSpace(skill.Content) == "" {
+			continue
+		}
+		out = append(out, skill)
 	}
+	return out
 }
 
 func synthesizedExecutionProjectProfile(context *domain.SpecForgeProjectContext, primaryRepoID string) *domain.SpecForgeRepoProfile {

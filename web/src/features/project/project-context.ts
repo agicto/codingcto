@@ -69,7 +69,9 @@ export function projectContextContract(
   return context?.context_contract;
 }
 
-export function projectRepositoryEvidence(context?: ProjectContextDTO): ProjectRepositoryEvidence[] {
+export function projectRepositoryEvidence(
+  context?: ProjectContextDTO
+): ProjectRepositoryEvidence[] {
   return (context?.repository_contexts ?? []).map(item => {
     const repositoryId = item.repository.repository_id;
     const missingEvidence = [
@@ -147,7 +149,9 @@ export function projectSkillContract(context?: ProjectContextDTO): ProjectSkillC
   };
 }
 
-export function projectContextReadiness(context?: ProjectContextDTO): ProjectContextReadiness {
+export function projectContextReadiness(context?: ProjectContextDTO, locale = 'zh-Hans'): ProjectContextReadiness {
+  const localize = (text?: string) => localizeProjectContextText(text, locale);
+
   if (context?.readiness) {
     return {
       hasPrimaryRepository: context.readiness.has_primary_repository,
@@ -156,10 +160,10 @@ export function projectContextReadiness(context?: ProjectContextDTO): ProjectCon
       skillCount: context.readiness.skill_count,
       warningCount: context.readiness.warning_count,
       guardrails: (context.readiness.guardrails ?? context.execution_guardrails ?? []).map(
-        localizeProjectContextText
+        localize
       ),
-      summary: localizeProjectContextText(context.readiness.summary),
-      nextAction: localizeProjectContextText(context.readiness.next_action),
+      summary: localize(context.readiness.summary),
+      nextAction: localize(context.readiness.next_action),
     };
   }
 
@@ -178,7 +182,7 @@ export function projectContextReadiness(context?: ProjectContextDTO): ProjectCon
       (item.profile?.warnings?.length ?? 0),
     0
   );
-  const guardrails = (context?.execution_guardrails ?? []).map(localizeProjectContextText);
+  const guardrails = (context?.execution_guardrails ?? []).map(localize);
 
   return {
     hasPrimaryRepository: Boolean(primaryRepository),
@@ -187,51 +191,17 @@ export function projectContextReadiness(context?: ProjectContextDTO): ProjectCon
     skillCount,
     warningCount,
     guardrails,
-    summary: readinessSummary(activeRepositories.length, primaryRepository?.repository.repository_id),
-    nextAction: readinessNextAction(Boolean(primaryRepository), warningCount, skillCount),
+    summary: localize(readinessSummary(activeRepositories.length, primaryRepository?.repository.repository_id)),
+    nextAction: localize(readinessNextAction(Boolean(primaryRepository), warningCount, skillCount)),
   };
 }
 
-export function projectOverviewDecision(context?: ProjectContextDTO): ProjectOverviewDecision {
-  const readiness = projectContextReadiness(context);
-  if (!readiness.hasPrimaryRepository) {
-    return {
-      step: 'bind_repository',
-      title: 'Bind a primary repository',
-      description:
-        'CodingCTO needs one writable primary repository before it can generate or execute a plan.',
-      actionLabel: 'Bind repository',
-      actionHref: '#repository-binding',
-      tone: 'warning',
-    };
-  }
-
-  if (readiness.warningCount > 0 || readiness.skillCount === 0) {
-    return {
-      step: 'review_context',
-      title: 'Review project context',
-      description:
-        'Repo profiles, architecture snapshots, skills, and warnings should be reviewed before plan approval.',
-      actionLabel: 'Review context',
-      actionHref: '#project-context',
-      tone: 'info',
-    };
-  }
-
-  return {
-    step: 'create_requirement',
-    title: 'Create a requirement',
-    description:
-      'The project context is ready enough to turn a product change into a plan and PR DAG.',
-    actionLabel: 'Create requirement',
-    actionHref: '#project-requirement',
-    tone: 'success',
-  };
-}
-
-export function localizeProjectContextText(text?: string) {
+export function localizeProjectContextText(text?: string, locale = 'zh-Hans') {
   if (!text) {
     return '';
+  }
+  if (!locale.startsWith('zh')) {
+    return text;
   }
 
   let next = text;
@@ -272,14 +242,41 @@ export function localizeProjectContextText(text?: string) {
   return next;
 }
 
-function readinessSummary(activeRepositoryCount: number, primaryRepositoryID?: string) {
-  if (!activeRepositoryCount) {
-    return 'No active repositories are bound to this project yet.';
+export function projectOverviewDecision(context?: ProjectContextDTO): ProjectOverviewDecision {
+  const readiness = projectContextReadiness(context);
+  if (!readiness.hasPrimaryRepository) {
+    return {
+      step: 'bind_repository',
+      title: 'Bind a primary repository',
+      description:
+        'CodingCTO needs one writable primary repository before it can generate or execute a plan.',
+      actionLabel: 'Bind repository',
+      actionHref: '#repository-binding',
+      tone: 'warning',
+    };
   }
-  if (!primaryRepositoryID) {
-    return `${activeRepositoryCount} active repositories are bound, but none is the primary execution repository.`;
+
+  if (readiness.warningCount > 0 || readiness.skillCount === 0) {
+    return {
+      step: 'review_context',
+      title: 'Review project context',
+      description:
+        'Repo profiles, architecture snapshots, skills, and warnings should be reviewed before plan approval.',
+      actionLabel: 'Review context',
+      actionHref: '#project-context',
+      tone: 'info',
+    };
   }
-  return `Execution will modify ${primaryRepositoryID}; other active repositories are read-only planning context.`;
+
+  return {
+    step: 'create_requirement',
+    title: 'Create a requirement',
+    description:
+      'The project context is ready enough to turn a product change into a plan and PR DAG.',
+    actionLabel: 'Create requirement',
+    actionHref: '#project-requirement',
+    tone: 'success',
+  };
 }
 
 function normalizeSkillNames(values: string[]): string[] {
@@ -294,6 +291,16 @@ function skillContractSummary(skillCount: number, missingRepositoryCount: number
     return `${skillCount} skills are available, but ${missingRepositoryCount} active repositories still need explicit instructions.`;
   }
   return `${skillCount} skills are ready for planning, PR DAG generation, and prompt compilation.`;
+}
+
+function readinessSummary(activeRepositoryCount: number, primaryRepositoryID?: string) {
+  if (!activeRepositoryCount) {
+    return 'No active repositories are bound to this project yet.';
+  }
+  if (!primaryRepositoryID) {
+    return `${activeRepositoryCount} active repositories are bound, but none is the primary execution repository.`;
+  }
+  return `Execution will modify ${primaryRepositoryID}; other active repositories are read-only planning context.`;
 }
 
 function readinessNextAction(

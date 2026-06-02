@@ -36,7 +36,7 @@ Minimum local values:
 ```bash
 APP_NAME=CodingCTO
 APP_ENV=development
-SERVER_PORT=2010
+SERVER_PORT=8025
 
 DB_DRIVER=postgres
 DB_HOST=localhost
@@ -85,9 +85,9 @@ make dev-pg
 
 Default local endpoints:
 
-- Home: `http://localhost:2010/`
-- Health: `http://localhost:2010/v1/health`
-- Swagger: `http://localhost:2010/swagger/index.html`
+- Home: `http://localhost:8025/`
+- Health: `http://localhost:8025/v1/health`
+- Swagger: `http://localhost:8025/swagger/index.html`
 
 ### Run the CLI
 
@@ -107,7 +107,7 @@ The SpecForge execution module can be driven by a local runtime process. The run
 
 ```bash
 go run ./cmd/specforge-runtime \
-  --api-base-url http://localhost:2010/v1 \
+  --api-base-url http://localhost:8025/v1 \
   --token "$CODINGCTO_RUNTIME_TOKEN" \
   --runtime-id local-codex-1 \
   --repo-dir /path/to/local/repo \
@@ -215,9 +215,6 @@ For focused work, run the affected module package first, then run the full suite
 - Never commit secrets.
 - Do not read or inject `.env` values into AI prompts.
 - Keep GitHub App permissions minimal: `metadata:read`, `contents:write`, `pull_requests:write`, and `issues:write` are required for the repository-to-issue-to-PR flow; `actions:read` and `statuses:read` are optional but recommended for CI visibility.
-- Prefer `GITHUB_APP_PRIVATE_KEY_PATH` for local development instead of pasting a PEM into `.env`. The repo helper can configure local files after the GitHub App manifest flow:
-  - `node scripts/github-app-config.mjs manifest --owner <user-or-org>`
-  - `node scripts/github-app-config.mjs convert --code <manifest-code>`
 - Redact tokens and sensitive logs.
 - Treat runner workspaces as isolated execution environments.
 

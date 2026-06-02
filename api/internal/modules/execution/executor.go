@@ -286,16 +286,14 @@ func newCodexCLIExecutor(cfg CodexCLIExecutorConfig, runner CommandRunner) *cliE
 			gitAuthorName:  cfg.GitAuthorName,
 			gitAuthorEmail: cfg.GitAuthorEmail,
 			buildArgs: func(execContext ExecutionContext) []string {
-				args := []string{
-					"exec",
-					"--json",
-					"--cd", execContext.Workdir,
-				}
+				args := []string{}
 				if strings.EqualFold(strings.TrimSpace(cfg.SandboxMode), "danger-full-access") &&
 					strings.EqualFold(strings.TrimSpace(cfg.ApprovalPolicy), "never") {
+					args = append(args, "exec", "--json", "--cd", execContext.Workdir)
 					args = append(args, "--dangerously-bypass-approvals-and-sandbox")
 				} else {
-					args = append([]string{"--ask-for-approval", cfg.ApprovalPolicy}, args...)
+					args = append(args, "--ask-for-approval", cfg.ApprovalPolicy)
+					args = append(args, "exec", "--json", "--cd", execContext.Workdir)
 					args = append(args, "--sandbox", cfg.SandboxMode)
 				}
 				args = append(args, "--skip-git-repo-check")
@@ -402,11 +400,11 @@ func (e *cliExecutor) Run(
 	runCtx, cancel := context.WithTimeout(ctx, e.cfg.timeout)
 	defer cancel()
 
-		e.emit(runCtx, reporter, ExecutionProgressEvent{
-			Type:    "executor_preparing_repo",
-			Content: "preparing_repo",
-			Tool:    e.name,
-		})
+	e.emit(runCtx, reporter, ExecutionProgressEvent{
+		Type:    "executor_preparing_repo",
+		Content: "preparing_repo",
+		Tool:    e.name,
+	})
 
 	args := e.cfg.buildArgs(execContext)
 	start := time.Now()
