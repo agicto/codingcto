@@ -594,6 +594,9 @@ const messages = {
       projectRequired: '请填写项目名称和标识。',
       slugInvalid: '标识至少需要 2 个字符，请使用小写字母、数字或连字符。',
       projectCreateFailed: '项目创建失败。请检查 API 连接和标识是否唯一。',
+      repositoryRequired: '请先选择一个已连接的 GitHub 仓库。',
+      repositoryBound: '主仓库 {repoId} 已绑定到当前项目。',
+      repositoryBindFailed: '仓库无法绑定。请确认它属于当前工作区后重试。',
     },
   },
   projectDelivery: {

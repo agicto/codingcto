@@ -534,6 +534,7 @@ const messages: DashboardMessages = {
       selectPlaceholder: 'Select workspace',
       empty: 'No workspace yet. Create one to unlock project and CodingCTO flows.',
       noDescription: 'No workspace description yet.',
+      selected: 'Workspace: {name}',
       id: 'ID: {id}',
     },
     projects: {
