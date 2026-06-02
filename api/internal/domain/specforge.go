@@ -270,36 +270,74 @@ type SpecForgeExecutionRun struct {
 
 // SpecForgeAgentTask tracks one executor task for a planned PR node.
 type SpecForgeAgentTask struct {
-	ID            uint       `json:"id"`
-	RunID         uint       `json:"run_id"`
-	PRNodeID      uint       `json:"pr_node_id"`
-	Executor      string     `json:"executor"`
-	Status        string     `json:"status"`
-	PromptType    string     `json:"prompt_type"`
-	ProcessStatus string     `json:"process_status,omitempty"`
-	CurrentPhase  string     `json:"current_phase,omitempty"`
-	RuntimeID     string     `json:"runtime_id,omitempty"`
-	AttemptNumber int        `json:"attempt_number"`
-	ParentTaskID  *uint      `json:"parent_task_id,omitempty"`
-	FixAttemptID  *uint      `json:"fix_attempt_id,omitempty"`
-	SessionID     string     `json:"session_id,omitempty"`
-	Workdir       string     `json:"workdir,omitempty"`
-	FailureReason string     `json:"failure_reason,omitempty"`
-	LogsURL       string     `json:"logs_url,omitempty"`
-	OutputLog     string     `json:"output_log,omitempty"`
-	ErrorLog      string     `json:"error_log,omitempty"`
-	ExitCode      *int       `json:"exit_code,omitempty"`
-	ProcessRef    string     `json:"process_ref,omitempty"`
-	DispatchedAt  *time.Time `json:"dispatched_at,omitempty"`
-	StartedAt     *time.Time `json:"started_at,omitempty"`
-	FinishedAt    *time.Time `json:"finished_at,omitempty"`
+	ID             uint       `json:"id"`
+	RunID          uint       `json:"run_id"`
+	PRNodeID       uint       `json:"pr_node_id"`
+	Executor       string     `json:"executor"`
+	Status         string     `json:"status"`
+	PromptType     string     `json:"prompt_type"`
+	ProcessStatus  string     `json:"process_status,omitempty"`
+	CurrentPhase   string     `json:"current_phase,omitempty"`
+	RuntimeID      string     `json:"runtime_id,omitempty"`
+	AttemptNumber  int        `json:"attempt_number"`
+	ParentTaskID   *uint      `json:"parent_task_id,omitempty"`
+	FixAttemptID   *uint      `json:"fix_attempt_id,omitempty"`
+	SessionID      string     `json:"session_id,omitempty"`
+	Workdir        string     `json:"workdir,omitempty"`
+	FailureReason  string     `json:"failure_reason,omitempty"`
+	LogsURL        string     `json:"logs_url,omitempty"`
+	OutputLog      string     `json:"output_log,omitempty"`
+	ErrorLog       string     `json:"error_log,omitempty"`
+	ExitCode       *int       `json:"exit_code,omitempty"`
+	ProcessRef     string     `json:"process_ref,omitempty"`
+	DispatchedAt   *time.Time `json:"dispatched_at,omitempty"`
+	StartedAt      *time.Time `json:"started_at,omitempty"`
+	FinishedAt     *time.Time `json:"finished_at,omitempty"`
 	LastProgressAt *time.Time `json:"last_progress_at,omitempty"`
-	CreatedAt     time.Time  `json:"created_at"`
-	UpdatedAt     time.Time  `json:"updated_at"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
 }
 
 // SpecForgeTaskEvent records ordered runtime output for one agent task.
 type SpecForgeTaskEvent struct {
+	ID        uint      `json:"id"`
+	TaskID    uint      `json:"task_id"`
+	Seq       int       `json:"seq"`
+	Type      string    `json:"type"`
+	Tool      string    `json:"tool,omitempty"`
+	Content   string    `json:"content,omitempty"`
+	Input     string    `json:"input,omitempty"`
+	Output    string    `json:"output,omitempty"`
+	CreatedAt time.Time `json:"created_at"`
+}
+
+// CodingCTODirectAgentTask is an ad-hoc user prompt dispatched to a local runtime.
+type CodingCTODirectAgentTask struct {
+	ID             uint       `json:"id"`
+	CreatedBy      uint       `json:"created_by"`
+	RepositoryID   string     `json:"repository_id"`
+	Title          string     `json:"title"`
+	Prompt         string     `json:"prompt"`
+	Executor       string     `json:"executor"`
+	Status         string     `json:"status"`
+	RuntimeID      string     `json:"runtime_id,omitempty"`
+	SessionID      string     `json:"session_id,omitempty"`
+	Workdir        string     `json:"workdir,omitempty"`
+	ProcessRef     string     `json:"process_ref,omitempty"`
+	OutputLog      string     `json:"output_log,omitempty"`
+	ErrorLog       string     `json:"error_log,omitempty"`
+	ExitCode       *int       `json:"exit_code,omitempty"`
+	FailureReason  string     `json:"failure_reason,omitempty"`
+	DispatchedAt   *time.Time `json:"dispatched_at,omitempty"`
+	StartedAt      *time.Time `json:"started_at,omitempty"`
+	FinishedAt     *time.Time `json:"finished_at,omitempty"`
+	LastProgressAt *time.Time `json:"last_progress_at,omitempty"`
+	CreatedAt      time.Time  `json:"created_at"`
+	UpdatedAt      time.Time  `json:"updated_at"`
+}
+
+// CodingCTODirectTaskEvent records ordered output for an ad-hoc agent task.
+type CodingCTODirectTaskEvent struct {
 	ID        uint      `json:"id"`
 	TaskID    uint      `json:"task_id"`
 	Seq       int       `json:"seq"`
@@ -462,4 +500,12 @@ type SpecForgeExecutionRepository interface {
 	ClaimDispatchedAgentTask(ctx context.Context, runtimeID, executor, sessionID, workdir string) (*SpecForgeAgentTask, error)
 	UpdateExecutionRun(ctx context.Context, run *SpecForgeExecutionRun) error
 	UpdateAgentTask(ctx context.Context, task *SpecForgeAgentTask) error
+	CreateDirectAgentTask(ctx context.Context, task *CodingCTODirectAgentTask) error
+	FindDirectAgentTaskByID(ctx context.Context, taskID uint) (*CodingCTODirectAgentTask, error)
+	ListDirectAgentTasks(ctx context.Context, createdBy uint, repositoryID, executor, runtimeID string, limit int) ([]*CodingCTODirectAgentTask, error)
+	HasClaimableDirectAgentTask(ctx context.Context, runtimeID, executor string) (bool, error)
+	ClaimDirectAgentTask(ctx context.Context, runtimeID, executor, sessionID, workdir string) (*CodingCTODirectAgentTask, error)
+	UpdateDirectAgentTask(ctx context.Context, task *CodingCTODirectAgentTask) error
+	CreateDirectTaskEvent(ctx context.Context, event *CodingCTODirectTaskEvent) error
+	ListDirectTaskEvents(ctx context.Context, taskID uint, afterSeq int) ([]*CodingCTODirectTaskEvent, error)
 }

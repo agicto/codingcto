@@ -1,5 +1,7 @@
 # CodingCTO
 
+测试 starkwang
+
 > **CodingCTO** is an open-source, GitHub-native PRD-to-PR automation system for AI-assisted engineering teams.
 
 CodingCTO turns a product idea into a product plan, technical plan, PR dependency graph, versioned coding prompts, execution tasks, CI feedback, and review-ready pull requests. The repository contains the Go API and Next.js console that make that workflow shippable.
@@ -36,9 +38,9 @@ The product principle is simple: users manage delivery artifacts, not AI workers
 
 Core product docs:
 
-- [SpecForge PRD](SPECFORGE_PRD.md)
-- [SpecForge architecture plan](SPECFORGE_ARCHITECTURE_PLAN.md)
-- [SpecForge development implementation plan](SPECFORGE_DEVELOPMENT_IMPLEMENTATION_PLAN.md)
+- [CodingCTO PRD](SPECFORGE_PRD.md)
+- [CodingCTO architecture plan](SPECFORGE_ARCHITECTURE_PLAN.md)
+- [CodingCTO development implementation plan](SPECFORGE_DEVELOPMENT_IMPLEMENTATION_PLAN.md)
 
 ## Quick start
 
@@ -59,9 +61,9 @@ After the API has an approved plan and dispatched execution task, a local Codex 
 
 ```bash
 cd api
-go run ./cmd/specforge-runtime \
+go run ./cmd/ccto daemon \
   --api-base-url http://localhost:2010/v1 \
-  --token "$SPECFORGE_RUNTIME_TOKEN" \
+  --token "$CODINGCTO_RUNTIME_TOKEN" \
   --repo-dir /path/to/local/repo \
   --repository-id github_owner__repo
 ```
@@ -89,9 +91,9 @@ This is a global open-source project. Keep all commits, pull request titles, pul
 Commit messages should be short, imperative, and English-only:
 
 ```text
-feat: add project-aware SpecForge planning
+feat: add project-aware CodingCTO planning
 fix: preserve project skills in execution prompts
-docs: clarify SpecForge development workflow
+docs: clarify CodingCTO development workflow
 ```
 
 Before opening a pull request, run the checks that match your change:

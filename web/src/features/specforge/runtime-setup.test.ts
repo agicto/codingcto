@@ -13,8 +13,8 @@ describe('runtime setup', () => {
     });
 
     expect(command).toContain('cd api');
-    expect(command).toContain('export SPECFORGE_RUNTIME_TOKEN="paste-runtime-token-here"');
-    expect(command).toContain('go run ./cmd/specforge-runtime');
+    expect(command).toContain('export CODINGCTO_RUNTIME_TOKEN="paste-runtime-token-here"');
+    expect(command).toContain('go run ./cmd/ccto daemon');
     expect(command).toContain('--api-base-url http://localhost:2010/v1');
     expect(command).toContain('--runtime-id local-codex-plan-42');
     expect(command).toContain('--repo-dir /Users/example/codingcto');

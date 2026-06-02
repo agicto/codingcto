@@ -19,11 +19,11 @@ func TestRuntimeWorkerRunsRealCLIExecutors(t *testing.T) {
 	}
 
 	cases := []struct {
-		name        string
-		executor    string
-		executable  string
-		codexPath   string
-		claudePath  string
+		name       string
+		executor   string
+		executable string
+		codexPath  string
+		claudePath string
 	}{
 		{
 			name:       "codex",
@@ -133,6 +133,16 @@ func (c *runtimeRealCLIFakeClient) CreateTaskEvent(ctx context.Context, taskID u
 func (c *runtimeRealCLIFakeClient) SubmitTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.SpecForgeExecutionBundle, error) {
 	c.submit = req
 	return &domain.SpecForgeExecutionBundle{}, nil
+}
+
+func (c *runtimeRealCLIFakeClient) CreateDirectTaskEvent(ctx context.Context, taskID uint, req *CreateTaskEventRequest) (*domain.CodingCTODirectTaskEvent, error) {
+	c.events = append(c.events, req)
+	return &domain.CodingCTODirectTaskEvent{TaskID: taskID, Type: req.Type, Tool: req.Tool, Content: req.Content, Output: req.Output}, nil
+}
+
+func (c *runtimeRealCLIFakeClient) SubmitDirectTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.CodingCTODirectAgentTask, error) {
+	c.submit = req
+	return &domain.CodingCTODirectAgentTask{ID: taskID, Status: req.Status}, nil
 }
 
 func (c *runtimeRealCLIFakeClient) Deregister(ctx context.Context, req *RuntimeDeregisterRequest) (*domain.SpecForgeRuntimeSweepResult, error) {

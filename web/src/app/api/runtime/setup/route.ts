@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   const command = [
     `cd ${shellQuote(apiDir)}`,
     `export CODINGCTO_RUNTIME_TOKEN=${shellQuote(session.apiAccessToken)}`,
-    'go run ./cmd/specforge-runtime \\',
+    'go run ./cmd/ccto daemon \\',
     `  --api-base-url ${shellQuote(apiBaseURL)} \\`,
     `  --runtime-id ${shellQuote(runtimeId)} \\`,
     `  --repo-dir ${shellQuote(repoDir)} \\`,

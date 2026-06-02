@@ -11,7 +11,7 @@ The Go module path is still `github.com/zgiai/luas/api` for compatibility with t
 - GORM persistence and migration registry
 - DDD-flavored domain and module boundaries
 - Starter modules for users, API keys, and audit logs
-- GitHub-native SpecForge planning and execution modules
+- GitHub-native CodingCTO planning and execution modules
 - Repository profile, skill, plan, prompt, execution, and verification services
 - Unified API responses, pagination, validation, logging, JWT, and middleware
 - Kest flow tests and Go unit/integration tests
@@ -103,10 +103,10 @@ The CLI binary path remains `cmd/luas` until a dedicated compatibility migration
 
 ### Run a Local Codex Runtime
 
-The SpecForge execution module can be driven by a local runtime process. The runtime talks to the API over `/v1`, claims dispatched `codex_cli` tasks, runs Codex CLI in a local repository directory, records task events, and submits the final result.
+The CodingCTO execution module can be driven by a local runtime process. The runtime talks to the API over `/v1`, claims dispatched `codex_cli` tasks, runs Codex CLI in a local repository directory, records task events, and submits the final result.
 
 ```bash
-go run ./cmd/specforge-runtime \
+go run ./cmd/ccto daemon \
   --api-base-url http://localhost:2010/v1 \
   --token "$CODINGCTO_RUNTIME_TOKEN" \
   --runtime-id local-codex-1 \
@@ -122,13 +122,14 @@ Useful flags:
 - `--sandbox workspace-write`: pass the Codex sandbox mode.
 - `--approval-policy never`: keep execution non-interactive for automation.
 
-Environment equivalents are available with `SPECFORGE_API_BASE_URL`, `SPECFORGE_RUNTIME_TOKEN` (or `CODINGCTO_RUNTIME_TOKEN`), `SPECFORGE_RUNTIME_ID`, `SPECFORGE_RUNTIME_REPO_DIR`, `SPECFORGE_RUNTIME_REPOSITORY_ID`, `CODEX_CLI_PATH`, `SPECFORGE_CODEX_SANDBOX`, `SPECFORGE_CODEX_APPROVAL_POLICY`, and `SPECFORGE_CODEX_TIMEOUT`.
+Environment equivalents are available with `CODINGCTO_API_BASE_URL`, `CODINGCTO_RUNTIME_TOKEN`, `CODINGCTO_RUNTIME_ID`, `CODINGCTO_RUNTIME_REPO_DIR`, `CODINGCTO_RUNTIME_REPOSITORY_ID`, `CODEX_CLI_PATH`, `CODINGCTO_CODEX_SANDBOX`, `CODINGCTO_CODEX_APPROVAL_POLICY`, and `CODINGCTO_CODEX_TIMEOUT`.
 
 ## Repository Layout
 
 ```text
 api/
 ├── cmd/
+│   ├── ccto/             # CodingCTO local runtime CLI
 │   ├── luas/              # compatibility CLI entrypoint
 │   └── server/            # HTTP server entrypoint
 ├── database/
@@ -157,9 +158,9 @@ api/
 - Use explicit interfaces only at real seams such as repositories, external services, clocks, or runners.
 - Keep all new comments and documentation in English.
 
-## SpecForge Modules
+## CodingCTO Workflow Modules
 
-SpecForge is the CodingCTO workflow that turns product intent into delivery artifacts:
+CodingCTO turns product intent into delivery artifacts:
 
 1. Repository context indexing
 2. Product plan generation
@@ -188,7 +189,7 @@ Run checks from `api/` unless noted otherwise.
 
 ## Migrations
 
-Migrations are registered in `database/migrations`. Keep migrations small, ordered, reversible, and covered by migration tests when adding schema that is part of the SpecForge workflow.
+Migrations are registered in `database/migrations`. Keep migrations small, ordered, reversible, and covered by migration tests when adding schema that is part of the CodingCTO workflow.
 
 Useful commands:
 

@@ -83,6 +83,45 @@ func TestStartRunRejectsUnknownSelectedPRNode(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrInvalidInput)
 }
 
+func TestListDirectAgentTasksFiltersCurrentAgent(t *testing.T) {
+	repo := &memoryExecutionRepo{}
+	svc := NewService(repo, nil, nil, nil, nil, nil, nil)
+	ctx := context.Background()
+
+	first, err := svc.CreateDirectAgentTask(ctx, 42, &CreateDirectAgentTaskRequest{
+		RepositoryID: "repo-a",
+		Prompt:       "run pwd",
+		Executor:     ExecutorNameCodexCLI,
+		RuntimeID:    "runtime-a",
+	})
+	require.NoError(t, err)
+	_, err = svc.CreateDirectAgentTask(ctx, 42, &CreateDirectAgentTaskRequest{
+		RepositoryID: "repo-a",
+		Prompt:       "different runtime",
+		Executor:     ExecutorNameCodexCLI,
+		RuntimeID:    "runtime-b",
+	})
+	require.NoError(t, err)
+	_, err = svc.CreateDirectAgentTask(ctx, 42, &CreateDirectAgentTaskRequest{
+		RepositoryID: "repo-b",
+		Prompt:       "different repository",
+		Executor:     ExecutorNameCodexCLI,
+		RuntimeID:    "runtime-a",
+	})
+	require.NoError(t, err)
+
+	result, err := svc.ListDirectAgentTasks(ctx, 42, &ListDirectAgentTasksRequest{
+		RepositoryID: "repo-a",
+		Executor:     ExecutorNameCodexCLI,
+		RuntimeID:    "runtime-a",
+		Limit:        8,
+	})
+
+	require.NoError(t, err)
+	require.Len(t, result.Tasks, 1)
+	require.Equal(t, first.ID, result.Tasks[0].ID)
+}
+
 func TestStartRunIncludesRepoProfileInCompiledPrompt(t *testing.T) {
 	bundle := approvedPlanBundle()
 	bundle.RepoProfile = &domain.SpecForgeRepoProfile{
@@ -2387,10 +2426,12 @@ func TestSweepStaleTasksPublishesLinkedFixTaskResult(t *testing.T) {
 }
 
 type memoryExecutionRepo struct {
-	nextID   uint
-	bundle   *domain.SpecForgeExecutionBundle
-	runtimes map[string]*domain.SpecForgeRuntime
-	events   map[uint][]*domain.SpecForgeTaskEvent
+	nextID       uint
+	bundle       *domain.SpecForgeExecutionBundle
+	runtimes     map[string]*domain.SpecForgeRuntime
+	events       map[uint][]*domain.SpecForgeTaskEvent
+	directTasks  map[uint]*domain.CodingCTODirectAgentTask
+	directEvents map[uint][]*domain.CodingCTODirectTaskEvent
 }
 
 func (r *memoryExecutionRepo) CreateExecutionBundle(ctx context.Context, bundle *domain.SpecForgeExecutionBundle) error {
@@ -2801,6 +2842,155 @@ func (r *memoryExecutionRepo) UpdateAgentTask(ctx context.Context, task *domain.
 		}
 	}
 	return domain.ErrNotFound
+}
+
+func (r *memoryExecutionRepo) CreateDirectAgentTask(ctx context.Context, task *domain.CodingCTODirectAgentTask) error {
+	if task == nil || strings.TrimSpace(task.RepositoryID) == "" || strings.TrimSpace(task.Prompt) == "" {
+		return domain.ErrInvalidInput
+	}
+	if r.directTasks == nil {
+		r.directTasks = map[uint]*domain.CodingCTODirectAgentTask{}
+	}
+	r.nextID++
+	copied := *task
+	copied.ID = r.nextID
+	task.ID = copied.ID
+	r.directTasks[copied.ID] = &copied
+	return nil
+}
+
+func (r *memoryExecutionRepo) FindDirectAgentTaskByID(ctx context.Context, taskID uint) (*domain.CodingCTODirectAgentTask, error) {
+	if taskID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	task := r.directTasks[taskID]
+	if task == nil {
+		return nil, domain.ErrNotFound
+	}
+	copied := *task
+	return &copied, nil
+}
+
+func (r *memoryExecutionRepo) ListDirectAgentTasks(ctx context.Context, createdBy uint, repositoryID, executor, runtimeID string, limit int) ([]*domain.CodingCTODirectAgentTask, error) {
+	if createdBy == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	repositoryID = strings.TrimSpace(repositoryID)
+	executor = strings.TrimSpace(executor)
+	runtimeID = strings.TrimSpace(runtimeID)
+	out := []*domain.CodingCTODirectAgentTask{}
+	for _, task := range r.directTasks {
+		if task.CreatedBy != createdBy {
+			continue
+		}
+		if repositoryID != "" && task.RepositoryID != repositoryID {
+			continue
+		}
+		if executor != "" && task.Executor != executor {
+			continue
+		}
+		if runtimeID != "" && task.RuntimeID != runtimeID {
+			continue
+		}
+		copied := *task
+		out = append(out, &copied)
+		if limit > 0 && len(out) >= limit {
+			break
+		}
+	}
+	return out, nil
+}
+
+func (r *memoryExecutionRepo) HasClaimableDirectAgentTask(ctx context.Context, runtimeID, executor string) (bool, error) {
+	runtimeID = strings.TrimSpace(runtimeID)
+	executor = strings.TrimSpace(executor)
+	if runtimeID == "" {
+		return false, domain.ErrInvalidInput
+	}
+	for _, task := range r.directTasks {
+		if task.Status != domain.AgentTaskStatusDispatched {
+			continue
+		}
+		if executor != "" && task.Executor != executor {
+			continue
+		}
+		if task.RuntimeID == "" || task.RuntimeID == runtimeID {
+			return true, nil
+		}
+	}
+	return false, nil
+}
+
+func (r *memoryExecutionRepo) ClaimDirectAgentTask(ctx context.Context, runtimeID, executor, sessionID, workdir string) (*domain.CodingCTODirectAgentTask, error) {
+	runtimeID = strings.TrimSpace(runtimeID)
+	executor = strings.TrimSpace(executor)
+	if runtimeID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	for _, task := range r.directTasks {
+		if task.Status != domain.AgentTaskStatusDispatched {
+			continue
+		}
+		if executor != "" && task.Executor != executor {
+			continue
+		}
+		if task.RuntimeID != "" && task.RuntimeID != runtimeID {
+			continue
+		}
+		now := time.Now()
+		task.Status = domain.AgentTaskStatusRunning
+		task.RuntimeID = runtimeID
+		task.SessionID = strings.TrimSpace(sessionID)
+		task.Workdir = strings.TrimSpace(workdir)
+		task.StartedAt = &now
+		copied := *task
+		return &copied, nil
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryExecutionRepo) UpdateDirectAgentTask(ctx context.Context, task *domain.CodingCTODirectAgentTask) error {
+	if task == nil || task.ID == 0 {
+		return domain.ErrInvalidInput
+	}
+	if r.directTasks == nil || r.directTasks[task.ID] == nil {
+		return domain.ErrNotFound
+	}
+	copied := *task
+	r.directTasks[task.ID] = &copied
+	return nil
+}
+
+func (r *memoryExecutionRepo) CreateDirectTaskEvent(ctx context.Context, event *domain.CodingCTODirectTaskEvent) error {
+	if event == nil || event.TaskID == 0 || event.Type == "" {
+		return domain.ErrInvalidInput
+	}
+	if r.directEvents == nil {
+		r.directEvents = make(map[uint][]*domain.CodingCTODirectTaskEvent)
+	}
+	r.nextID++
+	copied := *event
+	copied.ID = r.nextID
+	copied.Seq = len(r.directEvents[event.TaskID]) + 1
+	event.ID = copied.ID
+	event.Seq = copied.Seq
+	r.directEvents[event.TaskID] = append(r.directEvents[event.TaskID], &copied)
+	return nil
+}
+
+func (r *memoryExecutionRepo) ListDirectTaskEvents(ctx context.Context, taskID uint, afterSeq int) ([]*domain.CodingCTODirectTaskEvent, error) {
+	if taskID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	out := make([]*domain.CodingCTODirectTaskEvent, 0, len(r.directEvents[taskID]))
+	for _, event := range r.directEvents[taskID] {
+		if event.Seq <= afterSeq {
+			continue
+		}
+		copied := *event
+		out = append(out, &copied)
+	}
+	return out, nil
 }
 
 type memoryPlanningRepo struct {

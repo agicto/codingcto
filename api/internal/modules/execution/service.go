@@ -44,6 +44,12 @@ type Service interface {
 	CreateTaskEvent(ctx context.Context, taskID uint, req *CreateTaskEventRequest) (*domain.SpecForgeTaskEvent, error)
 	ListTaskEvents(ctx context.Context, taskID uint, afterSeq int) ([]*domain.SpecForgeTaskEvent, error)
 	CompleteTask(ctx context.Context, taskID uint) (*domain.SpecForgeExecutionBundle, error)
+	CreateDirectAgentTask(ctx context.Context, userID uint, req *CreateDirectAgentTaskRequest) (*domain.CodingCTODirectAgentTask, error)
+	ListDirectAgentTasks(ctx context.Context, userID uint, req *ListDirectAgentTasksRequest) (*DirectAgentTaskListResponse, error)
+	GetDirectAgentTask(ctx context.Context, userID, taskID uint) (*domain.CodingCTODirectAgentTask, error)
+	CreateDirectTaskEvent(ctx context.Context, taskID uint, req *CreateTaskEventRequest) (*domain.CodingCTODirectTaskEvent, error)
+	ListDirectTaskEvents(ctx context.Context, userID, taskID uint, afterSeq int) ([]*domain.CodingCTODirectTaskEvent, error)
+	SubmitDirectTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.CodingCTODirectAgentTask, error)
 }
 
 type PRNodeDeliverer interface {
@@ -658,6 +664,12 @@ func (s *service) HeartbeatRuntime(ctx context.Context, req *RuntimeHeartbeatReq
 	if err != nil {
 		return nil, fmt.Errorf("check claimable task: %w", err)
 	}
+	if !pending {
+		pending, err = s.repo.HasClaimableDirectAgentTask(ctx, runtime.RuntimeID, runtime.Executor)
+		if err != nil {
+			return nil, fmt.Errorf("check claimable direct task: %w", err)
+		}
+	}
 	return &RuntimeHeartbeatResponse{Runtime: runtime, ClaimPending: pending}, nil
 }
 
@@ -780,6 +792,13 @@ func (s *service) ClaimTask(ctx context.Context, runtimeID string, req *ClaimAge
 	if req == nil {
 		req = &ClaimAgentTaskRequest{}
 	}
+	directTask, err := s.repo.ClaimDirectAgentTask(ctx, runtimeID, req.Executor, req.SessionID, req.Workdir)
+	if err != nil && !errors.Is(err, domain.ErrNotFound) {
+		return nil, fmt.Errorf("claim direct agent task: %w", err)
+	}
+	if directTask != nil {
+		return s.buildDirectClaimResponse(ctx, directTask), nil
+	}
 	task, err := s.repo.ClaimDispatchedAgentTask(ctx, runtimeID, req.Executor, req.SessionID, req.Workdir)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
@@ -804,6 +823,205 @@ func (s *service) ClaimTask(ctx context.Context, runtimeID string, req *ClaimAge
 		return nil, err
 	}
 	return claim, nil
+}
+
+func (s *service) CreateDirectAgentTask(ctx context.Context, userID uint, req *CreateDirectAgentTaskRequest) (*domain.CodingCTODirectAgentTask, error) {
+	if userID == 0 || req == nil || strings.TrimSpace(req.RepositoryID) == "" || strings.TrimSpace(req.Prompt) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	executor := strings.TrimSpace(req.Executor)
+	if executor == "" {
+		executor = ExecutorNameCodexCLI
+	}
+	now := time.Now()
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		title = directTaskTitle(req.Prompt)
+	}
+	task := &domain.CodingCTODirectAgentTask{
+		CreatedBy:    userID,
+		RepositoryID: strings.TrimSpace(req.RepositoryID),
+		Title:        title,
+		Prompt:       strings.TrimSpace(req.Prompt),
+		Executor:     executor,
+		Status:       domain.AgentTaskStatusDispatched,
+		RuntimeID:    strings.TrimSpace(req.RuntimeID),
+		DispatchedAt: &now,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if err := s.repo.CreateDirectAgentTask(ctx, task); err != nil {
+		return nil, fmt.Errorf("create direct agent task: %w", err)
+	}
+	_, _ = s.CreateDirectTaskEvent(ctx, task.ID, &CreateTaskEventRequest{
+		Type:    "direct_task_dispatched",
+		Tool:    executor,
+		Content: "CodingCTO dispatched a direct agent task.",
+	})
+	return task, nil
+}
+
+func (s *service) ListDirectAgentTasks(ctx context.Context, userID uint, req *ListDirectAgentTasksRequest) (*DirectAgentTaskListResponse, error) {
+	if userID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	limit := 20
+	if req != nil && req.Limit > 0 {
+		limit = req.Limit
+	}
+	repositoryID := ""
+	executor := ""
+	runtimeID := ""
+	if req != nil {
+		repositoryID = strings.TrimSpace(req.RepositoryID)
+		executor = strings.TrimSpace(req.Executor)
+		runtimeID = strings.TrimSpace(req.RuntimeID)
+	}
+	tasks, err := s.repo.ListDirectAgentTasks(ctx, userID, repositoryID, executor, runtimeID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list direct agent tasks: %w", err)
+	}
+	return &DirectAgentTaskListResponse{Tasks: tasks}, nil
+}
+
+func (s *service) GetDirectAgentTask(ctx context.Context, userID, taskID uint) (*domain.CodingCTODirectAgentTask, error) {
+	if userID == 0 || taskID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	task, err := s.repo.FindDirectAgentTaskByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if task.CreatedBy != userID {
+		return nil, domain.ErrNotFound
+	}
+	return task, nil
+}
+
+func (s *service) CreateDirectTaskEvent(ctx context.Context, taskID uint, req *CreateTaskEventRequest) (*domain.CodingCTODirectTaskEvent, error) {
+	if taskID == 0 || req == nil || strings.TrimSpace(req.Type) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	event := &domain.CodingCTODirectTaskEvent{
+		TaskID:  taskID,
+		Type:    strings.TrimSpace(req.Type),
+		Tool:    strings.TrimSpace(req.Tool),
+		Content: trimRuntimeResultField(req.Content),
+		Input:   trimRuntimeResultField(req.Input),
+		Output:  trimRuntimeResultField(req.Output),
+	}
+	if err := s.repo.CreateDirectTaskEvent(ctx, event); err != nil {
+		return nil, fmt.Errorf("create direct task event: %w", err)
+	}
+	return event, nil
+}
+
+func (s *service) ListDirectTaskEvents(ctx context.Context, userID, taskID uint, afterSeq int) ([]*domain.CodingCTODirectTaskEvent, error) {
+	if _, err := s.GetDirectAgentTask(ctx, userID, taskID); err != nil {
+		return nil, err
+	}
+	events, err := s.repo.ListDirectTaskEvents(ctx, taskID, afterSeq)
+	if err != nil {
+		return nil, fmt.Errorf("list direct task events: %w", err)
+	}
+	return events, nil
+}
+
+func (s *service) SubmitDirectTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.CodingCTODirectAgentTask, error) {
+	if taskID == 0 || req == nil || strings.TrimSpace(req.Status) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	task, err := s.repo.FindDirectAgentTaskByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	task.RuntimeID = firstNonEmpty(req.RuntimeID, task.RuntimeID)
+	task.SessionID = firstNonEmpty(req.SessionID, task.SessionID)
+	task.Workdir = firstNonEmpty(req.Workdir, task.Workdir)
+	task.ProcessRef = strings.TrimSpace(req.ProcessRef)
+	task.OutputLog = trimRuntimeResultField(req.Output)
+	task.ErrorLog = trimRuntimeResultField(req.Error)
+	task.ExitCode = &req.ExitCode
+	task.FailureReason = strings.TrimSpace(req.FailureReason)
+	task.FinishedAt = &now
+	task.LastProgressAt = &now
+	switch strings.TrimSpace(req.Status) {
+	case "completed":
+		task.Status = domain.AgentTaskStatusCompleted
+	case "timeout":
+		task.Status = domain.AgentTaskStatusFailed
+		if task.FailureReason == "" {
+			task.FailureReason = "execution_timeout"
+		}
+	default:
+		task.Status = domain.AgentTaskStatusFailed
+		if task.FailureReason == "" {
+			task.FailureReason = "executor_failed"
+		}
+	}
+	if err := s.repo.UpdateDirectAgentTask(ctx, task); err != nil {
+		return nil, fmt.Errorf("submit direct task result: %w", err)
+	}
+	return task, nil
+}
+
+func (s *service) buildDirectClaimResponse(_ context.Context, task *domain.CodingCTODirectAgentTask) *ClaimAgentTaskResponse {
+	if task == nil {
+		return &ClaimAgentTaskResponse{}
+	}
+	return &ClaimAgentTaskResponse{
+		DirectTask: &ClaimedDirectAgentTask{
+			ID:           task.ID,
+			RepositoryID: task.RepositoryID,
+			Title:        task.Title,
+			Executor:     task.Executor,
+			Status:       task.Status,
+			RuntimeID:    task.RuntimeID,
+			SessionID:    task.SessionID,
+			Workdir:      task.Workdir,
+			ProcessRef:   task.ProcessRef,
+		},
+		Prompt: &ClaimedTaskPrompt{
+			ID:         task.ID,
+			Version:    "direct-v1",
+			Type:       domain.PromptTypeImplementation,
+			PromptText: directTaskPrompt(task),
+			PromptHash: directTaskPromptHash(task),
+		},
+		ExecutionContext: &ClaimedTaskExecutionContext{
+			RepositoryID: task.RepositoryID,
+			BranchName:   "",
+		},
+	}
+}
+
+func directTaskTitle(prompt string) string {
+	title := strings.Join(strings.Fields(strings.TrimSpace(prompt)), " ")
+	if len(title) > 80 {
+		title = title[:80]
+	}
+	if title == "" {
+		return "Direct CodingCTO task"
+	}
+	return title
+}
+
+func directTaskPrompt(task *domain.CodingCTODirectAgentTask) string {
+	return strings.TrimSpace(fmt.Sprintf(`You are running a direct CodingCTO agent task.
+
+Repository id: %s
+Task title: %s
+
+User request:
+%s
+
+Work only inside the current repository. Make the smallest coherent code change that satisfies the request. If the request is informational, inspect the repository and report concise findings without making unrelated edits.`, task.RepositoryID, task.Title, task.Prompt))
+}
+
+func directTaskPromptHash(task *domain.CodingCTODirectAgentTask) string {
+	sum := sha256.Sum256([]byte(directTaskPrompt(task)))
+	return hex.EncodeToString(sum[:])
 }
 
 func (s *service) RetryTask(ctx context.Context, taskID uint, req *RetryAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error) {

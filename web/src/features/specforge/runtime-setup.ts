@@ -8,9 +8,9 @@ export interface RuntimeSetupCommandInput {
 }
 
 export function buildRuntimeSetupCommand(input: RuntimeSetupCommandInput): string {
-  const runtimeTokenEnv = input.runtimeTokenEnv?.trim() || 'SPECFORGE_RUNTIME_TOKEN';
+  const runtimeTokenEnv = input.runtimeTokenEnv?.trim() || 'CODINGCTO_RUNTIME_TOKEN';
   const args = [
-    'go run ./cmd/specforge-runtime',
+    'go run ./cmd/ccto daemon',
     `  --api-base-url ${shellQuote(input.apiBaseUrl)}`,
     `  --token "$${runtimeTokenEnv}"`,
     `  --runtime-id ${shellQuote(input.runtimeId)}`,
