@@ -6,6 +6,7 @@ import errors from './errors/en-US';
 import metadata from './metadata/en-US';
 import dashboard from './dashboard/en-US';
 import test from './test/en-US';
+import site from './site/en-US';
 
 /**
  * Static messages type derived from English (en-US) files.
@@ -20,6 +21,7 @@ export const messages = {
   metadata,
   dashboard,
   test,
+  site,
 } as const;
 
 export type Messages = typeof messages;

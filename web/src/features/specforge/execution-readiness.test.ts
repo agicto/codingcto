@@ -47,7 +47,7 @@ describe('executionReadinessForExecutor', () => {
     });
 
     expect(result.canDispatch).toBe(false);
-    expect(result.reason).toContain('Start a CodingCTO runtime');
+    expect(result.reason).toContain('启动带 Codex CLI 的 CodingCTO 运行器');
   });
 
   it('rejects runtimes without codex cli capability', () => {
@@ -75,7 +75,6 @@ describe('executionReadinessForExecutor', () => {
 
     expect(result.canDispatch).toBe(true);
   });
-
   it('allows a non-codex executor when its runtime is online and writable', () => {
     const result = executionReadinessForExecutor({
       runtimes: [

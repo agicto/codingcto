@@ -496,7 +496,10 @@ func (s *service) DispatchRun(ctx context.Context, runID uint, req *DispatchExec
 			return nil, err
 		}
 		task.Status = domain.AgentTaskStatusDispatched
+		task.ProcessStatus = domain.AgentProcessStatusPending
+		task.CurrentPhase = "dispatched"
 		task.DispatchedAt = &now
+		task.LastProgressAt = &now
 		if task.AttemptNumber == 0 {
 			task.AttemptNumber = 1
 		}
@@ -1114,6 +1117,8 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 	}
 	now := time.Now()
 	task.Status = domain.AgentTaskStatusRunning
+	task.ProcessStatus = domain.AgentProcessStatusRunning
+	task.CurrentPhase = "claim_accepted"
 	if runtimeID := strings.TrimSpace(req.RuntimeID); runtimeID != "" {
 		task.RuntimeID = runtimeID
 	}
@@ -1129,6 +1134,7 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 	if task.StartedAt == nil {
 		task.StartedAt = &now
 	}
+	task.LastProgressAt = &now
 	if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
 		return nil, fmt.Errorf("mark agent task running: %w", err)
 	}
@@ -1204,6 +1210,11 @@ func (s *service) SubmitTaskResult(ctx context.Context, taskID uint, req *Submit
 	if workdir := strings.TrimSpace(req.Workdir); workdir != "" {
 		task.Workdir = workdir
 	}
+	if processRef := strings.TrimSpace(req.ProcessRef); processRef != "" {
+		task.ProcessRef = processRef
+	}
+	now := time.Now()
+	task.LastProgressAt = &now
 	result := &ExecutionResult{
 		Status:   strings.TrimSpace(req.Status),
 		Output:   strings.TrimSpace(req.Output),
@@ -1234,6 +1245,11 @@ func (s *service) CreateTaskEvent(ctx context.Context, taskID uint, req *CreateT
 	}
 	if err := s.repo.CreateTaskEvent(ctx, event); err != nil {
 		return nil, fmt.Errorf("create task event: %w", err)
+	}
+	if updated := applyTaskEventProgress(task, event); updated {
+		if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
+			return nil, fmt.Errorf("sync task progress from event: %w", err)
+		}
 	}
 	return event, nil
 }
@@ -1437,9 +1453,12 @@ func (s *service) finalizeTaskResult(ctx context.Context, task *domain.SpecForge
 	task.ErrorLog = redact.Text(result.Error)
 	task.ExitCode = &result.ExitCode
 	task.FinishedAt = &finishedAt
+	task.LastProgressAt = &finishedAt
 	if runErr != nil || result.Status != "completed" || result.ExitCode != 0 {
 		task.Status = domain.AgentTaskStatusFailed
 		task.FailureReason = executionFailureReason(result, runErr)
+		task.ProcessStatus = processStatusForResult(result, runErr)
+		task.CurrentPhase = "finished_with_error"
 		if strings.TrimSpace(failureReasonOverride) != "" {
 			task.FailureReason = strings.TrimSpace(failureReasonOverride)
 		}
@@ -1447,9 +1466,13 @@ func (s *service) finalizeTaskResult(ctx context.Context, task *domain.SpecForge
 		if err := s.deliverTaskPR(ctx, task); err != nil {
 			task.Status = domain.AgentTaskStatusFailed
 			task.FailureReason = "pr_delivery_failed"
+			task.ProcessStatus = domain.AgentProcessStatusFailed
+			task.CurrentPhase = "pr_delivery_failed"
 			task.ErrorLog = appendLogLine(task.ErrorLog, err.Error())
 		} else {
 			task.Status = domain.AgentTaskStatusCompleted
+			task.ProcessStatus = domain.AgentProcessStatusCompleted
+			task.CurrentPhase = "completed"
 		}
 	}
 	if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
@@ -1605,18 +1628,98 @@ func appendLogLine(existing, line string) string {
 	return existing + "\n" + line
 }
 
+func normalizeProcessStatus(value string) string {
+	value = strings.TrimSpace(value)
+	switch value {
+	case domain.AgentProcessStatusPending,
+		domain.AgentProcessStatusPreparing,
+		domain.AgentProcessStatusRunning,
+		domain.AgentProcessStatusCompleted,
+		domain.AgentProcessStatusFailed,
+		domain.AgentProcessStatusTimedOut,
+		domain.AgentProcessStatusCancelled,
+		domain.AgentProcessStatusLost:
+		return value
+	default:
+		return domain.AgentProcessStatusPending
+	}
+}
+
+func applyTaskEventProgress(task *domain.SpecForgeAgentTask, event *domain.SpecForgeTaskEvent) bool {
+	if task == nil || event == nil {
+		return false
+	}
+	updated := false
+	now := event.CreatedAt
+	if now.IsZero() {
+		now = time.Now()
+	}
+	task.LastProgressAt = &now
+	updated = true
+
+	switch strings.TrimSpace(event.Type) {
+	case "runtime_claimed":
+		if task.Status == domain.AgentTaskStatusDispatched {
+			task.Status = domain.AgentTaskStatusRunning
+		}
+		task.ProcessStatus = domain.AgentProcessStatusPreparing
+		task.CurrentPhase = "runtime_claimed"
+	case "executor_started":
+		task.ProcessStatus = domain.AgentProcessStatusRunning
+		task.CurrentPhase = "executor_started"
+		if strings.TrimSpace(event.Content) != "" {
+			task.ProcessRef = strings.TrimSpace(event.Content)
+		}
+	case "executor_preparing_repo":
+		task.ProcessStatus = domain.AgentProcessStatusPreparing
+		task.CurrentPhase = "preparing_repo"
+	case "executor_phase_changed":
+		task.ProcessStatus = domain.AgentProcessStatusRunning
+		if strings.TrimSpace(event.Content) != "" {
+			task.CurrentPhase = strings.TrimSpace(event.Content)
+		}
+	case "executor_stdout":
+		task.ProcessStatus = domain.AgentProcessStatusRunning
+		task.CurrentPhase = "streaming_output"
+		if strings.TrimSpace(event.Output) != "" {
+			task.OutputLog = appendLogLine(task.OutputLog, event.Output)
+		}
+	case "executor_stderr":
+		task.ProcessStatus = domain.AgentProcessStatusRunning
+		task.CurrentPhase = "streaming_output"
+		if strings.TrimSpace(event.Output) != "" {
+			task.ErrorLog = appendLogLine(task.ErrorLog, event.Output)
+		}
+	case "executor_heartbeat":
+		if task.ProcessStatus == domain.AgentProcessStatusPending {
+			task.ProcessStatus = domain.AgentProcessStatusRunning
+		}
+		if strings.TrimSpace(event.Content) != "" {
+			task.CurrentPhase = strings.TrimSpace(event.Content)
+		}
+	case "executor_result":
+		task.CurrentPhase = "executor_finished"
+	}
+	return updated
+}
+
 func buildInitialTasks(nodes []*domain.SpecForgePRNode, executor string) []*domain.SpecForgeAgentTask {
 	tasks := make([]*domain.SpecForgeAgentTask, 0, len(nodes))
 	for _, node := range nodes {
 		status := domain.AgentTaskStatusQueued
+		processStatus := domain.AgentProcessStatusPending
+		currentPhase := "awaiting_dispatch"
 		if len(node.DependsOn) > 0 {
 			status = domain.AgentTaskStatusWaiting
+			currentPhase = "awaiting_dependencies"
 		}
 		tasks = append(tasks, &domain.SpecForgeAgentTask{
 			PRNodeID:      node.ID,
 			Executor:      executor,
 			Status:        status,
 			PromptType:    domain.PromptTypeImplementation,
+			ProcessStatus: processStatus,
+			CurrentPhase:  currentPhase,
 			AttemptNumber: 1,
 		})
 	}
@@ -2176,7 +2279,20 @@ func writeExecutionSkills(b *strings.Builder, skills []*domain.SpecForgeSkill) {
 		b.WriteString("- None\n\n")
 		return
 	}
-	wrote := false
+	for _, skill := range activeSkills {
+		b.WriteString("## " + strings.TrimSpace(skill.Name) + "\n")
+		if strings.TrimSpace(skill.Description) != "" {
+			b.WriteString(strings.TrimSpace(skill.Description) + "\n")
+		}
+		if len(skill.TargetAgents) > 0 {
+			b.WriteString("Assigned agents: " + strings.Join(skill.TargetAgents, ", ") + "\n")
+		}
+		b.WriteString(strings.TrimSpace(skill.Content) + "\n\n")
+	}
+}
+
+func activeExecutionSkills(skills []*domain.SpecForgeSkill) []*domain.SpecForgeSkill {
+	out := make([]*domain.SpecForgeSkill, 0, len(skills))
 	for _, skill := range skills {
 		if skill == nil || strings.TrimSpace(skill.Name) == "" || strings.TrimSpace(skill.Content) == "" {
 			continue
@@ -2749,6 +2865,9 @@ func markTaskFailed(task *domain.SpecForgeAgentTask, reason, detail string, exit
 	task.ErrorLog = appendLogLine(task.ErrorLog, detail)
 	task.ExitCode = &exitCode
 	task.FinishedAt = &now
+	task.LastProgressAt = &now
+	task.ProcessStatus = domain.AgentProcessStatusFailed
+	task.CurrentPhase = "failed"
 }
 
 func executionFailureReason(result *ExecutionResult, runErr error) string {
@@ -2759,6 +2878,16 @@ func executionFailureReason(result *ExecutionResult, runErr error) string {
 		return "executor_error"
 	}
 	return "executor_failed"
+}
+
+func processStatusForResult(result *ExecutionResult, runErr error) string {
+	if result != nil && strings.TrimSpace(result.Status) == "timeout" {
+		return domain.AgentProcessStatusTimedOut
+	}
+	if runErr != nil || (result != nil && result.ExitCode != 0) {
+		return domain.AgentProcessStatusFailed
+	}
+	return domain.AgentProcessStatusCompleted
 }
 
 func toClaimedAgentTask(task *domain.SpecForgeAgentTask) *ClaimedAgentTask {
@@ -2772,12 +2901,15 @@ func toClaimedAgentTask(task *domain.SpecForgeAgentTask) *ClaimedAgentTask {
 		Executor:      task.Executor,
 		Status:        task.Status,
 		PromptType:    taskPromptType(task),
+		ProcessStatus: normalizeProcessStatus(task.ProcessStatus),
+		CurrentPhase:  strings.TrimSpace(task.CurrentPhase),
 		RuntimeID:     task.RuntimeID,
 		AttemptNumber: task.AttemptNumber,
 		ParentTaskID:  task.ParentTaskID,
 		FixAttemptID:  task.FixAttemptID,
 		SessionID:     task.SessionID,
 		Workdir:       task.Workdir,
+		ProcessRef:    task.ProcessRef,
 	}
 }
 

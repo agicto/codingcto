@@ -1,92 +1,66 @@
 import Link from 'next/link';
-import {
-  ArrowRight,
-  Bot,
-  CheckCircle2,
-  ClipboardCheck,
-  Code2,
-  DollarSign,
-  FileCode2,
-  MessageSquareText,
-  Rocket,
-  ShieldCheck,
-  Sparkles,
-  Target,
-  TestTube2,
-  TrendingUp,
-  UsersRound,
-  Zap,
+import { getTranslations } from 'next-intl/server';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { 
+  ArrowRight, 
+  Shield, 
+  Globe, 
+  Terminal, 
+  Sparkles, 
+  Palette,
+  Atom,
+  Database,
+  ShieldCheck
 } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
-import { Logo } from '@/components/ui/icons';
+/**
+ * CodingCTO homepage
+ * Unified design language with Auth and Console sections
+ */
+export default async function HomePage() {
+  const t = await getTranslations('site');
+  const features = featuresData(t);
 
-const teamRoles = [
-  { name: '产品专家', detail: '需求分析 / 方案规划' },
-  { name: '架构专家', detail: '技术设计 / 架构规划' },
-  { name: 'UI/UX 专家', detail: '交互设计 / 体验优化' },
-  { name: 'QA 专家', detail: '测试策略 / 质量保障' },
-];
-
-const knowledgeItems = ['深度理解仓库', '最佳实践知识', '实施方案生成', '任务拆解规划'];
-
-const agents = [
-  'Cursor',
-  'Codex',
-  'Claude Code',
-  'Gemini CLI',
-  '更多 Agent',
-];
-
-const qualityItems = [
-  '单元测试',
-  'API 测试',
-  'UI / E2E 测试',
-  '回归测试',
-  '代码审查',
-  '安全扫描',
-];
-
-const deliveryItems = ['自动创建 PR', '测试报告', '代码审查报告', '风险评估', '可直接合并'];
-
-const benefits = [
-  { icon: Zap, title: '交付更快', detail: '10x 更快的交付速度', tone: 'blue' },
-  { icon: Target, title: '质量更高', detail: '标准化流程保障质量', tone: 'purple' },
-  { icon: ShieldCheck, title: '风险更低', detail: '自动化测试与审查', tone: 'green' },
-  { icon: DollarSign, title: '成本更优', detail: '节省研发时间与成本', tone: 'orange' },
-  { icon: TrendingUp, title: '持续进化', detail: '持续优化与知识沉淀', tone: 'blue' },
-];
-
-export default function HomePage() {
   return (
     <div className="min-h-screen bg-white text-[#07143d] dark:bg-bg-canvas dark:text-text-main">
       <section className="relative overflow-hidden">
         <div className="absolute inset-0 bg-[radial-gradient(circle_at_15%_0%,rgba(17,99,255,0.16),transparent_30%),radial-gradient(circle_at_85%_8%,rgba(99,102,241,0.12),transparent_28%),linear-gradient(180deg,#ffffff_0%,#f7fbff_62%,#ffffff_100%)] dark:bg-[radial-gradient(circle_at_15%_0%,rgba(110,160,255,0.18),transparent_30%),radial-gradient(circle_at_85%_8%,rgba(99,102,241,0.16),transparent_28%),linear-gradient(180deg,#050916_0%,#07101f_62%,#050916_100%)]" />
         <div className="absolute inset-x-0 top-0 h-px bg-linear-to-r from-transparent via-blue-300 to-transparent" />
 
-        <div className="container relative py-10 md:py-14 lg:py-16">
-          <div className="grid gap-8 lg:grid-cols-[360px_minmax(0,1fr)] lg:items-start">
-            <div className="space-y-6">
-              <Logo className="h-14 w-auto md:h-16" />
-              <div className="space-y-4">
-                <h1 className="max-w-3xl text-4xl font-black leading-tight tracking-normal md:text-5xl">
-                  让每个仓库拥有世界级数字研发团队
-                </h1>
-                <p className="text-lg font-medium leading-8 text-[#596681] dark:text-text-subtle md:text-xl">
-                  从需求到生产级 PR，自动化交付
-                  <span className="mx-1 text-[#1163ff] dark:text-[#6ea0ff]">高质量</span>
-                  软件
-                </p>
-              </div>
-              <div className="flex flex-wrap gap-3">
-                <Button asChild size="lg" className="h-11 rounded-full px-6">
-                  <Link href="/console/projects">
-                    进入项目
-                    <ArrowRight className="h-4 w-4" />
-                  </Link>
+        <div className="container relative py-20 md:py-28 lg:py-36">
+          <div className="mx-auto max-w-4xl text-center">
+            {/* Badge */}
+            <Badge variant="secondary" className="mb-6 px-4 py-1.5 text-sm font-medium">
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+              {t('hero.eyebrow')}
+            </Badge>
+
+            {/* Title */}
+            <h1 className="text-4xl font-bold tracking-tight md:text-5xl lg:text-6xl">
+              {t('hero.titlePrefix')}{' '}
+              <span className="bg-linear-to-r from-primary to-primary-deeper bg-clip-text text-transparent">
+                {t('hero.titleHighlight')}
+              </span>
+            </h1>
+
+            {/* Description */}
+            <p className="mt-6 text-lg text-text-muted md:text-xl max-w-2xl mx-auto">
+              {t('hero.description')}
+            </p>
+
+            {/* CTA Buttons */}
+            <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
+              <Link href="/register">
+                <Button size="lg" className="h-12 px-8 gap-2 shadow-button-primary">
+                  {t('hero.getStarted')}
+                  <ArrowRight className="h-4 w-4" />
                 </Button>
-                <Button asChild variant="outline" size="lg" className="h-11 rounded-full px-6">
-                  <Link href="/console/settings?tab=github">连接 GitHub</Link>
+              </Link>
+              <Link href="/console">
+                <Button variant="outline" size="lg" className="h-12 px-8">
+                  {t('hero.viewDemo')}
                 </Button>
               </div>
             </div>
@@ -96,10 +70,100 @@ export default function HomePage() {
             </div>
           </div>
 
-          <BenefitStrip />
+      {/* Features Section */}
+      <section className="py-20 md:py-28 bg-bg-subtle/30">
+        <div className="container">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
+              {t('features.title')}
+            </h2>
+            <p className="mt-4 text-text-muted max-w-2xl mx-auto">
+              {t('features.description')}
+            </p>
+          </div>
 
-          <div className="mx-auto mt-8 w-fit rounded-xl border border-blue-100 bg-blue-50/80 px-6 py-3 text-center text-lg font-bold text-[#1c2d68] shadow-sm dark:border-white/10 dark:bg-white/5 dark:text-text-main">
-            CodingCTO = 数字研发团队 + AI 代理 + 自动化质量保障
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {features.map((feature, index) => (
+              <Card 
+                key={index} 
+                className="group bg-bg-surface border-border/50 hover:shadow-premium hover:-translate-y-1 transition-all duration-300"
+              >
+                <CardContent className="p-6">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-300">
+                    <feature.icon className="h-6 w-6" />
+                  </div>
+                  <h3 className="mt-4 text-lg font-semibold">{feature.title}</h3>
+                  <p className="mt-2 text-sm text-text-muted leading-relaxed">
+                    {feature.description}
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Tech Stack Section */}
+      <section className="py-20 md:py-28">
+        <div className="container">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
+              {t('stack.title')}
+            </h2>
+            <p className="mt-4 text-text-muted">
+              {t('stack.description')}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-6 md:gap-10">
+            {techStackData.map((tech, index) => (
+              <div 
+                key={index}
+                className="flex items-center gap-3 px-5 py-3 rounded-xl bg-bg-surface border border-border/50 hover:border-primary/30 hover:shadow-md transition-all duration-300"
+              >
+                {tech.icon}
+                <span className="font-medium">{tech.name}</span>
+              </div>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* CTA Section - Using primary gradient like Auth */}
+      <section className="relative overflow-hidden bg-linear-to-br from-primary via-primary/95 to-primary-deeper py-20 md:py-28">
+        {/* Background decorations */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-[-20%] right-[-10%] w-[40%] h-[40%] rounded-full bg-white/10 blur-3xl" />
+          <div className="absolute bottom-[-20%] left-[-10%] w-[30%] h-[30%] rounded-full bg-primary-deeper/30 blur-2xl" />
+        </div>
+
+        <div className="container relative text-center text-white">
+          <h2 className="text-3xl font-bold tracking-tight md:text-4xl lg:text-5xl">
+            {t('cta.title')}
+          </h2>
+          <p className="mt-4 text-white/80 max-w-xl mx-auto md:text-lg">
+            {t('cta.description')}
+          </p>
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
+            <Link href="/register">
+              <Button size="lg" variant="secondary" className="h-12 px-8 gap-2">
+                {t('cta.getStarted')}
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
+            <a 
+              href="https://github.com/agicto/codingcto"
+              target="_blank" 
+              rel="noopener noreferrer"
+            >
+              <Button 
+                size="lg" 
+                variant="outline" 
+                className="h-12 px-8 bg-transparent border-white/30 text-white hover:bg-white/10 hover:text-white"
+              >
+                {t('cta.viewGitHub')}
+              </Button>
+            </a>
           </div>
         </div>
       </section>
@@ -107,21 +171,31 @@ export default function HomePage() {
   );
 }
 
-function WorkflowDiagram() {
-  return (
-    <div className="grid gap-4 xl:grid-cols-[0.78fr_auto_1.85fr_auto_1.05fr_auto_0.92fr_auto_0.95fr] xl:items-center">
-      <InputStage />
-      <FlowArrow tone="blue" />
-      <TeamStage />
-      <FlowArrow tone="purple" />
-      <AgentStage />
-      <FlowArrow tone="blue" />
-      <QualityStage />
-      <FlowArrow tone="green" />
-      <DeliveryStage />
-    </div>
-  );
-}
+// Features data
+type SiteTranslator = Awaited<ReturnType<typeof getTranslations>>;
+
+const featuresData = (t: SiteTranslator) => [
+  {
+    title: t('features.items.auth.title'),
+    description: t('features.items.auth.description'),
+    icon: Shield,
+  },
+  {
+    title: t('features.items.console.title'),
+    description: t('features.items.console.description'),
+    icon: Terminal,
+  },
+  {
+    title: t('features.items.context.title'),
+    description: t('features.items.context.description'),
+    icon: Globe,
+  },
+  {
+    title: t('features.items.review.title'),
+    description: t('features.items.review.description'),
+    icon: Palette,
+  },
+];
 
 function InputStage() {
   return (

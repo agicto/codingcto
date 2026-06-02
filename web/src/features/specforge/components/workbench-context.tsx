@@ -611,4 +611,3 @@ function GitHubWebhookEventRow({ event }: { event: GitHubWebhookEventDTO }) {
     </div>
   );
 }
-

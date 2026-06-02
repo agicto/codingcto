@@ -14,14 +14,16 @@ import (
 )
 
 func main() {
-	apiBaseURL := flag.String("api-base-url", envOrDefault("SPECFORGE_API_BASE_URL", "http://localhost:2010/v1"), "CodingCTO API base URL, including /v1")
+	apiBaseURL := flag.String("api-base-url", envOrDefault("SPECFORGE_API_BASE_URL", "http://localhost:8025/v1"), "CodingCTO API base URL, including /v1")
 	token := flag.String("token", envOrDefault("SPECFORGE_RUNTIME_TOKEN", os.Getenv("CODINGCTO_RUNTIME_TOKEN")), "Bearer token for runtime API access")
 	runtimeID := flag.String("runtime-id", envOrDefault("SPECFORGE_RUNTIME_ID", defaultRuntimeID()), "Stable runtime id")
 	repositoryID := flag.String("repository-id", os.Getenv("SPECFORGE_RUNTIME_REPOSITORY_ID"), "Optional repository id guard for claimed tasks")
 	repoDir := flag.String("repo-dir", os.Getenv("SPECFORGE_RUNTIME_REPO_DIR"), "Local repository directory used by Codex CLI")
 	once := flag.Bool("once", false, "Run one heartbeat/claim/execute cycle and exit")
 	pollInterval := flag.Duration("poll-interval", envDurationOrDefault("SPECFORGE_RUNTIME_POLL_INTERVAL", 10*time.Second), "Polling interval for daemon mode")
+	executorName := flag.String("executor", envOrDefault("SPECFORGE_RUNTIME_EXECUTOR", execution.ExecutorNameCodexCLI), "Executor kind: codex_cli or claude_code_cli")
 	codexPath := flag.String("codex-path", envOrDefault("CODEX_CLI_PATH", "codex"), "Codex CLI executable path")
+	claudePath := flag.String("claude-path", envOrDefault("CLAUDE_CODE_CLI_PATH", "claude"), "Claude Code CLI executable path")
 	sandbox := flag.String("sandbox", envOrDefault("SPECFORGE_CODEX_SANDBOX", "workspace-write"), "Codex sandbox mode")
 	approval := flag.String("approval-policy", envOrDefault("SPECFORGE_CODEX_APPROVAL_POLICY", "never"), "Codex approval policy")
 	timeout := flag.Duration("timeout", envDurationOrDefault("SPECFORGE_CODEX_TIMEOUT", 30*time.Minute), "Per-task Codex timeout")
@@ -35,12 +37,14 @@ func main() {
 		BaseURL: *apiBaseURL,
 		Token:   *token,
 	})
-	executor := execution.NewCodexCLIExecutor(execution.CodexCLIExecutorConfig{
-		ExecutablePath: *codexPath,
+	executorFactory := execution.NewExecutorFactory(execution.ExecutorFactoryConfig{
+		CodexPath:      *codexPath,
+		ClaudePath:     *claudePath,
 		SandboxMode:    *sandbox,
 		ApprovalPolicy: *approval,
 		Timeout:        *timeout,
 	}, nil)
+	executor := executorFactory.MustCreate(*executorName)
 	capabilities := execution.DetectRuntimeCapabilities(execution.RuntimeCapabilityProbeConfig{
 		CodexPath:      *codexPath,
 		RepoDir:        *repoDir,
@@ -49,7 +53,7 @@ func main() {
 	})
 	worker := execution.NewRuntimeWorker(execution.RuntimeWorkerConfig{
 		RuntimeID:       *runtimeID,
-		Executor:        execution.ExecutorNameCodexCLI,
+		Executor:        *executorName,
 		Version:         "specforge-runtime/0.1",
 		RepositoryID:    *repositoryID,
 		RepoDir:         *repoDir,

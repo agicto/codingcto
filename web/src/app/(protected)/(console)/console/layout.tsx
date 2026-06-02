@@ -43,7 +43,11 @@ import { useLogout } from '@/features/auth/hooks/use-auth';
 import { useAuthStore } from '@/features/auth/store/auth-store';
 import { useCreateWorkspace } from '@/features/project/hooks/use-projects';
 import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
-import { slugFromProjectName } from '@/features/project/project-utils';
+import {
+  projectIdFromConsolePathname,
+  projectRequirementNewHref,
+  slugFromProjectName,
+} from '@/features/project/project-utils';
 import { useSpecForgeRuntimes } from '@/features/specforge/hooks/use-specforge';
 
 interface WorkspaceNavItem {
@@ -86,8 +90,10 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
       }),
     [runtimesQuery.data?.runtimes]
   );
-  const isDeliveryPath = pathname.includes('/codingcto') || pathname.includes('/specforge');
-  const newRequirementHref = `${isDeliveryPath ? pathname : ROUTES.CONSOLE.SPECFORGE}?new=requirement`;
+  const currentProjectId = projectIdFromConsolePathname(pathname);
+  const newRequirementHref = currentProjectId
+    ? projectRequirementNewHref(currentProjectId)
+    : ROUTES.CONSOLE.SPECFORGE;
 
   const deliveryNavItems: WorkspaceNavItem[] = [
     {
@@ -202,7 +208,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
           <Settings className="h-3.5 w-3.5" />
           <Link
             href={ROUTES.CONSOLE.SETTINGS}
-            className="truncate rounded-full px-1 hover:text-text-main"
+            className="truncate hover:text-text-main"
           >
             {sidebarT('footer')}
           </Link>
@@ -269,7 +275,9 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
           </div>
         </header>
 
-        <main className="min-h-0 flex-1 overflow-hidden">{children}</main>
+        <main className="min-h-0 flex-1 overflow-x-hidden overflow-y-auto overscroll-contain">
+          {children}
+        </main>
       </section>
     </div>
   );
@@ -486,6 +494,7 @@ function SidebarLink({
 }) {
   const text = label ?? title ?? '';
   const active = !disabled && isSidebarItemActive({ href, activeOn }, pathname, settingsTab);
+  const showDescription = Boolean(active && description);
   const content = (
     <>
       <span className="flex min-w-0 items-center gap-2">

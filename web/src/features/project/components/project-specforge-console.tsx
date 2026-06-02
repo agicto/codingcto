@@ -19,6 +19,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { SpecForgeWorkbench } from '@/features/specforge';
+import { useLocale } from '@/hooks/use-locale';
 import { useT } from '@/i18n';
 import { useBindProjectRepository, useProjectContext } from '@/features/project/hooks/use-projects';
 import {
@@ -305,16 +306,16 @@ function ProjectE2ERunPanel({
   projectName?: string;
   repository?: ProjectRepositoryContextDTO['repository'];
 }) {
+  const t = useT('dashboard.projectDelivery.e2e');
+  const { locale } = useLocale();
   const createIssue = useCreateGitHubIssue();
   const createRequirement = useCreateSpecForgeProjectIdea(projectId);
   const approvePlan = useApproveSpecForgePlan();
   const startRun = useStartExecutionRun();
   const dispatchRun = useDispatchExecutionRun();
   const readinessQuery = useGitHubRepositoryReadiness(repository?.repository_id);
-  const [issueTitle, setIssueTitle] = useState('CodingCTO 端到端试跑：添加自动化运行记录');
-  const [issueBody, setIssueBody] = useState(
-    '请添加一个 .codingcto/e2e-smoke.md 文件，用中文记录本次 CodingCTO 自动化试跑已经完成 GitHub Issue、计划、Codex CLI 执行和 PR 创建链路。保持改动很小，只提交这个说明文件。'
-  );
+  const [issueTitle, setIssueTitle] = useState(t('defaultIssueTitle'));
+  const [issueBody, setIssueBody] = useState(t('defaultIssueBody'));
   const [steps, setSteps] = useState<FlowStep[]>([]);
   const [running, setRunning] = useState(false);
   const readiness = readinessQuery.data;
@@ -340,9 +341,9 @@ function ProjectE2ERunPanel({
       setSteps([
         {
           id: 'repository',
-          title: '检查仓库绑定',
+          title: t('steps.repository.title'),
           status: 'error',
-          detail: '当前项目还没有主仓库。',
+          detail: t('errors.noRepository'),
         },
       ]);
       return;
@@ -351,9 +352,9 @@ function ProjectE2ERunPanel({
       setSteps([
         {
           id: 'readiness',
-          title: '运行前检查',
+          title: t('readiness.title'),
           status: 'error',
-          detail: readinessProblemSummary(readinessBlockingChecks),
+          detail: readinessProblemSummary(readinessBlockingChecks, t('readiness.noChecks'), locale),
         },
       ]);
       return;
@@ -361,9 +362,9 @@ function ProjectE2ERunPanel({
     setRunning(true);
     setSteps([]);
     try {
-      setStep({ id: 'repository', title: '检查仓库绑定', status: 'success', detail: repository.repository_id });
+      setStep({ id: 'repository', title: t('steps.repository.title'), status: 'success', detail: repository.repository_id });
 
-      setStep({ id: 'issue', title: '创建 GitHub Issue', status: 'running' });
+      setStep({ id: 'issue', title: t('steps.issue.title'), status: 'running' });
       const issue = await createIssue.mutateAsync({
         repository_id: repository.repository_id,
         title: issueTitle,
@@ -371,13 +372,13 @@ function ProjectE2ERunPanel({
       });
       setStep({
         id: 'issue',
-        title: '创建 GitHub Issue',
+        title: t('steps.issue.title'),
         status: 'success',
         detail: `#${issue.number} ${issue.title}`,
         href: issue.html_url,
       });
 
-      setStep({ id: 'plan', title: '生成 CodingCTO 计划', status: 'running' });
+      setStep({ id: 'plan', title: t('steps.plan.title'), status: 'running' });
       const planBundle = await createRequirement.mutateAsync({
         type: 'docs',
         input: [
@@ -391,85 +392,85 @@ function ProjectE2ERunPanel({
       });
       setStep({
         id: 'plan',
-        title: '生成 CodingCTO 计划',
+        title: t('steps.plan.title'),
         status: 'success',
-        detail: `生成 ${planBundle.pr_nodes.length} 个 PR 节点`,
+        detail: t('steps.plan.detail', { count: planBundle.pr_nodes.length }),
       });
 
       const firstNode = planBundle.pr_nodes.find(node => node.depends_on.length === 0) ?? planBundle.pr_nodes[0];
       if (!firstNode) {
-        throw new Error('计划没有生成可执行 PR 节点。');
+        throw new Error(t('errors.noExecutableNode'));
       }
 
-      setStep({ id: 'approve', title: '审批计划', status: 'running' });
+      setStep({ id: 'approve', title: t('steps.approve.title'), status: 'running' });
       const approved = await approvePlan.mutateAsync({
         planId: planBundle.implementation_plan.id,
         payload: { approved: true },
       });
       setStep({
         id: 'approve',
-        title: '审批计划',
+        title: t('steps.approve.title'),
         status: 'success',
-        detail: `计划 #${approved.implementation_plan.id} 已审批`,
+        detail: t('steps.approve.detail', { id: approved.implementation_plan.id }),
       });
 
-      setStep({ id: 'run', title: '启动执行运行', status: 'running' });
+      setStep({ id: 'run', title: t('steps.run.title'), status: 'running' });
       const run = await startRun.mutateAsync({
         planId: approved.implementation_plan.id,
         payload: { executor: 'codex_cli', pr_node_ids: [firstNode.id] },
       });
       setStep({
         id: 'run',
-        title: '启动执行运行',
+        title: t('steps.run.title'),
         status: 'success',
         detail: `Run #${run.run.id}`,
       });
 
-      setStep({ id: 'dispatch', title: '派发给本地 Codex CLI', status: 'running' });
+      setStep({ id: 'dispatch', title: t('steps.dispatch.title'), status: 'running' });
       const dispatched = await dispatchRun.mutateAsync({
         runId: run.run.id,
         payload: { max_tasks: 1, require_runtime_ready: true },
       });
       const task = dispatched.tasks.find(candidate => candidate.status === 'dispatched');
       if (!task) {
-        throw new Error('执行运行没有派发出 Codex CLI 任务。');
+        throw new Error(t('errors.noDispatchedTask'));
       }
       setStep({
         id: 'dispatch',
-        title: '派发给本地 Codex CLI',
+        title: t('steps.dispatch.title'),
         status: 'success',
         detail: `Task #${task.id}`,
       });
 
       setStep({
         id: 'codex',
-        title: '等待本地 Runtime 执行',
+        title: t('steps.codexWaiting.title'),
         status: 'running',
-        detail: '任务已派发，等待本地 runtime claim 后调用 Codex CLI。',
+        detail: t('steps.codexWaiting.detail'),
       });
-      const executed = await waitForRuntimeTaskCompletion(run.run.id, task.id);
+      const executed = await waitForRuntimeTaskCompletion(run.run.id, task.id, t('errors.timeout'));
       const executedTask = executed.tasks.find(candidate => candidate.id === task.id);
       if (!executedTask || executedTask.status !== 'completed') {
-        throw new Error(executedTask?.failure_reason || executedTask?.error_log || 'Codex CLI 执行失败。');
+        throw new Error(executedTask?.failure_reason || executedTask?.error_log || t('errors.codexFailed'));
       }
       setStep({
         id: 'codex',
-        title: '本地 Runtime 执行完成',
+        title: t('steps.codexDone.title'),
         status: 'success',
-        detail: '本地 runtime 已调用 Codex CLI 完成代码修改、提交并推送分支。',
+        detail: t('steps.codexDone.detail'),
       });
 
       const prNode = executed.plan?.pr_nodes.find(node => node.id === task.pr_node_id);
       setStep({
         id: 'pr',
-        title: '创建 GitHub Pull Request',
+        title: t('steps.pr.title'),
         status: prNode?.github_pr_url ? 'success' : 'error',
-        detail: prNode?.github_pr_url ? `PR #${prNode.github_pr_number}` : '任务完成，但没有返回 PR URL。',
+        detail: prNode?.github_pr_url ? t('steps.pr.detail', { number: prNode.github_pr_number ?? '' }) : t('steps.pr.missing'),
         href: prNode?.github_pr_url,
       });
     } catch (error) {
-      const detail = error instanceof Error ? error.message : '流程执行失败。';
-      setStep({ id: 'error', title: '流程中断', status: 'error', detail });
+      const detail = error instanceof Error ? error.message : t('errors.flowFailed');
+      setStep({ id: 'error', title: t('steps.error.title'), status: 'error', detail });
     } finally {
       setRunning(false);
     }
@@ -479,9 +480,9 @@ function ProjectE2ERunPanel({
     <section className="mx-auto w-full max-w-7xl px-4 pt-4 md:px-8">
       <Card>
         <CardHeader>
-          <CardTitle className="text-base">真实端到端试跑</CardTitle>
+          <CardTitle className="text-base">{t('title')}</CardTitle>
           <CardDescription>
-            创建 GitHub Issue，生成计划，审批并派发给本地 runtime，由本机 Codex CLI 执行并创建 PR。
+            {t('description')}
           </CardDescription>
         </CardHeader>
         <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
@@ -489,9 +490,9 @@ function ProjectE2ERunPanel({
             <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3">
               <div className="flex flex-wrap items-center justify-between gap-2">
                 <div>
-                  <div className="text-sm font-medium text-text-main">运行前检查</div>
+                  <div className="text-sm font-medium text-text-main">{t('readiness.title')}</div>
                   <div className="mt-1 text-xs leading-5 text-text-muted">
-                    自动检测 GitHub App 安装、仓库权限和令牌是否能支撑 Issue、Codex 执行和 PR。
+                    {t('readiness.description')}
                   </div>
                 </div>
                 <Badge
@@ -505,15 +506,15 @@ function ProjectE2ERunPanel({
                   }
                 >
                   {readiness?.ready
-                    ? '可以执行'
+                    ? t('readiness.status.ready')
                     : readinessBlocked || readinessQuery.isError
-                      ? '需要处理'
-                      : '检查中'}
+                      ? t('readiness.status.blocked')
+                      : t('readiness.status.checking')}
                 </Badge>
               </div>
               {readinessQuery.isError ? (
                 <div className="mt-3 rounded-md border border-error/30 bg-error-subtle px-3 py-2 text-xs leading-5 text-error">
-                  无法读取仓库检查结果，请确认 API 服务和登录状态正常。
+                  {t('readiness.error')}
                 </div>
               ) : readiness ? (
                 <div className="mt-3 grid gap-2 md:grid-cols-2">
@@ -522,11 +523,11 @@ function ProjectE2ERunPanel({
                   ))}
                 </div>
               ) : (
-                <div className="mt-3 text-xs leading-5 text-text-muted">正在检查当前主仓库...</div>
+                <div className="mt-3 text-xs leading-5 text-text-muted">{t('readiness.checkingRepository')}</div>
               )}
             </div>
             <div className="space-y-2">
-              <Label htmlFor="e2e-issue-title">Issue 标题</Label>
+              <Label htmlFor="e2e-issue-title">{t('issueTitleLabel')}</Label>
               <Input
                 id="e2e-issue-title"
                 value={issueTitle}
@@ -534,7 +535,7 @@ function ProjectE2ERunPanel({
               />
             </div>
             <div className="space-y-2">
-              <Label htmlFor="e2e-issue-body">Issue 内容</Label>
+              <Label htmlFor="e2e-issue-body">{t('issueBodyLabel')}</Label>
               <Textarea
                 id="e2e-issue-body"
                 value={issueBody}
@@ -554,17 +555,17 @@ function ProjectE2ERunPanel({
               }
             >
               {running
-                ? '真实执行中...'
+                ? t('button.running')
                 : readinessBlocked
-                  ? '先处理 GitHub 检查'
-                  : '创建 Issue 并启动 Codex'}
+                  ? t('button.blocked')
+                  : t('button.start')}
             </Button>
           </div>
           <div className="space-y-2 rounded-lg border border-border-subtle bg-bg-subtle p-3">
-            <div className="text-sm font-medium text-text-main">执行时间线</div>
+            <div className="text-sm font-medium text-text-main">{t('timeline.title')}</div>
             {steps.length === 0 ? (
               <div className="text-sm leading-6 text-text-muted">
-                点击后这里会实时显示：仓库检查、Issue、计划、审批、派发、Codex CLI 和 PR。
+                {t('timeline.empty')}
               </div>
             ) : (
               <div className="space-y-2">
@@ -581,6 +582,7 @@ function ProjectE2ERunPanel({
 }
 
 function FlowStepRow({ step }: { step: FlowStep }) {
+  const t = useT('dashboard.projectDelivery.e2e');
   const tone =
     step.status === 'success'
       ? 'border-success/30 text-success'
@@ -596,12 +598,12 @@ function FlowStepRow({ step }: { step: FlowStep }) {
         <span className="font-medium text-text-main">{step.title}</span>
         <Badge variant="outline" className={tone}>
           {step.status === 'running'
-            ? '进行中'
+            ? t('stepStatus.running')
             : step.status === 'success'
-              ? '完成'
+              ? t('stepStatus.success')
               : step.status === 'error'
-                ? '失败'
-                : '等待'}
+                ? t('stepStatus.error')
+                : t('stepStatus.pending')}
         </Badge>
       </div>
       {step.detail ? <div className="mt-1 text-xs leading-5 text-text-muted">{step.detail}</div> : null}
@@ -612,7 +614,7 @@ function FlowStepRow({ step }: { step: FlowStep }) {
           rel="noreferrer"
           className="mt-1 inline-flex text-xs font-medium text-primary hover:underline"
         >
-          打开链接
+          {t('linkLabel')}
         </a>
       ) : null}
     </div>
@@ -620,21 +622,24 @@ function FlowStepRow({ step }: { step: FlowStep }) {
 }
 
 function ReadinessCheckRow({ check }: { check: GitHubRepositoryReadinessCheckDTO }) {
+  const t = useT('dashboard.projectDelivery.e2e');
+  const { locale } = useLocale();
+  const localizedCheck = localizeGitHubReadinessCheck(check, locale);
   const tone =
     check.status === 'ok'
       ? 'border-success/30 bg-success-subtle text-success'
       : check.status === 'warning'
         ? 'border-warning/30 bg-warning-subtle text-warning'
         : 'border-error/30 bg-error-subtle text-error';
-  const label = check.status === 'ok' ? '通过' : check.status === 'warning' ? '提醒' : '缺失';
+  const label = check.status === 'ok' ? t('checkStatus.ok') : check.status === 'warning' ? t('checkStatus.warning') : t('checkStatus.error');
 
   return (
     <div className="rounded-md border border-border-subtle bg-bg-surface px-3 py-2 text-xs">
       <div className="flex items-start justify-between gap-2">
         <div className="min-w-0">
-          <div className="font-medium leading-5 text-text-main">{check.message}</div>
-          {check.detail ? (
-            <div className="mt-1 break-words leading-5 text-text-muted">{check.detail}</div>
+          <div className="font-medium leading-5 text-text-main">{localizedCheck.message}</div>
+          {localizedCheck.detail ? (
+            <div className="mt-1 break-words leading-5 text-text-muted">{localizedCheck.detail}</div>
           ) : null}
         </div>
         <Badge variant="outline" className={tone}>
@@ -645,14 +650,81 @@ function ReadinessCheckRow({ check }: { check: GitHubRepositoryReadinessCheckDTO
   );
 }
 
-function readinessProblemSummary(checks: GitHubRepositoryReadinessCheckDTO[]) {
+function readinessProblemSummary(
+  checks: GitHubRepositoryReadinessCheckDTO[],
+  emptyMessage: string,
+  locale: string
+) {
   if (checks.length === 0) {
-    return 'GitHub App 当前还没有通过运行前检查。';
+    return emptyMessage;
   }
-  return checks.map(check => `${check.message}${check.detail ? `：${check.detail}` : ''}`).join('；');
+  return checks
+    .map(check => {
+      const localizedCheck = localizeGitHubReadinessCheck(check, locale);
+      return `${localizedCheck.message}${localizedCheck.detail ? `: ${localizedCheck.detail}` : ''}`;
+    })
+    .join(locale.startsWith('zh') ? '；' : '; ');
 }
 
-async function waitForRuntimeTaskCompletion(runId: number, taskId: number) {
+function localizeGitHubReadinessCheck(
+  check: GitHubRepositoryReadinessCheckDTO,
+  locale: string
+) {
+  if (locale.startsWith('zh')) {
+    return { message: check.message, detail: check.detail };
+  }
+
+  const permissionName = githubPermissionLabel(check.key);
+  const permissionMessage = check.key.startsWith('permission_')
+    ? permissionReadinessMessage(permissionName, check.status)
+    : undefined;
+  const messages: Record<string, string> = {
+    repository: 'Repository is bound to this project',
+    settings: 'GitHub integration is enabled',
+    installation: 'GitHub App installation is synced',
+    installation_token: 'GitHub App token is available',
+  };
+
+  return {
+    message: permissionMessage ?? messages[check.key] ?? check.message,
+    detail: localizeGitHubReadinessDetail(check.detail),
+  };
+}
+
+function permissionReadinessMessage(permissionName: string, status: GitHubRepositoryReadinessCheckDTO['status']) {
+  if (status === 'ok') {
+    return `${permissionName} permission is available`;
+  }
+  if (status === 'warning') {
+    return `GitHub App is missing ${permissionName}; later CI reads may be unavailable`;
+  }
+  return `GitHub App is missing required ${permissionName} permission`;
+}
+
+function githubPermissionLabel(key: string) {
+  const labels: Record<string, string> = {
+    permission_metadata: 'metadata:read',
+    permission_contents: 'contents:write',
+    permission_pull_requests: 'pull_requests:write',
+    permission_issues: 'issues:write',
+    permission_actions: 'actions:read',
+    permission_statuses: 'statuses:read',
+  };
+  return labels[key] ?? key.replace(/^permission_/, '').replaceAll('_', ':');
+}
+
+function localizeGitHubReadinessDetail(detail?: string) {
+  if (!detail) {
+    return undefined;
+  }
+  const permissionDetail = detail.match(/^当前权限：(.+)，需要：(.+)$/);
+  if (permissionDetail) {
+    return `Current permission: ${permissionDetail[1]}; required: ${permissionDetail[2]}`;
+  }
+  return detail;
+}
+
+async function waitForRuntimeTaskCompletion(runId: number, taskId: number, timeoutMessage: string) {
   const terminalStatuses = new Set([
     'completed',
     'failed',
@@ -668,7 +740,7 @@ async function waitForRuntimeTaskCompletion(runId: number, taskId: number) {
     }
     await sleep(2000);
   }
-  throw new Error('本地 runtime 还没有完成任务。请确认 runtime 仍在运行，并查看智能体页面的心跳状态。');
+  throw new Error(timeoutMessage);
 }
 
 function sleep(ms: number) {
@@ -701,7 +773,8 @@ function parseGitHubRepositoryURL(value: string) {
 
 function ProjectContextReadiness({ context }: { context?: ProjectContextDTO }) {
   const t = useT('dashboard.projectDelivery.readiness');
-  const readiness = projectContextReadiness(context);
+  const { locale } = useLocale();
+  const readiness = projectContextReadiness(context, locale);
   const repositories = context?.repository_contexts ?? [];
 
   return (
@@ -758,6 +831,7 @@ function ProjectContextReadiness({ context }: { context?: ProjectContextDTO }) {
               <ProjectRepositoryCard
                 key={repositoryContext.repository.repository_id}
                 repositoryContext={repositoryContext}
+                locale={locale}
                 t={t}
               />
             ))}
@@ -779,9 +853,11 @@ function ReadinessMetric({ label, value }: { label: string; value: number }) {
 
 function ProjectRepositoryCard({
   repositoryContext,
+  locale,
   t,
 }: {
   repositoryContext: ProjectRepositoryContextDTO;
+  locale: string;
   t: (key: string, values?: Record<string, string | number | Date>) => string;
 }) {
   const {
@@ -854,7 +930,7 @@ function ProjectRepositoryCard({
       </div>
       {repoWarnings.length > 0 && (
         <div className="mt-3 rounded-md border border-warning/30 bg-warning-subtle px-3 py-2 text-xs leading-5 text-warning">
-          {localizeProjectContextText(repoWarnings[0])}
+          {localizeProjectContextText(repoWarnings[0], locale)}
         </div>
       )}
     </div>
