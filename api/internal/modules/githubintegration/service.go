@@ -157,7 +157,7 @@ func (s *service) UpsertRepository(ctx context.Context, userID uint, req *Upsert
 	}
 	repositoryID := strings.TrimSpace(req.RepositoryID)
 	if repositoryID == "" {
-		repositoryID = fmt.Sprintf("github_%s__%s", strings.TrimSpace(req.GitHubOwner), strings.TrimSpace(req.GitHubRepo))
+		repositoryID = githubRepositoryID(req.GitHubOwner, req.GitHubRepo)
 	}
 
 	repository := &domain.Repository{
@@ -207,11 +207,69 @@ func (s *service) GetRepository(ctx context.Context, repositoryID string) (*doma
 }
 
 func (s *service) ListRepositories(ctx context.Context, workspaceID string) ([]*domain.Repository, error) {
-	workspaceID = strings.TrimSpace(workspaceID)
-	if workspaceID == "" {
+	return s.repo.ListRepositoriesByWorkspaceID(ctx, strings.TrimSpace(workspaceID))
+}
+
+func (s *service) CheckRepositoryReadiness(ctx context.Context, repositoryID string) (*GitHubRepositoryReadinessResponse, error) {
+	repositoryID = strings.TrimSpace(repositoryID)
+	if repositoryID == "" {
 		return nil, domain.ErrInvalidInput
 	}
-	return s.repo.ListRepositoriesByWorkspaceID(ctx, workspaceID)
+	repository, err := s.repo.FindRepositoryByRepositoryID(ctx, repositoryID)
+	if err != nil {
+		return nil, err
+	}
+
+	checks := []GitHubReadinessCheck{
+		readinessOK(
+			"repository",
+			"仓库已绑定到当前项目",
+			strings.TrimSpace(repository.GitHubOwner)+"/"+strings.TrimSpace(repository.GitHubRepo),
+			true,
+		),
+	}
+
+	settings, err := s.settingsForRepository(ctx, repository)
+	if err != nil {
+		checks = append(checks, readinessError("settings", "读取 GitHub 设置失败", err.Error(), true))
+	} else if !settings.Enabled {
+		checks = append(checks, readinessError("settings", "GitHub 功能已关闭", "请在 GitHub 设置中启用 GitHub 功能。", true))
+	} else {
+		checks = append(checks, readinessOK("settings", "GitHub 功能已启用", "", true))
+	}
+
+	var installation *domain.GitHubInstallation
+	if repository.GitHubInstallationID == 0 {
+		checks = append(checks, readinessError("installation", "仓库没有关联 GitHub App 安装记录", "请先安装 GitHub App 并同步仓库，再绑定项目。", true))
+	} else {
+		installation, err = s.repo.FindInstallationByID(ctx, repository.GitHubInstallationID)
+		if err != nil {
+			checks = append(checks, readinessError("installation", "找不到 GitHub App 安装记录", err.Error(), true))
+		} else {
+			checks = append(checks, readinessOK("installation", "GitHub App 安装记录已同步", installation.AccountLogin, true))
+			checks = append(checks, permissionReadinessChecks(installation.Permissions)...)
+		}
+	}
+
+	if installation != nil {
+		token, err := s.tokenProvider.InstallationToken(ctx, installation.InstallationID)
+		if err != nil {
+			checks = append(checks, readinessError("installation_token", "GitHub App 令牌交换失败", userFacingGitHubError(err), true))
+		} else if token == nil || strings.TrimSpace(token.Token) == "" {
+			checks = append(checks, readinessError("installation_token", "GitHub App 令牌为空", "请检查 GITHUB_APP_ID 和 GitHub App 私钥配置是否对应当前安装。", true))
+		} else {
+			checks = append(checks, readinessOK("installation_token", "GitHub App 令牌可用", "", true))
+		}
+	}
+
+	return &GitHubRepositoryReadinessResponse{
+		RepositoryID: repository.RepositoryID,
+		WorkspaceID:  repository.WorkspaceID,
+		GitHubOwner:  repository.GitHubOwner,
+		GitHubRepo:   repository.GitHubRepo,
+		Ready:        readinessIsReady(checks),
+		Checks:       checks,
+	}, nil
 }
 
 func (s *service) CheckRepositoryReadiness(ctx context.Context, repositoryID string) (*GitHubRepositoryReadinessResponse, error) {

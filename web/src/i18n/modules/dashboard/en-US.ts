@@ -93,8 +93,7 @@ const messages: DashboardMessages = {
     footer: 'Settings',
     workspace: {
       title: 'Organization workspace',
-      description:
-        'Switch the enterprise boundary used by settings, GitHub binding, projects, and CodingCTO delivery.',
+      description: 'Switch the enterprise boundary used by settings, GitHub binding, projects, and CodingCTO delivery.',
       loading: 'Loading...',
       createWorkspace: 'Create workspace',
       current: 'Current',
@@ -319,33 +318,28 @@ const messages: DashboardMessages = {
   console: {
     eyebrow: 'Enterprise delivery workspace',
     title: 'What needs attention today',
-    description:
-      'Start from projects, GitHub binding, and the CodingCTO delivery board. This home page now keeps only real business entry points.',
+    description: 'Start from projects, GitHub binding, and the CodingCTO delivery board. This home page now keeps only real business entry points.',
     openDelivery: 'Open delivery board',
     openProjects: 'View projects',
     cards: {
       projects: {
         title: 'Projects and repositories',
-        description:
-          'Create workspaces and projects, then bind GitHub repositories as primary, dependency, docs, or infra context.',
+        description: 'Create workspaces and projects, then bind GitHub repositories as primary, dependency, docs, or infra context.',
         action: 'Manage projects',
       },
       delivery: {
         title: 'CodingCTO delivery',
-        description:
-          'Turn requirements into plans, PR DAGs, execution tasks, and reviewable GitHub pull requests.',
+        description: 'Turn requirements into plans, PR DAGs, execution tasks, and reviewable GitHub pull requests.',
         action: 'Open delivery board',
       },
       github: {
         title: 'GitHub setup',
-        description:
-          'Install the GitHub App, sync accessible repositories, and bind them to projects.',
+        description: 'Install the GitHub App, sync accessible repositories, and bind them to projects.',
         action: 'Configure GitHub',
       },
       review: {
         title: 'Review Queue',
-        description:
-          'Plan approvals, failed CI, human review, and blockers will be collected here.',
+        description: 'Plan approvals, failed CI, human review, and blockers will be collected here.',
         action: 'Coming soon',
       },
     },
@@ -360,25 +354,21 @@ const messages: DashboardMessages = {
   deliveryEntry: {
     eyebrow: 'CodingCTO delivery',
     title: 'Start from a project, not a blank prompt',
-    description:
-      'Enterprise execution needs a workspace, project, GitHub repositories, repo context, and scope guardrails. The global delivery page is now an entry point; real execution should happen inside a project delivery board.',
+    description: 'Enterprise execution needs a workspace, project, GitHub repositories, repo context, and scope guardrails. The global delivery page is now an entry point; real execution should happen inside a project delivery board.',
     primaryAction: 'Open projects',
     githubAction: 'Configure GitHub',
     cards: {
       project: {
         title: 'Project delivery board',
-        description:
-          'Recommended entry. The project board loads bound repo profiles, architecture snapshots, skills, and guardrails automatically.',
+        description: 'Recommended entry. The project board loads bound repo profiles, architecture snapshots, skills, and guardrails automatically.',
       },
       github: {
         title: 'GitHub binding',
-        description:
-          'Install the GitHub App, sync repositories, then bind repos as primary, dependency, docs, or infra.',
+        description: 'Install the GitHub App, sync repositories, then bind repos as primary, dependency, docs, or infra.',
       },
       review: {
         title: 'Review Queue',
-        description:
-          'Plan approvals, failed CI, human review, and blockers will be collected here next.',
+        description: 'Plan approvals, failed CI, human review, and blockers will be collected here next.',
       },
     },
   },
@@ -491,9 +481,8 @@ const messages: DashboardMessages = {
   },
   projectsConsole: {
     eyebrow: 'Project console',
-    title: 'Set up a delivery project',
-    description:
-      'Create one workspace, one project, and one primary GitHub repository before starting CodingCTO delivery.',
+    title: 'Projects',
+    description: 'Create a project, add a short description, then open it when you are ready to connect repositories.',
     badges: {
       enterprise: 'Enterprise workspace',
       apiUnavailable: 'API unavailable',
@@ -507,8 +496,8 @@ const messages: DashboardMessages = {
       newProject: 'New project',
       createWorkspace: 'Create workspace',
       createProject: 'Create project',
-      openProject: 'Open project',
       openCodingCTO: 'Open CodingCTO',
+      openProject: 'Open project',
       configureGitHub: 'Configure GitHub',
       openAgents: 'View agents',
       signInBackend: 'Sign in with backend',
@@ -541,37 +530,22 @@ const messages: DashboardMessages = {
     },
     workspace: {
       title: 'Current workspace',
-      description:
-        'The workspace is the shared boundary for organization, permissions, GitHub binding, and CodingCTO execution.',
+      description: 'The workspace is the shared boundary for organization, permissions, GitHub binding, and CodingCTO execution.',
       selectPlaceholder: 'Select workspace',
       empty: 'No workspace yet. Create one to unlock project and CodingCTO flows.',
-      selected: 'Workspace: {name}',
       noDescription: 'No workspace description yet.',
       id: 'ID: {id}',
     },
-    backendGate: {
-      title: 'Backend session required',
-      description:
-        'Project, repository, and execution data come from the CodingCTO API. Your current browser session is signed in to the console but does not include a backend API token, so workspace data cannot be trusted.',
-      localHint:
-        'For local development, enable backend-backed login with LUAS_AUTH_BACKEND_ENABLED=true and sign in with a seeded backend user.',
-      emptyTitle: 'Workspace data is unavailable',
-      emptyDescription:
-        'This is an authentication or API connectivity problem, not an empty workspace. Reconnect the backend session before creating projects.',
-    },
     projects: {
       title: 'Delivery projects',
-      description:
-        'Each project should bind a primary repository and become context for planning, execution, and review.',
+      description: 'Each project should bind a primary repository and become context for planning, execution, and review.',
       count: '{count} projects',
-      loading: 'Loading projects from the selected workspace...',
-      emptyForWorkspace:
-        'No projects in this workspace yet. Create one to start repository binding.',
-      selectWorkspace: 'Select or create a workspace to list projects.',
-      emptyDescription:
-        'After creating a project, open the CodingCTO delivery board to bind GitHub repositories and generate an execution plan.',
+      loading: 'Loading projects...',
+      emptyForWorkspace: 'No projects yet. Create one to start repository binding.',
+      selectWorkspace: 'No projects yet.',
+      emptyDescription: 'After creating a project, open it to bind GitHub repositories and generate an execution plan.',
       noDescription: 'No description yet.',
-      primaryRepoRequired: 'Review repo context',
+      primaryRepoRequired: 'Primary repo required',
       status: {
         active: 'Active',
         inactive: 'Inactive',
@@ -579,38 +553,30 @@ const messages: DashboardMessages = {
     },
     newWorkspace: {
       title: 'New workspace',
-      description:
-        'A workspace represents an organization or business unit. Projects, repositories, and permissions belong here.',
+      description: 'A workspace represents an organization or business unit. Projects, repositories, and permissions belong here.',
       descriptionPlaceholder: 'Who owns this product portfolio?',
     },
     newProject: {
       title: 'New project',
-      description:
-        'Define the product or system boundary first, then open the project delivery board to bind GitHub repositories.',
+      description: 'Define the product or system boundary first, then open the project delivery board to bind GitHub repositories.',
+      titlePlaceholder: 'Project title',
       descriptionPlaceholder: 'What product or system does this project represent?',
+      statusPlanned: 'Planned',
+      noPriority: 'No priority',
+      ownerLead: 'Lead',
+      repositories: 'Repos',
     },
     setup: {
-      title: 'Setup path',
-      description: 'Finish the setup in order. Each step unlocks the next action.',
-      nextAction: 'Next action',
-      actions: {
-        backend: 'Reconnect the backend session',
-        workspace: 'Create the first workspace',
-        project: 'Create a delivery project',
-        github: 'Open project delivery',
-      },
+      title: 'Recommended path',
+      description: 'Like a deployment platform, define resource boundaries before execution.',
       steps: {
-        workspace: {
-          title: 'Workspace',
-          description: 'Organization boundary for permissions, repositories, and execution.',
-        },
         project: {
-          title: 'Project',
-          description: 'Product or system boundary that CodingCTO will plan against.',
+          title: 'Create the project boundary',
+          description: 'Clarify the product, system, or code domain this project represents.',
         },
         github: {
-          title: 'GitHub repository',
-          description: 'Bind the writable primary repository, then generate plans and PRs.',
+          title: 'Bind GitHub repositories',
+          description: 'Connect the primary repository and read-only context repositories.',
         },
         delivery: {
           title: 'Open CodingCTO delivery',
@@ -622,60 +588,12 @@ const messages: DashboardMessages = {
         },
       },
     },
-    wizard: {
-      title: 'Guided setup',
-      description:
-        'Finish the required delivery context in one place: workspace, project, and writable primary repository.',
-      status: {
-        workspace: 'Workspace needed',
-        project: 'Project needed',
-        repository: 'Repository needed',
-        complete: 'Ready for requirements',
-      },
-      workspace: {
-        title: 'Choose the operating workspace',
-        description:
-          'The workspace owns GitHub access, permissions, and every project that will later generate PRs.',
-      },
-      project: {
-        title: 'Choose the delivery project',
-        description:
-          'A project is the product boundary CodingCTO will analyze before writing PRDs, tasks, prompts, and code.',
-        selectLabel: 'Delivery project',
-        selectPlaceholder: 'Select project',
-        selected: 'Project: {name}',
-        empty: 'No delivery project selected.',
-      },
-      repository: {
-        title: 'Bind the primary repository',
-        description:
-          'The primary repository is the only writable execution target. Other repositories can be added later as read-only context.',
-        project: 'Project: {name}',
-        loading: 'Loading connected GitHub repositories...',
-        connectedCount: '{count} connected repositories',
-        emptyTitle: 'No connected repositories yet',
-        emptyDescription:
-          'Connect or sync GitHub in Settings first, then return here to bind the primary repository.',
-        allBound:
-          'All connected repositories are already bound to this project. Open the project context page to review roles.',
-        selectLabel: 'Primary repository',
-        selectPlaceholder: 'Select connected repository',
-        bindPrimary: 'Bind as primary',
-      },
-      complete: {
-        title: 'Delivery context is ready',
-        description:
-          'You can now submit a product idea, generate the PRD and technical plan, then compile prompts for execution.',
-        ready: '{name} has a writable primary repository.',
-        startRequirement: 'Create requirement',
-      },
-    },
     messages: {
       workspaceRequired: 'Workspace name and slug are required.',
-      workspaceCreateFailed:
-        'Workspace could not be created. Check the API connection and slug uniqueness.',
-      selectWorkspaceFirst: 'Create or select a workspace before creating a project.',
-      selectProjectFirst: 'Create or select a project before binding a repository.',
+      workspaceCreateFailed: 'Workspace could not be created. Check the API connection and slug uniqueness.',
+      projectSpaceCreateFailed: 'Projects are not ready yet. Check the API connection and try again.',
+      selectWorkspaceFirst: 'Projects are getting ready. Try again in a moment.',
+      projectUnauthorized: 'Project creation needs a backend session. Sign out, sign in again, then retry.',
       projectRequired: 'Project name and slug are required.',
       slugInvalid: 'Slug must be at least 2 characters and use lowercase letters, numbers, or hyphens.',
       projectCreateFailed: 'Project could not be created. Check the API connection and slug uniqueness.',
@@ -689,36 +607,30 @@ const messages: DashboardMessages = {
     states: {
       invalidProject: {
         title: 'Invalid project',
-        description:
-          'Open CodingCTO from a real project so repo context, permissions, and execution scope are available.',
+        description: 'Open CodingCTO from a real project so repo context, permissions, and execution scope are available.',
       },
       loading: {
         title: 'Loading project context',
-        description:
-          'Fetching workspace, repository bindings, skills, and architecture readiness before enabling CodingCTO.',
+        description: 'Fetching workspace, repository bindings, skills, and architecture readiness before enabling CodingCTO.',
       },
       unavailable: {
         title: 'Project context unavailable',
-        description:
-          'CodingCTO cannot start from an empty context here. Refresh the project, check backend auth, or create the project again from the Projects page.',
+        description: 'CodingCTO cannot start from an empty context here. Refresh the project, check backend auth, or create the project again from the Projects page.',
         action: 'Back to projects',
       },
     },
     primaryRequired: {
       title: 'Bind a primary repository to start planning',
-      description:
-        'CodingCTO can read dependency, docs, and infra repositories as context, but execution only writes to the active primary repository.',
+      description: 'CodingCTO can read dependency, docs, and infra repositories as context, but execution only writes to the active primary repository.',
     },
     bindPanel: {
       title: 'Bind GitHub repository',
-      description:
-        'Select a repository already connected in Settings > GitHub. Primary repositories are writable; dependency, docs, and infra repositories become read-only planning context.',
-      repositoryId: 'GitHub repository',
-      selectRepository: 'Select connected repository',
+      description: 'Use the repository ID created by Settings > GitHub. Primary repositories are writable; dependency, docs, and infra repositories become read-only planning context.',
+      repositoryId: 'Repository ID',
+      selectRepository: 'Select repository',
+      allRepositoriesBound: 'All connected repositories are already bound.',
       loadingRepositories: 'Loading connected repositories...',
-      emptyRepositories: 'No connected repositories exist in this workspace yet.',
-      allRepositoriesBound:
-        'Every connected GitHub repository in this workspace is already bound to this project.',
+      emptyRepositories: 'No connected GitHub repositories yet.',
       connectRepository: 'Connect GitHub',
       role: 'Role',
       binding: 'Binding',
@@ -730,11 +642,9 @@ const messages: DashboardMessages = {
         infra: 'Infra',
       },
       messages: {
-        repositoryRequired:
-          'Repository ID is required. Connect a GitHub repository in Settings > GitHub first.',
+        repositoryRequired: 'Repository ID is required. Connect a GitHub repository in Settings > GitHub first.',
         bound: '{role} repository {repoId} bound.',
-        bindFailed:
-          'Repository could not be bound. Confirm it was connected in Settings and belongs to this workspace.',
+        bindFailed: 'Repository could not be bound. Confirm it was connected in Settings and belongs to this workspace.',
       },
     },
     e2e: {
@@ -841,12 +751,6 @@ const messages: DashboardMessages = {
         skills: 'Skills',
         warnings: 'Warnings',
       },
-      contract: {
-        title: 'Context contract',
-        execution: 'Execution repo',
-        skills: 'Active skills',
-        missingEvidence: 'Missing evidence',
-      },
       roles: {
         primary: 'Primary',
         dependency: 'Dependency',
@@ -866,12 +770,6 @@ const messages: DashboardMessages = {
         fresh: 'fresh',
         missing: 'missing',
         generateSnapshot: 'Generate a snapshot before approving execution.',
-        remove: 'Remove',
-        removing: 'Removing',
-        removed: 'Repository {repoId} was removed from the project context.',
-        removeFailed: 'Repository could not be removed. Refresh and try again.',
-        primaryRemoveBlocked:
-          'The primary repository cannot be removed directly. Bind another primary repo or adjust the execution boundary first.',
       },
     },
   },

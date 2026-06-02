@@ -36,7 +36,7 @@ Minimum local values:
 ```bash
 APP_NAME=CodingCTO
 APP_ENV=development
-SERVER_PORT=8025
+SERVER_PORT=2010
 
 DB_DRIVER=postgres
 DB_HOST=localhost
@@ -85,9 +85,9 @@ make dev-pg
 
 Default local endpoints:
 
-- Home: `http://localhost:8025/`
-- Health: `http://localhost:8025/v1/health`
-- Swagger: `http://localhost:8025/swagger/index.html`
+- Home: `http://localhost:2010/`
+- Health: `http://localhost:2010/v1/health`
+- Swagger: `http://localhost:2010/swagger/index.html`
 
 ### Run the CLI
 
@@ -107,7 +107,7 @@ The SpecForge execution module can be driven by a local runtime process. The run
 
 ```bash
 go run ./cmd/specforge-runtime \
-  --api-base-url http://localhost:8025/v1 \
+  --api-base-url http://localhost:2010/v1 \
   --token "$CODINGCTO_RUNTIME_TOKEN" \
   --runtime-id local-codex-1 \
   --repo-dir /path/to/local/repo \

@@ -40,10 +40,6 @@ export async function GET() {
   return NextResponse.json({
     data: {
       user,
-      session: {
-        mode: backendAuthEnabled ? 'backend' : 'mock',
-        projectApiReady: backendAuthEnabled,
-      },
     },
   });
 }
