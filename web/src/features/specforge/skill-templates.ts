@@ -8,8 +8,8 @@ export interface SpecForgeSkillTemplate {
 export const specForgeSkillTemplates: SpecForgeSkillTemplate[] = [
   {
     id: "planning-sop",
-    name: "CodingCTO planning SOP",
-    description: "Evidence-first planning workflow for idea-to-PR decomposition.",
+    name: "CodingCTO 规划 SOP",
+    description: "面向需求到 PR 拆分的证据优先规划流程。",
     content: [
       "Use this SOP before generating or executing PR nodes.",
       "",
@@ -27,8 +27,8 @@ export const specForgeSkillTemplates: SpecForgeSkillTemplate[] = [
   },
   {
     id: "review-gate",
-    name: "CodingCTO review gate",
-    description: "Quality gate for self-review before opening or updating PRs.",
+    name: "CodingCTO 评审门禁",
+    description: "创建或更新 PR 前的自检质量门禁。",
     content: [
       "Apply this gate before marking a PR node ready for review.",
       "",

@@ -143,6 +143,21 @@ func (h *Handler) GetPlan(c *gin.Context) {
 	response.Success(c, toPlanReviewResponse(bundle))
 }
 
+func (h *Handler) GetPlanByID(c *gin.Context) {
+	planID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+
+	bundle, err := h.service.GetPlan(c.Request.Context(), planID)
+	if err != nil {
+		response.HandleError(c, "Failed to get plan", err)
+		return
+	}
+
+	response.Success(c, toPlanReviewResponse(bundle))
+}
+
 func (h *Handler) ApprovePlan(c *gin.Context) {
 	userID, ok := handler.GetUserID(c)
 	if !ok {

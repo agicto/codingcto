@@ -55,6 +55,7 @@ type SpecForgeProjectContext struct {
 	ReadOnlyRepositoryIDs []string                             `json:"read_only_repository_ids,omitempty"`
 	ExecutionGuardrails   []string                             `json:"execution_guardrails,omitempty"`
 	Readiness             *SpecForgeProjectContextReadiness    `json:"readiness,omitempty"`
+	ContextContract       *SpecForgeProjectContextContract     `json:"context_contract,omitempty"`
 }
 
 // SpecForgeProjectRepositoryContext enriches a project repository binding with planner-ready repo intelligence.
@@ -80,6 +81,41 @@ type SpecForgeProjectContextReadiness struct {
 	NextAction              string   `json:"next_action"`
 }
 
+// SpecForgeProjectContextContract is the compact, stable context packet injected into planners and executors.
+type SpecForgeProjectContextContract struct {
+	Version               string                                        `json:"version"`
+	ProjectID             uint                                          `json:"project_id"`
+	ProjectName           string                                        `json:"project_name"`
+	PrimaryRepositoryID   string                                        `json:"primary_repository_id,omitempty"`
+	ExecutionRepositoryID string                                        `json:"execution_repository_id,omitempty"`
+	ReadOnlyRepositoryIDs []string                                      `json:"read_only_repository_ids,omitempty"`
+	ActiveRepositoryCount int                                           `json:"active_repository_count"`
+	SkillNames            []string                                      `json:"skill_names,omitempty"`
+	MissingEvidence       []string                                      `json:"missing_evidence,omitempty"`
+	Warnings              []string                                      `json:"warnings,omitempty"`
+	PromptGuardrails      []string                                      `json:"prompt_guardrails,omitempty"`
+	Repositories          []*SpecForgeRepositoryContextContractFragment `json:"repositories,omitempty"`
+}
+
+// SpecForgeRepositoryContextContractFragment summarizes one bound repository for prompt consumption.
+type SpecForgeRepositoryContextContractFragment struct {
+	RepositoryID               string   `json:"repository_id"`
+	Role                       string   `json:"role"`
+	Writable                   bool     `json:"writable"`
+	HasProfile                 bool     `json:"has_profile"`
+	HasArchitectureSnapshot    bool     `json:"has_architecture_snapshot"`
+	ArchitectureStale          bool     `json:"architecture_stale"`
+	Stack                      []string `json:"stack,omitempty"`
+	TestCommands               []string `json:"test_commands,omitempty"`
+	RiskAreas                  []string `json:"risk_areas,omitempty"`
+	CodingConventions          []string `json:"coding_conventions,omitempty"`
+	ArchitectureModules        []string `json:"architecture_modules,omitempty"`
+	ArchitectureEntrypoints    []string `json:"architecture_entrypoints,omitempty"`
+	ArchitectureCIWorkflows    []string `json:"architecture_ci_workflows,omitempty"`
+	ArchitectureSnapshotCommit string   `json:"architecture_snapshot_commit,omitempty"`
+	SkillNames                 []string `json:"skill_names,omitempty"`
+}
+
 func ApplySpecForgeProjectContextGuardrails(context *SpecForgeProjectContext) {
 	if context == nil {
 		return
@@ -89,6 +125,7 @@ func ApplySpecForgeProjectContextGuardrails(context *SpecForgeProjectContext) {
 	context.ReadOnlyRepositoryIDs = nil
 	context.ExecutionGuardrails = nil
 	context.Readiness = nil
+	context.ContextContract = nil
 
 	activeCount := 0
 	readOnly := []string{}
@@ -111,6 +148,7 @@ func ApplySpecForgeProjectContextGuardrails(context *SpecForgeProjectContext) {
 	if context.PrimaryRepositoryID == "" {
 		context.ExecutionGuardrails = append(context.ExecutionGuardrails, "Project must bind one active primary repository before planning or execution.")
 		context.Readiness = buildSpecForgeProjectContextReadiness(context, activeCount)
+		context.ContextContract = BuildSpecForgeProjectContextContract(context)
 		return
 	}
 	context.ExecutionGuardrails = append(context.ExecutionGuardrails,
@@ -120,6 +158,145 @@ func ApplySpecForgeProjectContextGuardrails(context *SpecForgeProjectContext) {
 		fmt.Sprintf("Project currently has %d active repositories bound; maximum supported is %d.", activeCount, MaxSpecForgeProjectRepositories),
 	)
 	context.Readiness = buildSpecForgeProjectContextReadiness(context, activeCount)
+	context.ContextContract = BuildSpecForgeProjectContextContract(context)
+}
+
+func BuildSpecForgeProjectContextContract(context *SpecForgeProjectContext) *SpecForgeProjectContextContract {
+	if context == nil || context.Project == nil {
+		return nil
+	}
+	contract := &SpecForgeProjectContextContract{
+		Version:               "project_context_contract_v1",
+		ProjectID:             context.Project.ID,
+		ProjectName:           strings.TrimSpace(context.Project.Name),
+		PrimaryRepositoryID:   strings.TrimSpace(context.PrimaryRepositoryID),
+		ExecutionRepositoryID: strings.TrimSpace(context.ExecutionRepositoryID),
+		ReadOnlyRepositoryIDs: compactProjectContextStrings(context.ReadOnlyRepositoryIDs),
+		PromptGuardrails:      compactProjectContextStrings(context.ExecutionGuardrails),
+		Repositories:          []*SpecForgeRepositoryContextContractFragment{},
+	}
+	for _, repository := range context.Repositories {
+		if repository != nil && repository.Active {
+			contract.ActiveRepositoryCount++
+		}
+	}
+	for _, repoContext := range context.RepositoryContexts {
+		if repoContext == nil || repoContext.Repository == nil || !repoContext.Repository.Active {
+			continue
+		}
+		fragment := buildRepositoryContextContractFragment(context, repoContext)
+		contract.Repositories = append(contract.Repositories, fragment)
+		for _, warning := range repoContext.Warnings {
+			contract.Warnings = append(contract.Warnings, projectContextWarning(repoContext.Repository.RepositoryID, warning))
+		}
+		for _, warning := range repoContext.ArchitectureWarnings {
+			contract.Warnings = append(contract.Warnings, projectContextWarning(repoContext.Repository.RepositoryID, warning))
+		}
+		if repoContext.Profile != nil {
+			for _, warning := range repoContext.Profile.Warnings {
+				contract.Warnings = append(contract.Warnings, projectContextWarning(repoContext.Repository.RepositoryID, warning))
+			}
+		}
+		if repoContext.Profile == nil {
+			contract.MissingEvidence = append(contract.MissingEvidence, "repo_profile:"+strings.TrimSpace(repoContext.Repository.RepositoryID))
+		}
+		if repoContext.ArchitectureSnapshot == nil {
+			contract.MissingEvidence = append(contract.MissingEvidence, "architecture_snapshot:"+strings.TrimSpace(repoContext.Repository.RepositoryID))
+		}
+		if repoContext.ArchitectureStale {
+			contract.MissingEvidence = append(contract.MissingEvidence, "architecture_snapshot_stale:"+strings.TrimSpace(repoContext.Repository.RepositoryID))
+		}
+		for _, skill := range repoContext.Skills {
+			if skill == nil || !skill.Active {
+				continue
+			}
+			name := strings.TrimSpace(skill.Name)
+			if name == "" {
+				continue
+			}
+			contract.SkillNames = append(contract.SkillNames, name)
+		}
+	}
+	contract.SkillNames = compactProjectContextStrings(contract.SkillNames)
+	contract.MissingEvidence = compactProjectContextStrings(contract.MissingEvidence)
+	contract.Warnings = compactProjectContextStrings(contract.Warnings)
+	contract.PromptGuardrails = append(contract.PromptGuardrails, derivedProjectContextGuardrails(contract)...)
+	contract.PromptGuardrails = compactProjectContextStrings(contract.PromptGuardrails)
+	return contract
+}
+
+func buildRepositoryContextContractFragment(context *SpecForgeProjectContext, repoContext *SpecForgeProjectRepositoryContext) *SpecForgeRepositoryContextContractFragment {
+	repositoryID := strings.TrimSpace(repoContext.Repository.RepositoryID)
+	fragment := &SpecForgeRepositoryContextContractFragment{
+		RepositoryID:            repositoryID,
+		Role:                    strings.TrimSpace(repoContext.Repository.Role),
+		Writable:                repositoryID != "" && repositoryID == strings.TrimSpace(context.PrimaryRepositoryID),
+		HasProfile:              repoContext.Profile != nil,
+		HasArchitectureSnapshot: repoContext.ArchitectureSnapshot != nil,
+		ArchitectureStale:       repoContext.ArchitectureStale,
+	}
+	if repoContext.Profile != nil {
+		fragment.Stack = compactProjectContextStrings(repoContext.Profile.Stack)
+		fragment.TestCommands = compactProjectContextStrings(repoContext.Profile.TestCommands)
+		fragment.RiskAreas = compactProjectContextStrings(repoContext.Profile.RiskAreas)
+		fragment.CodingConventions = compactProjectContextStrings(repoContext.Profile.CodingConventions)
+	}
+	if repoContext.ArchitectureSnapshot != nil {
+		fragment.ArchitectureSnapshotCommit = strings.TrimSpace(repoContext.ArchitectureSnapshot.CommitSHA)
+		fragment.ArchitectureModules = compactProjectContextStrings(repoContext.ArchitectureSnapshot.Modules)
+		fragment.ArchitectureEntrypoints = compactProjectContextStrings(repoContext.ArchitectureSnapshot.Entrypoints)
+		fragment.ArchitectureCIWorkflows = compactProjectContextStrings(repoContext.ArchitectureSnapshot.CIWorkflows)
+	}
+	for _, skill := range repoContext.Skills {
+		if skill == nil || !skill.Active {
+			continue
+		}
+		if name := strings.TrimSpace(skill.Name); name != "" {
+			fragment.SkillNames = append(fragment.SkillNames, name)
+		}
+	}
+	fragment.SkillNames = compactProjectContextStrings(fragment.SkillNames)
+	return fragment
+}
+
+func derivedProjectContextGuardrails(contract *SpecForgeProjectContextContract) []string {
+	if contract == nil {
+		return nil
+	}
+	guardrails := []string{}
+	if len(contract.MissingEvidence) > 0 {
+		guardrails = append(guardrails, "Missing context evidence must be treated as uncertainty, not inferred as fact.")
+	}
+	if len(contract.SkillNames) == 0 {
+		guardrails = append(guardrails, "No active project skills are pinned; planner and executor must rediscover local conventions before changing code.")
+	}
+	return guardrails
+}
+
+func projectContextWarning(repositoryID, warning string) string {
+	repositoryID = strings.TrimSpace(repositoryID)
+	warning = strings.Join(strings.Fields(strings.TrimSpace(warning)), " ")
+	if repositoryID == "" || warning == "" {
+		return warning
+	}
+	return repositoryID + ": " + warning
+}
+
+func compactProjectContextStrings(values []string) []string {
+	seen := map[string]struct{}{}
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.Join(strings.Fields(strings.TrimSpace(value)), " ")
+		if value == "" {
+			continue
+		}
+		if _, exists := seen[value]; exists {
+			continue
+		}
+		seen[value] = struct{}{}
+		out = append(out, value)
+	}
+	return out
 }
 
 func buildSpecForgeProjectContextReadiness(context *SpecForgeProjectContext, activeCount int) *SpecForgeProjectContextReadiness {

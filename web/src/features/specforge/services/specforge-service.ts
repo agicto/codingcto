@@ -84,6 +84,7 @@ export interface UpsertSkillPayload {
   description?: string;
   content: string;
   active?: boolean;
+  target_agents?: string[];
 }
 
 export interface UpsertProjectSkillPayload extends UpsertSkillPayload {
@@ -157,6 +158,7 @@ export interface SubmitTaskResultPayload {
   runtime_id?: string;
   session_id?: string;
   workdir?: string;
+  process_ref?: string;
   status: 'completed' | 'failed' | 'timeout';
   output?: string;
   error?: string;
@@ -181,6 +183,38 @@ export interface ListGitHubWebhookEventsParams {
   status?: string;
   repository_full_name?: string;
   limit?: number;
+}
+
+export interface CreateGitHubIssuePayload {
+  repository_id: string;
+  title: string;
+  body?: string;
+  labels?: string[];
+}
+
+export interface GitHubIssueDTO {
+  repository_id: string;
+  number: number;
+  html_url: string;
+  state: string;
+  title: string;
+}
+
+export interface GitHubRepositoryReadinessCheckDTO {
+  key: string;
+  status: 'ok' | 'warning' | 'error';
+  message: string;
+  detail?: string;
+  required: boolean;
+}
+
+export interface GitHubRepositoryReadinessDTO {
+  repository_id: string;
+  workspace_id: string;
+  github_owner: string;
+  github_repo: string;
+  ready: boolean;
+  checks: GitHubRepositoryReadinessCheckDTO[];
 }
 
 export interface UpsertGitHubInstallationPayload {
@@ -225,7 +259,7 @@ export interface SyncGitHubInstallationDTO {
 export interface UpsertGitHubRepositoryPayload {
   repository_id?: string;
   workspace_id: string;
-  github_installation_id: number;
+  github_installation_id?: number;
   github_owner: string;
   github_repo: string;
   default_branch?: string;
@@ -244,6 +278,14 @@ export interface GitHubRepositoryDTO {
   created_by: number;
   created_at: string;
   updated_at: string;
+}
+
+export interface ListGitHubRepositoriesParams {
+  workspace_id?: string;
+}
+
+export interface ListGitHubRepositoriesDTO {
+  repositories: GitHubRepositoryDTO[];
 }
 
 export interface GitHubSettingsPayload {
@@ -423,6 +465,7 @@ export interface SpecForgeCompiledPromptDTO {
   version: string;
   prompt_text: string;
   prompt_hash: string;
+  evidence_refs?: string[];
   created_by: number;
   created_at: string;
 }
@@ -434,6 +477,7 @@ export interface SpecForgeSkillDTO {
   description: string;
   content: string;
   active: boolean;
+  target_agents?: string[];
   created_by: number;
   created_at: string;
   updated_at: string;
@@ -464,6 +508,7 @@ export interface SpecForgeSkillRunDTO {
   input_summary: string;
   output_summary: string;
   output_json?: string;
+  evidence_refs?: string[];
   error_message?: string;
   started_at?: string;
   completed_at?: string;
@@ -483,6 +528,9 @@ export interface SpecForgeFixAttemptDTO {
   likely_cause: string;
   recommended_action: string;
   can_auto_fix: boolean;
+  risk_level?: string;
+  action_kind?: string;
+  blocked_reason?: string;
   workflow_run_id?: number;
   workflow_run_url?: string;
   conclusion?: string;
@@ -503,6 +551,9 @@ export interface SpecForgeEscalationSummaryDTO {
   latest_failure_type: string;
   latest_likely_cause: string;
   latest_action: string;
+  latest_risk_level: string;
+  latest_action_kind: string;
+  latest_blocked_reason: string;
   can_continue_auto_fix: boolean;
 }
 
@@ -570,11 +621,14 @@ export interface SpecForgeClaimedTaskDTO {
   pr_node_id: number;
   executor: string;
   status: string;
+  process_status?: string;
+  current_phase?: string;
   runtime_id: string;
   attempt_number: number;
   parent_task_id?: number;
   session_id?: string;
   workdir?: string;
+  process_ref?: string;
 }
 
 export interface SpecForgeClaimedPRNodeDTO {
@@ -645,6 +699,8 @@ export interface SpecForgeExecutionBundleDTO {
     pr_node_id: number;
     executor: string;
     status: string;
+    process_status?: string;
+    current_phase?: string;
     runtime_id?: string;
     attempt_number: number;
     parent_task_id?: number;
@@ -656,9 +712,11 @@ export interface SpecForgeExecutionBundleDTO {
     output_log?: string;
     error_log?: string;
     exit_code?: number;
+    process_ref?: string;
     dispatched_at?: string;
     started_at?: string;
     finished_at?: string;
+    last_progress_at?: string;
     created_at: string;
     updated_at: string;
   }>;
@@ -683,8 +741,26 @@ export const specForgeService = {
       payload
     ),
 
+  listGitHubRepositories: (
+    params?: ListGitHubRepositoriesParams,
+    config?: RequestConfig
+  ) => {
+    const search = new URLSearchParams();
+    if (params?.workspace_id) {
+      search.set("workspace_id", params.workspace_id);
+    }
+    const suffix = search.toString() ? `?${search.toString()}` : "";
+    return request.get<ListGitHubRepositoriesDTO>(`/github/repositories${suffix}`, config);
+  },
+
   getGitHubRepository: (repoId: string, config?: RequestConfig) =>
     request.get<GitHubRepositoryDTO>(`/repositories/${repoId}`, config),
+
+  getGitHubRepositoryReadiness: (repoId: string, config?: RequestConfig) =>
+    request.get<GitHubRepositoryReadinessDTO>(
+      `/github/repositories/${repoId}/readiness`,
+      config
+    ),
 
   getGitHubSettings: (workspaceId: string, config?: RequestConfig) =>
     request.get<GitHubSettingsDTO>(
@@ -702,7 +778,7 @@ export const specForgeService = {
     ),
 
   getRepoProfile: (repoId: string, config?: RequestConfig) =>
-    request.get<SpecForgeRepoProfileDTO>(`/repositories/${repoId}/profile`, config),
+    request.get<SpecForgeRepoProfileDTO | null>(`/repositories/${repoId}/profile`, config),
 
   inferRepoProfile: (repoId: string, payload: InferRepoProfilePayload) =>
     request.post<SpecForgeRepoProfileDTO, InferRepoProfilePayload>(
@@ -729,6 +805,9 @@ export const specForgeService = {
     return request.get<{ events: GitHubWebhookEventDTO[] }>(`/github/webhooks${suffix}`, config);
   },
 
+  createGitHubIssue: (payload: CreateGitHubIssuePayload) =>
+    request.post<GitHubIssueDTO, CreateGitHubIssuePayload>('/github/issues', payload),
+
   createIdea: (repoId: string, payload: CreateIdeaPayload) =>
     request.post<SpecForgePlanBundleDTO, CreateIdeaPayload>(
       `/repositories/${repoId}/ideas`,
@@ -751,6 +830,9 @@ export const specForgeService = {
 
   getPlanForRequirement: (requirementId: number) =>
     request.get<SpecForgePlanBundleDTO>(`/requirements/${requirementId}/plan`),
+
+  getPlan: (planId: number, config?: RequestConfig) =>
+    request.get<SpecForgePlanBundleDTO>(`/plans/${planId}`, config),
 
   generateRequirementPlan: (requirementId: number, payload?: CreateIdeaPayload) =>
     request.post<SpecForgePlanBundleDTO, CreateIdeaPayload | undefined>(
@@ -919,7 +1001,8 @@ export const specForgeService = {
   executeTask: (taskId: number, payload: ExecuteTaskPayload) =>
     request.post<SpecForgeExecutionBundleDTO, ExecuteTaskPayload>(
       `/tasks/${taskId}/execute`,
-      payload
+      payload,
+      { timeout: 30 * 60 * 1000 }
     ),
 
   retryTask: (taskId: number, payload?: RetryTaskPayload) =>

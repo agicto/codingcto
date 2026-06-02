@@ -40,9 +40,9 @@ Important local values:
 ```bash
 NEXT_PUBLIC_API_URL=/api
 NEXT_PUBLIC_SPECFORGE_API_URL=/v1
-LUAS_API_PROXY_TARGET=http://localhost:8025
+LUAS_API_PROXY_TARGET=http://localhost:2010
 LUAS_AUTH_BACKEND_ENABLED=false
-NEXT_PUBLIC_APP_URL=http://localhost:3000
+NEXT_PUBLIC_APP_URL=http://localhost:2020
 ```
 
 The `LUAS_*` environment keys are compatibility names. They proxy to the CodingCTO API.
@@ -53,7 +53,7 @@ The `LUAS_*` environment keys are compatibility names. They proxy to the CodingC
 pnpm dev
 ```
 
-Open `http://localhost:3000`.
+Open `http://localhost:2020`.
 
 ## Main Routes
 

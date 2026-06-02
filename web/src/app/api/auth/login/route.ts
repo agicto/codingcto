@@ -66,12 +66,16 @@ export async function POST(request: Request) {
   return NextResponse.json({
     data: {
       user,
+      session: {
+        mode: 'mock',
+        projectApiReady: false,
+      },
     },
   });
 }
 
 async function loginWithBackend(email: string, password: string) {
-  const apiTarget = process.env.LUAS_API_PROXY_TARGET ?? 'http://localhost:8025';
+  const apiTarget = process.env.LUAS_API_PROXY_TARGET ?? 'http://localhost:2010';
   const response = await fetch(`${apiTarget}/v1/login`, {
     method: 'POST',
     headers: {
@@ -108,6 +112,10 @@ async function loginWithBackend(email: string, password: string) {
   return NextResponse.json({
     data: {
       user,
+      session: {
+        mode: 'backend',
+        projectApiReady: true,
+      },
     },
   });
 }

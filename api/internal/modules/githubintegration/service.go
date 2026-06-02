@@ -20,8 +20,11 @@ type Service interface {
 	GetInstallation(ctx context.Context, id uint) (*domain.GitHubInstallation, error)
 	UpsertRepository(ctx context.Context, userID uint, req *UpsertRepositoryRequest) (*domain.Repository, error)
 	GetRepository(ctx context.Context, repositoryID string) (*domain.Repository, error)
+	ListRepositories(ctx context.Context, workspaceID string) ([]*domain.Repository, error)
+	CheckRepositoryReadiness(ctx context.Context, repositoryID string) (*GitHubRepositoryReadinessResponse, error)
 	GetSettings(ctx context.Context, workspaceID string) (*domain.GitHubSettings, error)
 	UpsertSettings(ctx context.Context, userID uint, req *UpsertSettingsRequest) (*domain.GitHubSettings, error)
+	CreateIssue(ctx context.Context, req *CreateIssueRequest) (*GitHubIssueResponse, error)
 	ListRepositoryTree(ctx context.Context, req *ListRepositoryTreeRequest) (*RepositoryTreeSnapshot, error)
 	ReadRepositoryFile(ctx context.Context, req *ReadRepositoryFileRequest) (*RepositoryFileSnapshot, error)
 	PreparePRNodeBranch(ctx context.Context, req *PreparePRNodeBranchRequest) (*domain.SpecForgePRNode, error)
@@ -117,6 +120,20 @@ func (s *service) SyncInstallation(ctx context.Context, userID uint, req *SyncIn
 			IsPrivate:     repository.Private,
 			HTMLURL:       repository.HTMLURL,
 		})
+		if owner != "" && repoName != "" {
+			if err := s.repo.UpsertRepository(ctx, &domain.Repository{
+				RepositoryID:         githubRepositoryID(owner, repoName),
+				WorkspaceID:          strings.TrimSpace(req.WorkspaceID),
+				GitHubInstallationID: installation.ID,
+				GitHubOwner:          owner,
+				GitHubRepo:           repoName,
+				DefaultBranch:        defaultText(strings.TrimSpace(repository.DefaultBranch), "main"),
+				IsPrivate:            repository.Private,
+				CreatedBy:            userID,
+			}); err != nil {
+				return nil, fmt.Errorf("sync github repository: %w", err)
+			}
+		}
 	}
 	return &SyncInstallationResponse{Installation: installation, Repositories: options}, nil
 }
@@ -129,7 +146,7 @@ func (s *service) GetInstallation(ctx context.Context, id uint) (*domain.GitHubI
 }
 
 func (s *service) UpsertRepository(ctx context.Context, userID uint, req *UpsertRepositoryRequest) (*domain.Repository, error) {
-	if userID == 0 || req == nil || strings.TrimSpace(req.WorkspaceID) == "" || req.GitHubInstallationID == 0 || strings.TrimSpace(req.GitHubOwner) == "" || strings.TrimSpace(req.GitHubRepo) == "" {
+	if userID == 0 || req == nil || strings.TrimSpace(req.WorkspaceID) == "" || strings.TrimSpace(req.GitHubOwner) == "" || strings.TrimSpace(req.GitHubRepo) == "" {
 		return nil, domain.ErrInvalidInput
 	}
 	defaultBranch := strings.TrimSpace(req.DefaultBranch)
@@ -138,7 +155,7 @@ func (s *service) UpsertRepository(ctx context.Context, userID uint, req *Upsert
 	}
 	repositoryID := strings.TrimSpace(req.RepositoryID)
 	if repositoryID == "" {
-		repositoryID = fmt.Sprintf("github_%s__%s", strings.TrimSpace(req.GitHubOwner), strings.TrimSpace(req.GitHubRepo))
+		repositoryID = githubRepositoryID(req.GitHubOwner, req.GitHubRepo)
 	}
 
 	repository := &domain.Repository{
@@ -151,8 +168,19 @@ func (s *service) UpsertRepository(ctx context.Context, userID uint, req *Upsert
 		IsPrivate:            req.IsPrivate,
 		CreatedBy:            userID,
 	}
-	if err := s.validateRepositoryAccess(ctx, repository); err != nil {
-		return nil, err
+	needsAccessValidation := repository.GitHubInstallationID > 0
+	if needsAccessValidation {
+		existing, err := s.repo.FindRepositoryByRepositoryID(ctx, repository.RepositoryID)
+		if err == nil && sameGitHubRepositoryAccess(existing, repository) {
+			needsAccessValidation = false
+		} else if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return nil, err
+		}
+	}
+	if needsAccessValidation {
+		if err := s.validateRepositoryAccess(ctx, repository); err != nil {
+			return nil, err
+		}
 	}
 	if err := s.repo.UpsertRepository(ctx, repository); err != nil {
 		return nil, fmt.Errorf("upsert repository: %w", err)
@@ -160,11 +188,90 @@ func (s *service) UpsertRepository(ctx context.Context, userID uint, req *Upsert
 	return repository, nil
 }
 
+func sameGitHubRepositoryAccess(existing, next *domain.Repository) bool {
+	if existing == nil || next == nil {
+		return false
+	}
+	return existing.GitHubInstallationID == next.GitHubInstallationID &&
+		strings.EqualFold(strings.TrimSpace(existing.GitHubOwner), strings.TrimSpace(next.GitHubOwner)) &&
+		strings.EqualFold(strings.TrimSpace(existing.GitHubRepo), strings.TrimSpace(next.GitHubRepo))
+}
+
+func githubRepositoryID(owner, repo string) string {
+	return fmt.Sprintf("github_%s__%s", strings.TrimSpace(owner), strings.TrimSpace(repo))
+}
+
 func (s *service) GetRepository(ctx context.Context, repositoryID string) (*domain.Repository, error) {
 	if strings.TrimSpace(repositoryID) == "" {
 		return nil, domain.ErrInvalidInput
 	}
 	return s.repo.FindRepositoryByRepositoryID(ctx, strings.TrimSpace(repositoryID))
+}
+
+func (s *service) ListRepositories(ctx context.Context, workspaceID string) ([]*domain.Repository, error) {
+	return s.repo.ListRepositoriesByWorkspaceID(ctx, strings.TrimSpace(workspaceID))
+}
+
+func (s *service) CheckRepositoryReadiness(ctx context.Context, repositoryID string) (*GitHubRepositoryReadinessResponse, error) {
+	repositoryID = strings.TrimSpace(repositoryID)
+	if repositoryID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	repository, err := s.repo.FindRepositoryByRepositoryID(ctx, repositoryID)
+	if err != nil {
+		return nil, err
+	}
+
+	checks := []GitHubReadinessCheck{
+		readinessOK(
+			"repository",
+			"仓库已绑定到当前项目",
+			strings.TrimSpace(repository.GitHubOwner)+"/"+strings.TrimSpace(repository.GitHubRepo),
+			true,
+		),
+	}
+
+	settings, err := s.settingsForRepository(ctx, repository)
+	if err != nil {
+		checks = append(checks, readinessError("settings", "读取 GitHub 设置失败", err.Error(), true))
+	} else if !settings.Enabled {
+		checks = append(checks, readinessError("settings", "GitHub 功能已关闭", "请在 GitHub 设置中启用 GitHub 功能。", true))
+	} else {
+		checks = append(checks, readinessOK("settings", "GitHub 功能已启用", "", true))
+	}
+
+	var installation *domain.GitHubInstallation
+	if repository.GitHubInstallationID == 0 {
+		checks = append(checks, readinessError("installation", "仓库没有关联 GitHub App 安装记录", "请先安装 GitHub App 并同步仓库，再绑定项目。", true))
+	} else {
+		installation, err = s.repo.FindInstallationByID(ctx, repository.GitHubInstallationID)
+		if err != nil {
+			checks = append(checks, readinessError("installation", "找不到 GitHub App 安装记录", err.Error(), true))
+		} else {
+			checks = append(checks, readinessOK("installation", "GitHub App 安装记录已同步", installation.AccountLogin, true))
+			checks = append(checks, permissionReadinessChecks(installation.Permissions)...)
+		}
+	}
+
+	if installation != nil {
+		token, err := s.tokenProvider.InstallationToken(ctx, installation.InstallationID)
+		if err != nil {
+			checks = append(checks, readinessError("installation_token", "GitHub App 令牌交换失败", userFacingGitHubError(err), true))
+		} else if token == nil || strings.TrimSpace(token.Token) == "" {
+			checks = append(checks, readinessError("installation_token", "GitHub App 令牌为空", "请检查 GITHUB_APP_ID 和 GitHub App 私钥配置是否对应当前安装。", true))
+		} else {
+			checks = append(checks, readinessOK("installation_token", "GitHub App 令牌可用", "", true))
+		}
+	}
+
+	return &GitHubRepositoryReadinessResponse{
+		RepositoryID: repository.RepositoryID,
+		WorkspaceID:  repository.WorkspaceID,
+		GitHubOwner:  repository.GitHubOwner,
+		GitHubRepo:   repository.GitHubRepo,
+		Ready:        readinessIsReady(checks),
+		Checks:       checks,
+	}, nil
 }
 
 func (s *service) GetSettings(ctx context.Context, workspaceID string) (*domain.GitHubSettings, error) {
@@ -199,6 +306,54 @@ func (s *service) UpsertSettings(ctx context.Context, userID uint, req *UpsertSe
 		return nil, fmt.Errorf("upsert github settings: %w", err)
 	}
 	return settings, nil
+}
+
+func (s *service) CreateIssue(ctx context.Context, req *CreateIssueRequest) (*GitHubIssueResponse, error) {
+	if req == nil || strings.TrimSpace(req.RepositoryID) == "" || strings.TrimSpace(req.Title) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	repository, err := s.repo.FindRepositoryByRepositoryID(ctx, strings.TrimSpace(req.RepositoryID))
+	if err != nil {
+		return nil, err
+	}
+	settings, err := s.settingsForRepository(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
+	if !settings.Enabled {
+		return nil, domain.ErrInvalidInput
+	}
+	installation, err := s.repo.FindInstallationByID(ctx, repository.GitHubInstallationID)
+	if err != nil {
+		return nil, err
+	}
+	if !permissionAllows(installation.Permissions, "issues", "write") {
+		return nil, fmt.Errorf("github integration: GitHub App requires issues:write permission to create issues")
+	}
+	client, err := s.repositoryClientForRepository(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
+	issue, err := client.CreateIssue(ctx, CreateIssueInput{
+		Owner:  repository.GitHubOwner,
+		Repo:   repository.GitHubRepo,
+		Title:  strings.TrimSpace(req.Title),
+		Body:   strings.TrimSpace(req.Body),
+		Labels: compactStrings(req.Labels),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if issue == nil || issue.Number == 0 || strings.TrimSpace(issue.HTMLURL) == "" {
+		return nil, fmt.Errorf("github integration: issue response missing number or URL")
+	}
+	return &GitHubIssueResponse{
+		RepositoryID: repository.RepositoryID,
+		Number:       issue.Number,
+		HTMLURL:      issue.HTMLURL,
+		State:        issue.State,
+		Title:        issue.Title,
+	}, nil
 }
 
 func (s *service) ListRepositoryTree(ctx context.Context, req *ListRepositoryTreeRequest) (*RepositoryTreeSnapshot, error) {
@@ -402,6 +557,9 @@ func (s *service) DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) 
 	}
 	node.Status = domain.PRNodeStatusPROpened
 	if err := s.planningRepo.UpdatePRNode(ctx, node); err != nil {
+		return nil, err
+	}
+	if err := s.publishPRNodeDependencySatisfied(ctx, node); err != nil {
 		return nil, err
 	}
 	return node, nil
@@ -678,6 +836,17 @@ func defaultText(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func compactStrings(values []string) []string {
+	out := make([]string, 0, len(values))
+	for _, value := range values {
+		value = strings.TrimSpace(value)
+		if value != "" {
+			out = append(out, value)
+		}
+	}
+	return out
 }
 
 func resolveBaseBranch(repository *domain.Repository, override string) string {
@@ -997,7 +1166,7 @@ func (s *service) publishPRNodeDependencySatisfied(ctx context.Context, node *do
 		return nil
 	}
 	switch node.Status {
-	case domain.PRNodeStatusReadyForReview, domain.PRNodeStatusMerged:
+	case domain.PRNodeStatusPROpened, domain.PRNodeStatusReadyForReview, domain.PRNodeStatusMerged:
 		return s.eventBus.Publish(ctx, domain.NewSpecForgePRNodeDependencySatisfiedEvent(node))
 	default:
 		return nil
@@ -1134,6 +1303,109 @@ func normalizePermissions(permissions map[string]string) map[string]string {
 		out[key] = value
 	}
 	return out
+}
+
+func permissionReadinessChecks(permissions map[string]string) []GitHubReadinessCheck {
+	required := []struct {
+		key      string
+		level    string
+		message  string
+		missing  string
+		required bool
+	}{
+		{key: "metadata", level: "read", message: "metadata:read 权限可用", missing: "GitHub App 缺少 metadata:read 权限", required: true},
+		{key: "contents", level: "write", message: "contents:write 权限可用", missing: "GitHub App 缺少 contents:write 权限", required: true},
+		{key: "pull_requests", level: "write", message: "pull_requests:write 权限可用", missing: "GitHub App 缺少 pull_requests:write 权限", required: true},
+		{key: "issues", level: "write", message: "issues:write 权限可用", missing: "GitHub App 缺少 issues:write 权限", required: true},
+		{key: "actions", level: "read", message: "actions:read 权限可用", missing: "GitHub App 缺少 actions:read 权限，后续 CI 读取可能不可用", required: false},
+		{key: "statuses", level: "read", message: "statuses:read 权限可用", missing: "GitHub App 缺少 statuses:read 权限，后续状态检查可能不可用", required: false},
+	}
+	checks := make([]GitHubReadinessCheck, 0, len(required))
+	for _, item := range required {
+		actual := strings.TrimSpace(permissions[item.key])
+		if permissionAllows(permissions, item.key, item.level) {
+			checks = append(checks, readinessOK("permission_"+item.key, item.message, actual, item.required))
+			continue
+		}
+		status := "error"
+		if !item.required {
+			status = "warning"
+		}
+		checks = append(checks, GitHubReadinessCheck{
+			Key:      "permission_" + item.key,
+			Status:   status,
+			Message:  item.missing,
+			Detail:   fmt.Sprintf("当前权限：%s，需要：%s", defaultText(actual, "none"), item.level),
+			Required: item.required,
+		})
+	}
+	return checks
+}
+
+func permissionAllows(permissions map[string]string, key string, required string) bool {
+	return permissionRank(permissions[strings.TrimSpace(key)]) >= permissionRank(required)
+}
+
+func permissionRank(value string) int {
+	switch strings.TrimSpace(value) {
+	case "admin":
+		return 3
+	case "write":
+		return 2
+	case "read":
+		return 1
+	default:
+		return 0
+	}
+}
+
+func readinessOK(key, message, detail string, required bool) GitHubReadinessCheck {
+	return GitHubReadinessCheck{
+		Key:      key,
+		Status:   "ok",
+		Message:  message,
+		Detail:   detail,
+		Required: required,
+	}
+}
+
+func readinessError(key, message, detail string, required bool) GitHubReadinessCheck {
+	return GitHubReadinessCheck{
+		Key:      key,
+		Status:   "error",
+		Message:  message,
+		Detail:   detail,
+		Required: required,
+	}
+}
+
+func userFacingGitHubError(err error) string {
+	if err == nil {
+		return ""
+	}
+	message := err.Error()
+	replacements := map[string]string{
+		"github app client":              "GitHub App 客户端",
+		"token request failed":           "令牌请求失败",
+		"token request failed with HTTP": "令牌请求失败，HTTP 状态码",
+		"token response missing token":   "令牌响应缺少令牌",
+		"read token response":            "读取令牌响应失败",
+		"decode token response":          "解析令牌响应失败",
+		"Not Found":                      "未找到",
+	}
+	for old, next := range replacements {
+		message = strings.ReplaceAll(message, old, next)
+	}
+	return message
+}
+
+func readinessIsReady(checks []GitHubReadinessCheck) bool {
+	for _, check := range checks {
+		if check.Required && check.Status != "ok" {
+			return false
+		}
+	}
+	return true
 }
 
 func verifyGitHubSignature(secret string, body []byte, signature string) bool {

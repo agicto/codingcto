@@ -20,9 +20,21 @@ import {
  */
 
 export async function getSessionUser(): Promise<AuthUser | null> {
+  const parsed = await getSessionPayload();
+  if (!parsed) return null;
+
+  // Strip server-only fields before handing it back as AuthUser.
+  const { iat: _iat, exp: _exp, apiAccessToken: _apiAccessToken, ...user } = parsed;
+  void _iat;
+  void _exp;
+  void _apiAccessToken;
+  return user;
+}
+
+export async function getSessionPayload(): Promise<SessionPayload | null> {
   const cookieStore = await cookies();
   const raw = cookieStore.get(authConfig.cookies.session)?.value;
-  return parseSession(await verifySession(raw));
+  return parseSignedSessionPayload(await verifySession(raw));
 }
 
 export async function setSessionCookie(
@@ -53,16 +65,4 @@ export async function setSessionCookie(
 export async function clearSessionCookie(): Promise<void> {
   const cookieStore = await cookies();
   cookieStore.delete(authConfig.cookies.session);
-}
-
-function parseSession(payload: string | null): AuthUser | null {
-  const parsed = parseSignedSessionPayload(payload);
-  if (!parsed) return null;
-
-  // Strip server-only fields before handing it back as AuthUser.
-  const { iat: _iat, exp: _exp, apiAccessToken: _apiAccessToken, ...user } = parsed;
-  void _iat;
-  void _exp;
-  void _apiAccessToken;
-  return user;
 }

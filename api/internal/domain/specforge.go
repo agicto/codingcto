@@ -46,6 +46,14 @@ const (
 	SkillRunStageSelfReview           = "self_review"
 	SkillRunStatusCompleted           = "completed"
 	SkillRunStatusFailed              = "failed"
+	AgentProcessStatusPending         = "pending"
+	AgentProcessStatusPreparing       = "preparing"
+	AgentProcessStatusRunning         = "running"
+	AgentProcessStatusCompleted       = "completed"
+	AgentProcessStatusFailed          = "failed"
+	AgentProcessStatusTimedOut        = "timed_out"
+	AgentProcessStatusCancelled       = "cancelled"
+	AgentProcessStatusLost            = "lost"
 )
 
 // SpecForgeIdea captures the original product intent submitted for a repository.
@@ -206,6 +214,7 @@ type SpecForgeSkill struct {
 	Description  string    `json:"description"`
 	Content      string    `json:"content"`
 	Active       bool      `json:"active"`
+	TargetAgents []string  `json:"target_agents,omitempty"`
 	CreatedBy    uint      `json:"created_by"`
 	CreatedAt    time.Time `json:"created_at"`
 	UpdatedAt    time.Time `json:"updated_at"`
@@ -267,6 +276,8 @@ type SpecForgeAgentTask struct {
 	Executor      string     `json:"executor"`
 	Status        string     `json:"status"`
 	PromptType    string     `json:"prompt_type"`
+	ProcessStatus string     `json:"process_status,omitempty"`
+	CurrentPhase  string     `json:"current_phase,omitempty"`
 	RuntimeID     string     `json:"runtime_id,omitempty"`
 	AttemptNumber int        `json:"attempt_number"`
 	ParentTaskID  *uint      `json:"parent_task_id,omitempty"`
@@ -278,9 +289,11 @@ type SpecForgeAgentTask struct {
 	OutputLog     string     `json:"output_log,omitempty"`
 	ErrorLog      string     `json:"error_log,omitempty"`
 	ExitCode      *int       `json:"exit_code,omitempty"`
+	ProcessRef    string     `json:"process_ref,omitempty"`
 	DispatchedAt  *time.Time `json:"dispatched_at,omitempty"`
 	StartedAt     *time.Time `json:"started_at,omitempty"`
 	FinishedAt    *time.Time `json:"finished_at,omitempty"`
+	LastProgressAt *time.Time `json:"last_progress_at,omitempty"`
 	CreatedAt     time.Time  `json:"created_at"`
 	UpdatedAt     time.Time  `json:"updated_at"`
 }

@@ -10,6 +10,9 @@ type CreateFixAttemptRequest struct {
 	LikelyCause       string  `json:"likely_cause" binding:"omitempty,max=5000"`
 	RecommendedAction string  `json:"recommended_action" binding:"omitempty,max=5000"`
 	CanAutoFix        bool    `json:"can_auto_fix"`
+	RiskLevel         string  `json:"risk_level" binding:"omitempty,max=30"`
+	ActionKind        string  `json:"action_kind" binding:"omitempty,max=50"`
+	BlockedReason     string  `json:"blocked_reason" binding:"omitempty,max=5000"`
 	WorkflowRunID     int64   `json:"workflow_run_id" binding:"omitempty"`
 	WorkflowRunURL    string  `json:"workflow_run_url" binding:"omitempty,max=500"`
 	Conclusion        string  `json:"conclusion" binding:"omitempty,max=100"`
@@ -35,16 +38,19 @@ type VerifyPRNodeCIResponse struct {
 }
 
 type EscalationSummary struct {
-	PRNodeID           uint     `json:"pr_node_id"`
-	Status             string   `json:"status"`
-	AttemptsUsed       int      `json:"attempts_used"`
-	MaxAttempts        int      `json:"max_attempts"`
-	FailureTypes       []string `json:"failure_types"`
-	Reason             string   `json:"reason"`
-	RecommendedOption  string   `json:"recommended_option"`
-	DecisionOptions    []string `json:"decision_options"`
-	LatestFailureType  string   `json:"latest_failure_type"`
-	LatestLikelyCause  string   `json:"latest_likely_cause"`
-	LatestAction       string   `json:"latest_action"`
-	CanContinueAutoFix bool     `json:"can_continue_auto_fix"`
+	PRNodeID            uint     `json:"pr_node_id"`
+	Status              string   `json:"status"`
+	AttemptsUsed        int      `json:"attempts_used"`
+	MaxAttempts         int      `json:"max_attempts"`
+	FailureTypes        []string `json:"failure_types"`
+	Reason              string   `json:"reason"`
+	RecommendedOption   string   `json:"recommended_option"`
+	DecisionOptions     []string `json:"decision_options"`
+	LatestFailureType   string   `json:"latest_failure_type"`
+	LatestLikelyCause   string   `json:"latest_likely_cause"`
+	LatestAction        string   `json:"latest_action"`
+	LatestRiskLevel     string   `json:"latest_risk_level"`
+	LatestActionKind    string   `json:"latest_action_kind"`
+	LatestBlockedReason string   `json:"latest_blocked_reason"`
+	CanContinueAutoFix  bool     `json:"can_continue_auto_fix"`
 }

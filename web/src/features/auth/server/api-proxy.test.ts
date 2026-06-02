@@ -14,15 +14,15 @@ describe('SpecForge API proxy', () => {
   });
 
   it('builds a backend v1 URL with query params', () => {
-    process.env.LUAS_API_PROXY_TARGET = 'http://127.0.0.1:8025';
+    process.env.LUAS_API_PROXY_TARGET = 'http://127.0.0.1:2010';
     const request = new Request(
-      'http://localhost:3000/v1/repositories/repo_123/ideas?include=plan'
+      'http://localhost:2020/v1/repositories/repo_123/ideas?include=plan'
     );
 
     const url = buildAPIURL(request, ['repositories', 'repo_123', 'ideas']);
 
     expect(url.toString()).toBe(
-      'http://127.0.0.1:8025/v1/repositories/repo_123/ideas?include=plan'
+      'http://127.0.0.1:2010/v1/repositories/repo_123/ideas?include=plan'
     );
   });
 
@@ -41,10 +41,10 @@ describe('SpecForge API proxy', () => {
 
     const request = {
       method: 'GET',
-      url: 'http://localhost:3000/v1/repositories/repo_123/ideas',
+      url: 'http://localhost:2020/v1/repositories/repo_123/ideas',
       headers: new Headers({
         cookie: `luas_session=${session}`,
-        host: 'localhost:3000',
+        host: 'localhost:2020',
       }),
       cookies: {
         get: () => undefined,
@@ -63,7 +63,7 @@ describe('SpecForge API proxy', () => {
 
     const request = {
       method: 'GET',
-      url: 'http://localhost:3000/v1/projects',
+      url: 'http://localhost:2020/v1/projects',
       headers: new Headers(),
       cookies: {
         get: () => undefined,

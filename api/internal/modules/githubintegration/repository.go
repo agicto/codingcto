@@ -88,6 +88,22 @@ func (r *repository) FindRepositoryByRepositoryID(ctx context.Context, repositor
 	return po.toDomain(), nil
 }
 
+func (r *repository) ListRepositoriesByWorkspaceID(ctx context.Context, workspaceID string) ([]*domain.Repository, error) {
+	var pos []*RepositoryPO
+	query := r.db.WithContext(ctx).Model(&RepositoryPO{})
+	if strings.TrimSpace(workspaceID) != "" {
+		query = query.Where("workspace_id = ?", strings.TrimSpace(workspaceID))
+	}
+	if err := query.Order("updated_at DESC, id DESC").Find(&pos).Error; err != nil {
+		return nil, err
+	}
+	repositories := make([]*domain.Repository, len(pos))
+	for i, po := range pos {
+		repositories[i] = po.toDomain()
+	}
+	return repositories, nil
+}
+
 func (r *repository) UpsertSettings(ctx context.Context, settings *domain.GitHubSettings) error {
 	po := newGitHubSettingsPO(settings)
 	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{

@@ -123,6 +123,14 @@ func TestStartRunIncludesActiveRepoSkillsInCompiledPrompt(t *testing.T) {
 				Description:  "Persistence rule",
 				Content:      "Do not access GORM directly from HTTP handlers.",
 				Active:       true,
+				TargetAgents: []string{"codex_cli"},
+			},
+			{
+				RepositoryID: "repo_123",
+				Name:         "Planning-only rule",
+				Content:      "This belongs only in planning prompts.",
+				Active:       true,
+				TargetAgents: []string{"planning"},
 			},
 			{
 				RepositoryID: "repo_123",
@@ -149,6 +157,7 @@ func TestStartRunIncludesActiveRepoSkillsInCompiledPrompt(t *testing.T) {
 	require.Contains(t, prompt, "## Service layer")
 	require.Contains(t, prompt, "Persistence rule")
 	require.Contains(t, prompt, "Do not access GORM directly from HTTP handlers.")
+	require.NotContains(t, prompt, "This belongs only in planning prompts.")
 	require.NotContains(t, prompt, "inactive skill")
 	require.NotContains(t, prompt, "another repository")
 }
@@ -167,6 +176,7 @@ func TestStartRunHydratesProjectContextInCompiledPrompt(t *testing.T) {
 				Description:  "Evidence-first planning workflow",
 				Content:      "Read repo evidence before planning and run a reverse trace.",
 				Active:       true,
+				TargetAgents: []string{"codex_cli"},
 			},
 		},
 	}
@@ -378,7 +388,10 @@ func TestDispatchRunMovesQueuedTasksToDispatched(t *testing.T) {
 	require.NoError(t, err)
 	require.Equal(t, domain.ExecutionRunStatusRunning, dispatched.Run.Status)
 	require.Equal(t, domain.AgentTaskStatusDispatched, dispatched.Tasks[0].Status)
+	require.Equal(t, domain.AgentProcessStatusPending, dispatched.Tasks[0].ProcessStatus)
+	require.Equal(t, "dispatched", dispatched.Tasks[0].CurrentPhase)
 	require.NotNil(t, dispatched.Tasks[0].DispatchedAt)
+	require.NotNil(t, dispatched.Tasks[0].LastProgressAt)
 	require.Nil(t, dispatched.Tasks[0].StartedAt)
 	require.Equal(t, domain.AgentTaskStatusWaiting, dispatched.Tasks[1].Status)
 }
@@ -433,6 +446,31 @@ func TestDispatchRunRejectsRuntimeWithoutCodexCLIWhenReadinessRequired(t *testin
 	require.ErrorIs(t, err, domain.ErrConflict)
 }
 
+func TestDispatchRunRejectsStaleRuntimeWhenReadinessRequired(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{
+		runtimes: map[string]*domain.SpecForgeRuntime{
+			"runtime_stale": {
+				RuntimeID: "runtime_stale",
+				Executor:  ExecutorNameCodexCLI,
+				Status:    domain.RuntimeStatusOnline,
+				AvailableCLIs: []domain.SpecForgeRuntimeCLI{
+					{Name: "Codex CLI", Command: "codex", Available: true},
+				},
+				Sandbox:    &domain.SpecForgeRuntimeSandbox{Provider: "codex_cli", Mode: "workspace-write", Writable: true, NetworkAccess: true},
+				LastSeenAt: time.Now().Add(-10 * time.Minute),
+			},
+		},
+	}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+
+	_, err = svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{RequireRuntimeReady: true})
+
+	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
 func TestDispatchRunRejectsCancelledRun(t *testing.T) {
 	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
 	runRepo := &memoryExecutionRepo{}
@@ -459,6 +497,30 @@ func TestDispatchRunRejectsBlockedRun(t *testing.T) {
 	_, err = svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{})
 
 	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
+func TestCreateTaskEventSyncsProgressFields(t *testing.T) {
+	planningRepo := &memoryPlanningRepo{bundle: approvedPlanBundle()}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+
+	event, err := svc.CreateTaskEvent(context.Background(), dispatched.Tasks[0].ID, &CreateTaskEventRequest{
+		Type:    "executor_phase_changed",
+		Tool:    "codex_cli",
+		Content: "running_tests",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "executor_phase_changed", event.Type)
+	updated, err := svc.GetRun(context.Background(), dispatched.Run.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.AgentProcessStatusRunning, updated.Tasks[0].ProcessStatus)
+	require.Equal(t, "running_tests", updated.Tasks[0].CurrentPhase)
+	require.NotNil(t, updated.Tasks[0].LastProgressAt)
 }
 
 func TestSatisfiedDependencyNodeKeySetIncludesReadyAndMergedPRNodes(t *testing.T) {
@@ -488,7 +550,7 @@ func TestSatisfiedDependencyNodeKeySetIncludesReadyAndMergedPRNodes(t *testing.T
 	require.NotContains(t, completed, "PR-005")
 }
 
-func TestSatisfiedDependencyNodeKeySetDoesNotUseCompletedTaskForOpenedPRNode(t *testing.T) {
+func TestSatisfiedDependencyNodeKeySetUsesOpenedPRNode(t *testing.T) {
 	prNumber := 42
 	bundle := &domain.SpecForgeExecutionBundle{
 		Plan: &domain.SpecForgePlanBundle{
@@ -511,11 +573,11 @@ func TestSatisfiedDependencyNodeKeySetDoesNotUseCompletedTaskForOpenedPRNode(t *
 
 	completed := satisfiedDependencyNodeKeySet(bundle)
 
-	require.NotContains(t, completed, "PR-001")
+	require.Contains(t, completed, "PR-001")
 	require.Contains(t, completed, "PR-002")
 }
 
-func TestDependenciesCompleteWaitsForReadyPRStatusAfterTaskCompletion(t *testing.T) {
+func TestDependenciesCompleteUsesOpenedPRStatusAfterTaskCompletion(t *testing.T) {
 	bundle := &domain.SpecForgeExecutionBundle{
 		Plan: &domain.SpecForgePlanBundle{
 			PRNodes: []*domain.SpecForgePRNode{
@@ -530,8 +592,6 @@ func TestDependenciesCompleteWaitsForReadyPRStatusAfterTaskCompletion(t *testing
 
 	node := bundle.Plan.PRNodes[1]
 
-	require.False(t, dependenciesComplete(node, satisfiedDependencyNodeKeySet(bundle)))
-	bundle.Plan.PRNodes[0].Status = domain.PRNodeStatusReadyForReview
 	require.True(t, dependenciesComplete(node, satisfiedDependencyNodeKeySet(bundle)))
 }
 
@@ -1306,6 +1366,24 @@ func TestSubmitTaskResultCompletesClaimedTaskAndUnlocksDependents(t *testing.T) 
 	require.Equal(t, domain.AgentTaskStatusQueued, updated.Tasks[1].Status)
 }
 
+func TestClaimTaskPreparesPRNodeBranchBeforeReturningPrompt(t *testing.T) {
+	planningRepo := memoryPlanningRepoWithPrompt()
+	runRepo := &memoryExecutionRepo{}
+	preparer := &fakePRNodeBranchPreparer{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, preparer, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{MaxTasks: 1})
+	require.NoError(t, err)
+
+	claim, err := svc.ClaimTask(context.Background(), "runtime_123", &ClaimAgentTaskRequest{Executor: "codex_cli"})
+
+	require.NoError(t, err)
+	require.NotNil(t, claim.Task)
+	require.Equal(t, "repo_123", preparer.request.RepositoryID)
+	require.Equal(t, dispatched.Tasks[0].PRNodeID, preparer.request.PRNodeID)
+}
+
 func TestSubmitTaskResultMarksFailureWithoutUnlockingDependents(t *testing.T) {
 	planningRepo := memoryPlanningRepoWithPrompt()
 	runRepo := &memoryExecutionRepo{}
@@ -1969,7 +2047,7 @@ func TestRunDeliveryCompleteWaitsForActiveRetry(t *testing.T) {
 	require.False(t, runDeliveryComplete(bundle))
 }
 
-func TestCompleteTaskWaitsForPRReadinessBeforeCompletingRun(t *testing.T) {
+func TestCompleteTaskCompletesRunWhenPROpened(t *testing.T) {
 	bundle := approvedPlanBundle()
 	bundle.PRNodes = bundle.PRNodes[:1]
 	bundle.PRNodes[0].Status = domain.PRNodeStatusPROpened
@@ -1986,8 +2064,34 @@ func TestCompleteTaskWaitsForPRReadinessBeforeCompletingRun(t *testing.T) {
 
 	require.NoError(t, err)
 	require.Equal(t, domain.AgentTaskStatusCompleted, updated.Tasks[0].Status)
-	require.Equal(t, domain.ExecutionRunStatusRunning, updated.Run.Status)
-	require.Nil(t, updated.Run.CompletedAt)
+	require.Equal(t, domain.ExecutionRunStatusCompleted, updated.Run.Status)
+	require.NotNil(t, updated.Run.CompletedAt)
+}
+
+func TestGetRunCompletesStaleOpenedPRDelivery(t *testing.T) {
+	bundle := approvedPlanBundle()
+	bundle.PRNodes = bundle.PRNodes[:1]
+	bundle.PRNodes[0].Status = domain.PRNodeStatusPROpened
+	bundle.PRNodes[0].GitHubPRURL = "https://github.com/agicto/codingcto/pull/42"
+	planningRepo := &memoryPlanningRepo{bundle: bundle}
+	runRepo := &memoryExecutionRepo{}
+	svc := NewService(runRepo, planningRepo, nil, nil, nil, nil, nil)
+	created, err := svc.StartRun(context.Background(), 42, planningRepo.bundle.Plan.ID, &StartExecutionRunRequest{})
+	require.NoError(t, err)
+	dispatched, err := svc.DispatchRun(context.Background(), created.Run.ID, &DispatchExecutionRunRequest{})
+	require.NoError(t, err)
+	task := dispatched.Tasks[0]
+	task.Status = domain.AgentTaskStatusCompleted
+	require.NoError(t, runRepo.UpdateAgentTask(context.Background(), task))
+	dispatched.Run.Status = domain.ExecutionRunStatusRunning
+	dispatched.Run.CompletedAt = nil
+	require.NoError(t, runRepo.UpdateExecutionRun(context.Background(), dispatched.Run))
+
+	reconciled, err := svc.GetRun(context.Background(), dispatched.Run.ID)
+
+	require.NoError(t, err)
+	require.Equal(t, domain.ExecutionRunStatusCompleted, reconciled.Run.Status)
+	require.NotNil(t, reconciled.Run.CompletedAt)
 }
 
 func TestCompleteTaskIgnoresUnselectedPRNodeDeliveryState(t *testing.T) {
@@ -2015,7 +2119,7 @@ func TestCompleteTaskIgnoresUnselectedPRNodeDeliveryState(t *testing.T) {
 func TestUnlockReadyTasksForPRNodeCompletesRunWhenAllPRNodesReady(t *testing.T) {
 	bundle := approvedPlanBundle()
 	bundle.PRNodes = bundle.PRNodes[:1]
-	bundle.PRNodes[0].Status = domain.PRNodeStatusPROpened
+	bundle.PRNodes[0].Status = domain.PRNodeStatusCIRunning
 	bundle.PRNodes[0].GitHubPRURL = "https://github.com/agicto/codingcto/pull/42"
 	planningRepo := &memoryPlanningRepo{bundle: bundle}
 	runRepo := &memoryExecutionRepo{}
@@ -3070,6 +3174,8 @@ type fakeExecutor struct {
 func (e *fakeExecutor) Name() string {
 	return "fake"
 }
+
+func (e *fakeExecutor) SetProgressReporter(reporter ProgressReporter) {}
 
 func (e *fakeExecutor) Prepare(ctx context.Context, execContext ExecutionContext) error {
 	return nil

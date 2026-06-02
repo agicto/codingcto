@@ -21,6 +21,7 @@ type Service interface {
 	CreateProjectRequirement(ctx context.Context, userID, projectID uint, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error)
 	GenerateRequirementPlan(ctx context.Context, userID, requirementID uint, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error)
 	GetLatestPlanForProject(ctx context.Context, projectID uint) (*domain.SpecForgePlanBundle, error)
+	GetPlan(ctx context.Context, planID uint) (*domain.SpecForgePlanBundle, error)
 	GetPlanForIdea(ctx context.Context, ideaID uint) (*domain.SpecForgePlanBundle, error)
 	GetPlanForRequirement(ctx context.Context, requirementID uint) (*domain.SpecForgePlanBundle, error)
 	ApprovePlan(ctx context.Context, userID, planID uint, req *ApprovePlanRequest) (*domain.SpecForgePlanBundle, error)
@@ -212,6 +213,17 @@ func (s *service) GetPlanForIdea(ctx context.Context, ideaID uint) (*domain.Spec
 	return s.withRepoProfile(ctx, bundle)
 }
 
+func (s *service) GetPlan(ctx context.Context, planID uint) (*domain.SpecForgePlanBundle, error) {
+	if planID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	bundle, err := s.repo.FindPlanBundleByPlanID(ctx, planID)
+	if err != nil {
+		return nil, err
+	}
+	return s.withRepoProfile(ctx, bundle)
+}
+
 func (s *service) GetPlanForRequirement(ctx context.Context, requirementID uint) (*domain.SpecForgePlanBundle, error) {
 	if requirementID == 0 {
 		return nil, domain.ErrInvalidInput
@@ -299,6 +311,7 @@ func (s *service) UpsertSkill(ctx context.Context, userID uint, repoID string, r
 		Description:  strings.TrimSpace(sanitizeSkillText(req.Description)),
 		Content:      strings.TrimSpace(sanitizeSkillText(req.Content)),
 		Active:       active,
+		TargetAgents: normalizeSkillTargetAgents(req.TargetAgents),
 		CreatedBy:    userID,
 	}
 	if skill.Name == "" || skill.Content == "" {
@@ -330,10 +343,11 @@ func (s *service) UpsertProjectSkill(ctx context.Context, userID, projectID uint
 		return nil, err
 	}
 	skill, err := s.UpsertSkill(ctx, userID, req.RepositoryID, &UpsertSkillRequest{
-		Name:        req.Name,
-		Description: req.Description,
-		Content:     req.Content,
-		Active:      req.Active,
+		Name:         req.Name,
+		Description:  req.Description,
+		Content:      req.Content,
+		Active:       req.Active,
+		TargetAgents: req.TargetAgents,
 	})
 	if err != nil {
 		return nil, err
@@ -431,10 +445,10 @@ func (s *service) activeSkillsFor(ctx context.Context, bundle *domain.SpecForgeP
 				return nil, fmt.Errorf("load active project skills: %w", err)
 			}
 			if len(projectSkills) > 0 {
-				return skillsFromProjectSkills(projectSkills), nil
+				return filterSkillsForAgents(skillsFromProjectSkills(projectSkills), "planning"), nil
 			}
 		}
-		return activeProjectSkills(bundle.ProjectContext), nil
+		return filterSkillsForAgents(activeProjectSkills(bundle.ProjectContext), "planning"), nil
 	}
 	if s.skillRepo == nil || bundle == nil || bundle.Idea == nil || strings.TrimSpace(bundle.Idea.RepositoryID) == "" {
 		return []*domain.SpecForgeSkill{}, nil
@@ -443,7 +457,7 @@ func (s *service) activeSkillsFor(ctx context.Context, bundle *domain.SpecForgeP
 	if err != nil {
 		return nil, fmt.Errorf("load active repo skills: %w", err)
 	}
-	return skills, nil
+	return filterSkillsForAgents(skills, "planning"), nil
 }
 
 func (s *service) recordPlanSkillRuns(ctx context.Context, userID uint, bundle *domain.SpecForgePlanBundle) error {
@@ -607,6 +621,7 @@ func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, no
 	b.WriteString("Goal:\n" + node.Goal + "\n\n")
 	writePromptContract(&b, promptType, bundle, node, skills)
 	writePromptTypeInstructions(&b, promptType)
+	writeSkillApplicationProtocol(&b, skills)
 	b.WriteString("Product context:\n")
 	for _, goal := range bundle.ProductSpec.Goals {
 		b.WriteString("- " + goal + "\n")
@@ -626,6 +641,18 @@ func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, no
 	b.WriteString("- Run the listed test commands.\n")
 	b.WriteString("- Prepare a PR description with summary, scope, non-goals, tests, risks, and dependencies.\n")
 	return b.String()
+}
+
+func writeSkillApplicationProtocol(b *strings.Builder, skills []*domain.SpecForgeSkill) {
+	b.WriteString("Skill application protocol:\n")
+	if len(activePromptSkills(skills)) == 0 {
+		b.WriteString("- No active repository skills were available for this prompt; do not invent skill rules.\n\n")
+		return
+	}
+	b.WriteString("- Before planning or editing files, translate every repository skill below into concrete constraints for this PR node.\n")
+	b.WriteString("- Apply those constraints together with the acceptance criteria, non-goals, and PR DAG dependencies.\n")
+	b.WriteString("- If a skill conflicts with approved plan evidence or repository evidence, stop and produce an escalation summary.\n")
+	b.WriteString("- In the final task summary, include skills_applied with the skill names used and the evidence refs that supported the decision.\n\n")
 }
 
 func writePromptContract(b *strings.Builder, promptType string, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, skills []*domain.SpecForgeSkill) {
@@ -883,6 +910,7 @@ func writeProjectContext(b *strings.Builder, context *domain.SpecForgeProjectCon
 	}
 	b.WriteString("Project context:\n")
 	b.WriteString("- Project: " + context.Project.Name + "\n")
+	writeProjectContextContract(b, context.ContextContract)
 	if strings.TrimSpace(context.PrimaryRepositoryID) != "" {
 		b.WriteString("- Primary repository: " + strings.TrimSpace(context.PrimaryRepositoryID) + "\n")
 	}
@@ -921,6 +949,49 @@ func writeProjectContext(b *strings.Builder, context *domain.SpecForgeProjectCon
 		writeArchitectureContext(b, repoContext)
 	}
 	b.WriteString("\n")
+}
+
+func writeProjectContextContract(b *strings.Builder, contract *domain.SpecForgeProjectContextContract) {
+	if contract == nil {
+		return
+	}
+	b.WriteString("- Context contract: " + contract.Version + "\n")
+	if strings.TrimSpace(contract.PrimaryRepositoryID) != "" {
+		b.WriteString("  - contract.primary_repository_id: " + strings.TrimSpace(contract.PrimaryRepositoryID) + "\n")
+	}
+	if len(contract.ReadOnlyRepositoryIDs) > 0 {
+		b.WriteString("  - contract.read_only_repository_ids: " + strings.Join(normalizePlanList(contract.ReadOnlyRepositoryIDs), ", ") + "\n")
+	}
+	if len(contract.SkillNames) > 0 {
+		b.WriteString("  - contract.active_skills: " + strings.Join(normalizePlanList(contract.SkillNames), ", ") + "\n")
+	}
+	if len(contract.MissingEvidence) > 0 {
+		b.WriteString("  - contract.missing_evidence: " + strings.Join(normalizePlanList(contract.MissingEvidence), ", ") + "\n")
+	}
+	for _, guardrail := range normalizePlanList(contract.PromptGuardrails) {
+		b.WriteString("  - contract.guardrail: " + guardrail + "\n")
+	}
+	for _, repository := range contract.Repositories {
+		if repository == nil {
+			continue
+		}
+		b.WriteString("  - contract.repository: " + repository.RepositoryID + " role=" + repository.Role)
+		if repository.Writable {
+			b.WriteString(" writable=true")
+		} else {
+			b.WriteString(" writable=false")
+		}
+		b.WriteString("\n")
+		if len(repository.TestCommands) > 0 {
+			b.WriteString("    - contract.repository_tests: " + strings.Join(normalizePlanList(repository.TestCommands), ", ") + "\n")
+		}
+		if len(repository.RiskAreas) > 0 {
+			b.WriteString("    - contract.repository_risks: " + strings.Join(normalizePlanList(repository.RiskAreas), ", ") + "\n")
+		}
+		if repository.ArchitectureSnapshotCommit != "" {
+			b.WriteString("    - contract.architecture_snapshot_commit: " + compactPromptLine(repository.ArchitectureSnapshotCommit) + "\n")
+		}
+	}
 }
 
 func writeArchitectureContext(b *strings.Builder, repoContext *domain.SpecForgeProjectRepositoryContext) {
@@ -962,20 +1033,32 @@ func writeIndentedList(b *strings.Builder, label string, values []string) {
 
 func writeSkills(b *strings.Builder, skills []*domain.SpecForgeSkill) {
 	b.WriteString("Repository skills:\n")
-	if len(skills) == 0 {
+	activeSkills := activePromptSkills(skills)
+	if len(activeSkills) == 0 {
 		b.WriteString("- None\n\n")
 		return
 	}
-	for _, skill := range skills {
-		if skill == nil || strings.TrimSpace(skill.Name) == "" || strings.TrimSpace(skill.Content) == "" {
-			continue
-		}
+	for _, skill := range activeSkills {
 		b.WriteString("## " + strings.TrimSpace(skill.Name) + "\n")
 		if strings.TrimSpace(skill.Description) != "" {
 			b.WriteString(strings.TrimSpace(skill.Description) + "\n")
 		}
+		if len(skill.TargetAgents) > 0 {
+			b.WriteString("Assigned agents: " + strings.Join(skill.TargetAgents, ", ") + "\n")
+		}
 		b.WriteString(strings.TrimSpace(skill.Content) + "\n\n")
 	}
+}
+
+func activePromptSkills(skills []*domain.SpecForgeSkill) []*domain.SpecForgeSkill {
+	out := make([]*domain.SpecForgeSkill, 0, len(skills))
+	for _, skill := range skills {
+		if skill == nil || strings.TrimSpace(skill.Name) == "" || strings.TrimSpace(skill.Content) == "" {
+			continue
+		}
+		out = append(out, skill)
+	}
+	return out
 }
 
 func primaryRepositoryID(context *domain.SpecForgeProjectContext) string {
@@ -1097,6 +1180,57 @@ func skillsFromProjectSkills(projectSkills []*domain.SpecForgeProjectSkill) []*d
 		skills = append(skills, projectSkill.Skill)
 	}
 	return skills
+}
+
+func normalizeSkillTargetAgents(values []string) []string {
+	out := make([]string, 0, len(values))
+	seen := map[string]struct{}{}
+	for _, value := range values {
+		agent := strings.TrimSpace(sanitizeSkillText(value))
+		if agent == "" {
+			continue
+		}
+		key := strings.ToLower(agent)
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, agent)
+	}
+	return out
+}
+
+func filterSkillsForAgents(skills []*domain.SpecForgeSkill, agents ...string) []*domain.SpecForgeSkill {
+	out := make([]*domain.SpecForgeSkill, 0, len(skills))
+	for _, skill := range skills {
+		if skillAppliesToAgents(skill, agents...) {
+			out = append(out, skill)
+		}
+	}
+	return out
+}
+
+func skillAppliesToAgents(skill *domain.SpecForgeSkill, agents ...string) bool {
+	if skill == nil {
+		return false
+	}
+	targets := map[string]struct{}{}
+	for _, target := range skill.TargetAgents {
+		normalized := strings.ToLower(strings.TrimSpace(target))
+		if normalized == "" {
+			continue
+		}
+		if normalized == "*" || normalized == "all" {
+			return true
+		}
+		targets[normalized] = struct{}{}
+	}
+	for _, agent := range agents {
+		if _, ok := targets[strings.ToLower(strings.TrimSpace(agent))]; ok {
+			return true
+		}
+	}
+	return false
 }
 
 func plannedSkillRuns(userID uint, requirementID, planID, projectID *uint, bundle *domain.SpecForgePlanBundle, skills []*domain.SpecForgeSkill, now time.Time) []*domain.SpecForgeSkillRun {

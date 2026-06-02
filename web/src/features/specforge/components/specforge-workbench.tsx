@@ -6,19 +6,12 @@ import {
   ArrowRight,
   Boxes,
   Building2,
-  CheckCircle2,
-  CircleDot,
-  CircleX,
-  ExternalLink,
   GitBranch,
   GitMerge,
-  GitPullRequest,
-  Info,
   ListChecks,
-  ScrollText,
+  LogIn,
   Play,
-  RotateCcw,
-  ShieldAlert,
+  ScrollText,
   Sparkles,
   Terminal,
 } from 'lucide-react';
@@ -35,10 +28,7 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
-import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import { cn } from '@/utils';
 import { projectSpecForgeHref, slugFromProjectName } from '@/features/project/project-utils';
 import {
   useCreateProject,
@@ -49,8 +39,22 @@ import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-work
 import {
   executionRunFromDTO,
   planBundleFromDTO,
-  prNodeFromDTO,
 } from '@/features/specforge/plan-adapter';
+import {
+  WorkbenchDeliveryBoard,
+  WorkbenchModeTabs,
+  type WorkbenchItemId,
+  type WorkbenchStage,
+} from '@/features/specforge/components/workbench-board';
+import {
+  DetailPanel,
+  EmptyProjectPlanPanel,
+} from '@/features/specforge/components/workbench-panels';
+import { PlanReview } from '@/features/specforge/components/workbench-plan';
+import { ExecutionStatus, RunSummary } from '@/features/specforge/components/workbench-execution';
+import { RepoContextPanel } from '@/features/specforge/components/workbench-context';
+import { PRDag } from '@/features/specforge/components/workbench-prompt';
+import { statusClassName, type PromptMode } from '@/features/specforge/components/workbench-utils';
 import { buildPromptPreview } from '@/features/specforge/prompt-preview';
 import {
   defaultIdea,
@@ -60,180 +64,33 @@ import {
 } from '@/features/specforge/mock-data';
 import { runtimeFromDTO, summarizeRuntimeHealth } from '@/features/specforge/runtime-health';
 import {
-  profileListValue,
-  repoProfileFromDTO,
-  repoProfilePayloadFromForm,
-} from '@/features/specforge/repo-profile-form';
-import { githubTreeProfileInferencePayload } from '@/features/specforge/repo-profile-inference';
-import {
   useApproveSpecForgePlan,
   useCancelExecutionRun,
   useCompileSpecForgePrompt,
   useCreateSpecForgeIdea,
   useCreateSpecForgeProjectIdea,
-  useDeliverSpecForgePRNode,
   useDispatchExecutionRun,
   useExecutionRun,
-  useGitHubWebhookEvents,
   useLatestPlanRun,
   useLatestProjectPlan,
-  useInferRepoProfile,
-  usePrepareSpecForgePRNodeBranch,
-  useRepoProfile,
-  useRepoArchitectureStatus,
-  useReindexRepoArchitecture,
-  useRefreshSpecForgePRNodeCI,
-  useCompleteExecutionTask,
-  useCreateReviewPatchTask,
-  useReadSpecForgePRNodeFailureLog,
-  useRetryExecutionTask,
-  useSpecForgeEscalationSummary,
-  useSpecForgeFixAttempts,
-  useSpecForgePlanSkillRuns,
-  useSpecForgeProjectSkills,
-  useSpecForgeSkills,
-  useSpecForgeTaskEvents,
   useSpecForgeRuntimes,
   useSweepSpecForgeRuntimes,
   useSweepSpecForgeTasks,
   useStartExecutionRun,
-  useUpsertRepoProfile,
-  useUpsertSpecForgeProjectSkill,
-  useUpsertSpecForgeSkill,
-  useVerifySpecForgePRNodeCI,
 } from '@/features/specforge/hooks/use-specforge';
-import { hasActiveFixAttempt } from '@/features/specforge/fix-attempts';
-import { planApprovalReadiness } from '@/features/specforge/plan-approval';
 import {
-  decisionFieldsForPlan,
   defaultDecisionOverrides,
   normalizeDecisionOverrides,
 } from '@/features/specforge/plan-decisions';
-import {
-  canStartExecutionRange,
-  executionRangeReview,
-  selectExecutionNode,
-} from '@/features/specforge/execution-range';
-import {
-  executionReadinessForExecutor,
-  type ExecutionReadiness,
-} from '@/features/specforge/execution-readiness';
-import type {
-  CompilePromptPayload,
-  SpecForgeFixAttemptDTO,
-  SpecForgeEscalationSummaryDTO,
-  SpecForgeExecutionBundleDTO,
-  GitHubWebhookEventDTO,
-  SpecForgePRNodeFailureLogDTO,
-  SpecForgeRepoArchitectureStatusDTO,
-  SpecForgeRepoProfileDTO,
-  SpecForgeSkillDTO,
-  SpecForgeSkillRunDTO,
-  SpecForgeTaskEventDTO,
-} from '@/features/specforge/services/specforge-service';
-import {
-  sortWebhookEvents,
-  webhookEventDetails,
-  webhookEventLabel,
-  webhookEventRepo,
-  webhookEventRisk,
-} from '@/features/specforge/webhook-events';
+import { executionReadinessForExecutor } from '@/features/specforge/execution-readiness';
+import type { SpecForgeExecutionBundleDTO } from '@/features/specforge/services/specforge-service';
 import { isPRNodeActive, isPRNodeDelivered } from '@/features/specforge/status';
-import {
-  nextBlockedNode,
-  nextReviewableNode,
-  summarizeDeliveryRun,
-} from '@/features/specforge/delivery-status';
-import {
-  specForgeSkillTemplates,
-  type SpecForgeSkillTemplate,
-} from '@/features/specforge/skill-templates';
-import type {
-  ExecutionRun,
-  ExecutorRuntime,
-  PlanBundle,
-  PRNode,
-  RepoProfile,
-} from '@/features/specforge/types';
+import type { ExecutionRun, ExecutorRuntime, PlanBundle, PRNode } from '@/features/specforge/types';
 
-const statusLabel: Record<PRNode['status'], string> = {
-  planned: 'Planned',
-  queued: 'Queued',
-  running: 'Running',
-  waiting_on_dependencies: 'Waiting',
-  pr_opened: 'PR opened',
-  ci_running: 'CI running',
-  ready_for_review: 'Ready',
-  blocked: 'Blocked',
-  merged: 'Merged',
-  closed: 'Closed',
-  completed: 'Completed',
-  failed: 'Failed',
-  cancelled: 'Cancelled',
-};
-const maxFixAttemptsPerNode = 3;
-type PromptMode = NonNullable<CompilePromptPayload['type']>;
-const promptModes: PromptMode[] = ['implementation', 'fix', 'review_patch'];
-const promptModeLabel: Record<PromptMode, string> = {
-  implementation: 'Implement',
-  fix: 'Fix',
-  review_patch: 'Review',
-};
-
-function statusClassName(status: PRNode['status'] | string) {
-  const nodeStatus = status as PRNode['status'];
-  if (isPRNodeDelivered(nodeStatus)) {
-    return 'border-success/30 bg-success-subtle text-success';
-  }
-  if (isPRNodeActive(nodeStatus)) {
-    return 'border-info/30 bg-info-subtle text-info';
-  }
-  if (status === 'waiting_on_dependencies' || status === 'pr_opened') {
-    return 'border-warning/30 bg-warning-subtle text-warning';
-  }
-  if (
-    status === 'failed' ||
-    status === 'cancelled' ||
-    status === 'blocked' ||
-    status === 'closed'
-  ) {
-    return 'border-error/30 bg-error-subtle text-error';
-  }
-  return 'border-border bg-bg-surface text-text-subtle';
-}
-
-function repoProfileSourceLabel(source: string) {
-  switch (source) {
-    case 'github_tree':
-      return 'GitHub tree';
-    case 'request_hints':
-      return 'Request hints';
-    case 'manual':
-      return 'Manual profile';
-    case 'demo':
-      return 'Demo profile';
-    default:
-      return 'Unknown source';
-  }
-}
-
-function formatTimestamp(value: string) {
-  const time = new Date(value);
-  if (Number.isNaN(time.getTime())) {
-    return value;
-  }
-  return time.toLocaleString();
-}
-
-function riskClassName(risk: PRNode['estimatedRisk']) {
-  if (risk === 'high') {
-    return 'border-error/30 bg-error-subtle text-error';
-  }
-  if (risk === 'medium') {
-    return 'border-warning/30 bg-warning-subtle text-warning';
-  }
-  return 'border-success/30 bg-success-subtle text-success';
-}
+const executorOptions = [
+  { value: 'codex_cli', label: 'Codex CLI' },
+  { value: 'claude_code_cli', label: 'Claude Code CLI' },
+] as const;
 
 function demoPlanForInput(idea: string, repositoryId: string): PlanBundle {
   return {
@@ -278,14 +135,15 @@ export function SpecForgeWorkbench({
   );
   const [hasPlan, setHasPlan] = useState(!projectId);
   const [approved, setApproved] = useState(false);
+  const [selectedExecutor, setSelectedExecutor] = useState<'codex_cli' | 'claude_code_cli'>(
+    'codex_cli'
+  );
   const [run, setRun] = useState<ExecutionRun>({
     status: 'idle',
     selectedPRNodeIds: [],
     tasks: demoPlan.prNodes,
   });
-  const [selectedWorkItem, setSelectedWorkItem] = useState<
-    'intake' | 'plan' | 'dag' | 'run' | 'context'
-  >('intake');
+  const [selectedWorkItem, setSelectedWorkItem] = useState<WorkbenchItemId>('intake');
   const [currentRuntimeNow] = useState(() => Date.now());
 
   const createIdea = useCreateSpecForgeIdea(repoId.trim());
@@ -302,7 +160,13 @@ export function SpecForgeWorkbench({
   });
   const latestProjectPlanQuery = useLatestProjectPlan(projectId);
   const latestPlanRunQuery = useLatestPlanRun(activePlan.planId, {
-    enabled: Boolean(projectId && activePlan.planId && planSource === 'api' && !run.runId),
+    enabled: Boolean(
+      projectId &&
+        activePlan.planId &&
+        planSource === 'api' &&
+        !run.runId &&
+        activePlan.implementationPlan.status === 'approved'
+    ),
     refetchInterval: false,
   });
   const readyCount = run.tasks.filter(task => isPRNodeDelivered(task.status)).length;
@@ -329,11 +193,11 @@ export function SpecForgeWorkbench({
     () =>
       executionReadinessForExecutor({
         runtimes,
-        executor: 'codex_cli',
+        executor: selectedExecutor,
         now: runtimeNow,
         allowFallback: useRuntimeFallback,
       }),
-    [runtimeNow, runtimes, useRuntimeFallback]
+    [runtimeNow, runtimes, selectedExecutor, useRuntimeFallback]
   );
 
   const progressText = useMemo(() => {
@@ -477,6 +341,7 @@ export function SpecForgeWorkbench({
         const started = await startRun.mutateAsync({
           planId: approvedPlan.planId ?? activePlan.planId,
           payload: {
+            executor: selectedExecutor,
             pr_node_ids: selectedPRNodeIDs,
           },
         });
@@ -583,6 +448,17 @@ export function SpecForgeWorkbench({
     setRun(next.run);
   }
 
+  function applyPRNodeUpdate(node: PRNode) {
+    setActivePlan(current => ({
+      ...current,
+      prNodes: current.prNodes.map(existing => (existing.id === node.id ? node : existing)),
+    }));
+    setRun(current => ({
+      ...current,
+      tasks: current.tasks.map(existing => (existing.id === node.id ? node : existing)),
+    }));
+  }
+
   async function compileNodePrompt(node: PRNode, mode: PromptMode) {
     const prNodeId = Number(node.id);
     if (Number.isFinite(prNodeId) && prNodeId > 0) {
@@ -599,7 +475,7 @@ export function SpecForgeWorkbench({
     return `Prompt type: ${mode}\n\n${buildPromptPreview(activePlan, node)}`;
   }
 
-  const deliveryStages = [
+  const deliveryStages: WorkbenchStage[] = [
     {
       id: 'intake',
       title: 'Idea intake',
@@ -724,94 +600,17 @@ export function SpecForgeWorkbench({
 
       {!projectId && <WorkspaceProjectLaunchPanel />}
 
-      <div className="flex h-11 shrink-0 items-center gap-2 border-b border-border-subtle px-4">
-        <Button
-          variant={
-            selectedWorkItem === 'intake' || selectedWorkItem === 'context'
-              ? 'secondary'
-              : 'outline'
-          }
-          size="sm"
-          onClick={() => setSelectedWorkItem('intake')}
-        >
-          All work
-        </Button>
-        <Button
-          variant={
-            selectedWorkItem === 'plan' || selectedWorkItem === 'dag' ? 'secondary' : 'outline'
-          }
-          size="sm"
-          onClick={() => setSelectedWorkItem('plan')}
-        >
-          Plans
-        </Button>
-        <Button
-          variant={selectedWorkItem === 'run' ? 'secondary' : 'outline'}
-          size="sm"
-          onClick={() => setSelectedWorkItem('run')}
-        >
-          Runs
-        </Button>
-      </div>
+      <WorkbenchModeTabs
+        selectedWorkItem={selectedWorkItem}
+        onSelectWorkItem={setSelectedWorkItem}
+      />
 
       <section className="grid min-h-0 flex-1 grid-rows-[minmax(360px,1fr)_minmax(340px,42vh)] overflow-hidden xl:grid-cols-[minmax(0,1fr)_420px] xl:grid-rows-1">
-        <div className="min-w-0 overflow-x-auto p-3">
-          <div className="grid h-full min-w-[1320px] grid-cols-6 gap-3">
-            {deliveryStages.map(column => (
-              <div
-                key={column.id}
-                className={cn('flex min-h-0 flex-col rounded-xl p-3', column.tone)}
-              >
-                <div className="flex h-8 items-center justify-between text-sm">
-                  <div className="flex items-center gap-2 font-medium">
-                    <CircleDot className="h-3.5 w-3.5 text-text-muted" />
-                    {column.title}
-                    <span className="text-xs text-text-muted">{column.items.length}</span>
-                  </div>
-                  <span className="text-text-muted">+</span>
-                </div>
-                <div className="mt-3 space-y-2">
-                  {column.items.length === 0 ? (
-                    <div className="flex h-40 items-center justify-center text-sm text-text-muted">
-                      {column.emptyLabel}
-                    </div>
-                  ) : (
-                    column.items.map(item => {
-                      const Icon = item.icon;
-                      return (
-                        <button
-                          key={item.id}
-                          onClick={() => setSelectedWorkItem(item.id)}
-                          className={cn(
-                            'w-full rounded-lg border bg-bg-surface p-3 text-left shadow-sm transition hover:border-primary/40',
-                            selectedWorkItem === item.id
-                              ? 'border-primary ring-1 ring-primary'
-                              : 'border-border-subtle'
-                          )}
-                        >
-                          <div className="flex items-center gap-2 text-xs text-text-muted">
-                            <Icon className="h-3.5 w-3.5 text-primary" />
-                            {item.key}
-                          </div>
-                          <div className="mt-2 text-sm font-semibold leading-5">{item.title}</div>
-                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-text-muted">
-                            {item.description}
-                          </p>
-                          <div className="mt-3 flex items-center justify-between text-xs">
-                            <span className="rounded-full bg-muted px-2 py-1 text-text-subtle">
-                              {item.status}
-                            </span>
-                            <span className="text-text-muted">Current</span>
-                          </div>
-                        </button>
-                      );
-                    })
-                  )}
-                </div>
-              </div>
-            ))}
-          </div>
-        </div>
+        <WorkbenchDeliveryBoard
+          stages={deliveryStages}
+          selectedWorkItem={selectedWorkItem}
+          onSelectWorkItem={setSelectedWorkItem}
+        />
 
         <aside className="min-h-0 overflow-y-auto border-t border-border-subtle bg-bg-subtle/60 p-4 xl:border-l xl:border-t-0">
           {selectedWorkItem === 'intake' && (
@@ -857,21 +656,18 @@ export function SpecForgeWorkbench({
 
           {selectedWorkItem === 'context' && (
             <DetailPanel title="CTX" heading="Repo intelligence and skills">
-              <div className="space-y-4">
-                <RepoProfileSummary
-                  repoId={repoId.trim()}
-                  repoProfile={activePlan.repoProfile}
-                  planSource={planSource}
-                  onProfileSaved={profile => {
-                    setActivePlan(current => ({
-                      ...current,
-                      repoProfile: profile,
-                    }));
-                  }}
-                />
-                <RepoSkillsPanel repoId={repoId.trim()} projectId={projectId} />
-                <GitHubWebhookEventsPanel />
-              </div>
+              <RepoContextPanel
+                repoId={repoId.trim()}
+                repoProfile={activePlan.repoProfile}
+                planSource={planSource}
+                projectId={projectId}
+                onProfileSaved={profile => {
+                  setActivePlan(current => ({
+                    ...current,
+                    repoProfile: profile,
+                  }));
+                }}
+              />
             </DetailPanel>
           )}
 
@@ -888,6 +684,11 @@ export function SpecForgeWorkbench({
                   setDecisionOverrides(current => ({ ...current, [key]: value }))
                 }
                 onExecutionNodeSelectionChange={setSelectedExecutionNodeIds}
+                selectedExecutor={selectedExecutor}
+                executorOptions={executorOptions}
+                onExecutorChange={value =>
+                  setSelectedExecutor(value as 'codex_cli' | 'claude_code_cli')
+                }
                 onApprove={approveAndStart}
               />
             </DetailPanel>
@@ -936,65 +737,18 @@ export function SpecForgeWorkbench({
                 />
                 <ExecutionStatus
                   run={run}
+                  repositoryId={activePlan.repoProfile.repositoryId}
                   isCancelling={cancelRun.isPending}
                   onAdvance={advanceRun}
                   onCancel={cancelActiveRun}
                   onExecutionBundle={applyExecutionBundle}
+                  onPRNodeUpdate={applyPRNodeUpdate}
                 />
               </div>
             </DetailPanel>
           )}
         </aside>
       </section>
-    </div>
-  );
-}
-
-function DetailPanel({
-  title,
-  heading,
-  children,
-}: {
-  title: string;
-  heading: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <div className="space-y-4">
-      <div>
-        <div className="text-xs font-medium text-text-muted">{title}</div>
-        <h2 className="mt-1 text-lg font-semibold leading-6">{heading}</h2>
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function EmptyProjectPlanPanel({
-  isLoading,
-  onCreate,
-}: {
-  isLoading: boolean;
-  onCreate: () => void;
-}) {
-  return (
-    <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
-      <div className="flex items-start gap-3">
-        <Info className="mt-0.5 h-4 w-4 text-primary" />
-        <div>
-          <div className="text-sm font-medium">
-            {isLoading ? 'Checking for existing project plans' : 'Create a real project plan'}
-          </div>
-          <p className="mt-1 text-sm leading-6 text-text-muted">
-            Project-scoped CodingCTO no longer falls back to demo work. Generate a requirement to
-            create the first backend-backed plan, prompt contract, and execution run for this
-            project.
-          </p>
-          <Button className="mt-3" size="sm" onClick={onCreate}>
-            Open idea intake
-          </Button>
-        </div>
-      </div>
     </div>
   );
 }
@@ -1163,6 +917,7 @@ function WorkspaceProjectLaunchPanel() {
   const projects = projectsQuery.data?.projects ?? [];
   const createWorkspace = useCreateWorkspace();
   const createProject = useCreateProject(effectiveWorkspaceId);
+  const backendUnavailable = workspacesQuery.isError;
 
   function updateWorkspaceName(value: string) {
     setWorkspaceName(value);
@@ -1302,12 +1057,14 @@ function WorkspaceProjectLaunchPanel() {
                 onChange={event => updateWorkspaceName(event.target.value)}
                 placeholder="Acme Platform"
                 aria-label="Workspace name"
+                disabled={backendUnavailable}
               />
               <Input
                 value={workspaceSlug}
                 onChange={event => setWorkspaceSlug(slugFromProjectName(event.target.value))}
                 placeholder="acme-platform"
                 aria-label="Workspace slug"
+                disabled={backendUnavailable}
               />
               <Textarea
                 value={workspaceDescription}
@@ -1315,8 +1072,13 @@ function WorkspaceProjectLaunchPanel() {
                 placeholder="Who owns this product portfolio?"
                 aria-label="Workspace description"
                 rows={3}
+                disabled={backendUnavailable}
               />
-              <Button type="submit" disabled={createWorkspace.isPending} className="w-full">
+              <Button
+                type="submit"
+                disabled={backendUnavailable || createWorkspace.isPending}
+                className="w-full"
+              >
                 {createWorkspace.isPending ? 'Creating workspace' : 'Create workspace'}
                 <ArrowRight className="ml-1.5 h-4 w-4" />
               </Button>
@@ -1336,20 +1098,35 @@ function WorkspaceProjectLaunchPanel() {
             </CardDescription>
           </CardHeader>
           <CardContent>
+            {backendUnavailable ? (
+              <div className="mb-4 rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm leading-6">
+                <div className="font-medium text-text-main">Backend session required</div>
+                <p className="mt-1 text-text-muted">
+                  Project setup needs a backend API token. Sign in with backend auth before
+                  creating workspaces, projects, repositories, or execution runs.
+                </p>
+                <Button asChild variant="outline" size="sm" className="mt-3">
+                  <Link href="/login?returnUrl=/console/codingcto">
+                    Sign in with backend
+                    <LogIn className="ml-1.5 h-4 w-4" />
+                  </Link>
+                </Button>
+              </div>
+            ) : null}
             <form className="space-y-3" onSubmit={createNewProject}>
               <Input
                 value={projectName}
                 onChange={event => updateProjectName(event.target.value)}
                 placeholder="CodingCTO"
                 aria-label="Project name"
-                disabled={!effectiveWorkspaceId}
+                disabled={!effectiveWorkspaceId || backendUnavailable}
               />
               <Input
                 value={projectSlug}
                 onChange={event => setProjectSlug(slugFromProjectName(event.target.value))}
                 placeholder="codingcto"
                 aria-label="Project slug"
-                disabled={!effectiveWorkspaceId}
+                disabled={!effectiveWorkspaceId || backendUnavailable}
               />
               <Textarea
                 value={projectDescription}
@@ -1357,11 +1134,11 @@ function WorkspaceProjectLaunchPanel() {
                 placeholder="What product or system does this project represent?"
                 aria-label="Project description"
                 rows={3}
-                disabled={!effectiveWorkspaceId}
+                disabled={!effectiveWorkspaceId || backendUnavailable}
               />
               <Button
                 type="submit"
-                disabled={!effectiveWorkspaceId || createProject.isPending}
+                disabled={!effectiveWorkspaceId || backendUnavailable || createProject.isPending}
                 className="w-full"
               >
                 {createProject.isPending ? 'Creating project' : 'Create project'}
@@ -1381,1825 +1158,6 @@ function WorkspaceProjectLaunchPanel() {
           </CardContent>
         </Card>
       </div>
-    </div>
-  );
-}
-
-function RepoProfileSummary({
-  repoId,
-  repoProfile,
-  planSource,
-  onProfileSaved,
-}: {
-  repoId: string;
-  repoProfile: RepoProfile;
-  planSource: 'api' | 'demo' | 'empty';
-  onProfileSaved: (profile: RepoProfile) => void;
-}) {
-  const profileQuery = useRepoProfile(repoId);
-  const architectureQuery = useRepoArchitectureStatus(repoId);
-  const [savedProfile, setSavedProfile] = useState<SpecForgeRepoProfileDTO>();
-  const effectiveProfile = savedProfile
-    ? repoProfileFromDTO(savedProfile)
-    : profileQuery.data
-      ? repoProfileFromDTO(profileQuery.data)
-      : repoProfile;
-  const editorKey = [
-    effectiveProfile.repositoryId,
-    effectiveProfile.defaultBranch,
-    effectiveProfile.stack.join('|'),
-    effectiveProfile.testCommands.join('|'),
-    effectiveProfile.ciProvider,
-  ].join(':');
-
-  return (
-    <div className="rounded-lg border border-border-subtle bg-muted/30 p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <GitBranch className="h-4 w-4 text-primary" />
-          Repo profile
-        </div>
-        <Badge
-          variant="outline"
-          className={planSource === 'api' ? statusClassName('completed') : ''}
-        >
-          {planSource === 'api'
-            ? 'API plan'
-            : planSource === 'empty'
-              ? 'Awaiting plan'
-              : 'Demo fallback'}
-        </Badge>
-      </div>
-      <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-text-muted">
-        <Badge variant="outline">{repoProfileSourceLabel(effectiveProfile.source)}</Badge>
-        {effectiveProfile.lastIndexedAt ? (
-          <span>Indexed {formatTimestamp(effectiveProfile.lastIndexedAt)}</span>
-        ) : (
-          <span>Not indexed yet</span>
-        )}
-      </div>
-      {effectiveProfile.warnings.length > 0 ? (
-        <div className="mt-3 space-y-2">
-          {effectiveProfile.warnings.map(warning => (
-            <div
-              key={warning}
-              className="flex gap-2 rounded-md border border-amber-200 bg-amber-50 px-3 py-2 text-xs leading-5 text-amber-900"
-            >
-              <Info className="mt-0.5 h-3.5 w-3.5 flex-none" />
-              <span>{warning}</span>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      <p className="mt-2 text-sm leading-6 text-text-muted">{effectiveProfile.summary}</p>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {effectiveProfile.stack.map(item => (
-          <Badge key={item} variant="outline">
-            {item}
-          </Badge>
-        ))}
-      </div>
-      <RepoProfileEditor
-        key={editorKey}
-        repoId={repoId}
-        initialProfile={effectiveProfile}
-        architectureStatus={architectureQuery.data}
-        isOffline={profileQuery.isError}
-        onSaved={profile => {
-          setSavedProfile(profile);
-          onProfileSaved(repoProfileFromDTO(profile));
-        }}
-      />
-    </div>
-  );
-}
-
-function RepoProfileEditor({
-  repoId,
-  initialProfile,
-  architectureStatus,
-  isOffline,
-  onSaved,
-}: {
-  repoId: string;
-  initialProfile: RepoProfile;
-  architectureStatus?: SpecForgeRepoArchitectureStatusDTO;
-  isOffline: boolean;
-  onSaved: (profile: SpecForgeRepoProfileDTO) => void;
-}) {
-  const upsertProfile = useUpsertRepoProfile(repoId);
-  const inferProfile = useInferRepoProfile(repoId);
-  const reindexArchitecture = useReindexRepoArchitecture(repoId);
-  const [defaultBranch, setDefaultBranch] = useState(initialProfile.defaultBranch);
-  const [stack, setStack] = useState(profileListValue(initialProfile.stack));
-  const [testCommands, setTestCommands] = useState(profileListValue(initialProfile.testCommands));
-  const [ciProvider, setCIProvider] = useState(initialProfile.ciProvider);
-  const [codingConventions, setCodingConventions] = useState(
-    profileListValue(initialProfile.codingConventions)
-  );
-  const [riskAreas, setRiskAreas] = useState(profileListValue(initialProfile.riskAreas));
-  const [summary, setSummary] = useState(initialProfile.summary);
-
-  async function saveProfile() {
-    if (!repoId) {
-      return;
-    }
-
-    const payload = repoProfilePayloadFromForm({
-      defaultBranch,
-      stack,
-      testCommands,
-      ciProvider,
-      codingConventions,
-      riskAreas,
-      summary,
-    });
-    const saved = await upsertProfile.mutateAsync(payload);
-    onSaved(saved);
-  }
-
-  async function inferFromRepositoryHints() {
-    if (!repoId) {
-      return;
-    }
-
-    const inferred = await inferProfile.mutateAsync(
-      githubTreeProfileInferencePayload(defaultBranch)
-    );
-    onSaved(inferred);
-  }
-
-  async function reindexRepositoryArchitecture() {
-    if (!repoId) {
-      return;
-    }
-
-    await reindexArchitecture.mutateAsync({ default_branch: defaultBranch.trim() || undefined });
-  }
-
-  return (
-    <div className="mt-4 space-y-3">
-      <RepoArchitectureStatus
-        status={architectureStatus}
-        isOffline={isOffline}
-        isReindexing={reindexArchitecture.isPending}
-        onReindex={reindexRepositoryArchitecture}
-      />
-      <div className="grid gap-3 md:grid-cols-2">
-        <Input
-          value={defaultBranch}
-          onChange={event => setDefaultBranch(event.target.value)}
-          aria-label="Default branch"
-          placeholder="Default branch"
-        />
-        <Input
-          value={ciProvider}
-          onChange={event => setCIProvider(event.target.value)}
-          aria-label="CI provider"
-          placeholder="CI provider"
-        />
-      </div>
-      <Input
-        value={stack}
-        onChange={event => setStack(event.target.value)}
-        aria-label="Repository stack"
-        placeholder="Stack: Go, Next.js, TypeScript"
-      />
-      <Input
-        value={testCommands}
-        onChange={event => setTestCommands(event.target.value)}
-        aria-label="Test commands"
-        placeholder="Test commands: go test ./..., pnpm lint"
-      />
-      <Input
-        value={codingConventions}
-        onChange={event => setCodingConventions(event.target.value)}
-        aria-label="Coding conventions"
-        placeholder="Coding conventions"
-      />
-      <Input
-        value={riskAreas}
-        onChange={event => setRiskAreas(event.target.value)}
-        aria-label="Risk areas"
-        placeholder="Risk areas: auth, migrations"
-      />
-      <Textarea
-        value={summary}
-        onChange={event => setSummary(event.target.value)}
-        className="min-h-24"
-        aria-label="Repo profile summary"
-        placeholder="Summarize the repository structure and implementation conventions."
-      />
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="text-xs leading-5 text-text-muted">
-          {isOffline
-            ? 'Start the CodingCTO backend to save profile changes.'
-            : 'Profile context feeds planning, PR DAG, and prompt compilation.'}
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            variant="outline"
-            onClick={inferFromRepositoryHints}
-            disabled={!repoId || isOffline || inferProfile.isPending}
-          >
-            {inferProfile.isPending ? 'Inferring' : 'Infer profile'}
-          </Button>
-          <Button onClick={saveProfile} disabled={!repoId || isOffline || upsertProfile.isPending}>
-            {upsertProfile.isPending ? 'Saving' : 'Save profile'}
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function RepoArchitectureStatus({
-  status,
-  isOffline,
-  isReindexing,
-  onReindex,
-}: {
-  status?: SpecForgeRepoArchitectureStatusDTO;
-  isOffline: boolean;
-  isReindexing: boolean;
-  onReindex: () => void;
-}) {
-  const snapshot = status?.snapshot;
-  const staleReasons = status?.stale_reasons ?? [];
-  const badgeLabel = isOffline
-    ? 'Offline'
-    : status?.stale
-      ? 'Reindex needed'
-      : snapshot
-        ? 'Architecture fresh'
-        : 'No snapshot';
-
-  return (
-    <div className="rounded-md border border-border-subtle bg-bg-surface px-3 py-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <ListChecks className="h-4 w-4 text-primary" />
-          Architecture snapshot
-        </div>
-        <Badge
-          variant="outline"
-          className={!status?.stale && snapshot ? statusClassName('completed') : ''}
-        >
-          {badgeLabel}
-        </Badge>
-      </div>
-      <div className="mt-2 text-xs leading-5 text-text-muted">
-        {snapshot ? (
-          <>
-            <span>{snapshot.commit_sha || 'unknown ref'}</span>
-            <span className="mx-2">·</span>
-            <span>{snapshot.modules.length} modules</span>
-            <span className="mx-2">·</span>
-            <span>{snapshot.ci_workflows.length} CI workflows</span>
-          </>
-        ) : (
-          <span>Generate a snapshot to make repo analysis traceable before planning.</span>
-        )}
-      </div>
-      {staleReasons.length > 0 ? (
-        <div className="mt-2 space-y-1">
-          {staleReasons.map(reason => (
-            <div key={reason} className="text-xs leading-5 text-warning">
-              {reason}
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {snapshot?.modules.length ? (
-        <div className="mt-2 flex flex-wrap gap-1.5">
-          {snapshot.modules.slice(0, 6).map(moduleName => (
-            <Badge key={moduleName} variant="outline" className="text-text-muted">
-              {moduleName}
-            </Badge>
-          ))}
-        </div>
-      ) : null}
-      <div className="mt-3 flex justify-end">
-        <Button
-          variant="outline"
-          size="sm"
-          onClick={onReindex}
-          disabled={isOffline || isReindexing}
-        >
-          {isReindexing ? 'Reindexing' : 'Reindex'}
-        </Button>
-      </div>
-    </div>
-  );
-}
-
-function RepoSkillsPanel({ repoId, projectId }: { repoId: string; projectId?: number }) {
-  const [name, setName] = useState('Repo coding guidelines');
-  const [description, setDescription] = useState('Instructions injected into CodingCTO prompts.');
-  const [content, setContent] = useState('');
-  const [active, setActive] = useState(true);
-  const [savedSkill, setSavedSkill] = useState<SpecForgeSkillDTO>();
-
-  const skillsQuery = useSpecForgeSkills(repoId);
-  const projectSkillsQuery = useSpecForgeProjectSkills(projectId);
-  const upsertSkill = useUpsertSpecForgeSkill(repoId);
-  const upsertProjectSkill = useUpsertSpecForgeProjectSkill(projectId);
-  const skills = skillsQuery.data?.skills ?? [];
-  const projectSkills = projectSkillsQuery.data?.project_skills ?? [];
-  const latestProjectSkill = projectSkills[0]?.skill;
-  const latestSkill = savedSkill ?? latestProjectSkill ?? skills[0];
-  const savedCount = projectId ? projectSkills.length : skills.length;
-  const isSaving = upsertSkill.isPending || upsertProjectSkill.isPending;
-
-  async function saveSkill() {
-    const trimmedName = name.trim();
-    const trimmedContent = content.trim();
-    if (!repoId || !trimmedName || !trimmedContent) {
-      return;
-    }
-
-    if (projectId) {
-      const response = await upsertProjectSkill.mutateAsync({
-        repository_id: repoId,
-        name: trimmedName,
-        description: description.trim(),
-        content: trimmedContent,
-        active,
-      });
-      if (response.project_skill.skill) {
-        setSavedSkill(response.project_skill.skill);
-      }
-      return;
-    }
-
-    const response = await upsertSkill.mutateAsync({
-      name: trimmedName,
-      description: description.trim(),
-      content: trimmedContent,
-      active,
-    });
-    setSavedSkill(response.skill);
-  }
-
-  function applySkillTemplate(template: SpecForgeSkillTemplate) {
-    setName(template.name);
-    setDescription(template.description);
-    setContent(template.content);
-    setActive(true);
-  }
-
-  return (
-    <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <ListChecks className="h-4 w-4 text-primary" />
-            Repo skills
-          </div>
-          <p className="mt-1 text-sm leading-6 text-text-muted">
-            Store repository instructions for planning, prompt compilation, and project skill runs.
-          </p>
-        </div>
-        <Badge
-          variant="outline"
-          className={savedCount > 0 || savedSkill ? statusClassName('completed') : ''}
-        >
-          {skillsQuery.isLoading || projectSkillsQuery.isLoading
-            ? 'Checking'
-            : savedCount > 0
-              ? `${savedCount} saved`
-              : savedSkill
-                ? 'Saved'
-                : 'No skills'}
-        </Badge>
-      </div>
-
-      <div className="mt-4 space-y-3">
-        <div className="flex flex-wrap gap-2">
-          {specForgeSkillTemplates.map(template => (
-            <Button
-              key={template.id}
-              type="button"
-              variant="outline"
-              size="sm"
-              onClick={() => applySkillTemplate(template)}
-            >
-              {template.name}
-            </Button>
-          ))}
-        </div>
-        <Input
-          value={name}
-          onChange={event => setName(event.target.value)}
-          aria-label="Skill name"
-          placeholder="Skill name"
-        />
-        <Input
-          value={description}
-          onChange={event => setDescription(event.target.value)}
-          aria-label="Skill description"
-          placeholder="Skill description"
-        />
-        <Textarea
-          value={content}
-          onChange={event => setContent(event.target.value)}
-          className="min-h-24"
-          aria-label="Skill content"
-          placeholder="Use service layer for data access. Keep API routes thin. Run pnpm type-check before UI PRs."
-        />
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <Label className="flex items-center gap-2">
-            <Switch checked={active} onCheckedChange={setActive} />
-            Active
-          </Label>
-          <Button
-            onClick={saveSkill}
-            disabled={!repoId || !name.trim() || !content.trim() || isSaving}
-          >
-            {isSaving ? 'Saving' : projectId ? 'Save project skill' : 'Save skill'}
-          </Button>
-        </div>
-        {(skillsQuery.isError || projectSkillsQuery.isError) && (
-          <p className="text-xs leading-5 text-text-muted">
-            Skills will save when the CodingCTO backend is available.
-          </p>
-        )}
-        {latestSkill && (
-          <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-xs leading-5 text-text-muted">
-            Latest: {latestSkill.name}
-          </div>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function GitHubWebhookEventsPanel() {
-  const eventsQuery = useGitHubWebhookEvents({ limit: 5 });
-  const events = sortWebhookEvents(eventsQuery.data?.events ?? []).slice(0, 5);
-
-  return (
-    <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <GitPullRequest className="h-4 w-4 text-primary" />
-          GitHub webhooks
-        </div>
-        <Badge variant="outline">{events.length} recent</Badge>
-      </div>
-      <div className="mt-3 space-y-2">
-        {eventsQuery.isLoading && (
-          <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
-            Loading webhook events.
-          </div>
-        )}
-        {eventsQuery.isError && (
-          <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
-            Webhook events will load when the CodingCTO backend is available.
-          </div>
-        )}
-        {!eventsQuery.isLoading && !eventsQuery.isError && events.length === 0 && (
-          <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
-            No webhook events recorded yet.
-          </div>
-        )}
-        {events.map(event => (
-          <GitHubWebhookEventRow key={event.id} event={event} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function GitHubWebhookEventRow({ event }: { event: GitHubWebhookEventDTO }) {
-  const details = webhookEventDetails(event);
-  const risk = webhookEventRisk(event);
-  const sourceUrl = details.reviewUrl ?? details.pullRequestUrl ?? details.workflowUrl;
-
-  return (
-    <div
-      className={cn(
-        'rounded-lg border border-border-subtle bg-bg-subtle p-3',
-        risk === 'blocked' && 'border-warning/30 bg-warning-subtle',
-        risk === 'failed' && 'border-error/30 bg-error-subtle'
-      )}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-sm font-medium">{webhookEventLabel(event)}</div>
-        <div className="flex flex-wrap items-center gap-2">
-          {details.reviewState && <Badge variant="outline">{details.reviewState}</Badge>}
-          {details.workflowConclusion && (
-            <Badge variant="outline">{details.workflowConclusion}</Badge>
-          )}
-          <Badge
-            variant="outline"
-            className={
-              risk === 'blocked'
-                ? statusClassName('blocked')
-                : risk === 'failed'
-                  ? statusClassName('failed')
-                  : ''
-            }
-          >
-            {event.status}
-          </Badge>
-        </div>
-      </div>
-      <div className="mt-1 text-xs text-text-muted">{webhookEventRepo(event)}</div>
-      <div className="mt-1 flex flex-wrap items-center gap-2 text-xs text-text-muted">
-        <span>{event.delivery_id}</span>
-        {sourceUrl && (
-          <a href={sourceUrl} target="_blank" rel="noreferrer" className="text-primary">
-            Open source
-          </a>
-        )}
-      </div>
-    </div>
-  );
-}
-
-function RunSummary({
-  progressText,
-  approved,
-  run,
-}: {
-  progressText: string;
-  approved: boolean;
-  run: ExecutionRun;
-}) {
-  const summary = summarizeDeliveryRun(run);
-  const blockedNode = nextBlockedNode(run.tasks);
-  const reviewableNode = nextReviewableNode(run.tasks);
-
-  return (
-    <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div className="min-w-0">
-          <div className="text-sm font-medium">PR delivery</div>
-          <div className="mt-1 text-sm text-text-muted">{summary.headline}</div>
-          <div className="mt-1 text-xs text-text-muted">{progressText}</div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Badge variant="outline" className={approved ? statusClassName('completed') : ''}>
-            {approved ? 'Plan approved' : 'Plan approval required'}
-          </Badge>
-          <Badge
-            variant="outline"
-            className={
-              run.status === 'running' || run.status === 'blocked'
-                ? statusClassName(run.status)
-                : ''
-            }
-          >
-            {run.status === 'idle' ? 'No run started' : run.status}
-          </Badge>
-          {run.status !== 'idle' && (
-            <Badge variant="outline">{run.selectedPRNodeIds.length} PR nodes selected</Badge>
-          )}
-        </div>
-      </div>
-      <div className="mt-4 h-2 overflow-hidden rounded-full bg-bg-subtle">
-        <div className="h-full bg-primary" style={{ width: `${summary.progressPercent}%` }} />
-      </div>
-      <div className="mt-4 grid gap-2 sm:grid-cols-2 lg:grid-cols-6">
-        <DeliveryMetric label="Ready" value={summary.ready} status="ready_for_review" />
-        <DeliveryMetric label="Active" value={summary.active} status="ci_running" />
-        <DeliveryMetric label="Waiting" value={summary.waiting} status="waiting_on_dependencies" />
-        <DeliveryMetric label="Blocked" value={summary.blocked} status="blocked" />
-        <DeliveryMetric label="Failed" value={summary.failed} status="failed" />
-        <DeliveryMetric label="Merged" value={summary.merged} status="merged" />
-      </div>
-      <div className="mt-4 flex flex-col gap-2 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="font-medium text-text-main">Next action</div>
-          <div className="mt-1 text-text-muted">{summary.nextAction}</div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          {blockedNode && (
-            <Badge variant="outline" className={statusClassName('blocked')}>
-              {blockedNode.nodeKey} blocked
-            </Badge>
-          )}
-          {reviewableNode && (
-            <Badge variant="outline" className={statusClassName('ready_for_review')}>
-              {reviewableNode.nodeKey} review
-            </Badge>
-          )}
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function DeliveryMetric({
-  label,
-  value,
-  status,
-}: {
-  label: string;
-  value: number;
-  status: PRNode['status'];
-}) {
-  return (
-    <div className="rounded-lg border border-border-subtle bg-bg-subtle px-3 py-2">
-      <div className="flex items-center justify-between gap-2">
-        <span className="text-xs text-text-muted">{label}</span>
-        <Badge variant="outline" className={value > 0 ? statusClassName(status) : ''}>
-          {value}
-        </Badge>
-      </div>
-    </div>
-  );
-}
-
-function PlanReview({
-  plan,
-  decisionOverrides,
-  selectedExecutionNodeIds,
-  approved,
-  isStarting,
-  executionReadiness,
-  onDecisionOverrideChange,
-  onExecutionNodeSelectionChange,
-  onApprove,
-}: {
-  plan: PlanBundle;
-  decisionOverrides: Record<string, string>;
-  selectedExecutionNodeIds: string[];
-  approved: boolean;
-  isStarting: boolean;
-  executionReadiness: ExecutionReadiness;
-  onDecisionOverrideChange: (key: string, value: string) => void;
-  onExecutionNodeSelectionChange: (nodeIds: string[]) => void;
-  onApprove: () => void;
-}) {
-  const { productSpec, implementationPlan } = plan;
-  const approvalReadiness = planApprovalReadiness(plan);
-  const executionRangeNotes = executionRangeReview(plan.prNodes, selectedExecutionNodeIds);
-  const canStartSelectedRange = canStartExecutionRange(plan.prNodes, selectedExecutionNodeIds);
-  const decisionFields = decisionFieldsForPlan(plan);
-  const planAssumptions = productSpec.assumptions.filter(
-    item => !item.startsWith('PR DAG review:')
-  );
-  const skillRunsQuery = useSpecForgePlanSkillRuns(plan.planId);
-  const skillRuns = skillRunsQuery.data?.skill_runs ?? [];
-
-  return (
-    <div className="grid gap-4 xl:grid-cols-2">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Product understanding</CardTitle>
-          <CardDescription>Defaults and acceptance criteria before execution.</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <ListBlock title="Goals" items={productSpec.goals} />
-          <ListBlock title="Business rules" items={productSpec.businessRules} />
-          <DecisionOverrideFields
-            fields={decisionFields}
-            values={decisionOverrides}
-            disabled={approved || isStarting}
-            onChange={onDecisionOverrideChange}
-          />
-          <ListBlock title="Acceptance criteria" items={productSpec.acceptanceCriteria} />
-          <ListBlock title="Plan assumptions" items={planAssumptions} />
-          <SkillPipelinePanel
-            skillRuns={skillRuns}
-            isLoading={skillRunsQuery.isLoading}
-            isOffline={skillRunsQuery.isError}
-          />
-        </CardContent>
-      </Card>
-
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">Technical plan</CardTitle>
-          <CardDescription>{implementationPlan.technicalSummary}</CardDescription>
-        </CardHeader>
-        <CardContent className="space-y-5">
-          <ListBlock title="Affected areas" items={implementationPlan.affectedAreas} />
-          <ListBlock title="PR DAG review" items={plan.prDagReview} />
-          <ExecutionRangeSelector
-            nodes={plan.prNodes}
-            selectedNodeIds={selectedExecutionNodeIds}
-            disabled={approved || isStarting}
-            onChange={onExecutionNodeSelectionChange}
-          />
-          <ListBlock title="Execution range review" items={executionRangeNotes} />
-          <ListBlock title="Security risks" items={implementationPlan.securityRisks} icon="risk" />
-          <ListBlock title="Migration risks" items={implementationPlan.migrationRisks} />
-          {!approvalReadiness.canApprove && (
-            <p className="rounded-md border border-warning/30 bg-warning-subtle px-3 py-2 text-sm text-warning">
-              {approvalReadiness.reason}
-            </p>
-          )}
-          {!canStartSelectedRange && (
-            <p className="rounded-md border border-warning/30 bg-warning-subtle px-3 py-2 text-sm text-warning">
-              Select at least one PR node before starting execution.
-            </p>
-          )}
-          {!executionReadiness.canDispatch && (
-            <p className="rounded-md border border-warning/30 bg-warning-subtle px-3 py-2 text-sm text-warning">
-              {executionReadiness.reason}
-            </p>
-          )}
-          <Button
-            onClick={onApprove}
-            disabled={
-              approved ||
-              isStarting ||
-              !approvalReadiness.canApprove ||
-              !canStartSelectedRange ||
-              !executionReadiness.canDispatch
-            }
-            className="w-full justify-center"
-          >
-            {approved ? 'Approved' : isStarting ? 'Starting run' : 'Approve & Start'}
-            {approved ? (
-              <CheckCircle2 className="ml-1.5 h-4 w-4" />
-            ) : (
-              <Play className="ml-1.5 h-4 w-4" />
-            )}
-          </Button>
-        </CardContent>
-      </Card>
-    </div>
-  );
-}
-
-function SkillPipelinePanel({
-  skillRuns,
-  isLoading,
-  isOffline,
-}: {
-  skillRuns: SpecForgeSkillRunDTO[];
-  isLoading: boolean;
-  isOffline: boolean;
-}) {
-  const stages = skillRuns.length
-    ? skillRuns
-    : [
-        {
-          id: 0,
-          stage: 'product_plan',
-          status: 'pending',
-          input_summary: '',
-          output_summary: 'Product understanding will be recorded when the API generates a plan.',
-          created_by: 0,
-          created_at: '',
-          updated_at: '',
-        },
-        {
-          id: 1,
-          stage: 'technical_plan',
-          status: 'pending',
-          input_summary: '',
-          output_summary: 'Technical planning history will appear here for API-generated plans.',
-          created_by: 0,
-          created_at: '',
-          updated_at: '',
-        },
-        {
-          id: 2,
-          stage: 'pr_dag',
-          status: 'pending',
-          input_summary: '',
-          output_summary: 'PR DAG generation will be tracked as a skill run.',
-          created_by: 0,
-          created_at: '',
-          updated_at: '',
-        },
-      ];
-
-  return (
-    <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="flex items-center gap-2 text-sm font-medium">
-          <ScrollText className="h-4 w-4 text-primary" />
-          Skill pipeline
-        </div>
-        <Badge
-          variant="outline"
-          className={skillRuns.length > 0 ? statusClassName('completed') : ''}
-        >
-          {isLoading ? 'Checking' : skillRuns.length > 0 ? `${skillRuns.length} runs` : 'Pending'}
-        </Badge>
-      </div>
-      {isOffline ? (
-        <p className="mt-2 text-xs leading-5 text-text-muted">
-          Skill run history will load when the CodingCTO backend is available.
-        </p>
-      ) : null}
-      <div className="mt-3 space-y-2">
-        {stages.map(run => (
-          <div
-            key={`${run.stage}-${run.id}`}
-            className="rounded-md border border-border-subtle bg-bg-surface px-3 py-2"
-          >
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <span className="text-xs font-medium uppercase text-text-subtle">
-                {skillRunStageLabel(run.stage)}
-              </span>
-              <Badge variant="outline" className={statusClassName(run.status)}>
-                {run.status}
-              </Badge>
-            </div>
-            <p className="mt-1 line-clamp-2 text-xs leading-5 text-text-muted">
-              {run.output_summary || 'No output recorded yet.'}
-            </p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function skillRunStageLabel(stage: string) {
-  const labels: Record<string, string> = {
-    product_plan: 'Product plan',
-    technical_plan: 'Technical plan',
-    pr_dag: 'PR DAG',
-    self_review: 'Self review',
-  };
-  return labels[stage] ?? stage.replaceAll('_', ' ');
-}
-
-function ExecutionRangeSelector({
-  nodes,
-  selectedNodeIds,
-  disabled,
-  onChange,
-}: {
-  nodes: PRNode[];
-  selectedNodeIds: string[];
-  disabled: boolean;
-  onChange: (nodeIds: string[]) => void;
-}) {
-  const selected = new Set(selectedNodeIds);
-
-  function toggleNode(nodeId: string, checked: boolean) {
-    onChange(selectExecutionNode(nodes, selectedNodeIds, nodeId, checked));
-  }
-
-  return (
-    <div>
-      <h3 className="text-sm font-medium">Execution range</h3>
-      <div className="mt-3 space-y-3">
-        {nodes.map(node => (
-          <div
-            key={node.id}
-            className="flex items-start justify-between gap-3 rounded-md border border-border-subtle px-3 py-2"
-          >
-            <div>
-              <div className="text-sm font-medium">
-                {node.nodeKey}: {node.title}
-              </div>
-              <div className="mt-1 text-xs text-text-muted">
-                Depends on {node.dependsOn.length > 0 ? node.dependsOn.join(', ') : 'none'}
-              </div>
-            </div>
-            <Switch
-              checked={selected.has(node.id)}
-              disabled={disabled}
-              onCheckedChange={checked => toggleNode(node.id, checked)}
-            />
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function DecisionOverrideFields({
-  fields,
-  values,
-  disabled,
-  onChange,
-}: {
-  fields: ReturnType<typeof decisionFieldsForPlan>;
-  values: Record<string, string>;
-  disabled: boolean;
-  onChange: (key: string, value: string) => void;
-}) {
-  return (
-    <div>
-      <h3 className="text-sm font-medium">Key decisions</h3>
-      <div className="mt-3 grid gap-3 md:grid-cols-2">
-        {fields.map(field => (
-          <div key={field.key} className="space-y-1.5">
-            <Label htmlFor={`decision-${field.key}`}>{field.label}</Label>
-            <Input
-              id={`decision-${field.key}`}
-              value={values[field.key] ?? ''}
-              disabled={disabled}
-              onChange={event => onChange(field.key, event.target.value)}
-            />
-            <p className="text-xs leading-5 text-text-muted">{field.description}</p>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ListBlock({ title, items, icon }: { title: string; items: string[]; icon?: 'risk' }) {
-  return (
-    <div>
-      <h3 className="flex items-center gap-2 text-sm font-medium">
-        {icon === 'risk' && <ShieldAlert className="h-4 w-4 text-warning" />}
-        {title}
-      </h3>
-      <ul className="mt-2 space-y-2 text-sm leading-6 text-text-muted">
-        {items.length === 0 && (
-          <li className="flex gap-2">
-            <CircleDot className="mt-1.5 h-3 w-3 shrink-0 text-text-muted" />
-            <span>None recorded.</span>
-          </li>
-        )}
-        {items.map(item => (
-          <li key={item} className="flex gap-2">
-            <CircleDot className="mt-1.5 h-3 w-3 shrink-0 text-primary" />
-            <span>{item}</span>
-          </li>
-        ))}
-      </ul>
-    </div>
-  );
-}
-
-function PRDag({
-  nodes,
-  repositoryId,
-  isCompilingPrompt,
-  onCompilePrompt,
-}: {
-  nodes: PRNode[];
-  repositoryId: string;
-  isCompilingPrompt: boolean;
-  onCompilePrompt: (node: PRNode, mode: PromptMode) => Promise<string>;
-}) {
-  const [selectedNodeId, setSelectedNodeId] = useState<string>();
-  const [promptMode, setPromptMode] = useState<PromptMode>('implementation');
-  const [selectedFixNode, setSelectedFixNode] = useState<PRNode>();
-  const [localFixAttempts, setLocalFixAttempts] = useState<SpecForgeFixAttemptDTO[]>([]);
-  const [failureLog, setFailureLog] = useState<SpecForgePRNodeFailureLogDTO>();
-  const [failureLogError, setFailureLogError] = useState('');
-  const [promptText, setPromptText] = useState('');
-  const [deliveryNodes, setDeliveryNodes] = useState<Record<string, PRNode>>({});
-  const [deliveryActionNodeId, setDeliveryActionNodeId] = useState<string>();
-  const [deliveryError, setDeliveryError] = useState('');
-  const prepareBranch = usePrepareSpecForgePRNodeBranch();
-  const deliverPR = useDeliverSpecForgePRNode();
-  const refreshCI = useRefreshSpecForgePRNodeCI();
-  const verifyCI = useVerifySpecForgePRNodeCI();
-  const selectedFixNodeId = selectedFixNode ? Number(selectedFixNode.id) : undefined;
-  const canReadFixAttempts =
-    selectedFixNodeId !== undefined && Number.isFinite(selectedFixNodeId) && selectedFixNodeId > 0;
-  const fixAttemptsQuery = useSpecForgeFixAttempts(
-    canReadFixAttempts ? selectedFixNodeId : undefined
-  );
-  const readFailureLog = useReadSpecForgePRNodeFailureLog();
-  const fixAttempts = canReadFixAttempts
-    ? (fixAttemptsQuery.data ?? localFixAttempts)
-    : localFixAttempts;
-  const hasLiveFixAttempt = hasActiveFixAttempt(fixAttempts);
-  const escalationSummaryQuery = useSpecForgeEscalationSummary(
-    canReadFixAttempts ? selectedFixNodeId : undefined,
-    hasLiveFixAttempt
-  );
-  const highestFixAttempt = Math.max(0, ...fixAttempts.map(attempt => attempt.attempt_number));
-  const remainingFixAttempts = Math.max(0, maxFixAttemptsPerNode - highestFixAttempt);
-  const fixBudgetExhausted = highestFixAttempt >= maxFixAttemptsPerNode;
-  const effectiveNodes = nodes.map(node => deliveryNodes[node.id] ?? node);
-  const isDeliveryActionPending =
-    prepareBranch.isPending || deliverPR.isPending || refreshCI.isPending;
-
-  function rememberDeliveredNode(node: PRNode) {
-    setDeliveryNodes(current => ({
-      ...current,
-      [node.id]: node,
-    }));
-  }
-
-  async function runDeliveryAction(node: PRNode, action: 'prepare' | 'deliver' | 'refresh') {
-    const prNodeId = Number(node.id);
-    if (!repositoryId || !Number.isFinite(prNodeId) || prNodeId <= 0) {
-      setDeliveryError('Live GitHub delivery requires a persisted repository and PR node.');
-      return;
-    }
-
-    setDeliveryError('');
-    setDeliveryActionNodeId(node.id);
-    try {
-      const payload = { repository_id: repositoryId, pr_node_id: prNodeId };
-      const updated =
-        action === 'prepare'
-          ? await prepareBranch.mutateAsync(payload)
-          : action === 'deliver'
-            ? await deliverPR.mutateAsync({ ...payload, draft: true })
-            : await refreshCI.mutateAsync(payload);
-      rememberDeliveredNode(prNodeFromDTO(updated));
-    } catch {
-      setDeliveryError(
-        'GitHub delivery controls require the CodingCTO backend and GitHub App setup.'
-      );
-    } finally {
-      setDeliveryActionNodeId(undefined);
-    }
-  }
-
-  async function handleCompilePrompt(node: PRNode) {
-    setSelectedNodeId(node.id);
-    const compiled = await onCompilePrompt(node, promptMode);
-    setPromptText(compiled);
-  }
-
-  async function inspectFailure(node: PRNode) {
-    setSelectedFixNode(node);
-    setFailureLog(undefined);
-    setFailureLogError('');
-    const prNodeId = Number(node.id);
-    if (Number.isFinite(prNodeId) && prNodeId > 0) {
-      try {
-        const result = await verifyCI.mutateAsync({
-          prNodeId,
-          payload: { repository_id: repositoryId },
-        });
-        rememberDeliveredNode(prNodeFromDTO(result.pr_node));
-        setLocalFixAttempts(result.fix_attempt ? [result.fix_attempt] : []);
-        return;
-      } catch {
-        // Keep failure review available for demo plans and offline backend development.
-      }
-    }
-
-    setLocalFixAttempts([
-      {
-        id: 0,
-        pr_node_id: Number.isFinite(prNodeId) ? prNodeId : 0,
-        failure_type: 'ci_failure',
-        ci_log_excerpt: 'No live CI log is available in demo mode.',
-        attempt_number: 1,
-        status: 'queued',
-        confidence: 0.7,
-        likely_cause: 'CI diagnostics require a GitHub workflow run for this PR node.',
-        recommended_action: 'Run CI for the branch, then inspect the failed job logs.',
-        can_auto_fix: false,
-        created_by: 0,
-        created_at: new Date().toISOString(),
-        updated_at: new Date().toISOString(),
-      },
-    ]);
-  }
-
-  async function readSelectedFailureLog() {
-    if (!selectedFixNode || !repositoryId) {
-      setFailureLogError('Failure logs require a selected PR node and repository.');
-      return;
-    }
-
-    const prNodeId = Number(selectedFixNode.id);
-    if (!Number.isFinite(prNodeId) || prNodeId <= 0) {
-      setFailureLogError('Failure logs require a persisted PR node.');
-      return;
-    }
-
-    setFailureLogError('');
-    try {
-      const log = await readFailureLog.mutateAsync({
-        repository_id: repositoryId,
-        pr_node_id: prNodeId,
-      });
-      setFailureLog(log);
-    } catch {
-      setFailureLogError(
-        'Failure logs require a failed GitHub workflow run and GitHub App access.'
-      );
-    }
-  }
-
-  return (
-    <div className="space-y-3">
-      <div className="flex flex-col gap-2 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="font-medium text-text-main">Prompt mode</div>
-          <div className="mt-1 text-text-muted">
-            Compile implementation, CI fix, or review feedback prompts for the selected PR node.
-          </div>
-        </div>
-        <ToggleGroup
-          type="single"
-          variant="outline"
-          size="sm"
-          value={promptMode}
-          onValueChange={value => {
-            if (promptModes.includes(value as PromptMode)) {
-              setPromptMode(value as PromptMode);
-            }
-          }}
-          className="w-full md:w-auto"
-        >
-          {promptModes.map(mode => (
-            <ToggleGroupItem key={mode} value={mode} aria-label={`${promptModeLabel[mode]} prompt`}>
-              {promptModeLabel[mode]}
-            </ToggleGroupItem>
-          ))}
-        </ToggleGroup>
-      </div>
-      <div className="flex flex-col gap-2 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm md:flex-row md:items-center md:justify-between">
-        <div>
-          <div className="font-medium text-text-main">Auto-fix guardrail</div>
-          <div className="mt-1 text-text-muted">
-            Each PR node can use up to {maxFixAttemptsPerNode} automatic fix attempts before
-            CodingCTO escalates with a decision summary.
-          </div>
-        </div>
-        <Badge variant="outline">3 attempts max</Badge>
-      </div>
-      {deliveryError && (
-        <div className="rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm text-warning">
-          {deliveryError}
-        </div>
-      )}
-      {effectiveNodes.map((node, index) => (
-        <div key={node.id} className="grid gap-3 md:grid-cols-[32px_minmax(0,1fr)]">
-          <div className="hidden flex-col items-center md:flex">
-            <div className="flex h-8 w-8 items-center justify-center rounded-full border border-border-subtle bg-bg-surface text-xs font-semibold">
-              {node.order}
-            </div>
-            {index < nodes.length - 1 && <div className="h-full w-px bg-border-subtle" />}
-          </div>
-          <Card className="transition-colors hover:border-primary/40">
-            <CardHeader className="space-y-3">
-              <div className="flex flex-wrap items-start justify-between gap-3">
-                <div>
-                  <CardTitle className="text-base">{node.title}</CardTitle>
-                  <CardDescription className="mt-1">{node.goal}</CardDescription>
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <Badge variant="outline">{node.nodeKey}</Badge>
-                  <Badge variant="outline" className={riskClassName(node.estimatedRisk)}>
-                    {node.estimatedRisk} risk
-                  </Badge>
-                  {node.githubPrUrl && (
-                    <Button variant="outline" size="sm" asChild>
-                      <a href={node.githubPrUrl} target="_blank" rel="noreferrer">
-                        PR #{node.githubPrNumber ?? 'open'}
-                        <GitPullRequest className="ml-1.5 h-4 w-4" />
-                      </a>
-                    </Button>
-                  )}
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => runDeliveryAction(node, 'prepare')}
-                    disabled={isDeliveryActionPending && deliveryActionNodeId === node.id}
-                  >
-                    Branch
-                    <GitBranch className="ml-1.5 h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => runDeliveryAction(node, 'deliver')}
-                    disabled={isDeliveryActionPending && deliveryActionNodeId === node.id}
-                  >
-                    PR
-                    <GitPullRequest className="ml-1.5 h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => runDeliveryAction(node, 'refresh')}
-                    disabled={isDeliveryActionPending && deliveryActionNodeId === node.id}
-                  >
-                    CI
-                    <CheckCircle2 className="ml-1.5 h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => handleCompilePrompt(node)}
-                    disabled={isCompilingPrompt && selectedNodeId === node.id}
-                  >
-                    {isCompilingPrompt && selectedNodeId === node.id
-                      ? 'Compiling'
-                      : promptModeLabel[promptMode]}
-                    <ScrollText className="ml-1.5 h-4 w-4" />
-                  </Button>
-                  <Button
-                    variant="outline"
-                    size="sm"
-                    onClick={() => inspectFailure(node)}
-                    disabled={verifyCI.isPending && selectedFixNode?.id === node.id}
-                  >
-                    {verifyCI.isPending && selectedFixNode?.id === node.id ? 'Checking' : 'Fixes'}
-                    <ShieldAlert className="ml-1.5 h-4 w-4" />
-                  </Button>
-                </div>
-              </div>
-            </CardHeader>
-            <CardContent className="grid gap-4 md:grid-cols-3">
-              <CompactList
-                title="Depends on"
-                items={node.dependsOn.length ? node.dependsOn : ['None']}
-              />
-              <CompactList title="Expected files" items={node.expectedFiles} />
-              <CompactList title="Tests" items={node.testCommands} />
-            </CardContent>
-          </Card>
-        </div>
-      ))}
-      {selectedFixNode && (
-        <Card>
-          <CardHeader>
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div>
-                <CardTitle className="text-base">Fix attempts</CardTitle>
-                <CardDescription>{selectedFixNode.title}</CardDescription>
-              </div>
-              <Button
-                variant="outline"
-                size="sm"
-                onClick={readSelectedFailureLog}
-                disabled={readFailureLog.isPending}
-              >
-                {readFailureLog.isPending ? 'Reading' : 'Read failure log'}
-                <ScrollText className="ml-1.5 h-4 w-4" />
-              </Button>
-            </div>
-          </CardHeader>
-          <CardContent className="space-y-3">
-            {failureLogError && (
-              <div className="rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm text-warning">
-                {failureLogError}
-              </div>
-            )}
-            {escalationSummaryQuery.data && (
-              <EscalationSummary summary={escalationSummaryQuery.data} />
-            )}
-            <div className="flex flex-col gap-2 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm md:flex-row md:items-center md:justify-between">
-              <div>
-                <div className="font-medium text-text-main">Auto-fix retry budget</div>
-                <div className="mt-1 text-text-muted">
-                  {highestFixAttempt} / {maxFixAttemptsPerNode} attempts used
-                  {fixBudgetExhausted
-                    ? '; escalate with a decision summary before retrying.'
-                    : `; ${remainingFixAttempts} automatic ${remainingFixAttempts === 1 ? 'retry' : 'retries'} remaining.`}
-                </div>
-              </div>
-              <Badge
-                variant="outline"
-                className={
-                  fixBudgetExhausted ? statusClassName('blocked') : statusClassName('running')
-                }
-              >
-                {fixBudgetExhausted ? 'Escalation needed' : 'Auto-fix available'}
-              </Badge>
-            </div>
-            {failureLog && <FailureLogSummary failureLog={failureLog} />}
-            {fixAttempts.length === 0 && (
-              <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
-                {fixAttemptsQuery.isLoading ? 'Checking CI diagnostics.' : 'No fix attempts yet.'}
-              </div>
-            )}
-            {fixAttempts.map(attempt => (
-              <div
-                key={`${attempt.id}-${attempt.attempt_number}`}
-                className="rounded-lg border border-border-subtle bg-bg-subtle p-4"
-              >
-                <div className="flex flex-wrap items-center justify-between gap-2">
-                  <div className="text-sm font-medium">
-                    Attempt {attempt.attempt_number}: {attempt.failure_type}
-                  </div>
-                  <div className="flex flex-wrap items-center gap-2">
-                    {attempt.workflow_run_url ? (
-                      <Button variant="outline" size="sm" asChild>
-                        <a href={attempt.workflow_run_url} target="_blank" rel="noreferrer">
-                          Run {attempt.workflow_run_id || 'CI'}
-                          <ExternalLink className="ml-1.5 h-4 w-4" />
-                        </a>
-                      </Button>
-                    ) : attempt.workflow_run_id ? (
-                      <Badge variant="outline">run {attempt.workflow_run_id}</Badge>
-                    ) : null}
-                    {attempt.conclusion && <Badge variant="outline">{attempt.conclusion}</Badge>}
-                    <Badge variant="outline">{attempt.status}</Badge>
-                  </div>
-                </div>
-                <p className="mt-2 text-sm leading-6 text-text-muted">{attempt.likely_cause}</p>
-                <p className="mt-2 text-sm leading-6 text-text-main">
-                  {attempt.recommended_action}
-                </p>
-              </div>
-            ))}
-            {fixAttemptsQuery.isError && (
-              <p className="text-xs leading-5 text-text-muted">
-                Live fix attempts will load when the CodingCTO backend is available.
-              </p>
-            )}
-            {escalationSummaryQuery.isError && (
-              <p className="text-xs leading-5 text-text-muted">
-                Escalation summaries require the CodingCTO backend.
-              </p>
-            )}
-          </CardContent>
-        </Card>
-      )}
-      {promptText && (
-        <Card>
-          <CardHeader>
-            <CardTitle className="text-base">Compiled prompt</CardTitle>
-            <CardDescription>Implementation prompt for the selected PR node.</CardDescription>
-          </CardHeader>
-          <CardContent>
-            <pre className="max-h-96 overflow-auto rounded-lg border border-border-subtle bg-bg-subtle p-4 text-xs leading-5 text-text-main">
-              {promptText}
-            </pre>
-          </CardContent>
-        </Card>
-      )}
-    </div>
-  );
-}
-
-function EscalationSummary({ summary }: { summary: SpecForgeEscalationSummaryDTO }) {
-  const needsDecision = summary.status === 'needs_user_decision';
-
-  return (
-    <div
-      className={cn(
-        'rounded-lg border p-4 text-sm',
-        needsDecision
-          ? 'border-warning/30 bg-warning-subtle text-warning'
-          : 'border-border-subtle bg-bg-subtle text-text-muted'
-      )}
-    >
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="font-medium text-text-main">Escalation summary</div>
-        <Badge
-          variant="outline"
-          className={needsDecision ? statusClassName('blocked') : statusClassName('running')}
-        >
-          {needsDecision ? 'Needs decision' : 'Auto-fix can continue'}
-        </Badge>
-      </div>
-      <p className="mt-2 leading-6">{summary.reason}</p>
-      <p className="mt-2 leading-6 text-text-main">{summary.recommended_option}</p>
-      {summary.latest_likely_cause && (
-        <p className="mt-2 leading-6">Latest cause: {summary.latest_likely_cause}</p>
-      )}
-      {summary.decision_options.length > 0 && (
-        <div className="mt-3 flex flex-wrap gap-2">
-          {summary.decision_options.map(option => (
-            <Badge key={option} variant="outline">
-              {option}
-            </Badge>
-          ))}
-        </div>
-      )}
-    </div>
-  );
-}
-
-function ExecutionStatus({
-  run,
-  isCancelling,
-  onAdvance,
-  onCancel,
-  onExecutionBundle,
-}: {
-  run: ExecutionRun;
-  isCancelling: boolean;
-  onAdvance: () => void;
-  onCancel: () => void;
-  onExecutionBundle: (bundle: SpecForgeExecutionBundleDTO) => void;
-}) {
-  const canAdvance = run.status === 'running';
-  const canCancel = run.status === 'queued' || run.status === 'running' || run.status === 'blocked';
-  const [selectedTask, setSelectedTask] = useState<PRNode>();
-  const [taskActionError, setTaskActionError] = useState('');
-  const [taskActionId, setTaskActionId] = useState<number>();
-  const retryTask = useRetryExecutionTask();
-  const completeTask = useCompleteExecutionTask();
-  const createReviewPatchTask = useCreateReviewPatchTask();
-  const selectedTaskId = selectedTask?.taskId;
-  const taskEventsQuery = useSpecForgeTaskEvents(selectedTaskId);
-  const taskEvents = taskEventsQuery.data?.events ?? [];
-  const isTaskActionPending =
-    retryTask.isPending || completeTask.isPending || createReviewPatchTask.isPending;
-  const blockedRecoverableTasks = run.tasks.filter(
-    task => task.status === 'failed' || task.status === 'cancelled'
-  );
-
-  async function retryExecutionTask(task: PRNode) {
-    if (!task.taskId) {
-      setTaskActionError('Retry requires a persisted backend task.');
-      return;
-    }
-
-    setTaskActionError('');
-    setTaskActionId(task.taskId);
-    try {
-      const bundle = await retryTask.mutateAsync({
-        taskId: task.taskId,
-        payload: { force_fresh_session: true },
-      });
-      onExecutionBundle(bundle);
-    } catch {
-      setTaskActionError(
-        'Retry requires a failed or cancelled task. Dependency-closed tasks need a revised plan.'
-      );
-    } finally {
-      setTaskActionId(undefined);
-    }
-  }
-
-  async function completeExecutionTask(task: PRNode) {
-    if (!task.taskId) {
-      setTaskActionError('Complete requires a persisted backend task.');
-      return;
-    }
-
-    setTaskActionError('');
-    setTaskActionId(task.taskId);
-    try {
-      const bundle = await completeTask.mutateAsync(task.taskId);
-      onExecutionBundle(bundle);
-    } catch {
-      setTaskActionError(
-        'Complete requires a dispatched or running task and the CodingCTO backend.'
-      );
-    } finally {
-      setTaskActionId(undefined);
-    }
-  }
-
-  return (
-    <Card>
-      <CardHeader className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-        <div>
-          <CardTitle className="text-base">Execution run</CardTitle>
-          <CardDescription>
-            Delivery state is organized by PR node, not by individual agent workers.
-          </CardDescription>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button onClick={onCancel} disabled={!canCancel || isCancelling} variant="outline">
-            {isCancelling ? 'Cancelling' : 'Cancel run'}
-            <CircleX className="ml-1.5 h-4 w-4" />
-          </Button>
-          <Button onClick={onAdvance} disabled={!canAdvance} variant="outline">
-            Advance demo run
-            <ArrowRight className="ml-1.5 h-4 w-4" />
-          </Button>
-        </div>
-      </CardHeader>
-      <CardContent className="space-y-3">
-        <PRDeliveryOverview tasks={run.tasks} />
-        {run.status === 'blocked' && (
-          <div className="rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm leading-6 text-warning">
-            This run is waiting for a decision. Retry a failed or cancelled task with a fresh
-            session, or cancel the run if the PR DAG needs to be replanned.
-            {blockedRecoverableTasks.length > 0 && (
-              <span className="ml-1 font-medium text-text-main">
-                {blockedRecoverableTasks.length} task
-                {blockedRecoverableTasks.length === 1 ? '' : 's'} can be retried.
-              </span>
-            )}
-          </div>
-        )}
-        {taskActionError && (
-          <div className="rounded-lg border border-warning/30 bg-warning-subtle p-3 text-sm text-warning">
-            {taskActionError}
-          </div>
-        )}
-        {run.tasks.map(task => (
-          <div
-            key={`${task.id}-${task.taskId ?? 'planned'}`}
-            className={cn(
-              'flex flex-col gap-3 rounded-lg border border-border-subtle p-4',
-              task.status === 'running' && 'border-info/40 bg-info-subtle'
-            )}
-          >
-            <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
-              <div className="min-w-0">
-                <div className="flex items-center gap-2">
-                  <GitPullRequest className="h-4 w-4 shrink-0 text-primary" />
-                  <span className="truncate text-sm font-medium">{task.title}</span>
-                </div>
-                <div className="mt-1 text-xs text-text-muted">{task.branchName}</div>
-                <div className="mt-2 flex flex-wrap gap-2">
-                  {task.executor && <Badge variant="outline">{task.executor}</Badge>}
-                  {task.attemptNumber && (
-                    <Badge variant="outline">attempt {task.attemptNumber}</Badge>
-                  )}
-                  {task.taskId && <Badge variant="outline">task #{task.taskId}</Badge>}
-                </div>
-              </div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge variant="outline" className={statusClassName(task.status)}>
-                  {statusLabel[task.status]}
-                </Badge>
-                <Button variant="outline" size="sm" onClick={() => setSelectedTask(task)}>
-                  Events
-                  <Terminal className="ml-1.5 h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => retryExecutionTask(task)}
-                  disabled={
-                    isTaskActionPending ||
-                    !(task.status === 'failed' || task.status === 'cancelled')
-                  }
-                >
-                  {retryTask.isPending && taskActionId === task.taskId ? 'Retrying' : 'Retry'}
-                  <RotateCcw className="ml-1.5 h-4 w-4" />
-                </Button>
-                <Button
-                  variant="outline"
-                  size="sm"
-                  onClick={() => completeExecutionTask(task)}
-                  disabled={isTaskActionPending || task.status !== 'running'}
-                >
-                  {completeTask.isPending && taskActionId === task.taskId
-                    ? 'Completing'
-                    : 'Complete'}
-                  <CheckCircle2 className="ml-1.5 h-4 w-4" />
-                </Button>
-              </div>
-            </div>
-            {(task.fixAttemptId ||
-              task.failureReason ||
-              task.errorLog ||
-              task.outputLog ||
-              task.logsUrl) && <TaskDiagnostics task={task} />}
-          </div>
-        ))}
-        {selectedTask && (
-          <TaskEventPanel
-            task={selectedTask}
-            events={taskEvents}
-            isLoading={taskEventsQuery.isLoading}
-            isError={taskEventsQuery.isError}
-            isSubmittingReviewPatch={
-              createReviewPatchTask.isPending && taskActionId === selectedTask.taskId
-            }
-            onCreateReviewPatch={async feedback => {
-              if (!selectedTask.taskId) {
-                setTaskActionError('Review patches require a persisted backend task.');
-                return;
-              }
-              setTaskActionError('');
-              setTaskActionId(selectedTask.taskId);
-              try {
-                const bundle = await createReviewPatchTask.mutateAsync({
-                  taskId: selectedTask.taskId,
-                  payload: { feedback, force_fresh_session: true },
-                });
-                onExecutionBundle(bundle);
-              } catch {
-                setTaskActionError(
-                  'Review patches require a completed, failed, or cancelled task and the CodingCTO backend.'
-                );
-              } finally {
-                setTaskActionId(undefined);
-              }
-            }}
-          />
-        )}
-      </CardContent>
-    </Card>
-  );
-}
-
-function PRDeliveryOverview({ tasks }: { tasks: PRNode[] }) {
-  if (tasks.length === 0) {
-    return (
-      <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm text-text-muted">
-        No PR nodes have been selected for execution yet.
-      </div>
-    );
-  }
-
-  return (
-    <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3">
-      <div className="flex items-center gap-2 text-sm font-medium text-text-main">
-        <GitMerge className="h-4 w-4 text-primary" />
-        Delivery graph
-      </div>
-      <div className="mt-3 grid gap-2 md:grid-cols-2 xl:grid-cols-3">
-        {tasks
-          .slice()
-          .sort((a, b) => a.order - b.order)
-          .map(task => (
-            <div
-              key={`${task.id}-${task.taskId ?? 'overview'}`}
-              className="rounded-lg border border-border-subtle bg-bg-surface p-3"
-            >
-              <div className="flex flex-wrap items-start justify-between gap-2">
-                <div className="min-w-0">
-                  <div className="truncate text-sm font-medium">{task.nodeKey}</div>
-                  <div className="mt-1 line-clamp-2 text-xs leading-5 text-text-muted">
-                    {task.title}
-                  </div>
-                </div>
-                <Badge variant="outline" className={statusClassName(task.status)}>
-                  {statusLabel[task.status]}
-                </Badge>
-              </div>
-              {task.dependsOn.length > 0 && (
-                <div className="mt-2 text-xs text-text-muted">
-                  Depends on {task.dependsOn.join(', ')}
-                </div>
-              )}
-              {task.githubPrUrl && (
-                <a
-                  href={task.githubPrUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="mt-2 inline-flex items-center text-xs text-primary"
-                >
-                  Open GitHub PR
-                  <ExternalLink className="ml-1 h-3 w-3" />
-                </a>
-              )}
-            </div>
-          ))}
-      </div>
-    </div>
-  );
-}
-
-function TaskDiagnostics({ task }: { task: PRNode }) {
-  return (
-    <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-xs leading-5 text-text-muted">
-      {task.fixAttemptId && <div>Fix attempt: #{task.fixAttemptId}</div>}
-      {task.failureReason && <div>Failure: {task.failureReason}</div>}
-      {task.outputLog && <div className="mt-1 truncate">Output: {task.outputLog}</div>}
-      {task.errorLog && <div className="mt-1 truncate">Error: {task.errorLog}</div>}
-      {task.logsUrl && (
-        <a
-          href={task.logsUrl}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-1 inline-flex text-primary hover:underline"
-        >
-          Open logs
-        </a>
-      )}
-    </div>
-  );
-}
-
-function FailureLogSummary({ failureLog }: { failureLog: SpecForgePRNodeFailureLogDTO }) {
-  return (
-    <div className="rounded-lg border border-border-subtle bg-bg-subtle p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div className="text-sm font-medium">{failureLog.job_name}</div>
-        <Badge variant="outline">run {failureLog.workflow_run_id}</Badge>
-      </div>
-      {failureLog.failed_steps.length > 0 && (
-        <div className="mt-2 flex flex-wrap gap-2">
-          {failureLog.failed_steps.map(step => (
-            <Badge key={step} variant="outline" className={statusClassName('failed')}>
-              {step}
-            </Badge>
-          ))}
-        </div>
-      )}
-      <pre className="mt-3 max-h-64 overflow-auto whitespace-pre-wrap rounded-lg border border-border-subtle bg-bg-surface p-3 font-mono text-xs leading-5 text-text-main">
-        {failureLog.log_excerpt || 'No log excerpt returned.'}
-      </pre>
-    </div>
-  );
-}
-
-function TaskEventPanel({
-  task,
-  events,
-  isLoading,
-  isError,
-  isSubmittingReviewPatch,
-  onCreateReviewPatch,
-}: {
-  task: PRNode;
-  events: SpecForgeTaskEventDTO[];
-  isLoading: boolean;
-  isError: boolean;
-  isSubmittingReviewPatch: boolean;
-  onCreateReviewPatch: (feedback: string) => Promise<void>;
-}) {
-  const [reviewFeedback, setReviewFeedback] = useState('');
-  const canSubmitReviewPatch =
-    Boolean(task.taskId) &&
-    reviewFeedback.trim().length > 0 &&
-    ['completed', 'failed', 'cancelled'].includes(task.status);
-
-  async function submitReviewPatch() {
-    const feedback = reviewFeedback.trim();
-    if (!feedback) {
-      return;
-    }
-    await onCreateReviewPatch(feedback);
-    setReviewFeedback('');
-  }
-
-  return (
-    <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <div className="flex items-center gap-2 text-sm font-medium">
-            <Terminal className="h-4 w-4 text-primary" />
-            Task events
-          </div>
-          <div className="mt-1 text-xs text-text-muted">
-            {task.title} {task.taskId ? `#${task.taskId}` : ''}
-          </div>
-        </div>
-        <Badge variant="outline">{events.length} events</Badge>
-      </div>
-      <div className="mt-3 max-h-72 space-y-2 overflow-auto rounded-lg border border-border-subtle bg-bg-subtle p-3">
-        {isLoading && <div className="text-sm text-text-muted">Loading task events.</div>}
-        {isError && (
-          <div className="text-sm text-text-muted">
-            Live task events will load when the CodingCTO backend is available.
-          </div>
-        )}
-        {!task.taskId && (
-          <div className="text-sm text-text-muted">
-            Live task events require a dispatched backend task.
-          </div>
-        )}
-        {task.taskId && !isLoading && !isError && events.length === 0 && (
-          <div className="text-sm text-text-muted">No task events recorded yet.</div>
-        )}
-        {events.map(event => (
-          <TaskEventRow key={event.id} event={event} />
-        ))}
-      </div>
-      <div className="mt-3 rounded-lg border border-border-subtle bg-bg-subtle p-3">
-        <div className="text-sm font-medium text-text-main">Review feedback patch</div>
-        <div className="mt-1 text-xs leading-5 text-text-muted">
-          Queue a scoped patch task from human PR review feedback after this task reaches a terminal
-          state.
-        </div>
-        <Textarea
-          value={reviewFeedback}
-          onChange={event => setReviewFeedback(event.target.value)}
-          className="mt-3 min-h-24 bg-bg-surface"
-          aria-label="Human review feedback"
-          placeholder="Paste actionable PR review feedback for this task..."
-        />
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-2">
-          <Badge variant="outline">
-            {task.status === 'completed' || task.status === 'failed' || task.status === 'cancelled'
-              ? 'Patchable'
-              : 'Wait for terminal task'}
-          </Badge>
-          <Button
-            variant="outline"
-            size="sm"
-            onClick={submitReviewPatch}
-            disabled={!canSubmitReviewPatch || isSubmittingReviewPatch}
-          >
-            {isSubmittingReviewPatch ? 'Queuing' : 'Queue review patch'}
-            <ScrollText className="ml-1.5 h-4 w-4" />
-          </Button>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function TaskEventRow({ event }: { event: SpecForgeTaskEventDTO }) {
-  const eventText = event.content ?? event.output ?? event.input ?? '';
-
-  return (
-    <div className="grid gap-2 rounded-md border border-border-subtle bg-bg-surface p-3 text-xs md:grid-cols-[120px_minmax(0,1fr)]">
-      <div className="space-y-1 text-text-muted">
-        <div>#{event.seq}</div>
-        <div>{event.type}</div>
-        {event.tool && <div>{event.tool}</div>}
-      </div>
-      <pre className="whitespace-pre-wrap break-words font-mono text-text-main">
-        {eventText || 'No event content.'}
-      </pre>
-    </div>
-  );
-}
-
-function CompactList({ title, items }: { title: string; items: string[] }) {
-  return (
-    <div>
-      <div className="text-xs font-medium uppercase tracking-wide text-text-muted">{title}</div>
-      <ul className="mt-2 space-y-1 text-sm text-text-main">
-        {items.map(item => (
-          <li key={item} className="truncate">
-            {item}
-          </li>
-        ))}
-      </ul>
     </div>
   );
 }

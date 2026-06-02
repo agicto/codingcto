@@ -762,7 +762,7 @@ func RegisterWelcome(r *gin.Engine) {
 	r.GET("/", func(c *gin.Context) {
 		appName := "CodingCTO"
 		appEnv := "development"
-		appURL := "http://localhost:8025"
+		appURL := "http://localhost:2010"
 		aiProvider := "openai"
 		aiModel := "gpt-5.4"
 

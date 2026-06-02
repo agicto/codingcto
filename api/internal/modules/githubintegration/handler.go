@@ -103,6 +103,29 @@ func (h *Handler) GetRepository(c *gin.Context) {
 	response.Success(c, repository)
 }
 
+func (h *Handler) ListRepositories(c *gin.Context) {
+	var req ListRepositoriesRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		response.BadRequest(c, "Invalid request parameters", err)
+		return
+	}
+	repositories, err := h.service.ListRepositories(c.Request.Context(), req.WorkspaceID)
+	if err != nil {
+		response.HandleError(c, "Failed to list repositories", err)
+		return
+	}
+	response.Success(c, &ListRepositoriesResponse{Repositories: repositories})
+}
+
+func (h *Handler) CheckRepositoryReadiness(c *gin.Context) {
+	readiness, err := h.service.CheckRepositoryReadiness(c.Request.Context(), c.Param("repo_id"))
+	if err != nil {
+		response.HandleError(c, "Failed to check repository readiness", err)
+		return
+	}
+	response.Success(c, readiness)
+}
+
 func (h *Handler) GetSettings(c *gin.Context) {
 	var req GetSettingsRequest
 	if err := c.ShouldBindQuery(&req); err != nil {
@@ -146,6 +169,19 @@ func (h *Handler) ListWebhookEvents(c *gin.Context) {
 		return
 	}
 	response.Success(c, gin.H{"events": events})
+}
+
+func (h *Handler) CreateIssue(c *gin.Context) {
+	var req CreateIssueRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+	issue, err := h.service.CreateIssue(c.Request.Context(), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to create GitHub issue", err)
+		return
+	}
+	response.Success(c, issue)
 }
 
 func (h *Handler) DeliverPRNode(c *gin.Context) {

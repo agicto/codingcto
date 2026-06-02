@@ -125,7 +125,16 @@ func (m *LocalGitWorktreeManager) PrepareWorktree(ctx context.Context, req Workt
 		Args:       []string{"worktree", "add", "--force", "-B", branchName, worktreeDir, "origin/" + branchName},
 		Dir:        mirrorDir,
 	}); runErr != nil || result.ExitCode != 0 {
-		return nil, commandFailure("create task worktree", result, runErr)
+		if !isMissingRemoteBranchFailure(result, runErr) {
+			return nil, commandFailure("create task worktree", result, runErr)
+		}
+		if fallback, fallbackErr := m.runner.Run(ctx, CommandSpec{
+			Executable: "git",
+			Args:       []string{"worktree", "add", "--force", "-B", branchName, worktreeDir, "HEAD"},
+			Dir:        mirrorDir,
+		}); fallbackErr != nil || fallback.ExitCode != 0 {
+			return nil, commandFailure("create fallback task worktree", fallback, fallbackErr)
+		}
 	}
 	return &Worktree{Path: worktreeDir}, nil
 }

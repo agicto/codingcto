@@ -20,7 +20,7 @@
   --neutral-950: oklch(0.1 0 0);
   --neutral-1000: oklch(0 0 0);
 
-  /* Brand (Blue) */
+  /* Brand (legacy blue retained for compatibility-only surfaces) */
   --blue-50: oklch(0.97 0.01 250);
   --blue-100: oklch(0.92 0.03 250);
   --blue-200: oklch(0.85 0.06 250);
@@ -31,6 +31,22 @@
   --blue-700: oklch(0.4 0.18 250);
   --blue-800: oklch(0.32 0.15 250);
   --blue-900: oklch(0.25 0.1 250);
+
+  /* CodingCTO Product Brand */
+  --cto-black: #000000;
+  --cto-black-elevated: #282828;
+  --cto-canvas: #ffffff;
+  --cto-canvas-parchment: #f5f5f7;
+  --cto-surface-pearl: #fafafc;
+  --cto-canvas-soft: #f3f3f3;
+  --cto-canvas-softer: #f3f3f3;
+  --cto-ink: #1d1d1f;
+  --cto-body: #333333;
+  --cto-hairline-mid: #7a7a7a;
+  --cto-mute: #86868b;
+  --cto-action-blue: #0066cc;
+  --cto-focus-blue: #0071e3;
+  --cto-sky-link-blue: #2997ff;
 
   /* Success (Green) */
   --green-500: oklch(0.627 0.194 149.214);
@@ -56,6 +72,11 @@
   --spacing-2: 0.5rem;
   --spacing-4: 1rem;
   --spacing-8: 2rem;
+
+  /* Shape */
+  --radius-field: 8px;
+  --radius-card: 18px;
+  --radius-control: 999px;
 
   /* Motion / Animation */
   --motion-fast: 150ms ease-out;

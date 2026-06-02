@@ -4,6 +4,7 @@ import (
 	"context"
 	"errors"
 	"sort"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -12,12 +13,13 @@ import (
 
 func TestServiceProjectRepositoryFlow(t *testing.T) {
 	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
 	github := &memoryGitHubRepositoryStore{
 		repositories: map[string]*domain.Repository{
 			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
 		},
 	}
-	svc := NewService(store, github, nil, nil)
+	svc := NewService(store, workspaces, github, nil, nil)
 
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
@@ -49,10 +51,19 @@ func TestServiceProjectRepositoryFlow(t *testing.T) {
 	require.Equal(t, 0, contextBundle.Readiness.ReadOnlyRepositoryCount)
 	require.Equal(t, 0, contextBundle.Readiness.SkillCount)
 	require.Equal(t, "Add project or repo skills to reduce prompt ambiguity.", contextBundle.Readiness.NextAction)
+	require.NotNil(t, contextBundle.ContextContract)
+	require.Equal(t, "project_context_contract_v1", contextBundle.ContextContract.Version)
+	require.Equal(t, "repo_1", contextBundle.ContextContract.PrimaryRepositoryID)
+	require.Equal(t, "repo_1", contextBundle.ContextContract.ExecutionRepositoryID)
+	require.Contains(t, contextBundle.ContextContract.MissingEvidence, "repo_profile:repo_1")
+	require.Contains(t, contextBundle.ContextContract.MissingEvidence, "architecture_snapshot:repo_1")
+	require.Contains(t, contextBundle.ContextContract.PromptGuardrails, "Missing context evidence must be treated as uncertainty, not inferred as fact.")
+	require.Contains(t, contextBundle.ContextContract.PromptGuardrails, "No active project skills are pinned; planner and executor must rediscover local conventions before changing code.")
 }
 
 func TestServiceProjectContextIncludesRepoProfilesAndSkills(t *testing.T) {
 	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
 	github := &memoryGitHubRepositoryStore{
 		repositories: map[string]*domain.Repository{
 			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
@@ -102,7 +113,7 @@ func TestServiceProjectContextIncludesRepoProfilesAndSkills(t *testing.T) {
 			},
 		},
 	}
-	svc := NewService(store, github, profiles, skills)
+	svc := NewService(store, workspaces, github, profiles, skills)
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
 		Name:        "SpecForge",
@@ -151,16 +162,33 @@ func TestServiceProjectContextIncludesRepoProfilesAndSkills(t *testing.T) {
 	require.Equal(t, contextBundle.ExecutionGuardrails, contextBundle.Readiness.Guardrails)
 	require.Contains(t, contextBundle.Readiness.Summary, "repo_1")
 	require.Equal(t, "Review repository context warnings before approving execution.", contextBundle.Readiness.NextAction)
+	require.NotNil(t, contextBundle.ContextContract)
+	require.Equal(t, "project_context_contract_v1", contextBundle.ContextContract.Version)
+	require.Equal(t, []string{"repo_2"}, contextBundle.ContextContract.ReadOnlyRepositoryIDs)
+	require.Equal(t, []string{"module-boundaries"}, contextBundle.ContextContract.SkillNames)
+	require.Contains(t, contextBundle.ContextContract.MissingEvidence, "repo_profile:repo_2")
+	require.Contains(t, contextBundle.ContextContract.MissingEvidence, "architecture_snapshot:repo_2")
+	require.Len(t, contextBundle.ContextContract.Repositories, 2)
+	repoOneContract := projectRepoContractByRepositoryID(contextBundle.ContextContract, "repo_1")
+	require.NotNil(t, repoOneContract)
+	require.True(t, repoOneContract.Writable)
+	require.Contains(t, repoOneContract.Stack, "Go")
+	require.Contains(t, repoOneContract.TestCommands, "go test ./...")
+	require.Contains(t, repoOneContract.ArchitectureModules, "api/internal/modules/project")
+	repoTwoContract := projectRepoContractByRepositoryID(contextBundle.ContextContract, "repo_2")
+	require.NotNil(t, repoTwoContract)
+	require.False(t, repoTwoContract.Writable)
 }
 
 func TestServiceProjectContextReadinessRequiresPrimaryRepository(t *testing.T) {
 	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
 	github := &memoryGitHubRepositoryStore{
 		repositories: map[string]*domain.Repository{
 			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
 		},
 	}
-	svc := NewService(store, github, nil, nil)
+	svc := NewService(store, workspaces, github, nil, nil)
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
 		Name:        "SpecForge",
@@ -188,13 +216,14 @@ func TestServiceProjectContextReadinessRequiresPrimaryRepository(t *testing.T) {
 
 func TestServiceRejectsSecondPrimaryRepository(t *testing.T) {
 	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
 	github := &memoryGitHubRepositoryStore{
 		repositories: map[string]*domain.Repository{
 			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
 			"repo_2": {RepositoryID: "repo_2", WorkspaceID: "workspace_1"},
 		},
 	}
-	svc := NewService(store, github, nil, nil)
+	svc := NewService(store, workspaces, github, nil, nil)
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
 		Name:        "SpecForge",
@@ -217,12 +246,13 @@ func TestServiceRejectsSecondPrimaryRepository(t *testing.T) {
 
 func TestServiceRejectsCrossWorkspaceRepository(t *testing.T) {
 	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1", "workspace_2")
 	github := &memoryGitHubRepositoryStore{
 		repositories: map[string]*domain.Repository{
 			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_2"},
 		},
 	}
-	svc := NewService(store, github, nil, nil)
+	svc := NewService(store, workspaces, github, nil, nil)
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
 		Name:        "SpecForge",
@@ -235,6 +265,41 @@ func TestServiceRejectsCrossWorkspaceRepository(t *testing.T) {
 		Role:         domain.ProjectRepositoryRolePrimary,
 	})
 	require.ErrorIs(t, err, domain.ErrPermissionDenied)
+}
+
+func TestServiceCreateProjectResolvesCanonicalWorkspaceID(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("local_test")
+	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "local-test",
+		Name:        "CodingCTO Local Flow",
+		Slug:        "codingcto-local-flow",
+	})
+	require.NoError(t, err)
+	require.Equal(t, "local_test", project.WorkspaceID)
+
+	projects, err := svc.ListProjects(context.Background(), "local-test")
+	require.NoError(t, err)
+	require.Len(t, projects, 1)
+	require.Equal(t, "local_test", projects[0].WorkspaceID)
+}
+
+func TestServiceRejectsProjectForMissingWorkspace(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil)
+
+	_, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "missing-workspace",
+		Name:        "Ghost Project",
+		Slug:        "ghost-project",
+	})
+	require.ErrorIs(t, err, domain.ErrNotFound)
+
+	_, err = svc.ListProjects(context.Background(), "missing-workspace")
+	require.ErrorIs(t, err, domain.ErrNotFound)
 }
 
 type memoryProjectStore struct {
@@ -353,6 +418,93 @@ func (s *memoryProjectStore) FindActivePrimaryProjectRepository(_ context.Contex
 	return nil, domain.ErrNotFound
 }
 
+type memoryWorkspaceStore struct {
+	workspaces map[string]*domain.Workspace
+}
+
+func newMemoryWorkspaceStore(workspaceIDs ...string) *memoryWorkspaceStore {
+	store := &memoryWorkspaceStore{workspaces: map[string]*domain.Workspace{}}
+	for index, workspaceID := range workspaceIDs {
+		normalizedID := domain.NormalizeWorkspaceID(workspaceID)
+		store.workspaces[normalizedID] = &domain.Workspace{
+			ID:          uint(index + 1),
+			WorkspaceID: normalizedID,
+			Name:        normalizedID,
+			Slug:        strings.ReplaceAll(normalizedID, "_", "-"),
+			Status:      domain.WorkspaceStatusActive,
+			CreatedBy:   42,
+		}
+	}
+	return store
+}
+
+func (s *memoryWorkspaceStore) CreateWorkspace(_ context.Context, workspace *domain.Workspace) error {
+	if workspace == nil {
+		return domain.ErrInvalidInput
+	}
+	workspaceID := domain.NormalizeWorkspaceID(workspace.WorkspaceID)
+	if workspaceID == "" {
+		return domain.ErrInvalidInput
+	}
+	if _, ok := s.workspaces[workspaceID]; ok {
+		return domain.ErrConflict
+	}
+	copied := *workspace
+	copied.ID = uint(len(s.workspaces) + 1)
+	copied.WorkspaceID = workspaceID
+	s.workspaces[workspaceID] = &copied
+	*workspace = copied
+	return nil
+}
+
+func (s *memoryWorkspaceStore) UpdateWorkspace(_ context.Context, workspace *domain.Workspace) error {
+	if workspace == nil {
+		return domain.ErrInvalidInput
+	}
+	workspaceID := domain.NormalizeWorkspaceID(workspace.WorkspaceID)
+	if _, ok := s.workspaces[workspaceID]; !ok {
+		return domain.ErrNotFound
+	}
+	copied := *workspace
+	copied.WorkspaceID = workspaceID
+	s.workspaces[workspaceID] = &copied
+	return nil
+}
+
+func (s *memoryWorkspaceStore) FindWorkspaceByWorkspaceID(_ context.Context, workspaceID string) (*domain.Workspace, error) {
+	workspace, ok := s.workspaces[domain.NormalizeWorkspaceID(workspaceID)]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	copied := *workspace
+	return &copied, nil
+}
+
+func (s *memoryWorkspaceStore) FindWorkspaceBySlug(_ context.Context, slug string) (*domain.Workspace, error) {
+	for _, workspace := range s.workspaces {
+		if workspace.Slug == slug {
+			copied := *workspace
+			return &copied, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (s *memoryWorkspaceStore) ListWorkspaces(_ context.Context, createdBy uint, status string, _ int) ([]*domain.Workspace, error) {
+	out := make([]*domain.Workspace, 0, len(s.workspaces))
+	for _, workspace := range s.workspaces {
+		if createdBy != 0 && workspace.CreatedBy != createdBy {
+			continue
+		}
+		if status != "" && workspace.Status != status {
+			continue
+		}
+		copied := *workspace
+		out = append(out, &copied)
+	}
+	return out, nil
+}
+
 type memoryGitHubRepositoryStore struct {
 	repositories map[string]*domain.Repository
 }
@@ -364,6 +516,18 @@ func (s *memoryGitHubRepositoryStore) FindRepositoryByRepositoryID(_ context.Con
 	}
 	copied := *repository
 	return &copied, nil
+}
+
+func (s *memoryGitHubRepositoryStore) ListRepositoriesByWorkspaceID(_ context.Context, workspaceID string) ([]*domain.Repository, error) {
+	out := make([]*domain.Repository, 0, len(s.repositories))
+	for _, repository := range s.repositories {
+		if repository.WorkspaceID != workspaceID {
+			continue
+		}
+		copied := *repository
+		out = append(out, &copied)
+	}
+	return out, nil
 }
 
 func (s *memoryGitHubRepositoryStore) UpsertInstallation(context.Context, *domain.GitHubInstallation) error {
@@ -411,6 +575,18 @@ func projectRepoContextByRepositoryID(bundle *domain.SpecForgeProjectContext, re
 	for _, context := range bundle.RepositoryContexts {
 		if context.Repository.RepositoryID == repositoryID {
 			return context
+		}
+	}
+	return nil
+}
+
+func projectRepoContractByRepositoryID(contract *domain.SpecForgeProjectContextContract, repositoryID string) *domain.SpecForgeRepositoryContextContractFragment {
+	if contract == nil {
+		return nil
+	}
+	for _, fragment := range contract.Repositories {
+		if fragment.RepositoryID == repositoryID {
+			return fragment
 		}
 	}
 	return nil

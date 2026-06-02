@@ -3,6 +3,33 @@ SERVER_BINARY=server
 OUTPUT_DIR=bin
 GOBIN ?= $(shell go env GOPATH)/bin
 WIRE ?= $(shell command -v wire 2>/dev/null || echo $(GOBIN)/wire)
+LOCAL_PG_HOST ?= localhost
+LOCAL_PG_PORT ?= 5432
+LOCAL_PG_DB ?= luas
+LOCAL_PG_USER ?= luas_user
+LOCAL_PG_PASSWORD ?= luas_pass
+LOCAL_PG_ADMIN_DB ?= postgres
+LOCAL_PG_ADMIN_USER ?= postgres
+LOCAL_API_PORT ?= 2010
+
+LOCAL_PG_ENV = APP_ENV=development \
+	APP_DEBUG=true \
+	APP_URL=http://localhost:$(LOCAL_API_PORT) \
+	SERVER_PORT=$(LOCAL_API_PORT) \
+	CORS_ALLOW_ORIGINS=http://localhost:2020 \
+	DB_ENABLED=true \
+	DB_DRIVER=postgres \
+	DB_HOST=$(LOCAL_PG_HOST) \
+	DB_PORT=$(LOCAL_PG_PORT) \
+	DB_NAME=$(LOCAL_PG_DB) \
+	DB_USERNAME=$(LOCAL_PG_USER) \
+	DB_PASSWORD=$(LOCAL_PG_PASSWORD) \
+	DB_SSLMODE=disable \
+	DB_TIMEZONE=UTC \
+	JWT_SECRET=local-dev-secret-change-before-production \
+	AI_ENABLED=false \
+	TRACING_ENABLED=false \
+	LOG_CH_ENABLED=false
 
 # Version information
 VERSION ?= $(shell git describe --tags --always --dirty 2>/dev/null || echo "dev")
@@ -23,7 +50,7 @@ else
 	PATH_SEP=/
 endif
 
-.PHONY: all build build-server build-all clean test test-kest cover lint lint-fix generate wire docs mock dev run air server migrate seed tidy update vuln setup install build-windows build-linux build-darwin build-all-platforms build-prod help
+.PHONY: all build build-server build-all clean test test-kest cover lint lint-fix generate wire docs mock dev dev-pg run air server db-up db-down db-logs db-bootstrap-pg db-check migrate migrate-pg seed tidy update vuln setup install build-windows build-linux build-darwin build-all-platforms build-prod help
 
 # Default target
 all: lint test build
@@ -160,7 +187,11 @@ mock:
 
 # Run development server
 dev:
-	go run cmd/server/main.go
+	APP_URL=http://localhost:$(LOCAL_API_PORT) SERVER_PORT=$(LOCAL_API_PORT) CORS_ALLOW_ORIGINS=http://localhost:2020 go run cmd/server/main.go
+
+# Run development server against the local PostgreSQL service from docker-compose.
+dev-pg: db-check
+	$(LOCAL_PG_ENV) go run cmd/server/main.go
 
 # Run development server (README-compatible alias)
 run: dev
@@ -177,6 +208,25 @@ endif
 # Run server (alias for dev)
 server: dev
 
+# Local PostgreSQL service
+db-up:
+	docker compose up -d luas-db
+
+db-down:
+	docker compose stop luas-db
+
+db-logs:
+	docker compose logs -f luas-db
+
+db-bootstrap-pg:
+	@echo "Ensuring local PostgreSQL role and database exist..."
+	@psql -h $(LOCAL_PG_HOST) -p $(LOCAL_PG_PORT) -U $(LOCAL_PG_ADMIN_USER) -d $(LOCAL_PG_ADMIN_DB) -Atc "SELECT 1 FROM pg_roles WHERE rolname = '$(LOCAL_PG_USER)'" | grep -q 1 || psql -h $(LOCAL_PG_HOST) -p $(LOCAL_PG_PORT) -U $(LOCAL_PG_ADMIN_USER) -d $(LOCAL_PG_ADMIN_DB) -v ON_ERROR_STOP=1 -c "CREATE ROLE $(LOCAL_PG_USER) LOGIN PASSWORD '$(LOCAL_PG_PASSWORD)'"
+	@psql -h $(LOCAL_PG_HOST) -p $(LOCAL_PG_PORT) -U $(LOCAL_PG_ADMIN_USER) -d $(LOCAL_PG_ADMIN_DB) -Atc "SELECT 1 FROM pg_database WHERE datname = '$(LOCAL_PG_DB)'" | grep -q 1 || createdb -h $(LOCAL_PG_HOST) -p $(LOCAL_PG_PORT) -U $(LOCAL_PG_ADMIN_USER) -O $(LOCAL_PG_USER) $(LOCAL_PG_DB)
+
+db-check:
+	@echo "Checking local PostgreSQL connection..."
+	@PGPASSWORD="$(LOCAL_PG_PASSWORD)" psql -h $(LOCAL_PG_HOST) -p $(LOCAL_PG_PORT) -U $(LOCAL_PG_USER) -d $(LOCAL_PG_DB) -v ON_ERROR_STOP=1 -Atc "SELECT 1" >/dev/null
+
 # Database migrations
 migrate:
 	@echo "Running migrations..."
@@ -185,6 +235,10 @@ ifeq ($(OS),Windows_NT)
 else
 	@if [ -f $(OUTPUT_DIR)/$(BINARY_NAME) ]; then ./$(OUTPUT_DIR)/$(BINARY_NAME) migrate; else go run cmd/luas/main.go migrate; fi
 endif
+
+migrate-pg: db-check
+	@echo "Running migrations against local PostgreSQL..."
+	$(LOCAL_PG_ENV) go run cmd/luas/main.go migrate
 
 migrate-fresh:
 	@echo "Running fresh migrations..."
@@ -259,6 +313,7 @@ help:
 	@echo ""
 	@echo "Development Commands:"
 	@echo "  make dev                - Run development server"
+	@echo "  make dev-pg             - Run development server against local PostgreSQL"
 	@echo "  make server             - Run server (alias for dev)"
 	@echo "  make air                - Run with hot reload (Air)"
 	@echo "  make test               - Run tests"
@@ -275,7 +330,13 @@ help:
 	@echo "  make mock               - Generate mocks"
 	@echo ""
 	@echo "Database Commands:"
+	@echo "  make db-up              - Start local PostgreSQL service"
+	@echo "  make db-down            - Stop local PostgreSQL service"
+	@echo "  make db-logs            - Tail local PostgreSQL logs"
+	@echo "  make db-bootstrap-pg    - Create local PostgreSQL role and database"
+	@echo "  make db-check           - Verify local PostgreSQL credentials"
 	@echo "  make migrate            - Run database migrations"
+	@echo "  make migrate-pg         - Run migrations against local PostgreSQL"
 	@echo "  make migrate-fresh      - Fresh migration (drop & recreate)"
 	@echo "  make migrate-rollback   - Rollback last migration"
 	@echo "  make seed               - Run database seeders"

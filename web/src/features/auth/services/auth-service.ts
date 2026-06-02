@@ -1,5 +1,10 @@
 import request from '@/http';
-import type { AuthResponse, LoginRequest, RegisterRequest } from '@/features/auth/types';
+import type {
+  AuthResponse,
+  AuthRuntimeConfig,
+  LoginRequest,
+  RegisterRequest,
+} from '@/features/auth/types';
 
 export const authService = {
   login: (data: LoginRequest) =>
@@ -14,6 +19,11 @@ export const authService = {
 
   me: () =>
     request.get<AuthResponse>('/auth/me', {
+      skipErrorHandler: true,
+    }),
+
+  config: () =>
+    request.get<AuthRuntimeConfig>('/auth/config', {
       skipErrorHandler: true,
     }),
 
