@@ -2275,7 +2275,8 @@ func writeExecutionRepoProfile(b *strings.Builder, bundle *domain.SpecForgePlanB
 
 func writeExecutionSkills(b *strings.Builder, skills []*domain.SpecForgeSkill) {
 	b.WriteString("Repository skills:\n")
-	if len(skills) == 0 {
+	activeSkills := activeExecutionSkills(skills)
+	if len(activeSkills) == 0 {
 		b.WriteString("- None\n\n")
 		return
 	}
@@ -2297,19 +2298,9 @@ func activeExecutionSkills(skills []*domain.SpecForgeSkill) []*domain.SpecForgeS
 		if skill == nil || strings.TrimSpace(skill.Name) == "" || strings.TrimSpace(skill.Content) == "" {
 			continue
 		}
-		wrote = true
-		b.WriteString("## " + strings.TrimSpace(skill.Name) + "\n")
-		if strings.TrimSpace(skill.Description) != "" {
-			b.WriteString(strings.TrimSpace(skill.Description) + "\n")
-		}
-		if len(skill.TargetAgents) > 0 {
-			b.WriteString("Assigned agents: " + strings.Join(skill.TargetAgents, ", ") + "\n")
-		}
-		b.WriteString(strings.TrimSpace(skill.Content) + "\n\n")
+		out = append(out, skill)
 	}
-	if !wrote {
-		b.WriteString("- None\n\n")
-	}
+	return out
 }
 
 func synthesizedExecutionProjectProfile(context *domain.SpecForgeProjectContext, primaryRepoID string) *domain.SpecForgeRepoProfile {
