@@ -65,6 +65,12 @@ interface LocalCliProbeItem {
   version?: string;
 }
 
+interface DaemonCommandDefinition {
+  title: string;
+  description: string;
+  command: string;
+}
+
 interface CodexHistoryThread {
   id: string;
   title: string;
@@ -84,6 +90,37 @@ interface CodexHistoryProject {
 }
 
 const ONLINE_RUNTIME_STALE_MS = 5 * 60 * 1000;
+
+const daemonCommandDefinitions: DaemonCommandDefinition[] = [
+  {
+    title: 'Codex CLI runtime',
+    description: '启动后会让 Codex CLI 显示为可调度。',
+    command: [
+      'cd api',
+      'export CODINGCTO_RUNTIME_TOKEN="<runtime-token>"',
+      'export CODINGCTO_RUNTIME_REPO_DIR="$(cd .. && pwd)"',
+      'go run ./cmd/ccto daemon \\',
+      '  --api-base-url http://localhost:2010/v1 \\',
+      '  --runtime-id local-codingcto \\',
+      '  --executor codex_cli \\',
+      '  --codex-path codex',
+    ].join('\n'),
+  },
+  {
+    title: 'Claude Code runtime',
+    description: '启动后会让 Claude Code 显示为可调度。',
+    command: [
+      'cd api',
+      'export CODINGCTO_RUNTIME_TOKEN="<runtime-token>"',
+      'export CODINGCTO_RUNTIME_REPO_DIR="$(cd .. && pwd)"',
+      'go run ./cmd/ccto daemon \\',
+      '  --api-base-url http://localhost:2010/v1 \\',
+      '  --runtime-id local-codingcto-claude \\',
+      '  --executor claude_code_cli \\',
+      '  --claude-path claude',
+    ].join('\n'),
+  },
+];
 
 const codingCliDefinitions: CodingCliDefinition[] = [
   {
@@ -279,6 +316,19 @@ export function AgentsConsole() {
           </div>
 
           <div className="mt-4 rounded-md border border-border-subtle bg-bg-subtle p-3">
+            <div className="text-xs font-medium text-text-main">启动 ccto daemon</div>
+            <p className="mt-1 text-xs leading-5 text-text-muted">
+              一个 daemon 对应一个 executor runtime；保持终端运行，页面会在 heartbeat 后把对应 CLI
+              标成可调度。
+            </p>
+            <div className="mt-3 grid gap-3 lg:grid-cols-2">
+              {daemonCommandDefinitions.map(command => (
+                <DaemonCommandBlock key={command.title} command={command} />
+              ))}
+            </div>
+          </div>
+
+          <div className="mt-4 rounded-md border border-border-subtle bg-bg-subtle p-3">
             <div className="text-xs font-medium text-text-main">调度协议</div>
             <p className="mt-1 text-xs leading-5 text-text-muted">
               ccto daemon 每 5-10 秒 heartbeat；API 发现 direct task 后返回 claim；
@@ -440,8 +490,8 @@ export function AgentDispatchConsole() {
               ) : null}
               {!canDispatch ? (
                 <div className="rounded-md bg-warning-subtle px-3 py-2 text-sm leading-6 text-warning">
-                  当前只接入了 Codex CLI direct 调度。其他 CLI 可以检测展示，等对应 executor daemon
-                  跑起来后再开放入口。
+                  当前 CLI 没有可用 executor runtime。启动 ccto daemon 并设置{' '}
+                  {agent.executor ? `--executor ${agent.executor}` : '对应 executor'} 后会开放入口。
                 </div>
               ) : null}
               <div className="flex flex-wrap items-center gap-2">
@@ -475,6 +525,18 @@ export function AgentDispatchConsole() {
           </aside>
         </section>
       </main>
+    </div>
+  );
+}
+
+function DaemonCommandBlock({ command }: { command: DaemonCommandDefinition }) {
+  return (
+    <div className="min-w-0 rounded-md border border-border-subtle bg-bg-surface p-3">
+      <div className="text-xs font-medium text-text-main">{command.title}</div>
+      <p className="mt-1 text-[11px] leading-5 text-text-muted">{command.description}</p>
+      <pre className="mt-2 max-h-56 overflow-auto rounded-md bg-bg-subtle p-2 text-[11px] leading-5 text-text-muted">
+        <code>{command.command}</code>
+      </pre>
     </div>
   );
 }
