@@ -32,6 +32,8 @@ type Service interface {
 	ListProjectSkills(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectSkill, error)
 	ListSkillRunsForRequirement(ctx context.Context, requirementID uint) ([]*domain.SpecForgeSkillRun, error)
 	ListSkillRunsForPlan(ctx context.Context, planID uint) ([]*domain.SpecForgeSkillRun, error)
+	GenerateExpertImplementationPlan(ctx context.Context, userID uint, req *GenerateExpertImplementationPlanRequest) (*ExpertImplementationPlanResponse, error)
+	GenerateExpertImplementationPlanStream(ctx context.Context, userID uint, req *GenerateExpertImplementationPlanRequest, emit func(ExpertPlanStreamEvent) error) error
 	CompilePrompt(ctx context.Context, userID, prNodeID uint, req *CompilePromptRequest) (*domain.SpecForgeCompiledPrompt, error)
 }
 

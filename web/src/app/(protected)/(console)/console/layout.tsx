@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { FormEvent, useState } from 'react';
 import {
+  Brain,
   Bot,
   Building2,
   LucideIcon,
@@ -57,6 +58,7 @@ interface WorkspaceNavItem {
     | 'home'
     | 'projects'
     | 'codingcto'
+    | 'experts'
     | 'agents'
     | 'skills'
     | 'settings'
@@ -103,6 +105,13 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
       icon: ListChecks,
       description: sidebarT('items.delivery.description'),
       activeOn: 'codingcto',
+    },
+    {
+      title: sidebarT('items.experts.title'),
+      href: ROUTES.CONSOLE.EXPERTS,
+      icon: Brain,
+      description: sidebarT('items.experts.description'),
+      activeOn: 'experts',
     },
     {
       title: sidebarT('items.agents.title'),
@@ -506,6 +515,9 @@ function isSidebarItemActive(
   }
   if (item.activeOn === 'codingcto') {
     return pathname.includes('/codingcto');
+  }
+  if (item.activeOn === 'experts') {
+    return pathname === ROUTES.CONSOLE.EXPERTS || pathname.startsWith(`${ROUTES.CONSOLE.EXPERTS}/`);
   }
   if (item.activeOn === 'agents') {
     return pathname === ROUTES.CONSOLE.AGENTS || pathname.startsWith(`${ROUTES.CONSOLE.AGENTS}/`);

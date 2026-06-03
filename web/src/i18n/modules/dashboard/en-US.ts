@@ -69,6 +69,10 @@ const messages: DashboardMessages = {
         title: 'Coding Agent',
         description: 'Check local CLI and dispatch status.',
       },
+      experts: {
+        title: 'Experts',
+        description: 'Turn ideas and skills into implementation plans.',
+      },
       review: {
         title: 'Check',
         description: 'Handle tests, CI, and human decisions.',

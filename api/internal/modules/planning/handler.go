@@ -1,6 +1,10 @@
 package planning
 
 import (
+	"encoding/json"
+	"errors"
+	"net/http"
+
 	"github.com/gin-gonic/gin"
 	"github.com/zgiai/luas/api/internal/contracts"
 	"github.com/zgiai/luas/api/pkg/handler"
@@ -281,6 +285,94 @@ func (h *Handler) ListPlanSkillRuns(c *gin.Context) {
 	}
 
 	response.Success(c, &SkillRunListResponse{SkillRuns: skillRuns})
+}
+
+func (h *Handler) GenerateExpertImplementationPlan(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+
+	var req GenerateExpertImplementationPlanRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+
+	result, err := h.service.GenerateExpertImplementationPlan(c.Request.Context(), userID, &req)
+	if err != nil {
+		switch {
+		case errors.Is(err, ErrExpertProviderNotConfigured):
+			response.ErrorWithCode(c, http.StatusServiceUnavailable, "EXPERT_PROVIDER_NOT_CONFIGURED", "DeepSeek provider is not configured", err)
+		case errors.Is(err, ErrExpertProviderFailed):
+			response.ErrorWithCode(c, http.StatusBadGateway, "EXPERT_PROVIDER_ERROR", "DeepSeek provider failed", err)
+		case errors.Is(err, ErrExpertToolCallMissing):
+			response.ErrorWithCode(c, http.StatusBadGateway, "EXPERT_TOOL_CALL_MISSING", "DeepSeek did not return the expected tool call", err)
+		default:
+			response.HandleError(c, "Failed to generate expert implementation plan", err)
+		}
+		return
+	}
+
+	response.Success(c, result)
+}
+
+func (h *Handler) StreamExpertImplementationPlan(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+
+	var req GenerateExpertImplementationPlanRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+
+	flusher, ok := c.Writer.(http.Flusher)
+	if !ok {
+		response.ErrorWithCode(c, http.StatusInternalServerError, "STREAM_UNSUPPORTED", "Streaming is not supported by this server", nil)
+		return
+	}
+
+	c.Header("Content-Type", "application/x-ndjson; charset=utf-8")
+	c.Header("Cache-Control", "no-cache")
+	c.Header("Connection", "keep-alive")
+	c.Header("X-Accel-Buffering", "no")
+	c.Status(http.StatusOK)
+
+	encoder := json.NewEncoder(c.Writer)
+	emit := func(event ExpertPlanStreamEvent) error {
+		if err := encoder.Encode(event); err != nil {
+			return err
+		}
+		flusher.Flush()
+		return nil
+	}
+
+	if err := h.service.GenerateExpertImplementationPlanStream(c.Request.Context(), userID, &req, emit); err != nil {
+		_ = emit(expertPlanStreamError(err))
+	}
+}
+
+func expertPlanStreamError(err error) ExpertPlanStreamEvent {
+	event := ExpertPlanStreamEvent{
+		Type:  "error",
+		Error: "Failed to generate expert implementation plan",
+	}
+	switch {
+	case errors.Is(err, ErrExpertProviderNotConfigured):
+		event.ErrorCode = "EXPERT_PROVIDER_NOT_CONFIGURED"
+		event.Error = "DeepSeek provider is not configured"
+	case errors.Is(err, ErrExpertProviderFailed):
+		event.ErrorCode = "EXPERT_PROVIDER_ERROR"
+		event.Error = err.Error()
+	case errors.Is(err, ErrExpertToolCallMissing):
+		event.ErrorCode = "EXPERT_TOOL_CALL_MISSING"
+		event.Error = "DeepSeek did not return the expected tool call"
+	default:
+		event.ErrorCode = "EXPERT_STREAM_ERROR"
+		event.Error = err.Error()
+	}
+	return event
 }
 
 func (h *Handler) CompilePrompt(c *gin.Context) {

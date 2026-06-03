@@ -67,6 +67,10 @@ const messages = {
         title: 'Coding Agent',
         description: '查看本地 CLI 和调度状态。',
       },
+      experts: {
+        title: '专家',
+        description: '把 idea 和 skill 生成实施方案。',
+      },
       review: {
         title: '检查',
         description: '处理测试、CI 和人工决策。',
