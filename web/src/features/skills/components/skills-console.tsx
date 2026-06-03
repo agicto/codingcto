@@ -422,11 +422,11 @@ function SkillOperationalMap({
   skills: SpecForgeSkillDTO[];
   runtimes: SpecForgeRuntimeDTO[];
 }) {
+  const [runtimeNow] = useState(() => Date.now());
   const activeSkills = skills.filter(skill => skill.active);
   const planningSkills = activeSkills.filter(skill => skillTargets(skill, 'planning'));
   const codexSkills = activeSkills.filter(skill => skillTargets(skill, 'codex_cli'));
   const reviewSkills = activeSkills.filter(skill => skillTargets(skill, 'review'));
-  const runtimeNow = Date.now();
   const freshRuntimes = runtimes.filter(
     runtime => deriveRuntimeHealth(runtimeFromDTO(runtime), runtimeNow) === 'online'
   );

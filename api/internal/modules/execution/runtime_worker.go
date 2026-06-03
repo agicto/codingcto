@@ -27,9 +27,9 @@ type RuntimeWorkerConfig struct {
 }
 
 type RuntimeWorker struct {
-	cfg      RuntimeWorkerConfig
-	client   RuntimeAPIClient
-	executor CodeExecutor
+	cfg       RuntimeWorkerConfig
+	client    RuntimeAPIClient
+	connector CodingAgentConnector
 }
 
 type runtimeProgressReporter struct {
@@ -51,6 +51,10 @@ type RuntimeWorkerResult struct {
 }
 
 func NewRuntimeWorker(cfg RuntimeWorkerConfig, client RuntimeAPIClient, executor CodeExecutor) *RuntimeWorker {
+	return NewRuntimeWorkerWithConnector(cfg, client, NewCLIConnector(executor))
+}
+
+func NewRuntimeWorkerWithConnector(cfg RuntimeWorkerConfig, client RuntimeAPIClient, connector CodingAgentConnector) *RuntimeWorker {
 	if strings.TrimSpace(cfg.Executor) == "" {
 		cfg.Executor = ExecutorNameCodexCLI
 	}
@@ -62,11 +66,11 @@ func NewRuntimeWorker(cfg RuntimeWorkerConfig, client RuntimeAPIClient, executor
 	if cfg.PollInterval <= 0 {
 		cfg.PollInterval = 10 * time.Second
 	}
-	return &RuntimeWorker{cfg: cfg, client: client, executor: executor}
+	return &RuntimeWorker{cfg: cfg, client: client, connector: connector}
 }
 
 func (w *RuntimeWorker) RunOnce(ctx context.Context) (*RuntimeWorkerResult, error) {
-	if w.client == nil || w.executor == nil || strings.TrimSpace(w.cfg.RuntimeID) == "" {
+	if w.client == nil || w.connector == nil || strings.TrimSpace(w.cfg.RuntimeID) == "" {
 		return nil, domain.ErrInvalidInput
 	}
 	heartbeat, err := w.client.Heartbeat(ctx, &RuntimeHeartbeatRequest{
@@ -147,28 +151,18 @@ func (w *RuntimeWorker) executeClaim(ctx context.Context, claim *ClaimAgentTaskR
 
 	_, _ = w.client.CreateTaskEvent(ctx, taskID, &CreateTaskEventRequest{
 		Type:    "runtime_claimed",
-		Tool:    w.executor.Name(),
+		Tool:    w.connector.Name(),
 		Content: "Runtime claimed task and is starting executor.",
 	})
-	if progressExecutor, ok := w.executor.(ProgressReportingExecutor); ok {
-		progressExecutor.SetProgressReporter(&runtimeProgressReporter{
-			client: w.client,
-			taskID: taskID,
-			tool:   w.executor.Name(),
-		})
+	envelope, err := PRNodeTaskEnvelope(w.cfg.RuntimeID, w.cfg.Executor, w.cfg.SessionID, workdir, claim)
+	if err != nil {
+		return nil, err
 	}
-	result, runErr := w.executor.Run(ctx, ExecutionContext{
-		RunID:      fmt.Sprintf("%d", claim.Task.RunID),
-		TaskID:     taskID,
-		Workdir:    workdir,
-		BranchName: claim.ExecutionContext.BranchName,
-		Env:        w.cfg.Env,
-	}, CompiledExecutionPrompt{
-		ID:         claim.Prompt.ID,
-		PRNodeID:   claim.Task.PRNodeID,
-		Type:       claim.Prompt.Type,
-		Version:    claim.Prompt.Version,
-		PromptText: claim.Prompt.PromptText,
+	envelope.Env = w.cfg.Env
+	result, runErr := w.connector.Run(ctx, envelope, &runtimeProgressReporter{
+		client: w.client,
+		taskID: taskID,
+		tool:   w.connector.Name(),
 	})
 	if result == nil {
 		errorLine := "executor returned no result"
@@ -179,7 +173,7 @@ func (w *RuntimeWorker) executeClaim(ctx context.Context, claim *ClaimAgentTaskR
 	}
 	_, _ = w.client.CreateTaskEvent(ctx, taskID, &CreateTaskEventRequest{
 		Type:   "executor_result",
-		Tool:   w.executor.Name(),
+		Tool:   w.connector.Name(),
 		Output: result.Output,
 	})
 	submitErr := w.submitResult(ctx, claim, workdir, result, runErr)
@@ -208,28 +202,18 @@ func (w *RuntimeWorker) executeDirectClaim(ctx context.Context, claim *ClaimAgen
 
 	_, _ = w.client.CreateDirectTaskEvent(ctx, taskID, &CreateTaskEventRequest{
 		Type:    "runtime_claimed",
-		Tool:    w.executor.Name(),
+		Tool:    w.connector.Name(),
 		Content: "Runtime claimed direct task and is starting executor.",
 	})
-	if progressExecutor, ok := w.executor.(ProgressReportingExecutor); ok {
-		progressExecutor.SetProgressReporter(&directRuntimeProgressReporter{
-			client: w.client,
-			taskID: taskID,
-			tool:   w.executor.Name(),
-		})
+	envelope, err := DirectTaskEnvelope(w.cfg.RuntimeID, w.cfg.Executor, w.cfg.SessionID, workdir, claim)
+	if err != nil {
+		return nil, err
 	}
-	result, runErr := w.executor.Run(ctx, ExecutionContext{
-		RunID:      fmt.Sprintf("direct-%d", taskID),
-		TaskID:     taskID,
-		Workdir:    workdir,
-		BranchName: claim.ExecutionContext.BranchName,
-		Env:        w.cfg.Env,
-	}, CompiledExecutionPrompt{
-		ID:         claim.Prompt.ID,
-		PRNodeID:   0,
-		Type:       claim.Prompt.Type,
-		Version:    claim.Prompt.Version,
-		PromptText: claim.Prompt.PromptText,
+	envelope.Env = w.cfg.Env
+	result, runErr := w.connector.Run(ctx, envelope, &directRuntimeProgressReporter{
+		client: w.client,
+		taskID: taskID,
+		tool:   w.connector.Name(),
 	})
 	if result == nil {
 		errorLine := "executor returned no result"

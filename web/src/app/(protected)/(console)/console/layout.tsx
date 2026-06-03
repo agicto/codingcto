@@ -1,8 +1,8 @@
 'use client';
 
 import Link from 'next/link';
-import { usePathname, useSearchParams } from 'next/navigation';
-import { FormEvent, useMemo, useState } from 'react';
+import { usePathname } from 'next/navigation';
+import { FormEvent, useState } from 'react';
 import {
   Building2,
   LucideIcon,
@@ -11,14 +11,9 @@ import {
   LogOut,
   Boxes,
   SquarePen,
-  Inbox,
   ListChecks,
   ChevronDown,
   Plus,
-  Github,
-  GitBranch,
-  BookOpen,
-  Bot,
 } from 'lucide-react';
 
 import { cn } from '@/utils';
@@ -49,8 +44,6 @@ import {
   projectSpecForgeHref,
   slugFromProjectName,
 } from '@/features/project/project-utils';
-import { useSpecForgeRuntimes } from '@/features/specforge/hooks/use-specforge';
-import { hasFreshCodexDispatchRuntime } from '@/features/specforge/runtime-dispatch-readiness';
 
 interface WorkspaceNavItem {
   title: string;
@@ -63,48 +56,38 @@ interface WorkspaceNavItem {
     | 'home'
     | 'projects'
     | 'codingcto'
-    | 'review'
     | 'agents'
     | 'skills'
-    | 'github-settings'
-    | 'repository-settings'
     | 'settings'
     | 'none';
 }
 
 export default function ConsoleLayout({ children }: { children: React.ReactNode }) {
   const pathname = usePathname();
-  const searchParams = useSearchParams();
-  const settingsTab = searchParams.get('tab') ?? 'profile';
   const t = useT();
   const sidebarT = useT('dashboard.sidebar');
+  const sidebarGroupLabel = (key: 'work' | 'platform' | 'settings') => {
+    const value = sidebarT(`groups.${key}`);
+    if (!value.startsWith('dashboard.sidebar.groups.')) {
+      return value;
+    }
+    return {
+      work: '工作',
+      platform: '平台',
+      settings: '设置',
+    }[key];
+  };
   const user = useAuthStore.use.user();
   const { mutate: logout, isPending: isLoggingOut } = useLogout();
-  const [runtimeNow] = useState(() => Date.now());
-  const runtimesQuery = useSpecForgeRuntimes({ status: 'online', limit: 20 });
-  const codexDispatchReady = useMemo(
-    () => hasFreshCodexDispatchRuntime(runtimesQuery.data?.runtimes, runtimeNow),
-    [runtimeNow, runtimesQuery.data?.runtimes]
-  );
   const currentProjectId = projectIdFromConsolePathname(pathname);
-  const deliveryBaseHref = currentProjectId
+  const boardHref = currentProjectId
     ? projectSpecForgeHref(currentProjectId)
     : ROUTES.CONSOLE.SPECFORGE;
-  const deliveryBoardHref = `${deliveryBaseHref}?board=delivery`;
-  const reviewBoardHref = `${deliveryBaseHref}?board=review`;
   const newRequirementHref = currentProjectId
     ? projectDeliveryIntakeHref(currentProjectId)
     : `${ROUTES.CONSOLE.SPECFORGE}?board=intake&new=requirement`;
 
-  const deliveryNavItems: WorkspaceNavItem[] = [
-    {
-      title: sidebarT('items.delivery.title'),
-      href: deliveryBoardHref,
-      icon: ListChecks,
-      description: sidebarT('items.delivery.description'),
-      badge: sidebarT('badges.live'),
-      activeOn: 'codingcto',
-    },
+  const workNavItems: WorkspaceNavItem[] = [
     {
       title: sidebarT('items.projects.title'),
       href: ROUTES.CONSOLE.PROJECTS,
@@ -113,54 +96,21 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
       activeOn: 'projects',
     },
     {
-      title: sidebarT('items.agents.title'),
-      href: ROUTES.CONSOLE.AGENTS,
-      icon: Bot,
-      description: sidebarT('items.agents.description'),
-      badge: codexDispatchReady ? sidebarT('badges.codexReady') : undefined,
-      activeOn: 'agents',
+      title: sidebarT('items.delivery.title'),
+      href: boardHref,
+      icon: ListChecks,
+      description: sidebarT('items.delivery.description'),
+      activeOn: 'codingcto',
     },
   ];
 
-  const reviewNavItems: WorkspaceNavItem[] = [
-    {
-      title: sidebarT('items.review.title'),
-      href: reviewBoardHref,
-      icon: Inbox,
-      description: sidebarT('items.review.description'),
-      badge: sidebarT('badges.live'),
-      activeOn: 'review',
-    },
-  ];
-
-  const platformNavItems: WorkspaceNavItem[] = [
-    {
-      title: sidebarT('items.skills.title'),
-      href: ROUTES.CONSOLE.SKILLS,
-      icon: BookOpen,
-      description: sidebarT('items.skills.description'),
-      activeOn: 'skills',
-    },
+  const settingsNavItems: WorkspaceNavItem[] = [
     {
       title: sidebarT('items.settings.title'),
       href: ROUTES.CONSOLE.SETTINGS,
       icon: Settings,
       description: sidebarT('items.settings.description'),
       activeOn: 'settings',
-    },
-    {
-      title: sidebarT('items.github.title'),
-      href: `${ROUTES.CONSOLE.SETTINGS}?tab=github`,
-      icon: Github,
-      description: sidebarT('items.github.description'),
-      activeOn: 'github-settings',
-    },
-    {
-      title: sidebarT('items.repositories.title'),
-      href: `${ROUTES.CONSOLE.SETTINGS}?tab=repositories`,
-      icon: GitBranch,
-      description: sidebarT('items.repositories.description'),
-      activeOn: 'repository-settings',
     },
   ];
 
@@ -186,25 +136,14 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
 
         <div className="mt-6 min-h-0 flex-1 overflow-y-auto pr-1">
           <SidebarSection
-            title={sidebarT('groups.deliver')}
-            items={deliveryNavItems}
+            title={sidebarGroupLabel('work')}
+            items={workNavItems}
             pathname={pathname}
-            settingsTab={settingsTab}
-            board={searchParams.get('board')}
           />
           <SidebarSection
-            title={sidebarT('groups.review')}
-            items={reviewNavItems}
+            title={sidebarGroupLabel('settings')}
+            items={settingsNavItems}
             pathname={pathname}
-            settingsTab={settingsTab}
-            board={searchParams.get('board')}
-          />
-          <SidebarSection
-            title={sidebarT('groups.platform')}
-            items={platformNavItems}
-            pathname={pathname}
-            settingsTab={settingsTab}
-            board={searchParams.get('board')}
           />
         </div>
 
@@ -449,14 +388,10 @@ function SidebarSection({
   title,
   items,
   pathname,
-  settingsTab,
-  board,
 }: {
   title: string;
   items: WorkspaceNavItem[];
   pathname: string;
-  settingsTab: string;
-  board: string | null;
 }) {
   return (
     <div className="mt-4 first:mt-0">
@@ -467,8 +402,6 @@ function SidebarSection({
             key={`${title}-${item.title}`}
             {...item}
             pathname={pathname}
-            settingsTab={settingsTab}
-            board={board}
           />
         ))}
       </nav>
@@ -486,8 +419,6 @@ function SidebarLink({
   disabled,
   activeOn,
   pathname,
-  settingsTab,
-  board,
 }: {
   href: string;
   icon: LucideIcon;
@@ -498,12 +429,10 @@ function SidebarLink({
   disabled?: boolean;
   activeOn?: WorkspaceNavItem['activeOn'];
   pathname: string;
-  settingsTab: string;
-  board: string | null;
 }) {
   const text = label ?? title ?? '';
   const active =
-    !disabled && isSidebarItemActive({ href, activeOn }, pathname, settingsTab, board);
+    !disabled && isSidebarItemActive({ href, activeOn }, pathname);
   const content = (
     <>
       <span className="flex min-w-0 items-center gap-2">
@@ -554,32 +483,20 @@ function SidebarLink({
 
 function isSidebarItemActive(
   item: Pick<WorkspaceNavItem, 'href' | 'activeOn'>,
-  pathname: string,
-  settingsTab: string,
-  board: string | null
+  pathname: string
 ) {
   if (item.activeOn === 'home') {
     return pathname === ROUTES.CONSOLE.HOME;
   }
   if (item.activeOn === 'projects') {
-    const isProjectScopedDelivery =
-      pathname.includes('/codingcto') || pathname.includes('/specforge');
+    const isProjectScopedDelivery = pathname.includes('/codingcto');
     return (
       !isProjectScopedDelivery &&
       (pathname === ROUTES.CONSOLE.PROJECTS || pathname.startsWith('/console/projects/'))
     );
   }
   if (item.activeOn === 'codingcto') {
-    return (
-      (pathname.includes('/codingcto') || pathname.includes('/specforge')) &&
-      board !== 'review'
-    );
-  }
-  if (item.activeOn === 'review') {
-    return (
-      (pathname.includes('/codingcto') || pathname.includes('/specforge')) &&
-      board === 'review'
-    );
+    return pathname.includes('/codingcto');
   }
   if (item.activeOn === 'agents') {
     return pathname === ROUTES.CONSOLE.AGENTS || pathname.startsWith(`${ROUTES.CONSOLE.AGENTS}/`);
@@ -590,16 +507,8 @@ function isSidebarItemActive(
   if (item.activeOn === 'settings') {
     return (
       (pathname === ROUTES.CONSOLE.SETTINGS ||
-        pathname.startsWith(`${ROUTES.CONSOLE.SETTINGS}/`)) &&
-      settingsTab !== 'github' &&
-      settingsTab !== 'repositories'
+        pathname.startsWith(`${ROUTES.CONSOLE.SETTINGS}/`))
     );
-  }
-  if (item.activeOn === 'github-settings') {
-    return pathname === ROUTES.CONSOLE.SETTINGS && settingsTab === 'github';
-  }
-  if (item.activeOn === 'repository-settings') {
-    return pathname === ROUTES.CONSOLE.SETTINGS && settingsTab === 'repositories';
   }
   if (item.activeOn === 'none') {
     return false;

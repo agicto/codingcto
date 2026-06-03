@@ -2,7 +2,14 @@
 
 import { FormEvent, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useParams, useSearchParams } from 'next/navigation';
+import { useParams } from 'next/navigation';
+import {
+  ArrowRight,
+  CheckCircle2,
+  Circle,
+  CircleAlert,
+  Sparkles,
+} from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -19,16 +26,20 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import { SpecForgeWorkbench } from '@/features/specforge';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { useLocale } from '@/hooks/use-locale';
 import { useT } from '@/i18n';
 import { useBindProjectRepository, useProjectContext } from '@/features/project/hooks/use-projects';
-import {
-  localizeProjectContextText,
-  primaryRepositoryContext,
-  projectContextReadiness,
-} from '@/features/project/project-context';
-import { projectSpecForgeHref } from '@/features/project/project-utils';
+import { primaryRepositoryContext } from '@/features/project/project-context';
+import { projectRequirementNewHref, projectSpecForgeHref } from '@/features/project/project-utils';
 import {
   projectDeliverySetupChecklist,
   type ProjectDeliverySetupItem,
@@ -53,6 +64,8 @@ import {
   useDispatchExecutionRun,
   useGitHubRepositories,
   useGitHubRepositoryReadiness,
+  useRepoArchitectureStatus,
+  useSpecForgeRuntimes,
   useStartExecutionRun,
   useUpsertGitHubRepository,
 } from '@/features/specforge/hooks/use-specforge';
@@ -60,11 +73,12 @@ import {
   specForgeService,
   type GitHubRepositoryReadinessCheckDTO,
 } from '@/features/specforge/services/specforge-service';
+import { hasFreshCodexDispatchRuntime } from '@/features/specforge/runtime-dispatch-readiness';
+import { cn } from '@/utils';
 
 export function ProjectSpecForgeConsole() {
   const t = useT('dashboard.projectDelivery');
   const params = useParams<{ projectId: string }>();
-  const searchParams = useSearchParams();
   const projectId = Number(params.projectId);
   const validProjectId = Number.isFinite(projectId) ? projectId : 0;
   const contextQuery = useProjectContext(validProjectId);
@@ -72,7 +86,6 @@ export function ProjectSpecForgeConsole() {
   const selectedRepository = primaryRepositoryContext(context);
   const repositoryId = selectedRepository?.repository.repository_id;
   const hasProjectContext = Boolean(context);
-  const boardMode = Boolean(searchParams.get('board'));
 
   if (!validProjectId) {
     return (
@@ -107,7 +120,6 @@ export function ProjectSpecForgeConsole() {
 
   return (
     <div className="h-full overflow-y-auto overflow-x-hidden pb-28">
-      {!boardMode ? <ProjectContextReadiness context={loadedContext} /> : null}
       {!repositoryId ? (
         <div className="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
           <Alert>
@@ -122,26 +134,377 @@ export function ProjectSpecForgeConsole() {
           />
         </div>
       ) : (
-        <>
-          {!boardMode ? (
-            <ProjectE2ERunPanel
-              projectId={validProjectId}
-              projectName={loadedContext.project.name}
-              repository={selectedRepository?.repository}
-            />
-          ) : null}
-          <SpecForgeWorkbench
-            key={repositoryId}
-            projectId={validProjectId}
-            initialRepositoryId={repositoryId}
-            projectLabel={loadedContext.project.name}
-            repositoryLocked
-            pageScroll
-          />
-        </>
+        <ProjectMvpBoard
+          projectId={validProjectId}
+          context={loadedContext}
+          repository={selectedRepository}
+        />
       )}
     </div>
   );
+}
+
+type MvpBoardColumnId = 'setup' | 'intake' | 'approve' | 'delivery';
+
+interface MvpBoardCard {
+  id: string;
+  column: MvpBoardColumnId;
+  title: string;
+  summary: string;
+  status: string;
+  tone: 'ready' | 'waiting' | 'blocked' | 'running';
+  details: string[];
+  actionLabel?: string;
+  actionHref?: string;
+  actionDisabled?: boolean;
+}
+
+const mvpBoardColumns: Array<{
+  id: MvpBoardColumnId;
+  title: string;
+  hint: string;
+  emptyLabel: string;
+}> = [
+  {
+    id: 'setup',
+    title: '准备',
+    hint: '确认项目能交付 PR',
+    emptyLabel: '仓库、上下文和运行器都准备好后进入需求录入。',
+  },
+  {
+    id: 'intake',
+    title: '需求',
+    hint: '输入一个产品目标',
+    emptyLabel: '新需求会出现在这里。',
+  },
+  {
+    id: 'approve',
+    title: '审批',
+    hint: '只做一次人工决策',
+    emptyLabel: '生成计划后在这里审批 PR 拆分。',
+  },
+  {
+    id: 'delivery',
+    title: '交付',
+    hint: '查看 PR、CI 和阻塞项',
+    emptyLabel: '审批后 PR 进度会出现在这里。',
+  },
+];
+
+function ProjectMvpBoard({
+  projectId,
+  context,
+  repository,
+}: {
+  projectId: number;
+  context: ProjectContextDTO;
+  repository?: ProjectRepositoryContextDTO;
+}) {
+  const repoId = repository?.repository.repository_id ?? '';
+  const [runtimeNow] = useState(() => Date.now());
+  const [selectedCardId, setSelectedCardId] = useState<string | undefined>();
+  const runtimesQuery = useSpecForgeRuntimes({ status: 'online', limit: 20 });
+  const architectureQuery = useRepoArchitectureStatus(repoId);
+  const readinessQuery = useGitHubRepositoryReadiness(repoId || undefined);
+  const codexReady = hasFreshCodexDispatchRuntime(runtimesQuery.data?.runtimes, runtimeNow);
+  const readiness = readinessQuery.data;
+  const githubReady = Boolean(readiness?.ready);
+  const snapshot = architectureQuery.data?.snapshot ?? repository?.architecture_snapshot;
+  const profile = repository?.profile;
+  const repoReady = Boolean(repoId);
+  const wikiReady = Boolean(snapshot || profile);
+  const projectName = context.project.name || `Project ${projectId}`;
+  const newRequirementHref = projectRequirementNewHref(projectId);
+
+  const cards: MvpBoardCard[] = [
+    {
+      id: 'setup',
+      column: 'setup',
+      title: '项目准备',
+      summary: repoReady ? '主仓库已绑定，可以生成计划。' : '先绑定一个 primary repository。',
+      status: repoReady && codexReady ? '可交付' : '需检查',
+      tone: repoReady && codexReady ? 'ready' : 'blocked',
+      details: [
+        `项目：${projectName}`,
+        repoReady ? `目标仓库：${repoId}` : '还没有绑定主仓库',
+        wikiReady ? '仓库上下文已可用，可用于计划生成。' : '仓库上下文还不完整，建议先生成或更新。',
+        codexReady ? 'Codex runtime 已在线。' : 'Codex runtime 未在线；可以先生成计划，执行前再处理。',
+        githubReady ? 'GitHub readiness 检查通过。' : 'GitHub readiness 还需要检查。',
+      ],
+      actionLabel: repoReady ? '新建需求' : '检查项目',
+      actionHref: repoReady ? newRequirementHref : undefined,
+      actionDisabled: !repoReady,
+    },
+    {
+      id: 'requirement',
+      column: 'intake',
+      title: '新建需求',
+      summary: '描述一个功能、bugfix、重构或测试目标。',
+      status: '等待输入',
+      tone: repoReady ? 'waiting' : 'blocked',
+      details: [
+        '只需要输入产品目标、约束和非目标。',
+        'CodingCTO 会生成产品计划、技术计划和 1-5 个 PR 节点。',
+        '不会在计划审批前执行代码。',
+      ],
+      actionLabel: '新建需求',
+      actionHref: repoReady ? newRequirementHref : undefined,
+      actionDisabled: !repoReady,
+    },
+    {
+      id: 'approval',
+      column: 'approve',
+      title: '计划审批',
+      summary: '检查 PR 边界、依赖、风险和测试命令。',
+      status: '等待计划',
+      tone: 'waiting',
+      details: [
+        '这是用户必须做的一次决策。',
+        '审批后系统按 PR 依赖顺序执行。',
+        'Prompt、Skill 和运行日志只作为高级详情展示。',
+      ],
+      actionLabel: '先生成计划',
+      actionHref: repoReady ? newRequirementHref : undefined,
+      actionDisabled: !repoReady,
+    },
+    {
+      id: 'delivery',
+      column: 'delivery',
+      title: 'PR 交付',
+      summary: '跟踪 PR、CI、自动修复和需要人工判断的阻塞项。',
+      status: '等待审批',
+      tone: 'waiting',
+      details: [
+        '交付单位是 GitHub PR，不是 agent 任务。',
+        'CI 失败会先自动分类和尝试修复。',
+        '无法安全继续时，只显示需要用户判断的阻塞项。',
+      ],
+      actionLabel: '等待审批',
+      actionDisabled: true,
+    },
+  ];
+
+  const selectedCard = cards.find(card => card.id === selectedCardId);
+
+  return (
+    <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 px-4 py-4 md:px-6">
+      <section className="rounded-lg border border-border-subtle bg-bg-surface p-4">
+        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h1 className="text-xl font-semibold text-text-main">{projectName}</h1>
+              <Badge variant="outline">CodingCTO Delivery</Badge>
+            </div>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-text-muted">
+              从一个需求开始，审批一次计划，然后跟踪 GitHub PR。仓库上下文、Prompt 和运行器是后台能力，不作为主流程步骤。
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button type="button" asChild>
+              <Link href={newRequirementHref}>
+                新建需求
+                <Sparkles className="ml-1.5 h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+        </div>
+        <div className="mt-4 grid gap-2 md:grid-cols-4">
+          <MvpStatusMetric label="主仓库" value={repoId || '未绑定'} state={repoReady ? 'ready' : 'blocked'} />
+          <MvpStatusMetric label="仓库上下文" value={wikiReady ? '可用' : '待生成'} state={wikiReady ? 'ready' : 'waiting'} />
+          <MvpStatusMetric label="运行器" value={codexReady ? '在线' : '未在线'} state={codexReady ? 'ready' : 'blocked'} />
+          <MvpStatusMetric label="GitHub" value={githubReady ? 'Ready' : '需检查'} state={githubReady ? 'ready' : 'waiting'} />
+        </div>
+        <div className="mt-3 rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 text-sm leading-6 text-text-muted">
+          主流程只保留准备、需求、审批、交付。高级配置在设置中处理，不在交付看板里调度。
+        </div>
+      </section>
+
+      <section className="grid gap-3 xl:grid-cols-4">
+        {mvpBoardColumns.map(column => {
+          const columnCards = cards.filter(card => card.column === column.id);
+          return (
+            <div key={column.id} className="min-h-[360px] rounded-lg border border-border-subtle bg-bg-subtle p-3">
+              <div className="flex items-start justify-between gap-2">
+                <div>
+                  <div className="text-sm font-semibold text-text-main">{column.title}</div>
+                  <div className="mt-1 text-xs leading-5 text-text-muted">{column.hint}</div>
+                </div>
+                <span className="rounded-full bg-bg-surface px-2 py-0.5 text-xs text-text-muted">
+                  {columnCards.length}
+                </span>
+              </div>
+              <div className="mt-3 space-y-2">
+                {columnCards.length ? (
+                  columnCards.map(card => (
+                    <button
+                      key={card.id}
+                      type="button"
+                      onClick={() => setSelectedCardId(card.id)}
+                      className="w-full rounded-md border border-border-subtle bg-bg-surface p-3 text-left shadow-sm transition hover:border-primary/50"
+                    >
+                      <div className="flex items-center justify-between gap-2">
+                        <span className="text-sm font-medium text-text-main">{card.title}</span>
+                        <MvpToneIcon tone={card.tone} />
+                      </div>
+                      <p className="mt-2 line-clamp-3 text-xs leading-5 text-text-muted">{card.summary}</p>
+                      <div className="mt-3 flex items-center justify-between gap-2 text-xs">
+                        <Badge variant="outline" className={mvpToneClassName(card.tone)}>
+                          {card.status}
+                        </Badge>
+                        <span className="text-primary">查看</span>
+                      </div>
+                    </button>
+                  ))
+                ) : (
+                  <div className="flex min-h-32 items-center rounded-md border border-dashed border-border-subtle bg-bg-surface/60 px-3 py-4 text-sm leading-6 text-text-muted">
+                    {column.emptyLabel}
+                  </div>
+                )}
+              </div>
+            </div>
+          );
+        })}
+      </section>
+
+      <Dialog open={Boolean(selectedCard)} onOpenChange={open => !open && setSelectedCardId(undefined)}>
+        <DialogContent size="lg">
+          {selectedCard ? (
+            <>
+              <DialogHeader className="pr-8">
+                <DialogTitle>{selectedCard.title}</DialogTitle>
+                <DialogDescription>{selectedCard.summary}</DialogDescription>
+              </DialogHeader>
+              <DialogBody className="space-y-4">
+                <div className="grid gap-2 sm:grid-cols-2">
+                  <MvpDetailMetric
+                    label="当前状态"
+                    value={selectedCard.status}
+                    helper={mvpBoardColumns.find(column => column.id === selectedCard.column)?.title ?? ''}
+                    tone={selectedCard.tone}
+                  />
+                  <MvpDetailMetric
+                    label="下一步"
+                    value={selectedCard.actionLabel ?? '继续'}
+                    helper={selectedCard.actionDisabled ? '等待前置产物' : '可以继续推进'}
+                    tone={selectedCard.actionDisabled ? 'waiting' : selectedCard.tone}
+                  />
+                </div>
+
+                <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+                  <div className="text-sm font-medium text-text-main">产物</div>
+                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
+                    {['产品计划', '技术计划', 'PR 拆分', '执行记录', 'GitHub PR'].map(item => (
+                      <div key={item} className="flex items-center justify-between rounded-md bg-bg-surface px-3 py-2 text-sm">
+                        <span className="text-text-main">{item}</span>
+                        <Badge variant="outline" className="text-text-muted">待生成</Badge>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+
+                <div className="space-y-2">
+                  <div className="text-sm font-medium text-text-main">说明</div>
+                  {selectedCard.details.map(detail => (
+                    <div key={detail} className="rounded-md border border-border-subtle bg-bg-surface px-3 py-2 text-sm leading-6 text-text-muted">
+                      {detail}
+                    </div>
+                  ))}
+                </div>
+              </DialogBody>
+              <DialogFooter>
+                {selectedCard.actionHref ? (
+                  <Button type="button" asChild>
+                    <Link href={selectedCard.actionHref}>
+                      {selectedCard.actionLabel ?? '继续'}
+                      <ArrowRight className="ml-1.5 h-4 w-4" />
+                    </Link>
+                  </Button>
+                ) : (
+                  <Button type="button" disabled={selectedCard.actionDisabled}>
+                    {selectedCard.actionLabel ?? '继续'}
+                    <ArrowRight className="ml-1.5 h-4 w-4" />
+                  </Button>
+                )}
+                <Button type="button" variant="outline" onClick={() => setSelectedCardId(undefined)}>
+                  关闭
+                </Button>
+              </DialogFooter>
+            </>
+          ) : null}
+        </DialogContent>
+      </Dialog>
+    </main>
+  );
+}
+
+function MvpStatusMetric({
+  label,
+  value,
+  state,
+}: {
+  label: string;
+  value: string;
+  state: 'ready' | 'waiting' | 'blocked';
+}) {
+  return (
+    <div className="rounded-md border border-border-subtle bg-bg-subtle px-3 py-2">
+      <div className="text-xs text-text-muted">{label}</div>
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <span className="truncate text-sm font-medium text-text-main">{value}</span>
+        <span className={cn('h-2 w-2 shrink-0 rounded-full', state === 'ready' ? 'bg-success' : state === 'blocked' ? 'bg-error' : 'bg-warning')} />
+      </div>
+    </div>
+  );
+}
+
+function MvpDetailMetric({
+  label,
+  value,
+  helper,
+  tone,
+}: {
+  label: string;
+  value: string;
+  helper: string;
+  tone: MvpBoardCard['tone'];
+}) {
+  return (
+    <div className="rounded-md border border-border-subtle bg-bg-subtle px-3 py-2">
+      <div className="text-xs text-text-muted">{label}</div>
+      <div className="mt-1 flex items-center justify-between gap-2">
+        <span className="text-sm font-medium text-text-main">{value}</span>
+        <Badge variant="outline" className={mvpToneClassName(tone)}>
+          {helper}
+        </Badge>
+      </div>
+    </div>
+  );
+}
+
+function MvpToneIcon({ tone }: { tone: MvpBoardCard['tone'] }) {
+  if (tone === 'ready') {
+    return <CheckCircle2 className="h-4 w-4 text-success" />;
+  }
+  if (tone === 'blocked') {
+    return <CircleAlert className="h-4 w-4 text-warning" />;
+  }
+  if (tone === 'running') {
+    return <CheckCircle2 className="h-4 w-4 text-primary" />;
+  }
+  return <Circle className="h-4 w-4 text-text-muted" />;
+}
+
+function mvpToneClassName(tone: MvpBoardCard['tone']) {
+  switch (tone) {
+    case 'ready':
+      return 'border-success/30 text-success';
+    case 'blocked':
+      return 'border-warning/30 text-warning';
+    case 'running':
+      return 'border-primary/30 text-primary';
+    default:
+      return 'border-border-subtle text-text-muted';
+  }
 }
 
 function ProjectScopedState({
@@ -1008,170 +1371,4 @@ function parseGitHubRepositoryURL(value: string) {
   } catch {
     return null;
   }
-}
-
-function ProjectContextReadiness({ context }: { context?: ProjectContextDTO }) {
-  const t = useT('dashboard.projectDelivery.readiness');
-  const { locale } = useLocale();
-  const readiness = projectContextReadiness(context, locale);
-  const repositories = context?.repository_contexts ?? [];
-
-  return (
-    <section className="mx-auto w-full max-w-7xl px-4 pt-6 md:px-8">
-      <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
-        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <div className="flex flex-wrap items-center gap-2">
-              <Badge variant="outline" className="border-primary/30 text-primary">
-                {t('projectScoped')}
-              </Badge>
-              <Badge
-                variant="outline"
-                className={
-                  readiness.hasPrimaryRepository
-                    ? 'border-success/30 text-success'
-                    : 'border-warning/30 text-warning'
-                }
-              >
-                {readiness.hasPrimaryRepository ? t('primaryReady') : t('primaryRequired')}
-              </Badge>
-            </div>
-            <h2 className="mt-3 text-base font-semibold text-text-main">
-              {context?.project.name ?? t('projectContext')}
-            </h2>
-            <p className="mt-1 max-w-3xl text-sm leading-6 text-text-muted">{readiness.summary}</p>
-          </div>
-          <div className="grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
-            <ReadinessMetric label={t('metrics.repos')} value={readiness.activeRepositoryCount} />
-            <ReadinessMetric
-              label={t('metrics.readOnly')}
-              value={readiness.readOnlyRepositoryCount}
-            />
-            <ReadinessMetric label={t('metrics.skills')} value={readiness.skillCount} />
-            <ReadinessMetric label={t('metrics.warnings')} value={readiness.warningCount} />
-          </div>
-        </div>
-        <div className="mt-4 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm">
-          <div className="font-medium text-text-main">{t('nextAction')}</div>
-          <div className="mt-1 text-text-muted">{readiness.nextAction}</div>
-        </div>
-        {readiness.guardrails.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {readiness.guardrails.map(guardrail => (
-              <Badge key={guardrail} variant="outline" className="text-text-muted">
-                {guardrail}
-              </Badge>
-            ))}
-          </div>
-        )}
-        {repositories.length > 0 && (
-          <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
-            {repositories.map(repositoryContext => (
-              <ProjectRepositoryCard
-                key={repositoryContext.repository.repository_id}
-                repositoryContext={repositoryContext}
-                locale={locale}
-                t={t}
-              />
-            ))}
-          </div>
-        )}
-      </div>
-    </section>
-  );
-}
-
-function ReadinessMetric({ label, value }: { label: string; value: number }) {
-  return (
-    <div className="rounded-lg border border-border-subtle bg-bg-subtle px-3 py-2">
-      <div className="text-sm font-semibold text-text-main">{value}</div>
-      <div className="mt-1 text-text-muted">{label}</div>
-    </div>
-  );
-}
-
-function ProjectRepositoryCard({
-  repositoryContext,
-  locale,
-  t,
-}: {
-  repositoryContext: ProjectRepositoryContextDTO;
-  locale: string;
-  t: (key: string, values?: Record<string, string | number | Date>) => string;
-}) {
-  const {
-    repository,
-    profile,
-    architecture_snapshot: architectureSnapshot,
-    skills,
-    warnings,
-  } = repositoryContext;
-  const repoWarnings = [
-    ...(warnings ?? []),
-    ...(repositoryContext.architecture_warnings ?? []),
-    ...(profile?.warnings ?? []),
-  ];
-
-  return (
-    <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0">
-          <div className="truncate text-sm font-medium text-text-main">
-            {repository.repository_id}
-          </div>
-          <div className="mt-1 text-xs text-text-muted">
-            {profile?.summary ?? t('repository.noProfile')}
-          </div>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Badge variant="outline">{t(`roles.${repository.role}`)}</Badge>
-          <Badge variant="outline">
-            {repository.active ? t('repository.active') : t('repository.inactive')}
-          </Badge>
-        </div>
-      </div>
-      <div className="mt-3 flex flex-wrap gap-2">
-        {(profile?.stack ?? []).slice(0, 5).map(stack => (
-          <Badge key={stack} variant="outline" className="text-text-muted">
-            {stack}
-          </Badge>
-        ))}
-      </div>
-      <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-text-muted">
-        <div>{t('repository.testCommands', { count: profile?.test_commands?.length ?? 0 })}</div>
-        <div>{t('repository.skills', { count: skills?.length ?? 0 })}</div>
-        <div>{t('repository.modules', { count: architectureSnapshot?.modules.length ?? 0 })}</div>
-        <div>
-          {t('repository.ciWorkflows', { count: architectureSnapshot?.ci_workflows.length ?? 0 })}
-        </div>
-      </div>
-      <div className="mt-3 rounded-md border border-border-subtle bg-bg-surface px-3 py-2 text-xs leading-5 text-text-muted">
-        <div className="flex flex-wrap items-center justify-between gap-2">
-          <span className="font-medium text-text-main">{t('repository.architecture')}</span>
-          <Badge
-            variant="outline"
-            className={
-              architectureSnapshot && !repositoryContext.architecture_stale
-                ? 'border-success/30 text-success'
-                : 'border-warning/30 text-warning'
-            }
-          >
-            {architectureSnapshot
-              ? repositoryContext.architecture_stale
-                ? t('repository.stale')
-                : t('repository.fresh')
-              : t('repository.missing')}
-          </Badge>
-        </div>
-        <div className="mt-1 truncate">
-          {architectureSnapshot?.commit_sha || t('repository.generateSnapshot')}
-        </div>
-      </div>
-      {repoWarnings.length > 0 && (
-        <div className="mt-3 rounded-md border border-warning/30 bg-warning-subtle px-3 py-2 text-xs leading-5 text-warning">
-          {localizeProjectContextText(repoWarnings[0], locale)}
-        </div>
-      )}
-    </div>
-  );
 }
