@@ -7,6 +7,7 @@ import (
 	"encoding/json"
 	"errors"
 	"fmt"
+	"math"
 	"regexp"
 	"sort"
 	"strings"
@@ -414,7 +415,7 @@ func (s *service) CompilePrompt(ctx context.Context, userID, prNodeID uint, req 
 	if err != nil {
 		return nil, err
 	}
-	skills, err := s.activeSkillsFor(ctx, bundle)
+	skills, err := s.promptSkillsFor(ctx, bundle)
 	if err != nil {
 		return nil, err
 	}
@@ -458,6 +459,28 @@ func (s *service) activeSkillsFor(ctx context.Context, bundle *domain.SpecForgeP
 		return nil, fmt.Errorf("load active repo skills: %w", err)
 	}
 	return filterSkillsForAgents(skills, "planning"), nil
+}
+
+func (s *service) promptSkillsFor(ctx context.Context, bundle *domain.SpecForgePlanBundle) ([]*domain.SpecForgeSkill, error) {
+	if bundle != nil && bundle.ProjectContext != nil {
+		skills := activeProjectSkills(bundle.ProjectContext)
+		if s.pipelineRepo != nil && bundle.ProjectContext.Project != nil {
+			projectSkills, err := s.pipelineRepo.ListActiveProjectSkillsByProjectID(ctx, bundle.ProjectContext.Project.ID)
+			if err != nil {
+				return nil, fmt.Errorf("load active project skills: %w", err)
+			}
+			skills = append(skills, skillsFromProjectSkills(projectSkills)...)
+		}
+		return uniqueSkills(filterSkillsForAgents(skills, "planning", "codex_cli")), nil
+	}
+	if s.skillRepo == nil || bundle == nil || bundle.Idea == nil || strings.TrimSpace(bundle.Idea.RepositoryID) == "" {
+		return []*domain.SpecForgeSkill{}, nil
+	}
+	skills, err := s.skillRepo.ListActiveSkillsByRepositoryID(ctx, bundle.Idea.RepositoryID)
+	if err != nil {
+		return nil, fmt.Errorf("load active repo skills: %w", err)
+	}
+	return uniqueSkills(filterSkillsForAgents(skills, "planning", "codex_cli")), nil
 }
 
 func (s *service) recordPlanSkillRuns(ctx context.Context, userID uint, bundle *domain.SpecForgePlanBundle) error {
@@ -713,12 +736,145 @@ func writeEvidenceRefs(b *strings.Builder, bundle *domain.SpecForgePlanBundle, n
 		writeEvidenceListRef(b, "repo_profile.test_commands", profile.TestCommands)
 		writeEvidenceListRef(b, "repo_profile.risk_areas", profile.RiskAreas)
 		writeEvidenceListRef(b, "repo_profile.warnings", profile.Warnings)
+		writeRepoWikiPlanningContextRefs(b, profile)
+	} else {
+		writeMissingRepoWikiPlanningContextRefs(b)
 	}
 	if bundle != nil && bundle.ProjectContext != nil {
 		writeProjectEvidenceRefs(b, bundle.ProjectContext)
 	}
 	writeSkillEvidenceRefs(b, skills)
 	b.WriteString("\n")
+}
+
+func writeMissingRepoWikiPlanningContextRefs(b *strings.Builder) {
+	b.WriteString("- repo_wiki.planning_context_state: blocked\n")
+	b.WriteString("- repo_wiki.planning_context_score: 0%\n")
+	b.WriteString("- repo_wiki.next_action: Complete Repository overview before asking experts to generate or approve the plan.\n")
+	b.WriteString("- repo_wiki.planning_context_sections:\n")
+	b.WriteString("  - Repository overview [blocked, evidence=0]: Repository profile is missing.\n")
+	b.WriteString("  - Structure and entrypoints [blocked, evidence=0]: Repository profile is missing.\n")
+	b.WriteString("  - Testing and quality [blocked, evidence=0]: Repository profile is missing.\n")
+}
+
+func writeRepoWikiPlanningContextRefs(b *strings.Builder, profile *domain.SpecForgeRepoProfile) {
+	if profile == nil {
+		return
+	}
+	sections := repoWikiPlanningSections(profile)
+	readyCount := 0
+	blockedCount := 0
+	for _, section := range sections {
+		if section.State == "ready" {
+			readyCount++
+		}
+		if section.State == "blocked" {
+			blockedCount++
+		}
+	}
+	state := "waiting"
+	if blockedCount > 0 {
+		state = "blocked"
+	} else if readyCount == len(sections) {
+		state = "ready"
+	}
+	score := 0
+	if len(sections) > 0 {
+		score = int(math.Round(float64(readyCount) / float64(len(sections)) * 100))
+	}
+
+	b.WriteString("- repo_wiki.planning_context_state: " + state + "\n")
+	b.WriteString("- repo_wiki.planning_context_score: " + fmt.Sprintf("%d%%", score) + "\n")
+	b.WriteString("- repo_wiki.next_action: " + compactPromptLine(repoWikiPlanningNextAction(sections)) + "\n")
+	b.WriteString("- repo_wiki.planning_context_sections:\n")
+	for _, section := range sections {
+		b.WriteString("  - " + section.Label + " [" + section.State + ", evidence=" + fmt.Sprint(section.EvidenceCount) + "]: " + compactPromptLine(section.Detail) + "\n")
+	}
+}
+
+type repoWikiPlanningSection struct {
+	Label         string
+	State         string
+	Detail        string
+	EvidenceCount int
+}
+
+func repoWikiPlanningSections(profile *domain.SpecForgeRepoProfile) []repoWikiPlanningSection {
+	summary := strings.TrimSpace(profile.Summary)
+	structureCount := len(normalizePlanList(profile.Stack)) + len(normalizePlanList(profile.AppStructure))
+	qualityCount := len(normalizePlanList(profile.TestCommands))
+	if strings.TrimSpace(profile.CIProvider) != "" {
+		qualityCount++
+	}
+	riskCount := len(normalizePlanList(profile.RiskAreas))
+	conventionCount := len(normalizePlanList(profile.CodingConventions))
+
+	return []repoWikiPlanningSection{
+		{
+			Label:         "Repository overview",
+			State:         planningSectionState(strings.TrimSpace(profile.RepositoryID) != "" && summary != "", true),
+			Detail:        "Product experts can understand the existing product boundary and available capabilities.",
+			EvidenceCount: countNonEmpty(profile.RepositoryID, summary),
+		},
+		{
+			Label:         "Structure and entrypoints",
+			State:         planningSectionState(structureCount > 0, true),
+			Detail:        "Architecture experts can constrain impact area, modules, and implementation entrypoints.",
+			EvidenceCount: structureCount,
+		},
+		{
+			Label:         "Testing and quality",
+			State:         planningSectionState(qualityCount > 0, true),
+			Detail:        "QA experts can attach commands and CI expectations to PR nodes.",
+			EvidenceCount: qualityCount,
+		},
+		{
+			Label:         "Risk areas",
+			State:         planningSectionState(riskCount > 0, false),
+			Detail:        "Architecture and security risks should enter plan approval and prompt constraints.",
+			EvidenceCount: riskCount,
+		},
+		{
+			Label:         "Engineering conventions",
+			State:         planningSectionState(conventionCount > 0, false),
+			Detail:        "Coding Agent can follow existing naming, folder, testing, and code style conventions.",
+			EvidenceCount: conventionCount,
+		},
+	}
+}
+
+func planningSectionState(hasEvidence bool, required bool) string {
+	if hasEvidence {
+		return "ready"
+	}
+	if required {
+		return "blocked"
+	}
+	return "waiting"
+}
+
+func repoWikiPlanningNextAction(sections []repoWikiPlanningSection) string {
+	for _, section := range sections {
+		if section.State == "blocked" {
+			return "Complete " + section.Label + " before asking experts to generate or approve the plan."
+		}
+	}
+	for _, section := range sections {
+		if section.State == "waiting" {
+			return "Planning can continue; add " + section.Label + " to improve prompt constraints."
+		}
+	}
+	return "Repo Wiki is ready as planning context for product, architecture, QA, and Coding Agent work."
+}
+
+func countNonEmpty(values ...string) int {
+	count := 0
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			count++
+		}
+	}
+	return count
 }
 
 func writeEvidenceListRef(b *strings.Builder, name string, values []string) {
@@ -797,15 +953,13 @@ func writeEvidenceListRefWithPrefix(b *strings.Builder, prefix, name string, val
 }
 
 func writeSkillEvidenceRefs(b *strings.Builder, skills []*domain.SpecForgeSkill) {
-	if len(skills) == 0 {
+	activeSkills := activePromptSkills(skills)
+	if len(activeSkills) == 0 {
 		b.WriteString("- repository_skills: none\n")
 		return
 	}
 	b.WriteString("- repository_skills:\n")
-	for _, skill := range skills {
-		if skill == nil || strings.TrimSpace(skill.Name) == "" {
-			continue
-		}
+	for _, skill := range activeSkills {
 		b.WriteString("  - " + strings.TrimSpace(skill.Name))
 		if strings.TrimSpace(skill.Description) != "" {
 			b.WriteString(": " + compactPromptLine(skill.Description))
@@ -1231,6 +1385,26 @@ func skillAppliesToAgents(skill *domain.SpecForgeSkill, agents ...string) bool {
 		}
 	}
 	return false
+}
+
+func uniqueSkills(skills []*domain.SpecForgeSkill) []*domain.SpecForgeSkill {
+	out := make([]*domain.SpecForgeSkill, 0, len(skills))
+	seen := map[string]struct{}{}
+	for _, skill := range skills {
+		if skill == nil {
+			continue
+		}
+		key := strings.TrimSpace(skill.RepositoryID) + ":" + strings.TrimSpace(skill.Name)
+		if skill.ID != 0 {
+			key = fmt.Sprintf("id:%d", skill.ID)
+		}
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, skill)
+	}
+	return out
 }
 
 func plannedSkillRuns(userID uint, requirementID, planID, projectID *uint, bundle *domain.SpecForgePlanBundle, skills []*domain.SpecForgeSkill, now time.Time) []*domain.SpecForgeSkillRun {

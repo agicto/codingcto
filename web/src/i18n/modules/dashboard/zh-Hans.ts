@@ -140,6 +140,52 @@ const messages = {
       active: '启用',
       inactive: '停用',
     },
+    flow: {
+      title: 'Skill 如何进入 Coding Agent Prompt',
+      description: 'Skill 不是资料库备注，而是会被专家和执行器读取的约束。保存时先选目标，再由计划和 prompt 编译按证据注入。',
+      scope: {
+        title: '定义约束',
+        description: '写清楚适用场景、规则、禁止事项和输出要求。',
+      },
+      expert: {
+        title: '分配专家',
+        description: '选择规划、Codex、评审或全部，控制 prompt 注入范围。',
+      },
+      prompt: {
+        title: '编译 Prompt',
+        description: '按仓库、PR 节点、executor 和 evidence refs 选择相关 skill。',
+      },
+      result: {
+        title: '执行回传',
+        description: 'Coding Agent 最终报告会包含 skills_applied、测试和风险。',
+      },
+    },
+    engine: {
+      title: 'Skill 引擎边界',
+      description: '当前产品不需要先做复杂 function calling。更稳定的顺序是先把技能编译进 Prompt，再由交付看板调度 Codex CLI。',
+      badge: 'MVP：Prompt 编译优先',
+      rule: '规则：Skill Registry 只管理可复用约束；Prompt Compiler 决定哪些约束进入任务；Runtime Dispatcher 只负责把最终任务交给本地 Codex CLI。',
+      status: {
+        required: '必须实现',
+        later: '后续增强',
+      },
+      registry: {
+        title: 'Skill Registry',
+        description: '保存团队经验、仓库规则、测试策略、PR 模板和专家约束，并按目标智能体启用。',
+      },
+      compiler: {
+        title: 'Prompt Compiler',
+        description: '根据需求、PRD、技术计划、PR DAG、repo profile、质量门和目标 executor 选择相关 Skill。',
+      },
+      dispatcher: {
+        title: 'Runtime Dispatcher',
+        description: '把已经编译好的任务交给在线 runtime，由 runtime 在本地仓库里启动 Codex CLI。',
+      },
+      functionCalling: {
+        title: 'Function Calling',
+        description: '适合后续做动态读仓库、请求更多上下文、CI 修复和多智能体工具调用；不是创建 Skill 的前置条件。',
+      },
+    },
     dialog: {
       title: '新建技能',
       description: '选择一种方式把技能添加到工作区。',
@@ -179,6 +225,7 @@ const messages = {
       description: '只有被选中的智能体会在 prompt 中收到这个 skill。',
       required: '请至少选择一个智能体。',
       all: '全部智能体',
+      allDescription: '产品、架构、UI/UX、QA 和执行 prompt 都可以使用。',
       summary: '{first} +{count}',
       planning: {
         title: '规划智能体',
@@ -220,17 +267,18 @@ const messages = {
   },
   agents: {
     title: '智能体',
-    description: '把本地 runtime 上报的 CLI 能力展开成可调度的 Coding Agent。',
+    description: '管理本地 runtime、CLI 能力、仓库绑定和 Skill 分配；调度在交付看板完成。',
     onlineCount: '{count} 个智能体检测到',
     cliCount: '{count} 个 runtime 在线',
     runtimeHelp: '在线的是 CodingCTO runtime，不是这些 CLI 常驻运行。Runtime 收到任务后，才会按需启动已接入调度的 CLI。',
     actions: {
+      openBoard: '打开交付板',
       manageSkills: '管理技能',
       openSkills: '打开技能',
     },
     list: {
-      title: 'Coding Agent 列表',
-      description: '来自在线 runtime 心跳；每个可用 CLI 展开为一个智能体。',
+      title: '执行能力',
+      description: '来自在线 runtime 心跳；这里只展示可被绑定和调度的 CLI 能力。',
     },
     states: {
       loading: '加载中...',
@@ -265,6 +313,73 @@ const messages = {
         },
       },
     },
+    operations: {
+      boundaryTitle: '智能体职责边界',
+      boundaryDescription: '这里管理执行能力、健康状态和 Skill 绑定；需求、Prompt、队列和 PR 交付在看板里调度。',
+      dispatchable: '可被看板调度',
+      needsBinding: '需要绑定',
+      unboundRepository: '未绑定仓库',
+      repository: '绑定仓库',
+      runtime: '运行时',
+      dispatchCapability: '调度能力',
+      codexExecutable: 'Codex 可执行',
+      detectOnly: '仅检测',
+      noCommandTitle: '为什么不在这里下命令',
+      readiness: {
+        repository: {
+          title: '仓库绑定',
+          ready: '当前执行器会面向 {repository} 工作。',
+          blocked: '先在仓库设置里绑定目标仓库，运行时才知道在哪个 checkout 执行。',
+        },
+        dispatch: {
+          title: 'Codex 调度',
+          ready: '该 runtime 已上报 codex，并且可由平台按任务启动。',
+          blocked: '目前只检测到 CLI，尚不能由交付板派发执行。',
+        },
+        skills: {
+          title: 'Skill 注入',
+          ready: '{count} 个 Skill 会在 Prompt 编译时进入约束和检查清单。',
+          waiting: '还没有绑定 Skill；可以先跑，但 Prompt 会缺少团队沉淀的约束。',
+        },
+      },
+      routes: {
+        binding: {
+          title: '绑定与技能',
+          description: '仓库、runtime 和 Skill 是执行前置条件；这里负责配置，不负责派发任务。',
+          repository: '先绑仓库',
+          skills: '调整 Skill',
+        },
+        delivery: {
+          title: '交付看板',
+          description: '从 idea、PRD、PR DAG 到 Codex 执行和 PR 交付的主流程。',
+          badge: '主流程',
+        },
+        intake: {
+          title: '新建需求',
+          description: '把需求先交给产品、架构、UI/UX、QA 专家生成计划，再决定是否调度。',
+          badge: '从这里开始',
+        },
+        review: {
+          title: '评审队列',
+          description: 'CI 失败、review patch、升级摘要和人工决策集中在这里处理。',
+          badge: '失败回收',
+        },
+      },
+      boundaries: {
+        agents: {
+          label: 'Agents 页',
+          value: '回答“有哪些执行器、是否在线、能不能被调度、绑定了哪些 Skill”。',
+        },
+        delivery: {
+          label: '交付看板',
+          value: '回答“要做什么、谁审批、哪个 PR 节点正在跑、测试和 PR 是否通过”。',
+        },
+        review: {
+          label: '评审看板',
+          value: '回答“哪里失败、谁要决策、是否需要 fix/review_patch、还能自动重试几次”。',
+        },
+      },
+    },
     status: {
       online: '在线',
       dispatchReady: 'Runtime 可调起',
@@ -280,7 +395,7 @@ const messages = {
       version: '版本',
     },
     tabs: {
-      activity: '动态',
+      activity: '边界',
       tasks: '任务',
       skills: '技能',
       environment: '环境变量',
@@ -681,6 +796,14 @@ const messages = {
         '请添加一个 .codingcto/e2e-smoke.md 文件，用中文记录本次试跑已完成：创建 GitHub Issue、生成计划、调用本地 Codex CLI、提交代码并创建 PR。请保持改动很小，只提交这个说明文件。',
       issueTitleLabel: '试跑 Issue 标题',
       issueBodyLabel: '试跑 Issue 内容',
+      impact: {
+        title: '正式试跑影响',
+        description:
+          '这不是只读验证。开始后会创建 GitHub Issue、生成并审批计划、派发 Codex 任务；成功后会提交代码、推送分支并尝试打开 PR。',
+        confirmTitle: '我确认要运行真实端到端试跑',
+        confirmDescription: '已理解该动作会修改目标仓库，并可能创建 Issue、分支和 PR。',
+        required: '请先确认正式试跑影响，再开始端到端试跑。',
+      },
       readiness: {
         title: '运行前检查',
         description: '检查 GitHub App 安装、仓库权限和访问令牌，确认能创建 Issue、推送分支并打开 PR。',
@@ -772,6 +895,12 @@ const messages = {
         readOnly: '只读',
         skills: '技能',
         warnings: '警告',
+      },
+      contract: {
+        title: '上下文契约',
+        execution: '执行仓库',
+        skills: '技能',
+        missingEvidence: '缺失证据',
       },
       roles: {
         primary: '主仓库',

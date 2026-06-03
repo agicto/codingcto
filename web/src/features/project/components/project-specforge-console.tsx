@@ -2,7 +2,7 @@
 
 import { FormEvent, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
@@ -10,6 +10,7 @@ import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
+import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
@@ -27,6 +28,20 @@ import {
   primaryRepositoryContext,
   projectContextReadiness,
 } from '@/features/project/project-context';
+import { projectSpecForgeHref } from '@/features/project/project-utils';
+import {
+  projectDeliverySetupChecklist,
+  type ProjectDeliverySetupItem,
+} from '@/features/project/project-delivery-setup';
+import {
+  githubReadinessRecoveryActions,
+  githubReadinessRecoveryDiagnostics,
+  githubReadinessRecoveryTargetFromRepositoryId,
+} from '@/features/project/github-readiness-recovery';
+import {
+  githubRepositoryIdentitySummary,
+  type GitHubRepositoryIdentitySummary,
+} from '@/features/project/github-repository-identity';
 import type {
   ProjectContextDTO,
   ProjectRepositoryContextDTO,
@@ -49,6 +64,7 @@ import {
 export function ProjectSpecForgeConsole() {
   const t = useT('dashboard.projectDelivery');
   const params = useParams<{ projectId: string }>();
+  const searchParams = useSearchParams();
   const projectId = Number(params.projectId);
   const validProjectId = Number.isFinite(projectId) ? projectId : 0;
   const contextQuery = useProjectContext(validProjectId);
@@ -56,6 +72,7 @@ export function ProjectSpecForgeConsole() {
   const selectedRepository = primaryRepositoryContext(context);
   const repositoryId = selectedRepository?.repository.repository_id;
   const hasProjectContext = Boolean(context);
+  const boardMode = Boolean(searchParams.get('board'));
 
   if (!validProjectId) {
     return (
@@ -90,7 +107,7 @@ export function ProjectSpecForgeConsole() {
 
   return (
     <div className="h-full overflow-y-auto overflow-x-hidden pb-28">
-      <ProjectContextReadiness context={loadedContext} />
+      {!boardMode ? <ProjectContextReadiness context={loadedContext} /> : null}
       {!repositoryId ? (
         <div className="mx-auto w-full max-w-7xl px-4 py-6 md:px-8">
           <Alert>
@@ -106,11 +123,13 @@ export function ProjectSpecForgeConsole() {
         </div>
       ) : (
         <>
-          <ProjectE2ERunPanel
-            projectId={validProjectId}
-            projectName={loadedContext.project.name}
-            repository={selectedRepository?.repository}
-          />
+          {!boardMode ? (
+            <ProjectE2ERunPanel
+              projectId={validProjectId}
+              projectName={loadedContext.project.name}
+              repository={selectedRepository?.repository}
+            />
+          ) : null}
           <SpecForgeWorkbench
             key={repositoryId}
             projectId={validProjectId}
@@ -318,11 +337,25 @@ function ProjectE2ERunPanel({
   const [issueBody, setIssueBody] = useState(t('defaultIssueBody'));
   const [steps, setSteps] = useState<FlowStep[]>([]);
   const [running, setRunning] = useState(false);
+  const [impactAcknowledged, setImpactAcknowledged] = useState(false);
+  const copy = (key: string, fallback: string) => {
+    const translated = t(key);
+    return translated.startsWith('dashboard.projectDelivery.e2e.') ? fallback : translated;
+  };
   const readiness = readinessQuery.data;
   const readinessBlockingChecks =
     readiness?.checks.filter(check => check.required && check.status !== 'ok') ?? [];
   const readinessChecking = Boolean(repository?.repository_id) && readinessQuery.isFetching && !readiness;
   const readinessBlocked = Boolean(readiness && !readiness.ready);
+  const setupChecklist = projectDeliverySetupChecklist({
+    hasRepository: Boolean(repository?.repository_id),
+    githubReady: readiness?.ready,
+    githubChecking: readinessChecking,
+    githubBlockingCheckCount: readinessBlockingChecks.length,
+    issueTitle,
+    issueBody,
+    impactAcknowledged,
+  });
 
   function setStep(next: FlowStep) {
     setSteps(current => {
@@ -355,6 +388,17 @@ function ProjectE2ERunPanel({
           title: t('readiness.title'),
           status: 'error',
           detail: readinessProblemSummary(readinessBlockingChecks, t('readiness.noChecks'), locale),
+        },
+      ]);
+      return;
+    }
+    if (!impactAcknowledged) {
+      setSteps([
+        {
+          id: 'impact',
+          title: copy('impact.title', '正式试跑影响'),
+          status: 'error',
+          detail: copy('impact.required', '请先确认正式试跑影响，再开始端到端试跑。'),
         },
       ]);
       return;
@@ -517,11 +561,24 @@ function ProjectE2ERunPanel({
                   {t('readiness.error')}
                 </div>
               ) : readiness ? (
-                <div className="mt-3 grid gap-2 md:grid-cols-2">
-                  {readiness.checks.map(check => (
-                    <ReadinessCheckRow key={check.key} check={check} />
-                  ))}
-                </div>
+                <>
+                  <div className="mt-3 grid gap-2 md:grid-cols-2">
+                    {readiness.checks.map(check => (
+                      <ReadinessCheckRow key={check.key} check={check} />
+                    ))}
+                  </div>
+                  {readinessBlocked ? (
+                    <ReadinessRecoveryActions
+                      checks={readinessBlockingChecks}
+                      repositoryId={repository?.repository_id ?? ''}
+                      githubOwner={readiness.github_owner}
+                      githubRepo={readiness.github_repo}
+                      returnTo={projectSpecForgeHref(projectId)}
+                      isChecking={readinessQuery.isFetching}
+                      onRefresh={() => readinessQuery.refetch()}
+                    />
+                  ) : null}
+                </>
               ) : (
                 <div className="mt-3 text-xs leading-5 text-text-muted">{t('readiness.checkingRepository')}</div>
               )}
@@ -543,15 +600,38 @@ function ProjectE2ERunPanel({
                 onChange={event => setIssueBody(event.target.value)}
               />
             </div>
+            <div className="rounded-lg border border-warning/30 bg-warning-subtle p-3">
+              <div className="text-sm font-medium text-warning">
+                {copy('impact.title', '正式试跑影响')}
+              </div>
+              <p className="mt-1 text-sm leading-6 text-warning">
+                {copy(
+                  'impact.description',
+                  '这不是只读验证。开始后会创建 GitHub Issue、生成并审批计划、派发 Codex 任务；成功后会提交代码、推送分支并尝试打开 PR。'
+                )}
+              </p>
+              <div className="mt-3 flex items-start justify-between gap-3 rounded-md bg-bg-surface px-3 py-2">
+                <div>
+                  <div className="text-sm font-medium text-text-main">
+                    {copy('impact.confirmTitle', '我确认要运行真实端到端试跑')}
+                  </div>
+                  <p className="mt-1 text-xs leading-5 text-text-muted">
+                    {copy(
+                      'impact.confirmDescription',
+                      '已理解该动作会修改目标仓库，并可能创建 Issue、分支和 PR。'
+                    )}
+                  </p>
+                </div>
+                <Switch checked={impactAcknowledged} onCheckedChange={setImpactAcknowledged} />
+              </div>
+            </div>
+            <ProjectDeliverySetupChecklistPanel summary={setupChecklist} />
             <Button
               type="button"
               onClick={runFlow}
               disabled={
                 running ||
-                readinessChecking ||
-                readinessBlocked ||
-                !repository?.repository_id ||
-                !issueTitle.trim()
+                !setupChecklist.canStart
               }
             >
               {running
@@ -648,6 +728,165 @@ function ReadinessCheckRow({ check }: { check: GitHubRepositoryReadinessCheckDTO
       </div>
     </div>
   );
+}
+
+function ReadinessRecoveryActions({
+  checks,
+  repositoryId,
+  githubOwner,
+  githubRepo,
+  returnTo,
+  isChecking,
+  onRefresh,
+}: {
+  checks: GitHubRepositoryReadinessCheckDTO[];
+  repositoryId: string;
+  githubOwner?: string;
+  githubRepo?: string;
+  returnTo: string;
+  isChecking: boolean;
+  onRefresh: () => void;
+}) {
+  const inferredRecoveryTarget = githubReadinessRecoveryTargetFromRepositoryId(repositoryId);
+  const recoveryTarget =
+    githubOwner && githubRepo
+      ? { owner: githubOwner, repo: githubRepo, repositoryId, returnTo }
+      : inferredRecoveryTarget
+        ? { ...inferredRecoveryTarget, returnTo }
+        : undefined;
+  const actions = githubReadinessRecoveryActions(
+    checks,
+    recoveryTarget
+  );
+  const diagnostics = githubReadinessRecoveryDiagnostics(checks);
+  const identity = githubRepositoryIdentitySummary({
+    repositoryId,
+    githubOwner,
+    githubRepo,
+  });
+
+  if (!actions.length) {
+    return null;
+  }
+
+  return (
+    <div className="mt-3 rounded-md border border-warning/30 bg-warning-subtle p-3">
+      <div className="text-sm font-medium text-warning">下一步处理</div>
+      <p className="mt-1 text-xs leading-5 text-warning">
+        真实端到端试跑需要 GitHub App 安装、仓库绑定和写权限都就绪。先完成下面的配置，再回到这里重新检查。
+      </p>
+      <ProjectRepositoryIdentityDiagnostic identity={identity} />
+      <div className="mt-3 grid gap-2 md:grid-cols-2">
+        {diagnostics.map(diagnostic => (
+          <div key={diagnostic.checkKey} className="rounded-md bg-bg-surface px-3 py-2">
+            <div className="text-xs font-medium leading-5 text-text-main">
+              {diagnostic.checkKey} - {diagnostic.setupStep}
+            </div>
+            <div className="mt-0.5 text-xs leading-5 text-text-muted">{diagnostic.detail}</div>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 grid gap-2 md:grid-cols-2">
+        {actions.map(action => (
+          <div key={action.id} className="rounded-md bg-bg-surface px-3 py-2">
+            <div className="text-xs font-medium leading-5 text-text-main">{action.label}</div>
+            <div className="mt-0.5 text-xs leading-5 text-text-muted">{action.description}</div>
+            <Button asChild variant="outline" size="sm" className="mt-2">
+              <Link href={action.href}>{action.label}</Link>
+            </Button>
+          </div>
+        ))}
+      </div>
+      <div className="mt-3 flex justify-end">
+        <Button type="button" variant="outline" size="sm" onClick={onRefresh} disabled={isChecking}>
+          {isChecking ? '检查中' : '重新检查'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function ProjectRepositoryIdentityDiagnostic({
+  identity,
+}: {
+  identity: GitHubRepositoryIdentitySummary;
+}) {
+  return (
+    <div className="mt-3 rounded-md bg-bg-surface px-3 py-2">
+      <div className="text-xs font-medium leading-5 text-text-main">{identity.headline}</div>
+      <div className="mt-0.5 text-xs leading-5 text-text-muted">{identity.detail}</div>
+    </div>
+  );
+}
+
+function ProjectDeliverySetupChecklistPanel({
+  summary,
+}: {
+  summary: ReturnType<typeof projectDeliverySetupChecklist>;
+}) {
+  return (
+    <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-text-main">真实试跑启动清单</div>
+          <p className="mt-1 text-xs leading-5 text-text-muted">
+            {summary.headline} {summary.nextAction}
+          </p>
+        </div>
+        <Badge
+          variant="outline"
+          className={summary.canStart ? 'border-success/30 text-success' : 'border-warning/30 text-warning'}
+        >
+          {summary.readyCount}/{summary.totalCount} 就绪
+        </Badge>
+      </div>
+      <div className="mt-3 grid gap-2 md:grid-cols-2">
+        {summary.items.map(item => (
+          <ProjectDeliverySetupChecklistRow key={item.id} item={item} />
+        ))}
+      </div>
+    </div>
+  );
+}
+
+function ProjectDeliverySetupChecklistRow({
+  item,
+}: {
+  item: ProjectDeliverySetupItem;
+}) {
+  return (
+    <div className="rounded-md border border-border-subtle bg-bg-surface px-3 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-xs font-medium leading-5 text-text-main">{item.label}</div>
+        <Badge variant="outline" className={projectDeliverySetupStateClassName(item.state)}>
+          {projectDeliverySetupStateLabel(item.state)}
+        </Badge>
+      </div>
+      <div className="mt-1 text-xs leading-5 text-text-muted">{item.detail}</div>
+    </div>
+  );
+}
+
+function projectDeliverySetupStateLabel(state: ProjectDeliverySetupItem['state']) {
+  switch (state) {
+    case 'ready':
+      return '就绪';
+    case 'waiting':
+      return '检查中';
+    default:
+      return '阻塞';
+  }
+}
+
+function projectDeliverySetupStateClassName(state: ProjectDeliverySetupItem['state']) {
+  switch (state) {
+    case 'ready':
+      return 'border-success/30 text-success';
+    case 'waiting':
+      return 'border-primary/30 text-primary';
+    default:
+      return 'border-error/30 text-error';
+  }
 }
 
 function readinessProblemSummary(

@@ -27,6 +27,10 @@ import { Input } from '@/components/ui/input';
 import { Switch } from '@/components/ui/switch';
 import { env } from '@/config/env';
 import { ROUTES } from '@/constants/routes';
+import {
+  githubSetupChecklist,
+  type GitHubSetupChecklistItem,
+} from '@/features/project/github-setup-checklist';
 import { useT } from '@/i18n';
 import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
 import {
@@ -53,6 +57,8 @@ const defaultSettings: GitHubSettings = {
   coAuthoredByTrailer: true,
   issuePrAutoLink: true,
 };
+const defaultRepositoryURL = 'https://github.com/agicto/codingcto-key';
+const githubRecoveryStoragePrefix = 'codingcto.githubRecovery.';
 
 type PendingRepository = {
   repositoryId: string;
@@ -69,6 +75,24 @@ function errorMessage(error: unknown, fallback: string) {
   return fallback;
 }
 
+function parsedTargetRepositoryLabel(repositoryURL: string) {
+  const parsed = parseGitHubRepositoryURL(repositoryURL);
+  return parsed ? `${parsed.owner}/${parsed.repo}` : '';
+}
+
+function safeConsoleReturnPath(value: string) {
+  const trimmed = value.trim();
+  return trimmed.startsWith('/console/') ? trimmed : '';
+}
+
+function githubRecoveryStorageKey(workspaceId: string) {
+  return `${githubRecoveryStoragePrefix}${workspaceId.trim()}`;
+}
+
+function shellArg(value: string) {
+  return `'${value.replaceAll("'", "'\\''")}'`;
+}
+
 function repositoryIdFor(owner: string, repo: string) {
   return `github_${owner.trim()}__${repo.trim()}`;
 }
@@ -83,10 +107,20 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
   const searchParams = useSearchParams();
   const syncedInstallationReturnRef = useRef<string | null>(null);
   const stateWorkspaceId = searchParams.get('state')?.trim() || '';
+  const targetRepositoryURL = searchParams.get('repository_url')?.trim() || '';
+  const targetOwner = searchParams.get('owner')?.trim() || '';
+  const targetRepo = searchParams.get('repo')?.trim() || '';
+  const targetRepositoryId = searchParams.get('repository_id')?.trim() || '';
+  const returnTo = safeConsoleReturnPath(searchParams.get('return_to') || '');
   const [, setInstallationId] = useState(
     () => searchParams.get('installation_id')?.trim() || ''
   );
-  const [repositoryURL, setRepositoryURL] = useState('https://github.com/agicto/codingcto-key');
+  const [repositoryURL, setRepositoryURL] = useState(
+    () =>
+      targetRepositoryURL ||
+      (targetOwner && targetRepo ? `https://github.com/${targetOwner}/${targetRepo}` : '') ||
+      defaultRepositoryURL
+  );
   const [defaultBranch] = useState('main');
   const [pendingRepositories, setPendingRepositories] = useState<PendingRepository[]>([]);
   const [savedRepoId, setSavedRepoId] = useState('');
@@ -94,6 +128,30 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
   const [installEntry] = useState(
     env.NEXT_PUBLIC_GITHUB_APP_INSTALL_URL || env.NEXT_PUBLIC_GITHUB_APP_SLUG || ''
   );
+  const targetRepositoryLabel =
+    targetOwner && targetRepo
+      ? `${targetOwner}/${targetRepo}`
+      : targetRepositoryId || parsedTargetRepositoryLabel(targetRepositoryURL);
+  const targetQuery = useMemo(() => {
+    const params = new URLSearchParams();
+    if (targetOwner) {
+      params.set('owner', targetOwner);
+    }
+    if (targetRepo) {
+      params.set('repo', targetRepo);
+    }
+    if (targetRepositoryURL) {
+      params.set('repository_url', targetRepositoryURL);
+    }
+    if (targetRepositoryId) {
+      params.set('repository_id', targetRepositoryId);
+    }
+    if (returnTo) {
+      params.set('return_to', returnTo);
+    }
+    return params.toString();
+  }, [returnTo, targetOwner, targetRepo, targetRepositoryId, targetRepositoryURL]);
+  const repositorySettingsHref = `${ROUTES.CONSOLE.SETTINGS}?tab=repositories${targetQuery ? `&${targetQuery}` : ''}`;
 
   const {
     selectedWorkspaceId: workspaceId,
@@ -161,11 +219,23 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
     const state = encodeURIComponent(workspaceId.trim());
     return `https://github.com/apps/${slug}/installations/new?state=${state}`;
   }, [installEntry, workspaceId]);
+  const setupChecklist = githubSetupChecklist({
+    workspaceId,
+    enabled: settings.enabled,
+    installURL,
+    connectedRepositoryCount: connectedRepositories.length,
+  });
+  const rememberGitHubRecoveryContext = useCallback(() => {
+    if (!workspaceId.trim() || !targetQuery) {
+      return;
+    }
+    window.sessionStorage.setItem(githubRecoveryStorageKey(workspaceId), targetQuery);
+  }, [targetQuery, workspaceId]);
   const syncGitHubInstallation = useCallback(
     async (
       installationIdValue: string,
       workspaceIdValue: string,
-      options: { clearReturnParams?: boolean } = {}
+      options: { clearReturnParams?: boolean; recoveryQuery?: string } = {}
     ) => {
       if (!workspaceIdValue.trim()) {
         setMessage(t('messages.selectWorkspaceBeforeSync'));
@@ -189,7 +259,12 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
             : t('messages.syncedNoRepos')
         );
         if (options.clearReturnParams) {
-          router.replace(`${ROUTES.CONSOLE.SETTINGS}?tab=github`, { scroll: false });
+          const recoveryQuery = options.recoveryQuery?.trim();
+          router.replace(
+            `${ROUTES.CONSOLE.SETTINGS}?tab=github${recoveryQuery ? `&${recoveryQuery}` : ''}`,
+            { scroll: false }
+          );
+          window.sessionStorage.removeItem(githubRecoveryStorageKey(workspaceIdValue));
         }
         return true;
       } catch (error) {
@@ -209,6 +284,19 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
     if (!returnedInstallationId || !returnWorkspaceId) {
       return;
     }
+    const storedRecoveryQuery =
+      window.sessionStorage.getItem(githubRecoveryStorageKey(returnWorkspaceId)) || '';
+    if (!targetQuery && storedRecoveryQuery) {
+      const params = new URLSearchParams(storedRecoveryQuery);
+      params.set('tab', 'github');
+      params.set('installation_id', returnedInstallationId);
+      params.set('state', returnWorkspaceId);
+      if (setupAction) {
+        params.set('setup_action', setupAction);
+      }
+      router.replace(`${ROUTES.CONSOLE.SETTINGS}?${params.toString()}`, { scroll: false });
+      return;
+    }
     const syncKey = `${returnWorkspaceId}:${returnedInstallationId}:${setupAction || ''}`;
     if (syncedInstallationReturnRef.current === syncKey) {
       return;
@@ -217,10 +305,26 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
     const timeoutId = window.setTimeout(() => {
       void syncGitHubInstallation(returnedInstallationId, returnWorkspaceId, {
         clearReturnParams: true,
+        recoveryQuery: targetQuery || storedRecoveryQuery,
       });
     }, 0);
     return () => window.clearTimeout(timeoutId);
-  }, [searchParams, syncGitHubInstallation, workspaceId]);
+  }, [router, searchParams, syncGitHubInstallation, targetQuery, workspaceId]);
+
+  useEffect(() => {
+    if (!targetRepositoryURL && (!targetOwner || !targetRepo)) {
+      return;
+    }
+    const nextURL =
+      targetRepositoryURL || `https://github.com/${targetOwner}/${targetRepo}`;
+    const timeoutId = window.setTimeout(() => {
+      setRepositoryURL(current => {
+        const trimmed = current.trim();
+        return !trimmed || trimmed === defaultRepositoryURL ? nextURL : current;
+      });
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [targetOwner, targetRepo, targetRepositoryURL]);
 
   async function updateSetting<Key extends keyof GitHubSettings>(
     key: Key,
@@ -350,6 +454,15 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
           <div className="mb-3 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm leading-6 text-text-muted">
             {message}
           </div>
+        ) : null}
+
+        {targetRepositoryLabel ? (
+          <GitHubRecoveryTargetPanel
+            label={targetRepositoryLabel}
+            repositoryId={targetRepositoryId}
+            mode="repositories"
+            returnTo={returnTo}
+          />
         ) : null}
 
         <Card>
@@ -489,8 +602,38 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
         </div>
       ) : null}
 
+      {targetRepositoryLabel ? (
+        <GitHubRecoveryTargetPanel
+          label={targetRepositoryLabel}
+          repositoryId={targetRepositoryId}
+          mode="github"
+          returnTo={returnTo}
+        />
+      ) : null}
+
       {mode === 'github' ? (
         <>
+          <GitHubSetupChecklistPanel
+            summary={setupChecklist}
+            installURL={installURL}
+            enabled={settings.enabled}
+            isSaving={isSaving}
+            repositorySettingsHref={repositorySettingsHref}
+            targetOwner={targetOwner}
+            targetRepo={targetRepo}
+            targetRepositoryURL={targetRepositoryURL}
+            targetRepositoryId={targetRepositoryId}
+            returnTo={returnTo}
+            onBeforeInstall={rememberGitHubRecoveryContext}
+            onMissingInstall={() => {
+              setMessage(
+                workspaceId.trim()
+                  ? t('messages.installEntryRequired')
+                  : t('messages.selectWorkspaceBeforeInstall')
+              );
+            }}
+          />
+
           <Card>
             <CardContent className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
               <div className="flex gap-3">
@@ -531,7 +674,12 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
                 </div>
                 {installURL && workspaceId.trim() ? (
                   <Button asChild disabled={!settings.enabled}>
-                    <a href={installURL} target="_blank" rel="noreferrer">
+                    <a
+                      href={installURL}
+                      target="_blank"
+                      rel="noreferrer"
+                      onClick={rememberGitHubRecoveryContext}
+                    >
                       {t('actions.installApp')}
                     </a>
                   </Button>
@@ -598,6 +746,195 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
       ) : null}
     </div>
   );
+}
+
+function GitHubRecoveryTargetPanel({
+  label,
+  repositoryId,
+  mode,
+  returnTo,
+}: {
+  label: string;
+  repositoryId?: string;
+  mode: 'github' | 'repositories';
+  returnTo?: string;
+}) {
+  return (
+    <div className="rounded-lg border border-primary/20 bg-primary-subtle p-3">
+      <div className="text-sm font-medium text-text-main">正在修复目标仓库</div>
+      <p className="mt-1 text-sm leading-6 text-text-muted">
+        {label}
+        {repositoryId ? ` · ${repositoryId}` : ''}。{mode === 'github'
+          ? '先安装或同步 GitHub App，确认这个仓库出现在可访问仓库列表。'
+          : '把已同步的仓库保存并绑定到项目后，再回到交付页重新检查。'}
+      </p>
+      {returnTo ? (
+        <div className="mt-2">
+          <Button asChild variant="outline" size="sm">
+            <Link href={returnTo}>返回继续检查</Link>
+          </Button>
+        </div>
+      ) : null}
+    </div>
+  );
+}
+
+function GitHubSetupChecklistPanel({
+  summary,
+  installURL,
+  enabled,
+  isSaving,
+  repositorySettingsHref,
+  targetOwner,
+  targetRepo,
+  targetRepositoryURL,
+  targetRepositoryId,
+  returnTo,
+  onBeforeInstall,
+  onMissingInstall,
+}: {
+  summary: ReturnType<typeof githubSetupChecklist>;
+  installURL: string;
+  enabled: boolean;
+  isSaving: boolean;
+  repositorySettingsHref: string;
+  targetOwner: string;
+  targetRepo: string;
+  targetRepositoryURL: string;
+  targetRepositoryId: string;
+  returnTo: string;
+  onBeforeInstall: () => void;
+  onMissingInstall: () => void;
+}) {
+  const manifestOwner = targetOwner.trim() || 'user';
+  const manifestRepositoryURL =
+    targetRepositoryURL.trim() ||
+    (targetOwner.trim() && targetRepo.trim()
+      ? `https://github.com/${targetOwner.trim()}/${targetRepo.trim()}`
+      : '');
+  const manifestCommand = [
+    'node scripts/github-app-config.mjs manifest',
+    '--owner',
+    shellArg(manifestOwner),
+    '--name',
+    shellArg('CodingCTO Local'),
+    manifestRepositoryURL ? `--repository-url ${shellArg(manifestRepositoryURL)}` : '',
+    targetRepositoryId.trim() ? `--repository-id ${shellArg(targetRepositoryId.trim())}` : '',
+    returnTo.trim() ? `--return-to ${shellArg(returnTo.trim())}` : '',
+  ]
+    .filter(Boolean)
+    .join(' ');
+
+  return (
+    <section className="rounded-lg border border-border-subtle bg-bg-surface p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div>
+          <div className="text-sm font-medium text-text-main">GitHub App 恢复清单</div>
+          <p className="mt-1 text-sm leading-6 text-text-muted">
+            {summary.headline} {summary.nextAction}
+          </p>
+        </div>
+        <span
+          className={
+            summary.canRecoverReadiness
+              ? 'rounded-full border border-success/30 px-2 py-1 text-xs text-success'
+              : 'rounded-full border border-warning/30 px-2 py-1 text-xs text-warning'
+          }
+        >
+          {summary.readyCount}/{summary.totalCount} 就绪
+        </span>
+      </div>
+      <div className="mt-3 grid gap-2 md:grid-cols-2">
+        {summary.items.map(item => (
+          <GitHubSetupChecklistRow key={item.id} item={item} />
+        ))}
+      </div>
+      {!installURL ? (
+        <div className="mt-3 rounded-md border border-warning/30 bg-warning-subtle p-3">
+          <div className="text-sm font-medium text-text-main">本地开发配置</div>
+          <p className="mt-1 text-xs leading-5 text-text-muted">
+            当前缺少 GitHub App 安装入口。先在仓库根目录完成下面任一配置，然后重启 Web/API，
+            回到本页安装或重新同步 App。
+          </p>
+          <div className="mt-3 grid gap-2">
+            <LocalConfigCommand
+              label="创建新的本地 GitHub App"
+              command={manifestCommand}
+            />
+            <LocalConfigCommand
+              label="接入已有 GitHub App"
+              command="node scripts/github-app-config.mjs existing --app-id <id> --private-key-path <path> --slug <app-slug>"
+            />
+          </div>
+        </div>
+      ) : null}
+      <div className="mt-3 flex flex-wrap justify-end gap-2">
+        {installURL ? (
+          <Button asChild variant="outline" size="sm" disabled={!enabled || isSaving}>
+            <a href={installURL} target="_blank" rel="noreferrer" onClick={onBeforeInstall}>
+              安装或重新同步 GitHub App
+            </a>
+          </Button>
+        ) : (
+          <Button type="button" variant="outline" size="sm" onClick={onMissingInstall}>
+            安装或重新同步 GitHub App
+          </Button>
+        )}
+        <Button asChild size="sm">
+          <Link href={repositorySettingsHref}>
+            绑定已同步仓库
+          </Link>
+        </Button>
+      </div>
+    </section>
+  );
+}
+
+function LocalConfigCommand({ label, command }: { label: string; command: string }) {
+  return (
+    <div className="rounded-md border border-border-subtle bg-bg-surface p-2">
+      <div className="text-xs font-medium text-text-main">{label}</div>
+      <pre className="mt-1 overflow-x-auto rounded bg-bg-subtle px-2 py-1 text-xs leading-5 text-text-main">
+        <code>{command}</code>
+      </pre>
+    </div>
+  );
+}
+
+function GitHubSetupChecklistRow({ item }: { item: GitHubSetupChecklistItem }) {
+  return (
+    <div className="rounded-md border border-border-subtle bg-bg-subtle px-3 py-2">
+      <div className="flex items-start justify-between gap-2">
+        <div className="text-sm font-medium text-text-main">{item.label}</div>
+        <span className={githubSetupChecklistStateClassName(item.state)}>
+          {githubSetupChecklistStateLabel(item.state)}
+        </span>
+      </div>
+      <div className="mt-1 text-xs leading-5 text-text-muted">{item.detail}</div>
+    </div>
+  );
+}
+
+function githubSetupChecklistStateLabel(state: GitHubSetupChecklistItem['state']) {
+  switch (state) {
+    case 'ready':
+      return '就绪';
+    case 'waiting':
+      return '等待';
+    default:
+      return '阻塞';
+  }
+}
+
+function githubSetupChecklistStateClassName(state: GitHubSetupChecklistItem['state']) {
+  switch (state) {
+    case 'ready':
+      return 'text-xs font-medium text-success';
+    case 'waiting':
+      return 'text-xs font-medium text-primary';
+    default:
+      return 'text-xs font-medium text-warning';
+  }
 }
 
 function FeatureToggle({

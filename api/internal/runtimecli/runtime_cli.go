@@ -25,7 +25,7 @@ func Run(commandName, version string) int {
 	}
 
 	flags := flag.NewFlagSet(commandName, flag.ContinueOnError)
-	apiBaseURL := flags.String("api-base-url", envOrDefault("CODINGCTO_API_BASE_URL", "http://localhost:8025/v1"), "CodingCTO API base URL, including /v1")
+	apiBaseURL := flags.String("api-base-url", envOrDefault("CODINGCTO_API_BASE_URL", "http://localhost:2010/v1"), "CodingCTO API base URL, including /v1")
 	token := flags.String("token", os.Getenv("CODINGCTO_RUNTIME_TOKEN"), "Bearer token for runtime API access")
 	runtimeID := flags.String("runtime-id", envOrDefault("CODINGCTO_RUNTIME_ID", defaultRuntimeID()), "Stable runtime id")
 	repositoryID := flags.String("repository-id", os.Getenv("CODINGCTO_RUNTIME_REPOSITORY_ID"), "Optional repository id guard for claimed tasks")

@@ -5,16 +5,15 @@ const RECENTLY_LOST_MS = 5 * 60 * 1000;
 const STALE_MS = 24 * 60 * 60 * 1000;
 
 export function deriveRuntimeHealth(runtime: ExecutorRuntime, now: number): RuntimeHealth {
-  if (runtime.status === 'online') {
-    return 'online';
-  }
-
   const lastSeen = runtime.lastSeenAt ? new Date(runtime.lastSeenAt).getTime() : 0;
   if (!Number.isFinite(lastSeen) || lastSeen <= 0) {
-    return 'stale';
+    return runtime.status === 'online' ? 'recently_lost' : 'stale';
   }
 
   const offlineFor = now - lastSeen;
+  if (runtime.status === 'online' && offlineFor < RECENTLY_LOST_MS) {
+    return 'online';
+  }
   if (offlineFor < RECENTLY_LOST_MS) {
     return 'recently_lost';
   }

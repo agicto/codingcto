@@ -44,11 +44,13 @@ import { useAuthStore } from '@/features/auth/store/auth-store';
 import { useCreateWorkspace } from '@/features/project/hooks/use-projects';
 import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
 import {
+  projectDeliveryIntakeHref,
   projectIdFromConsolePathname,
-  projectRequirementNewHref,
+  projectSpecForgeHref,
   slugFromProjectName,
 } from '@/features/project/project-utils';
 import { useSpecForgeRuntimes } from '@/features/specforge/hooks/use-specforge';
+import { hasFreshCodexDispatchRuntime } from '@/features/specforge/runtime-dispatch-readiness';
 
 interface WorkspaceNavItem {
   title: string;
@@ -61,6 +63,7 @@ interface WorkspaceNavItem {
     | 'home'
     | 'projects'
     | 'codingcto'
+    | 'review'
     | 'agents'
     | 'skills'
     | 'github-settings'
@@ -77,28 +80,26 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const sidebarT = useT('dashboard.sidebar');
   const user = useAuthStore.use.user();
   const { mutate: logout, isPending: isLoggingOut } = useLogout();
+  const [runtimeNow] = useState(() => Date.now());
   const runtimesQuery = useSpecForgeRuntimes({ status: 'online', limit: 20 });
   const codexDispatchReady = useMemo(
-    () =>
-      (runtimesQuery.data?.runtimes ?? []).some(runtime => {
-        if (runtime.status !== 'online' || runtime.executor !== 'codex_cli') {
-          return false;
-        }
-        return (runtime.available_clis ?? []).some(
-          cli => cli.available && cli.command === 'codex'
-        );
-      }),
-    [runtimesQuery.data?.runtimes]
+    () => hasFreshCodexDispatchRuntime(runtimesQuery.data?.runtimes, runtimeNow),
+    [runtimeNow, runtimesQuery.data?.runtimes]
   );
   const currentProjectId = projectIdFromConsolePathname(pathname);
-  const newRequirementHref = currentProjectId
-    ? projectRequirementNewHref(currentProjectId)
+  const deliveryBaseHref = currentProjectId
+    ? projectSpecForgeHref(currentProjectId)
     : ROUTES.CONSOLE.SPECFORGE;
+  const deliveryBoardHref = `${deliveryBaseHref}?board=delivery`;
+  const reviewBoardHref = `${deliveryBaseHref}?board=review`;
+  const newRequirementHref = currentProjectId
+    ? projectDeliveryIntakeHref(currentProjectId)
+    : `${ROUTES.CONSOLE.SPECFORGE}?board=intake&new=requirement`;
 
   const deliveryNavItems: WorkspaceNavItem[] = [
     {
       title: sidebarT('items.delivery.title'),
-      href: ROUTES.CONSOLE.SPECFORGE,
+      href: deliveryBoardHref,
       icon: ListChecks,
       description: sidebarT('items.delivery.description'),
       badge: sidebarT('badges.live'),
@@ -124,11 +125,11 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const reviewNavItems: WorkspaceNavItem[] = [
     {
       title: sidebarT('items.review.title'),
-      href: ROUTES.CONSOLE.SPECFORGE,
+      href: reviewBoardHref,
       icon: Inbox,
       description: sidebarT('items.review.description'),
-      badge: sidebarT('badges.soon'),
-      disabled: true,
+      badge: sidebarT('badges.live'),
+      activeOn: 'review',
     },
   ];
 
@@ -189,18 +190,21 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
             items={deliveryNavItems}
             pathname={pathname}
             settingsTab={settingsTab}
+            board={searchParams.get('board')}
           />
           <SidebarSection
             title={sidebarT('groups.review')}
             items={reviewNavItems}
             pathname={pathname}
             settingsTab={settingsTab}
+            board={searchParams.get('board')}
           />
           <SidebarSection
             title={sidebarT('groups.platform')}
             items={platformNavItems}
             pathname={pathname}
             settingsTab={settingsTab}
+            board={searchParams.get('board')}
           />
         </div>
 
@@ -446,11 +450,13 @@ function SidebarSection({
   items,
   pathname,
   settingsTab,
+  board,
 }: {
   title: string;
   items: WorkspaceNavItem[];
   pathname: string;
   settingsTab: string;
+  board: string | null;
 }) {
   return (
     <div className="mt-4 first:mt-0">
@@ -462,6 +468,7 @@ function SidebarSection({
             {...item}
             pathname={pathname}
             settingsTab={settingsTab}
+            board={board}
           />
         ))}
       </nav>
@@ -480,6 +487,7 @@ function SidebarLink({
   activeOn,
   pathname,
   settingsTab,
+  board,
 }: {
   href: string;
   icon: LucideIcon;
@@ -491,10 +499,11 @@ function SidebarLink({
   activeOn?: WorkspaceNavItem['activeOn'];
   pathname: string;
   settingsTab: string;
+  board: string | null;
 }) {
   const text = label ?? title ?? '';
-  const active = !disabled && isSidebarItemActive({ href, activeOn }, pathname, settingsTab);
-  const showDescription = Boolean(active && description);
+  const active =
+    !disabled && isSidebarItemActive({ href, activeOn }, pathname, settingsTab, board);
   const content = (
     <>
       <span className="flex min-w-0 items-center gap-2">
@@ -546,7 +555,8 @@ function SidebarLink({
 function isSidebarItemActive(
   item: Pick<WorkspaceNavItem, 'href' | 'activeOn'>,
   pathname: string,
-  settingsTab: string
+  settingsTab: string,
+  board: string | null
 ) {
   if (item.activeOn === 'home') {
     return pathname === ROUTES.CONSOLE.HOME;
@@ -560,7 +570,16 @@ function isSidebarItemActive(
     );
   }
   if (item.activeOn === 'codingcto') {
-    return pathname.includes('/codingcto') || pathname.includes('/specforge');
+    return (
+      (pathname.includes('/codingcto') || pathname.includes('/specforge')) &&
+      board !== 'review'
+    );
+  }
+  if (item.activeOn === 'review') {
+    return (
+      (pathname.includes('/codingcto') || pathname.includes('/specforge')) &&
+      board === 'review'
+    );
   }
   if (item.activeOn === 'agents') {
     return pathname === ROUTES.CONSOLE.AGENTS || pathname.startsWith(`${ROUTES.CONSOLE.AGENTS}/`);

@@ -170,7 +170,11 @@ func (s *service) UpsertRepository(ctx context.Context, userID uint, req *Upsert
 		IsPrivate:            req.IsPrivate,
 		CreatedBy:            userID,
 	}
-	needsAccessValidation := repository.GitHubInstallationID > 0
+	installationAssociatedFromSync, err := s.associateRepositoryInstallationFromWorkspace(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
+	needsAccessValidation := repository.GitHubInstallationID > 0 && !installationAssociatedFromSync
 	if needsAccessValidation {
 		existing, err := s.repo.FindRepositoryByRepositoryID(ctx, repository.RepositoryID)
 		if err == nil && sameGitHubRepositoryAccess(existing, repository) {
@@ -188,6 +192,27 @@ func (s *service) UpsertRepository(ctx context.Context, userID uint, req *Upsert
 		return nil, fmt.Errorf("upsert repository: %w", err)
 	}
 	return repository, nil
+}
+
+func (s *service) associateRepositoryInstallationFromWorkspace(ctx context.Context, repository *domain.Repository) (bool, error) {
+	if repository == nil || repository.GitHubInstallationID > 0 || strings.TrimSpace(repository.WorkspaceID) == "" {
+		return false, nil
+	}
+	repositories, err := s.repo.ListRepositoriesByWorkspaceID(ctx, repository.WorkspaceID)
+	if err != nil {
+		return false, err
+	}
+	for _, candidate := range repositories {
+		if candidate == nil || candidate.GitHubInstallationID == 0 {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(candidate.GitHubOwner), strings.TrimSpace(repository.GitHubOwner)) &&
+			strings.EqualFold(strings.TrimSpace(candidate.GitHubRepo), strings.TrimSpace(repository.GitHubRepo)) {
+			repository.GitHubInstallationID = candidate.GitHubInstallationID
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func sameGitHubRepositoryAccess(existing, next *domain.Repository) bool {

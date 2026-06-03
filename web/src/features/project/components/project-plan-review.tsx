@@ -306,6 +306,8 @@ function ProjectPlanReview({
           plan={plan}
           node={selectedPromptNode}
           promptMode={promptMode}
+          selectedExecutor={selectedExecutor}
+          runtimeReady={executionReadiness.canDispatch}
           compiledPrompt={compiledPrompt}
           message={promptMessage}
           skillRuns={skillRuns}
@@ -415,6 +417,8 @@ function PromptPreviewWorkbench({
   plan,
   node,
   promptMode,
+  selectedExecutor,
+  runtimeReady,
   compiledPrompt,
   message,
   skillRuns,
@@ -427,6 +431,8 @@ function PromptPreviewWorkbench({
   plan: PlanBundle;
   node?: PRNode;
   promptMode: PromptMode;
+  selectedExecutor: string;
+  runtimeReady: boolean;
   compiledPrompt?: SpecForgeCompiledPromptDTO;
   message: string;
   skillRuns: SpecForgeSkillRunDTO[];
@@ -437,7 +443,14 @@ function PromptPreviewWorkbench({
   onCompilePrompt: () => void;
 }) {
   const [copyMessage, setCopyMessage] = useState('');
-  const previewText = node ? (compiledPrompt?.prompt_text ?? buildPromptPreview(plan, node)) : '';
+  const previewText = node
+    ? (compiledPrompt?.prompt_text ??
+      buildPromptPreview(plan, node, {
+        skillRuns,
+        executor: selectedExecutor,
+        runtimeReady,
+      }))
+    : '';
   const promptSource = compiledPrompt ? 'Compiled by API' : 'Grounded local preview';
   const skillNames = skillNamesFromRuns(skillRuns);
   const promptSkillRefs = skillEvidenceRefs(compiledPrompt?.evidence_refs);

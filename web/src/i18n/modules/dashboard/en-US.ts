@@ -142,6 +142,52 @@ const messages: DashboardMessages = {
       active: 'active',
       inactive: 'inactive',
     },
+    flow: {
+      title: 'How skills enter the Coding Agent prompt',
+      description: 'A skill is not a passive note. It is a constraint read by experts and executors. Pick targets first; planning and prompt compilation inject matching skills by evidence.',
+      scope: {
+        title: 'Define constraint',
+        description: 'Capture when it applies, rules, forbidden actions, and output expectations.',
+      },
+      expert: {
+        title: 'Assign expert',
+        description: 'Choose planning, Codex, review, or all to control prompt injection scope.',
+      },
+      prompt: {
+        title: 'Compile prompt',
+        description: 'Select related skills by repository, PR node, executor, and evidence refs.',
+      },
+      result: {
+        title: 'Return evidence',
+        description: 'The Coding Agent final report includes skills_applied, tests, and risk.',
+      },
+    },
+    engine: {
+      title: 'Skill engine boundary',
+      description: 'The product does not need complex function calling first. The stable path is to compile skills into prompts, then let the delivery board dispatch Codex CLI.',
+      badge: 'MVP: prompt compiler first',
+      rule: 'Rule: Skill Registry manages reusable constraints; Prompt Compiler decides which constraints enter the task; Runtime Dispatcher hands the final task to local Codex CLI.',
+      status: {
+        required: 'required',
+        later: 'later',
+      },
+      registry: {
+        title: 'Skill Registry',
+        description: 'Stores team knowledge, repository rules, test strategy, PR templates, and expert constraints with agent targeting.',
+      },
+      compiler: {
+        title: 'Prompt Compiler',
+        description: 'Selects relevant skills from requirement, PRD, technical plan, PR DAG, repo profile, quality gates, and target executor.',
+      },
+      dispatcher: {
+        title: 'Runtime Dispatcher',
+        description: 'Sends the compiled task to an online runtime, which starts Codex CLI inside the local repository.',
+      },
+      functionCalling: {
+        title: 'Function calling',
+        description: 'Useful later for dynamic repository reads, more-context requests, CI repair, and multi-agent tools. It is not required before creating skills.',
+      },
+    },
     dialog: {
       title: 'New skill',
       description: 'Choose how to add a skill to the workspace.',
@@ -181,6 +227,7 @@ const messages: DashboardMessages = {
       description: 'Only selected agents receive this skill in their prompts.',
       required: 'Select at least one agent.',
       all: 'All agents',
+      allDescription: 'Available to product, architecture, UI/UX, QA, and execution prompts.',
       summary: '{first} +{count}',
       planning: {
         title: 'Planning agent',
@@ -222,17 +269,18 @@ const messages: DashboardMessages = {
   },
   agents: {
     title: 'Agents',
-    description: 'Expand local runtime CLI capabilities into Coding Agents you can inspect and dispatch.',
+    description: 'Manage local runtimes, CLI capabilities, repository binding, and skill assignment. Scheduling happens on delivery boards.',
     onlineCount: '{count} agents detected',
     cliCount: '{count} runtimes online',
     runtimeHelp: 'The CodingCTO runtime is online; these CLIs are not long-running processes. The runtime launches a wired CLI only when it receives a task.',
     actions: {
+      openBoard: 'Open board',
       manageSkills: 'Manage skills',
       openSkills: 'Open skills',
     },
     list: {
-      title: 'Coding Agent list',
-      description: 'Detected from online runtime heartbeats; each available CLI is shown as one agent.',
+      title: 'Execution capabilities',
+      description: 'Detected from online runtime heartbeats. This page only shows CLI capabilities that can be bound and scheduled.',
     },
     states: {
       loading: 'Loading...',
@@ -267,6 +315,73 @@ const messages: DashboardMessages = {
         },
       },
     },
+    operations: {
+      boundaryTitle: 'Agent responsibility boundary',
+      boundaryDescription: 'This page manages execution capability, health, and Skill binding. Requirements, prompts, queues, and PR delivery are scheduled on boards.',
+      dispatchable: 'Board schedulable',
+      needsBinding: 'Binding required',
+      unboundRepository: 'No repository bound',
+      repository: 'Repository binding',
+      runtime: 'Runtime',
+      dispatchCapability: 'Dispatch capability',
+      codexExecutable: 'Codex executable',
+      detectOnly: 'Detection only',
+      noCommandTitle: 'Why commands are not entered here',
+      readiness: {
+        repository: {
+          title: 'Repository binding',
+          ready: 'This executor works against {repository}.',
+          blocked: 'Bind a target repository first so the runtime knows which checkout to execute in.',
+        },
+        dispatch: {
+          title: 'Codex dispatch',
+          ready: 'This runtime reported codex and can be launched by platform tasks.',
+          blocked: 'The CLI was detected, but the delivery board cannot dispatch it yet.',
+        },
+        skills: {
+          title: 'Skill injection',
+          ready: '{count} Skills will be compiled into prompt constraints and checklists.',
+          waiting: 'No Skills are bound yet. You can run without them, but prompts will miss team constraints.',
+        },
+      },
+      routes: {
+        binding: {
+          title: 'Binding and skills',
+          description: 'Repository, runtime, and Skills are execution prerequisites. Configure them here; dispatch work on boards.',
+          repository: 'Bind repository',
+          skills: 'Adjust Skills',
+        },
+        delivery: {
+          title: 'Delivery board',
+          description: 'The main flow from idea, PRD, and PR DAG to Codex execution and PR delivery.',
+          badge: 'Main flow',
+        },
+        intake: {
+          title: 'New requirement',
+          description: 'Start with product, architecture, UI/UX, and QA planning before deciding whether to dispatch.',
+          badge: 'Start here',
+        },
+        review: {
+          title: 'Review queue',
+          description: 'CI failures, review patches, escalation summaries, and manual decisions are handled here.',
+          badge: 'Recovery',
+        },
+      },
+      boundaries: {
+        agents: {
+          label: 'Agents page',
+          value: 'Answers which executors exist, whether they are online, whether they can be scheduled, and which Skills are bound.',
+        },
+        delivery: {
+          label: 'Delivery board',
+          value: 'Answers what to build, who approves it, which PR node is running, and whether tests and PR checks passed.',
+        },
+        review: {
+          label: 'Review board',
+          value: 'Answers what failed, who must decide, whether fix/review_patch is needed, and how many retries remain.',
+        },
+      },
+    },
     status: {
       online: 'online',
       dispatchReady: 'runtime can launch',
@@ -282,7 +397,7 @@ const messages: DashboardMessages = {
       version: 'Version',
     },
     tabs: {
-      activity: 'Activity',
+      activity: 'Boundary',
       tasks: 'Tasks',
       skills: 'Skills',
       environment: 'Environment',
@@ -687,6 +802,15 @@ const messages: DashboardMessages = {
         'Please add a .codingcto/e2e-smoke.md file that records this trial run completed GitHub Issue creation, plan generation, local Codex CLI execution, code commit, and PR creation. Keep the change very small and only submit this note file.',
       issueTitleLabel: 'Trial Issue title',
       issueBodyLabel: 'Trial Issue body',
+      impact: {
+        title: 'Formal trial impact',
+        description:
+          'This is not a read-only verification. Starting it creates a GitHub Issue, generates and approves a plan, and dispatches Codex tasks; on success it commits code, pushes a branch, and attempts to open a PR.',
+        confirmTitle: 'I confirm I want to run the real end-to-end trial',
+        confirmDescription:
+          'I understand this action can modify the target repository and may create an Issue, branch, and PR.',
+        required: 'Confirm the formal trial impact before starting the end-to-end trial.',
+      },
       readiness: {
         title: 'Preflight checks',
         description:
@@ -781,6 +905,12 @@ const messages: DashboardMessages = {
         readOnly: 'Read-only',
         skills: 'Skills',
         warnings: 'Warnings',
+      },
+      contract: {
+        title: 'Context contract',
+        execution: 'Execution repo',
+        skills: 'Skills',
+        missingEvidence: 'Missing evidence',
       },
       roles: {
         primary: 'Primary',

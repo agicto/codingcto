@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   Activity,
   BookOpen,
@@ -12,8 +13,6 @@ import {
   Copy,
   ExternalLink,
   KeyRound,
-  Play,
-  RefreshCw,
   type LucideIcon,
   Server,
   SlidersHorizontal,
@@ -32,21 +31,20 @@ import {
 } from '@/components/ui/select';
 import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { Textarea } from '@/components/ui/textarea';
 import { ROUTES, buildRoute } from '@/constants/routes';
 import {
-  useCodingCTODirectAgentTask,
-  useCodingCTODirectAgentTasks,
-  useCodingCTODirectTaskEvents,
   useCodingCTORuntimes,
   useCodingCTOSkills,
-  useCreateCodingCTODirectAgentTask,
   useGitHubRepositories,
   useUpsertCodingCTOSkill,
 } from '@/features/codingcto/hooks/use-codingcto';
+import {
+  useCreateDirectAgentTask,
+  useDirectAgentTasks,
+  useDirectTaskEvents,
+} from '@/features/specforge/hooks/use-specforge';
+import { summarizeTaskEvents } from '@/features/specforge/task-event-summary';
 import type {
-  CodingCTODirectAgentTaskDTO,
-  CodingCTODirectTaskEventDTO,
   CodingCTORuntimeDTO,
   CodingCTOSkillDTO,
 } from '@/features/codingcto/services/codingcto-service';
@@ -84,8 +82,22 @@ interface LocalRuntime {
 const ALL_AGENT_TARGETS = new Set(['*', 'all']);
 const ONLINE_RUNTIME_STALE_MS = 5 * 60 * 1000;
 
+function safeConsoleReturnHref(value: string | null) {
+  const trimmed = value?.trim() ?? '';
+  if (!trimmed.startsWith('/console/')) {
+    return undefined;
+  }
+  if (trimmed.startsWith('//') || trimmed.includes('://')) {
+    return undefined;
+  }
+  return trimmed;
+}
+
 export function AgentsConsole({ selectedAgentId }: AgentsConsoleProps) {
   const t = useT('dashboard.agents');
+  const searchParams = useSearchParams();
+  const returnHref = safeConsoleReturnHref(searchParams.get('return_to')) ?? ROUTES.CONSOLE.SPECFORGE;
+  const initialRepositoryId = searchParams.get('repository_id')?.trim() ?? '';
   const { selectedWorkspaceId } = useSelectedWorkspace();
   const runtimesQuery = useCodingCTORuntimes({ status: 'online', limit: 50 });
   const runtimes = useMemo(
@@ -116,7 +128,7 @@ export function AgentsConsole({ selectedAgentId }: AgentsConsoleProps) {
     () => repositoriesQuery.data?.repositories ?? [],
     [repositoriesQuery.data?.repositories]
   );
-  const [selectedRepoId, setSelectedRepoId] = useState('');
+  const [selectedRepoId, setSelectedRepoId] = useState(initialRepositoryId);
   const effectiveSelectedRepoId =
     selectedRepoId && repositories.some(repository => repository.repository_id === selectedRepoId)
       ? selectedRepoId
@@ -208,13 +220,22 @@ export function AgentsConsole({ selectedAgentId }: AgentsConsoleProps) {
             <p className="hidden truncate text-xs text-text-muted md:block">{t('description')}</p>
           </div>
         </div>
-        <Link
-          href={ROUTES.CONSOLE.SKILLS}
-          className="focus-ring inline-flex h-8 shrink-0 items-center gap-2 whitespace-nowrap rounded-[4px] border border-border-subtle bg-bg-surface px-3 text-xs font-medium text-text-main shadow-xs transition-colors hover:bg-bg-subtle hover:text-primary"
-        >
-          <BookOpen className="h-4 w-4" />
-          <span>{t('actions.manageSkills')}</span>
-        </Link>
+        <div className="flex shrink-0 items-center gap-2">
+          <Link
+            href={returnHref}
+            className="focus-ring inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-[4px] border border-border-subtle bg-bg-surface px-3 text-xs font-medium text-text-main shadow-xs transition-colors hover:bg-bg-subtle hover:text-primary"
+          >
+            <ClipboardList className="h-4 w-4" />
+            <span>{t('actions.openBoard')}</span>
+          </Link>
+          <Link
+            href={ROUTES.CONSOLE.SKILLS}
+            className="focus-ring inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-[4px] border border-border-subtle bg-bg-surface px-3 text-xs font-medium text-text-main shadow-xs transition-colors hover:bg-bg-subtle hover:text-primary"
+          >
+            <BookOpen className="h-4 w-4" />
+            <span>{t('actions.manageSkills')}</span>
+          </Link>
+        </div>
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-8">
@@ -286,6 +307,7 @@ export function AgentsConsole({ selectedAgentId }: AgentsConsoleProps) {
                 runtime={selectedAgent}
                 repositories={repositories}
                 selectedRepoId={effectiveSelectedRepoId}
+                returnHref={returnHref}
                 skills={skills}
                 assignedSkillCount={assignedSkills.length}
                 skillsLoading={skillsQuery.isLoading}
@@ -380,6 +402,7 @@ function AgentDetail({
   runtime,
   repositories,
   selectedRepoId,
+  returnHref,
   skills,
   assignedSkillCount,
   skillsLoading,
@@ -396,6 +419,7 @@ function AgentDetail({
     full_name?: string;
   }>;
   selectedRepoId: string;
+  returnHref: string;
   skills: CodingCTOSkillDTO[];
   assignedSkillCount: number;
   skillsLoading: boolean;
@@ -407,42 +431,6 @@ function AgentDetail({
   const selectedRepository = repositories.find(
     repository => repository.repository_id === selectedRepoId
   );
-  const [directPrompt, setDirectPrompt] = useState('');
-  const [selectedDirectTaskId, setSelectedDirectTaskId] = useState<number | undefined>();
-  useEffect(() => {
-    setSelectedDirectTaskId(undefined);
-    setDirectPrompt('');
-  }, [runtime.id]);
-  const directTasksQuery = useCodingCTODirectAgentTasks({
-    limit: 8,
-    repository_id: selectedRepoId,
-    executor: runtime.executor,
-    runtime_id: runtime.runtimeId,
-  });
-  const createDirectTask = useCreateCodingCTODirectAgentTask();
-  const recentDirectTasks = directTasksQuery.data?.tasks ?? [];
-  const selectedDirectTask =
-    directTasksQuery.data?.tasks.find(task => task.id === selectedDirectTaskId) ??
-    recentDirectTasks[0];
-  const liveDirectTaskQuery = useCodingCTODirectAgentTask(selectedDirectTask?.id);
-  const liveDirectTask = liveDirectTaskQuery.data ?? selectedDirectTask;
-  const directTaskEventsQuery = useCodingCTODirectTaskEvents(liveDirectTask?.id);
-  const directEvents = directTaskEventsQuery.data?.events ?? [];
-
-  async function submitDirectTask() {
-    const prompt = directPrompt.trim();
-    if (!prompt || !selectedRepoId || runtime.dispatchableCapabilityCount === 0) {
-      return;
-    }
-    const task = await createDirectTask.mutateAsync({
-      repository_id: selectedRepoId,
-      prompt,
-      executor: runtime.executor,
-      runtime_id: runtime.runtimeId,
-    });
-    setSelectedDirectTaskId(task.id);
-    setDirectPrompt('');
-  }
 
   return (
     <div className="flex h-full min-h-[620px] flex-col">
@@ -520,7 +508,7 @@ function AgentDetail({
 
       <Tabs
         key={runtime.id}
-        defaultValue={runtime.dispatchableCapabilityCount > 0 ? 'tasks' : 'activity'}
+        defaultValue="activity"
         className="min-h-0 flex-1 gap-0"
       >
         <div className="border-b border-border-subtle px-5 py-3">
@@ -528,10 +516,6 @@ function AgentDetail({
             <TabsTrigger value="activity" className="rounded-none border-0 shadow-none">
               <Activity className="h-4 w-4" />
               {t('tabs.activity')}
-            </TabsTrigger>
-            <TabsTrigger value="tasks" className="rounded-none border-0 shadow-none">
-              <ClipboardList className="h-4 w-4" />
-              {t('tabs.tasks')}
             </TabsTrigger>
             <TabsTrigger value="skills" className="rounded-none border-0 shadow-none">
               <BookOpen className="h-4 w-4" />
@@ -545,23 +529,11 @@ function AgentDetail({
         </div>
 
         <TabsContent value="activity" className="m-0 p-5">
-          <EmptyPanel title={t('activity.title')} description={t('activity.description')} />
-        </TabsContent>
-        <TabsContent value="tasks" className="m-0 p-5">
-          <DirectTaskPanel
-            prompt={directPrompt}
-            onPromptChange={setDirectPrompt}
+          <AgentOperationsPanel
             selectedRepository={selectedRepository}
             runtime={runtime}
-            tasks={recentDirectTasks}
-            selectedTask={liveDirectTask}
-            selectedTaskId={selectedDirectTaskId}
-            events={directEvents}
-            isCreating={createDirectTask.isPending}
-            isLoading={directTasksQuery.isLoading}
-            isRefreshing={liveDirectTaskQuery.isFetching || directTaskEventsQuery.isFetching}
-            onSubmit={submitDirectTask}
-            onSelectTask={setSelectedDirectTaskId}
+            assignedSkillCount={assignedSkillCount}
+            returnHref={returnHref}
             t={t}
           />
         </TabsContent>
@@ -653,24 +625,13 @@ function AgentDetail({
   );
 }
 
-function DirectTaskPanel({
-  prompt,
-  onPromptChange,
+function AgentOperationsPanel({
   selectedRepository,
   runtime,
-  tasks,
-  selectedTask,
-  selectedTaskId,
-  events,
-  isCreating,
-  isLoading,
-  isRefreshing,
-  onSubmit,
-  onSelectTask,
+  assignedSkillCount,
+  returnHref,
   t,
 }: {
-  prompt: string;
-  onPromptChange: (value: string) => void;
   selectedRepository?: {
     repository_id: string;
     github_owner?: string;
@@ -678,29 +639,18 @@ function DirectTaskPanel({
     full_name?: string;
   };
   runtime: LocalRuntime;
-  tasks: CodingCTODirectAgentTaskDTO[];
-  selectedTask?: CodingCTODirectAgentTaskDTO;
-  selectedTaskId?: number;
-  events: CodingCTODirectTaskEventDTO[];
-  isCreating: boolean;
-  isLoading: boolean;
-  isRefreshing: boolean;
-  onSubmit: () => void;
-  onSelectTask: (taskId: number) => void;
+  assignedSkillCount: number;
+  returnHref: string;
   t: ReturnType<typeof useT<'dashboard.agents'>>;
 }) {
-  const canDispatch =
-    Boolean(prompt.trim()) &&
-    Boolean(selectedRepository?.repository_id) &&
-    runtime.dispatchableCapabilityCount > 0 &&
-    !isCreating;
-  const dispatchBlockReason = !selectedRepository?.repository_id
-    ? t('tasks.blocked.noRepository')
-    : runtime.dispatchableCapabilityCount === 0
-      ? t('tasks.blocked.notDispatchable')
-      : !prompt.trim()
-        ? t('tasks.blocked.noPrompt')
-        : '';
+  const copy = (
+    key: string,
+    fallback: string,
+    values?: Record<string, string | number | Date>
+  ) => {
+    const translated = t(key, values);
+    return translated.startsWith('dashboard.agents.') ? fallback : translated;
+  };
   const repositoryLabel = selectedRepository
     ? selectedRepository.full_name ||
       `${selectedRepository.github_owner ?? ''}/${selectedRepository.github_repo ?? ''}`.replace(
@@ -708,212 +658,372 @@ function DirectTaskPanel({
         ''
       ) ||
       selectedRepository.repository_id
-    : t('tasks.noRepository');
+    : copy('operations.unboundRepository', '未绑定仓库');
+  const canDispatch = runtime.dispatchableCapabilityCount > 0 && Boolean(selectedRepository);
+  const deliveryHref = returnHref;
+  const intakeHref = `${ROUTES.CONSOLE.SPECFORGE}?board=intake&new=requirement`;
+  const reviewHref = `${ROUTES.CONSOLE.SPECFORGE}?board=review`;
+  const bindingHref = selectedRepository
+    ? ROUTES.CONSOLE.SKILLS
+    : `${ROUTES.CONSOLE.SETTINGS}?tab=repositories`;
+  const createSmokeTask = useCreateDirectAgentTask();
+  const directTasksQuery = useDirectAgentTasks(
+    selectedRepository
+      ? {
+          repository_id: selectedRepository.repository_id,
+          executor: runtime.executor,
+          runtime_id: runtime.runtimeId,
+          limit: 3,
+        }
+      : undefined,
+    {
+      enabled: Boolean(selectedRepository),
+      refetchInterval: 3000,
+    }
+  );
+  const directTasks = directTasksQuery.data?.tasks ?? [];
+  const latestSmokeTask = directTasks[0];
+  const directTaskEventsQuery = useDirectTaskEvents(latestSmokeTask?.id, undefined, {
+    enabled: Boolean(latestSmokeTask?.id),
+    refetchInterval:
+      latestSmokeTask &&
+      ['dispatched', 'running', 'queued'].includes(latestSmokeTask.status)
+        ? 3000
+        : false,
+  });
+  const directTaskEvents = directTaskEventsQuery.data?.events ?? [];
+  const smokeEventSummary = summarizeTaskEvents(directTaskEvents);
+
+  async function runSmokeTest() {
+    if (!selectedRepository) {
+      return;
+    }
+    await createSmokeTask.mutateAsync({
+      repository_id: selectedRepository.repository_id,
+      executor: runtime.executor,
+      runtime_id: runtime.runtimeId,
+      title: 'CodingCTO Codex smoke test',
+      prompt: [
+        'Run a read-only CodingCTO smoke test for this local runtime.',
+        'Do not modify files. Do not commit. Do not create a branch. Do not open a PR.',
+        'Inspect only enough to report the current working directory, repository identity if available, and whether the Codex CLI task execution path is working.',
+        'Return a concise result with: status, runtime_check, repository_check, and any blocker.',
+      ].join('\n'),
+    });
+  }
 
   return (
     <div className="grid gap-4">
       <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 className="text-sm font-medium text-text-main">{t('tasks.runTitle')}</h3>
-            <p className="mt-1 text-sm leading-6 text-text-muted">{t('tasks.runDescription')}</p>
+            <h3 className="text-sm font-medium text-text-main">
+              {copy('operations.boundaryTitle', '智能体职责边界')}
+            </h3>
+            <p className="mt-1 text-sm leading-6 text-text-muted">
+              {copy(
+                'operations.boundaryDescription',
+                '这里管理执行能力、健康状态和 Skill 绑定；需求、Prompt、队列和 PR 交付在看板里调度。'
+              )}
+            </p>
           </div>
           <Badge
             variant="outline"
-            className={runtime.dispatchableCapabilityCount > 0 ? 'text-success' : 'text-text-muted'}
+            className={canDispatch ? 'text-success' : 'text-warning'}
           >
-            {runtime.dispatchableCapabilityCount > 0
-              ? t('status.dispatchReady')
-              : t('status.detectOnly')}
+            {canDispatch
+              ? copy('operations.dispatchable', '可被看板调度')
+              : copy('operations.needsBinding', '需要绑定')}
           </Badge>
         </div>
-        <div className="mt-3 grid gap-2 text-xs text-text-muted sm:grid-cols-2">
-          <InfoBlock label={t('tasks.targetRepository')} value={repositoryLabel} />
-          <InfoBlock label={t('fields.runtime')} value={runtime.runtimeId} />
-        </div>
-        <Textarea
-          className="mt-4 min-h-28"
-          value={prompt}
-          placeholder={t('tasks.promptPlaceholder')}
-          onChange={event => onPromptChange(event.target.value)}
-        />
-        <div className="mt-3 flex flex-wrap items-center justify-between gap-3">
-          <p className="text-xs leading-5 text-text-muted">
-            {dispatchBlockReason || t('tasks.promptHint')}
-          </p>
-          <Button disabled={!canDispatch} onClick={onSubmit}>
-            {isCreating ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            {isCreating ? t('tasks.dispatching') : t('tasks.dispatch')}
-          </Button>
+        <div className="mt-4 grid gap-2 sm:grid-cols-3">
+          <InfoBlock label={copy('operations.repository', '绑定仓库')} value={repositoryLabel} />
+          <InfoBlock label={copy('operations.runtime', '运行时')} value={runtime.runtimeId} />
+          <InfoBlock
+            label={copy('operations.dispatchCapability', '调度能力')}
+            value={
+              runtime.dispatchableCapabilityCount > 0
+                ? copy('operations.codexExecutable', 'Codex 可执行')
+                : copy('operations.detectOnly', '仅检测')
+            }
+          />
         </div>
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-[320px_minmax(0,1fr)]">
-        <div className="overflow-hidden rounded-lg border border-border-subtle">
-          <div className="border-b border-border-subtle bg-bg-subtle px-4 py-3">
-            <div className="text-sm font-medium text-text-main">{t('tasks.recentTitle')}</div>
-            <p className="mt-1 text-xs text-text-muted">{t('tasks.recentDescription')}</p>
+      <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div>
+            <h3 className="text-sm font-medium text-text-main">Codex 调度 Smoke Test</h3>
+            <p className="mt-1 text-sm leading-6 text-text-muted">
+              创建一个只读 direct task，验证平台能否让这个 runtime 领取任务并启动 Codex；不会修改文件、提交或创建 PR。
+            </p>
           </div>
-          {isLoading ? (
-            <div className="px-4 py-8 text-sm text-text-muted">{t('states.loading')}</div>
-          ) : tasks.length > 0 ? (
-            <div className="divide-y divide-border-subtle">
-              {tasks.map(task => (
-                <button
-                  key={task.id}
-                  type="button"
-                  className={cn(
-                    'block w-full px-4 py-3 text-left hover:bg-bg-subtle',
-                    (selectedTaskId ?? selectedTask?.id) === task.id && 'bg-bg-subtle'
-                  )}
-                  onClick={() => onSelectTask(task.id)}
-                >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm font-medium text-text-main">{task.title}</span>
-                    <TaskStatusBadge status={task.status} t={t} />
-                  </div>
-                  <div className="mt-1 truncate text-xs text-text-muted">
-                    #{task.id} · {task.executor}
-                  </div>
-                </button>
-              ))}
-            </div>
-          ) : (
-            <div className="px-4 py-8 text-sm leading-6 text-text-muted">
-              {t('tasks.emptyDescription')}
-            </div>
-          )}
+          <Button
+            type="button"
+            size="sm"
+            disabled={!canDispatch || createSmokeTask.isPending}
+            onClick={runSmokeTest}
+          >
+            {createSmokeTask.isPending ? '创建中' : '运行只读测试'}
+            <Terminal className="ml-1.5 h-4 w-4" />
+          </Button>
         </div>
-
-        <div className="overflow-hidden rounded-lg border border-border-subtle">
-          <div className="flex items-center justify-between gap-3 border-b border-border-subtle bg-bg-subtle px-4 py-3">
-            <div>
-              <div className="text-sm font-medium text-text-main">
-                {selectedTask ? selectedTask.title : t('tasks.noTaskTitle')}
-              </div>
-              <p className="mt-1 text-xs text-text-muted">
-                {selectedTask ? `#${selectedTask.id} · ${selectedTask.repository_id}` : t('tasks.noTaskDescription')}
-              </p>
+        <div className="mt-4 grid gap-2 sm:grid-cols-4">
+          <InfoBlock label="目标 runtime" value={runtime.runtimeId} />
+          <InfoBlock label="目标仓库" value={repositoryLabel} />
+          <InfoBlock
+            label="最近任务"
+            value={latestSmokeTask ? `#${latestSmokeTask.id}` : '暂无'}
+          />
+          <InfoBlock label="状态" value={latestSmokeTask?.status || '未创建'} />
+        </div>
+        <div className="mt-3 grid gap-2 sm:grid-cols-4">
+          <InfoBlock
+            label="Runtime claim"
+            value={smokeEventSummary.hasRuntimeClaim ? '有' : '无'}
+          />
+          <InfoBlock
+            label="执行结果"
+            value={smokeEventSummary.hasExecutorResult ? '有' : '无'}
+          />
+          <InfoBlock label="输出事件" value={String(smokeEventSummary.outputEventCount)} />
+          <InfoBlock label="最后事件" value={smokeEventSummary.lastEventLabel} />
+        </div>
+        {latestSmokeTask ? (
+          <div className="mt-3 rounded-md border border-border-subtle bg-bg-subtle p-3 text-xs leading-5 text-text-muted">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div className="font-medium text-text-main">{latestSmokeTask.title}</div>
+              <Badge
+                variant="outline"
+                className={
+                  smokeEventSummary.hasExecutorResult
+                    ? 'text-success'
+                    : directTaskEvents.length
+                      ? 'text-info'
+                      : ''
+                }
+              >
+                {smokeEventSummary.proofLabel}
+              </Badge>
             </div>
-            {selectedTask ? <TaskStatusBadge status={selectedTask.status} t={t} /> : null}
+            {latestSmokeTask.runtime_id ? <div>Runtime: {latestSmokeTask.runtime_id}</div> : null}
+            {latestSmokeTask.started_at ? <div>Started: {latestSmokeTask.started_at}</div> : null}
+            {latestSmokeTask.finished_at ? <div>Finished: {latestSmokeTask.finished_at}</div> : null}
+            {latestSmokeTask.output_log ? (
+              <div className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap">
+                {latestSmokeTask.output_log}
+              </div>
+            ) : null}
+            {latestSmokeTask.failure_reason ? (
+              <div className="mt-2 text-warning">{latestSmokeTask.failure_reason}</div>
+            ) : null}
           </div>
-          {selectedTask ? (
-            <div className="grid gap-4 p-4">
-              <div className="flex flex-wrap items-center gap-2 text-xs text-text-muted">
-                {isRefreshing ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : null}
-                <span>{formatRelativeTime(selectedTask.updated_at, t)}</span>
-                {selectedTask.runtime_id ? <span>· {selectedTask.runtime_id}</span> : null}
-                {typeof selectedTask.exit_code === 'number' ? (
-                  <span>· exit {selectedTask.exit_code}</span>
-                ) : null}
-              </div>
-              <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
-                <div className="text-xs font-medium uppercase text-text-muted">{t('tasks.promptLabel')}</div>
-                <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-text-main">
-                  {selectedTask.prompt}
-                </p>
-              </div>
-              <TaskEventLog events={events} selectedTask={selectedTask} t={t} />
-            </div>
-          ) : (
-            <div className="px-4 py-8 text-sm leading-6 text-text-muted">
-              {t('tasks.noTaskDescription')}
-            </div>
+        ) : null}
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-3">
+        <ReadinessBlock
+          state={selectedRepository ? 'ready' : 'blocked'}
+          title={copy('operations.readiness.repository.title', '仓库绑定')}
+          description={
+            selectedRepository
+              ? copy(
+                  'operations.readiness.repository.ready',
+                  `当前执行器会面向 ${repositoryLabel} 工作。`,
+                  { repository: repositoryLabel }
+                )
+              : copy(
+                  'operations.readiness.repository.blocked',
+                  '先在仓库设置里绑定目标仓库，运行时才知道在哪个 checkout 执行。'
+                )
+          }
+        />
+        <ReadinessBlock
+          state={runtime.dispatchableCapabilityCount > 0 ? 'ready' : 'blocked'}
+          title={copy('operations.readiness.dispatch.title', 'Codex 调度')}
+          description={
+            runtime.dispatchableCapabilityCount > 0
+              ? copy(
+                  'operations.readiness.dispatch.ready',
+                  '该 runtime 已上报 codex，并且可由平台按任务启动。'
+                )
+              : copy(
+                  'operations.readiness.dispatch.blocked',
+                  '目前只检测到 CLI，尚不能由交付板派发执行。'
+                )
+          }
+        />
+        <ReadinessBlock
+          state={assignedSkillCount > 0 ? 'ready' : 'waiting'}
+          title={copy('operations.readiness.skills.title', 'Skill 注入')}
+          description={
+            assignedSkillCount > 0
+              ? copy(
+                  'operations.readiness.skills.ready',
+                  `${assignedSkillCount} 个 Skill 会在 Prompt 编译时进入约束和检查清单。`,
+                  { count: assignedSkillCount }
+                )
+              : copy(
+                  'operations.readiness.skills.waiting',
+                  '还没有绑定 Skill；可以先跑，但 Prompt 会缺少团队沉淀的约束。'
+                )
+          }
+        />
+      </div>
+
+      <div className="grid gap-3 md:grid-cols-4">
+        <BoardRouteCard
+          title={copy('operations.routes.binding.title', '绑定与技能')}
+          description={copy(
+            'operations.routes.binding.description',
+            '仓库、runtime 和 Skill 是执行前置条件；这里负责配置，不负责派发任务。'
           )}
+          href={bindingHref}
+          badge={
+            selectedRepository
+              ? copy('operations.routes.binding.skills', '调整 Skill')
+              : copy('operations.routes.binding.repository', '先绑仓库')
+          }
+        />
+        <BoardRouteCard
+          title={copy('operations.routes.delivery.title', '交付看板')}
+          description={copy(
+            'operations.routes.delivery.description',
+            '从 idea、PRD、PR DAG 到 Codex 执行和 PR 交付的主流程。'
+          )}
+          href={deliveryHref}
+          badge={copy('operations.routes.delivery.badge', '主流程')}
+          primary
+        />
+        <BoardRouteCard
+          title={copy('operations.routes.intake.title', '新建需求')}
+          description={copy(
+            'operations.routes.intake.description',
+            '把需求先交给产品、架构、UI/UX、QA 专家生成计划，再决定是否调度。'
+          )}
+          href={intakeHref}
+          badge={copy('operations.routes.intake.badge', '从这里开始')}
+        />
+        <BoardRouteCard
+          title={copy('operations.routes.review.title', '评审队列')}
+          description={copy(
+            'operations.routes.review.description',
+            'CI 失败、review patch、升级摘要和人工决策集中在这里处理。'
+          )}
+          href={reviewHref}
+          badge={copy('operations.routes.review.badge', '失败回收')}
+        />
+      </div>
+
+      <div className="rounded-lg border border-border-subtle bg-bg-subtle p-4">
+        <div className="text-sm font-medium text-text-main">
+          {copy('operations.noCommandTitle', '为什么不在这里下命令')}
+        </div>
+        <div className="mt-3 grid gap-2 text-sm leading-6 text-text-muted">
+          <ProcessBoundaryLine
+            label={copy('operations.boundaries.agents.label', 'Agents 页')}
+            value={copy(
+              'operations.boundaries.agents.value',
+              '回答“有哪些执行器、是否在线、能不能被调度、绑定了哪些 Skill”。'
+            )}
+          />
+          <ProcessBoundaryLine
+            label={copy('operations.boundaries.delivery.label', '交付看板')}
+            value={copy(
+              'operations.boundaries.delivery.value',
+              '回答“要做什么、谁审批、哪个 PR 节点正在跑、测试和 PR 是否通过”。'
+            )}
+          />
+          <ProcessBoundaryLine
+            label={copy('operations.boundaries.review.label', '评审看板')}
+            value={copy(
+              'operations.boundaries.review.value',
+              '回答“哪里失败、谁要决策、是否需要 fix/review_patch、还能自动重试几次”。'
+            )}
+          />
         </div>
       </div>
     </div>
   );
 }
 
-function TaskStatusBadge({
-  status,
-  t,
+function ReadinessBlock({
+  state,
+  title,
+  description,
 }: {
-  status: string;
-  t: ReturnType<typeof useT<'dashboard.agents'>>;
+  state: 'ready' | 'waiting' | 'blocked';
+  title: string;
+  description: string;
 }) {
-  const normalized = status || 'unknown';
-  const tone =
-    normalized === 'completed'
-      ? 'text-success'
-      : normalized === 'failed' || normalized === 'cancelled'
-        ? 'text-error'
-        : normalized === 'running'
-          ? 'text-info'
-          : 'text-text-muted';
   return (
-    <Badge variant="outline" className={tone}>
-      {directTaskStatusLabel(normalized, t)}
-    </Badge>
+    <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
+      <div className="flex items-start gap-3">
+        <span
+          className={cn(
+            'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border',
+            state === 'ready' && 'border-success bg-success/10 text-success',
+            state === 'waiting' && 'border-warning bg-warning/10 text-warning',
+            state === 'blocked' && 'border-warning bg-warning/10 text-warning'
+          )}
+        >
+          {state === 'ready' ? (
+            <Check className="h-3.5 w-3.5" />
+          ) : (
+            <Circle className="h-2.5 w-2.5 fill-current" />
+          )}
+        </span>
+        <div className="min-w-0">
+          <div className="text-sm font-medium text-text-main">{title}</div>
+          <p className="mt-1 text-xs leading-5 text-text-muted">{description}</p>
+        </div>
+      </div>
+    </div>
   );
 }
 
-function directTaskStatusLabel(
-  status: string,
-  t: ReturnType<typeof useT<'dashboard.agents'>>
-) {
-  switch (status) {
-    case 'dispatched':
-      return t('tasks.status.dispatched');
-    case 'running':
-      return t('tasks.status.running');
-    case 'completed':
-      return t('tasks.status.completed');
-    case 'failed':
-      return t('tasks.status.failed');
-    case 'cancelled':
-      return t('tasks.status.cancelled');
-    default:
-      return t('tasks.status.unknown');
-  }
+function BoardRouteCard({
+  title,
+  description,
+  href,
+  badge,
+  primary = false,
+}: {
+  title: string;
+  description: string;
+  href: string;
+  badge: string;
+  primary?: boolean;
+}) {
+  return (
+    <Link
+      href={href}
+      className={cn(
+        'rounded-lg border border-border-subtle bg-bg-surface p-4 transition-colors hover:border-primary/40 hover:bg-bg-subtle',
+        primary && 'border-primary/40'
+      )}
+    >
+      <div className="flex items-start justify-between gap-3">
+        <ClipboardList className="h-5 w-5 shrink-0 text-primary" />
+        <Badge variant="outline" className={primary ? 'text-primary' : 'text-text-muted'}>
+          {badge}
+        </Badge>
+      </div>
+      <div className="mt-3 text-sm font-medium text-text-main">{title}</div>
+      <p className="mt-2 text-xs leading-5 text-text-muted">{description}</p>
+      <div className="mt-3 flex items-center gap-1 text-xs font-medium text-primary">
+        打开
+        <ExternalLink className="h-3.5 w-3.5" />
+      </div>
+    </Link>
+  );
 }
 
-function TaskEventLog({
-  events,
-  selectedTask,
-  t,
-}: {
-  events: CodingCTODirectTaskEventDTO[];
-  selectedTask: CodingCTODirectAgentTaskDTO;
-  t: ReturnType<typeof useT<'dashboard.agents'>>;
-}) {
-  const hasResult = selectedTask.output_log || selectedTask.error_log;
+function ProcessBoundaryLine({ label, value }: { label: string; value: string }) {
   return (
-    <div className="overflow-hidden rounded-md border border-border-subtle">
-      <div className="border-b border-border-subtle bg-bg-subtle px-3 py-2 text-xs font-medium uppercase text-text-muted">
-        {t('tasks.eventsTitle')}
-      </div>
-      {events.length > 0 ? (
-        <div className="max-h-72 divide-y divide-border-subtle overflow-y-auto">
-          {events.map(event => (
-            <div key={event.id} className="px-3 py-2">
-              <div className="flex items-center justify-between gap-2 text-xs text-text-muted">
-                <span>
-                  #{event.seq} · {event.type}
-                  {event.tool ? ` · ${event.tool}` : ''}
-                </span>
-                <span>{formatRelativeTime(event.created_at, t)}</span>
-              </div>
-              {event.content || event.output ? (
-                <pre className="mt-2 whitespace-pre-wrap break-words text-xs leading-5 text-text-main">
-                  {event.content || event.output}
-                </pre>
-              ) : null}
-            </div>
-          ))}
-        </div>
-      ) : (
-        <div className="px-3 py-8 text-sm text-text-muted">{t('tasks.noEvents')}</div>
-      )}
-      {hasResult ? (
-        <div className="border-t border-border-subtle bg-bg-surface p-3">
-          <div className="text-xs font-medium uppercase text-text-muted">{t('tasks.resultTitle')}</div>
-          <pre className="mt-2 max-h-80 overflow-y-auto whitespace-pre-wrap break-words text-xs leading-5 text-text-main">
-            {selectedTask.output_log || selectedTask.error_log}
-          </pre>
-        </div>
-      ) : null}
+    <div className="grid gap-1 rounded-md bg-bg-surface px-3 py-2 sm:grid-cols-[96px_minmax(0,1fr)]">
+      <span className="font-medium text-text-main">{label}</span>
+      <span>{value}</span>
     </div>
   );
 }
@@ -932,15 +1042,6 @@ function MetaRow({
       <Icon className="h-4 w-4 shrink-0" />
       <span className="shrink-0">{label}</span>
       <span className="truncate text-text-main">{value}</span>
-    </div>
-  );
-}
-
-function EmptyPanel({ title, description }: { title: string; description: string }) {
-  return (
-    <div className="rounded-lg border border-border-subtle px-4 py-8">
-      <div className="text-sm font-medium text-text-main">{title}</div>
-      <p className="mt-2 text-sm leading-6 text-text-muted">{description}</p>
     </div>
   );
 }

@@ -11,8 +11,17 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { ApiError } from '@/http/request';
 import { ProjectRepositoryBindPanel } from '@/features/project/components/project-context-panel';
+import {
+  githubReadinessRecoveryActions,
+  githubReadinessRecoveryDiagnostics,
+  githubReadinessRecoveryTargetFromRepositoryId,
+} from '@/features/project/github-readiness-recovery';
+import {
+  githubRepositoryIdentitySummary,
+  type GitHubRepositoryIdentitySummary,
+} from '@/features/project/github-repository-identity';
 import { projectKeys, useProjectContext } from '@/features/project/hooks/use-projects';
-import { projectContextHref } from '@/features/project/project-utils';
+import { projectContextHref, projectOverviewHref } from '@/features/project/project-utils';
 import {
   useGitHubRepositoryReadiness,
   useReindexRepoArchitecture,
@@ -176,6 +185,30 @@ function ProjectRepositoryMaterialRow({
     readiness?.checks.filter(check => check.required && check.status !== 'ok') ?? [];
   const readinessChecking = readinessQuery.isFetching && !readiness;
   const scanBlocked = Boolean(readiness && !readiness.ready);
+  const inferredRecoveryTarget = githubReadinessRecoveryTargetFromRepositoryId(
+    item.repository.repository_id
+  );
+  const recoveryTarget =
+    readiness?.github_owner && readiness.github_repo
+      ? {
+          owner: readiness.github_owner,
+          repo: readiness.github_repo,
+          repositoryId: item.repository.repository_id,
+          returnTo: projectOverviewHref(projectId),
+        }
+      : inferredRecoveryTarget
+        ? { ...inferredRecoveryTarget, returnTo: projectOverviewHref(projectId) }
+        : undefined;
+  const recoveryActions = githubReadinessRecoveryActions(
+    readinessBlockingChecks,
+    recoveryTarget
+  );
+  const recoveryDiagnostics = githubReadinessRecoveryDiagnostics(readinessBlockingChecks);
+  const identitySummary = githubRepositoryIdentitySummary({
+    repositoryId: item.repository.repository_id,
+    githubOwner: readiness?.github_owner,
+    githubRepo: readiness?.github_repo,
+  });
 
   async function handleScan() {
     if (scanBlocked || readinessChecking) {
@@ -249,9 +282,14 @@ function ProjectRepositoryMaterialRow({
         ) : null}
         {message ? <div className="mt-1 text-xs leading-5 text-text-muted">{message}</div> : null}
         {scanBlocked ? (
-          <div className="mt-2 rounded-md border border-warning/30 bg-warning-subtle px-3 py-2 text-xs leading-5 text-warning">
-            {readinessProblemSummary(readinessBlockingChecks)}
-          </div>
+          <RepositoryMaterialRecoveryPanel
+            summary={readinessProblemSummary(readinessBlockingChecks)}
+            actions={recoveryActions}
+            diagnostics={recoveryDiagnostics}
+            identity={identitySummary}
+            isChecking={readinessQuery.isFetching}
+            onRefresh={() => readinessQuery.refetch()}
+          />
         ) : null}
       </div>
       <Button
@@ -266,6 +304,75 @@ function ProjectRepositoryMaterialRow({
           className={reindexArchitecture.isPending ? 'ml-1.5 h-3.5 w-3.5 animate-spin' : 'ml-1.5 h-3.5 w-3.5'}
         />
       </Button>
+    </div>
+  );
+}
+
+function RepositoryMaterialRecoveryPanel({
+  summary,
+  actions,
+  diagnostics,
+  identity,
+  isChecking,
+  onRefresh,
+}: {
+  summary: string;
+  actions: ReturnType<typeof githubReadinessRecoveryActions>;
+  diagnostics: ReturnType<typeof githubReadinessRecoveryDiagnostics>;
+  identity: GitHubRepositoryIdentitySummary;
+  isChecking: boolean;
+  onRefresh: () => void;
+}) {
+  return (
+    <div className="mt-2 rounded-md border border-warning/30 bg-warning-subtle px-3 py-2">
+      <div className="text-xs font-medium leading-5 text-warning">GitHub setup required</div>
+      <div className="mt-1 text-xs leading-5 text-warning">{summary}</div>
+      <RepositoryIdentityDiagnostic identity={identity} />
+      {diagnostics.length > 0 ? (
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          {diagnostics.map(diagnostic => (
+            <div key={diagnostic.checkKey} className="rounded-md bg-bg-surface px-2.5 py-2">
+              <div className="text-xs font-medium leading-5 text-text-main">
+                {diagnostic.checkKey} - {diagnostic.setupStep}
+              </div>
+              <div className="mt-0.5 text-xs leading-5 text-text-muted">
+                {diagnostic.detail}
+              </div>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      {actions.length > 0 ? (
+        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+          {actions.map(action => (
+            <div key={action.id} className="rounded-md bg-bg-surface px-2.5 py-2">
+              <div className="text-xs font-medium leading-5 text-text-main">{action.label}</div>
+              <div className="mt-0.5 text-xs leading-5 text-text-muted">{action.description}</div>
+              <Button asChild variant="outline" size="sm" className="mt-2 h-7 text-xs">
+                <Link href={action.href}>{action.label}</Link>
+              </Button>
+            </div>
+          ))}
+        </div>
+      ) : null}
+      <div className="mt-2 flex justify-end">
+        <Button type="button" variant="outline" size="sm" className="h-7 text-xs" disabled={isChecking} onClick={onRefresh}>
+          {isChecking ? 'Checking' : 'Recheck GitHub'}
+        </Button>
+      </div>
+    </div>
+  );
+}
+
+function RepositoryIdentityDiagnostic({
+  identity,
+}: {
+  identity: GitHubRepositoryIdentitySummary;
+}) {
+  return (
+    <div className="mt-2 rounded-md bg-bg-surface px-2.5 py-2">
+      <div className="text-xs font-medium leading-5 text-text-main">{identity.headline}</div>
+      <div className="mt-0.5 text-xs leading-5 text-text-muted">{identity.detail}</div>
     </div>
   );
 }

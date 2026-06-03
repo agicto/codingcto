@@ -6,6 +6,7 @@ import { activeFixAttemptPollMs, hasActiveFixAttempt } from '@/features/specforg
 import {
   type ApprovePlanPayload,
   type CompilePromptPayload,
+  type CreateDirectAgentTaskPayload,
   type CreateGitHubIssuePayload,
   type ClaimTaskPayload,
   type CreateFixAttemptFromCIPayload,
@@ -18,6 +19,7 @@ import {
   type InferRepoProfilePayload,
   type ListGitHubRepositoriesParams,
   type ListGitHubWebhookEventsParams,
+  type ListDirectAgentTasksParams,
   type ListSpecForgeRuntimesParams,
   type PreparePRNodeBranchPayload,
   type ReadPRNodeFailureLogPayload,
@@ -66,6 +68,17 @@ export const specForgeKeys = {
     [...specForgeKeys.all, 'escalation-summary', prNodeId] as const,
   runtimePendingTasks: (runtimeId: string, executor?: string) =>
     [...specForgeKeys.all, 'runtime-pending-tasks', runtimeId, executor ?? ''] as const,
+  directAgentTasks: (params?: ListDirectAgentTasksParams) =>
+    [
+      ...specForgeKeys.all,
+      'direct-agent-tasks',
+      params?.repository_id ?? '',
+      params?.executor ?? '',
+      params?.runtime_id ?? '',
+      params?.limit ?? 20,
+    ] as const,
+  directTaskEvents: (taskId: number, afterSeq?: number) =>
+    [...specForgeKeys.all, 'direct-task-events', taskId, afterSeq ?? 0] as const,
   runtimes: (params?: ListSpecForgeRuntimesParams) =>
     [
       ...specForgeKeys.all,
@@ -595,6 +608,56 @@ export function useClaimSpecForgeTask() {
   return useMutation({
     mutationFn: ({ runtimeId, payload }: { runtimeId: string; payload?: ClaimTaskPayload }) =>
       specForgeService.claimTask(runtimeId, payload),
+  });
+}
+
+export function useCreateDirectAgentTask() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: CreateDirectAgentTaskPayload) =>
+      specForgeService.createDirectAgentTask(payload),
+    onSuccess: task => {
+      queryClient.invalidateQueries({ queryKey: specForgeKeys.all });
+      queryClient.setQueryData(
+        specForgeKeys.directAgentTasks({
+          repository_id: task.repository_id,
+          executor: task.executor,
+          runtime_id: task.runtime_id,
+          limit: 5,
+        }),
+        (current: { tasks: Array<typeof task> } | undefined) => ({
+          tasks: [task, ...(current?.tasks ?? []).filter(item => item.id !== task.id)],
+        })
+      );
+    },
+  });
+}
+
+export function useDirectAgentTasks(
+  params?: ListDirectAgentTasksParams,
+  options?: { enabled?: boolean; refetchInterval?: number | false }
+) {
+  return useQuery({
+    queryKey: specForgeKeys.directAgentTasks(params),
+    queryFn: () => specForgeService.listDirectAgentTasks(params, silentQueryConfig),
+    enabled: options?.enabled ?? true,
+    refetchInterval: options?.refetchInterval,
+    meta: silentQueryMeta,
+  });
+}
+
+export function useDirectTaskEvents(
+  taskId?: number,
+  afterSeq?: number,
+  options?: { enabled?: boolean; refetchInterval?: number | false }
+) {
+  return useQuery({
+    queryKey: specForgeKeys.directTaskEvents(taskId ?? 0, afterSeq),
+    queryFn: () => specForgeService.listDirectTaskEvents(taskId ?? 0, afterSeq, silentQueryConfig),
+    enabled: Boolean(taskId) && (options?.enabled ?? true),
+    refetchInterval: options?.refetchInterval,
+    meta: silentQueryMeta,
   });
 }
 

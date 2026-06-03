@@ -198,6 +198,9 @@ func TestReindexArchitectureCreatesSnapshotAndUpdatesProfile(t *testing.T) {
 				"go.mod",
 				"cmd/server/main.go",
 				"api/internal/modules/user/service.go",
+				"api/internal/modules/execution/runtime_worker.go",
+				"api/internal/modules/githubintegration/webhook_handler.go",
+				"api/database/migrations/2026_05_25_000022_create_specforge_repo_architecture_snapshots_table.go",
 				"web/src/features/specforge/components/workbench.tsx",
 				"web/package.json",
 				"web/next.config.ts",
@@ -228,6 +231,10 @@ func TestReindexArchitectureCreatesSnapshotAndUpdatesProfile(t *testing.T) {
 	require.Contains(t, status.Snapshot.Modules, "web/src/features/specforge")
 	require.Contains(t, status.Snapshot.Entrypoints, "cmd/server/main.go")
 	require.Contains(t, status.Snapshot.CIWorkflows, ".github/workflows/ci.yml")
+	require.Contains(t, status.Snapshot.RiskAreas, "local agent execution and runtime safety")
+	require.Contains(t, status.Snapshot.RiskAreas, "GitHub integration and webhook delivery")
+	require.Contains(t, status.Snapshot.RiskAreas, "database migrations")
+	require.Contains(t, status.Snapshot.RiskAreas, "CI workflow and release gates")
 	require.Contains(t, status.Snapshot.Warnings, "GitHub tree response was truncated; architecture snapshot may miss files.")
 	require.Contains(t, status.Snapshot.Warnings, "CodingCTO filtered 1 sensitive repository paths from the architecture snapshot.")
 	require.NotContains(t, strings.Join(status.Snapshot.Modules, " "), ".env")
