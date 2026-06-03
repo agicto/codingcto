@@ -24,8 +24,8 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import type {
+  ExpertSkillInput,
   ExpertImplementationPlanResponse,
-  ExpertPlanStreamEvent,
   GenerateExpertImplementationPlanPayload,
 } from '@/features/experts/services/experts-service';
 import { expertsService } from '@/features/experts/services/experts-service';
@@ -34,18 +34,70 @@ import {
   useGitHubRepositories,
   useSpecForgeSkills,
 } from '@/features/specforge/hooks/use-specforge';
-import type {
-  GitHubRepositoryDTO,
-  SpecForgeSkillDTO,
-} from '@/features/specforge/services/specforge-service';
+import type { GitHubRepositoryDTO } from '@/features/specforge/services/specforge-service';
 import { cn } from '@/utils';
 
 type ExpertPlanMode = NonNullable<GenerateExpertImplementationPlanPayload['mode']>;
+type ExpertSkillOption = ExpertSkillInput & {
+  id: string | number;
+  source: 'project' | 'recommended';
+};
 
 const modeOptions: Array<{ id: ExpertPlanMode; label: string; hint: string }> = [
   { id: 'standard', label: '标准方案', hint: 'PRD、技术方案、里程碑' },
   { id: 'mvp', label: 'MVP', hint: '更小范围，优先可验证' },
   { id: 'deep', label: '深度方案', hint: '更多风险、边界和测试' },
+];
+
+const recommendedExpertSkills: ExpertSkillOption[] = [
+  {
+    id: 'recommended-product-requirements',
+    source: 'recommended',
+    name: 'Product Requirements Expert',
+    description: 'Clarifies users, scope, acceptance criteria, non-goals, and open questions.',
+    content: [
+      'Use this exact skill name in expert_skills: Product Requirements Expert.',
+      'Turn the idea into target users, concrete in-scope items, explicit out-of-scope items, acceptance criteria, and unanswered product questions.',
+      'Reject vague phases. Each milestone must be small enough to become one reviewable PR.',
+    ].join('\n'),
+    target_agents: ['planning'],
+  },
+  {
+    id: 'recommended-architecture-impact',
+    source: 'recommended',
+    name: 'Architecture Impact Expert',
+    description: 'Constrains module boundaries, API contracts, data flow, compatibility, and risks.',
+    content: [
+      'Use this exact skill name in expert_skills: Architecture Impact Expert.',
+      'Identify affected frontend features, API modules, data contracts, persistence changes, and integration boundaries.',
+      'Call out compatibility risks and migration or rollout constraints before implementation starts.',
+    ].join('\n'),
+    target_agents: ['planning'],
+  },
+  {
+    id: 'recommended-qa-verification',
+    source: 'recommended',
+    name: 'QA Verification Expert',
+    description: 'Defines test strategy, acceptance gates, failure modes, and manual checks.',
+    content: [
+      'Use this exact skill name in expert_skills: QA Verification Expert.',
+      'Attach verification to every milestone: unit or integration tests, type checks, lint, browser checks, and manual acceptance checks.',
+      'Include likely failure modes and the command or signal that proves each one is handled.',
+    ].join('\n'),
+    target_agents: ['planning'],
+  },
+  {
+    id: 'recommended-agent-handoff',
+    source: 'recommended',
+    name: 'Coding Agent Handoff Expert',
+    description: 'Makes the plan executable by a coding agent with files, commands, and review gates.',
+    content: [
+      'Use this exact skill name in expert_skills: Coding Agent Handoff Expert.',
+      'For each milestone, name likely files, expected edits, validation commands, and the review checklist a coding agent should follow.',
+      'Keep tasks sequenced so a coding agent can complete and commit them without broad refactors.',
+    ].join('\n'),
+    target_agents: ['planning'],
+  },
 ];
 
 export function ExpertsConsole() {
@@ -67,13 +119,31 @@ export function ExpertsConsole() {
   );
   const skillsQuery = useSpecForgeSkills(effectiveRepoId);
   const skills = useMemo(() => skillsQuery.data?.skills ?? [], [skillsQuery.data?.skills]);
-  const planningSkills = useMemo(
-    () => skills.filter(skill => skill.active && skillTargets(skill, 'planning')).slice(0, 12),
+  const projectPlanningSkills = useMemo<ExpertSkillOption[]>(
+    () =>
+      skills
+        .filter(skill => skill.active && skillTargets(skill, 'planning'))
+        .slice(0, 12)
+        .map(skill => ({
+          id: skill.id,
+          source: 'project',
+          name: skill.name,
+          description: skill.description,
+          content: skill.content,
+          target_agents: skill.target_agents,
+        })),
     [skills]
   );
+  const usingRecommendedSkills = !skillsQuery.isLoading && projectPlanningSkills.length === 0;
+  const availableSkills = useMemo(() => {
+    if (skillsQuery.isLoading) {
+      return [];
+    }
+    return usingRecommendedSkills ? recommendedExpertSkills : projectPlanningSkills;
+  }, [projectPlanningSkills, skillsQuery.isLoading, usingRecommendedSkills]);
   const defaultSelectedSkillIds = useMemo(
-    () => planningSkills.map(skill => String(skill.id)).slice(0, 8),
-    [planningSkills]
+    () => availableSkills.map(skill => String(skill.id)).slice(0, 8),
+    [availableSkills]
   );
   const [skillSelection, setSkillSelection] = useState<{
     repositoryId: string;
@@ -86,15 +156,15 @@ export function ExpertsConsole() {
   const [error, setError] = useState('');
   const [copyMessage, setCopyMessage] = useState('');
   const [isGenerating, setIsGenerating] = useState(false);
-  const [streamEvents, setStreamEvents] = useState<ExpertPlanStreamEvent[]>([]);
   const [streamBytes, setStreamBytes] = useState(0);
+  const [streamStatus, setStreamStatus] = useState('');
 
   const selectedSkillIds =
     skillSelection.touched && skillSelection.repositoryId === effectiveRepoId
       ? skillSelection.ids
       : defaultSelectedSkillIds;
 
-  const selectedSkills = planningSkills.filter(skill =>
+  const selectedSkills = availableSkills.filter(skill =>
     selectedSkillIds.includes(String(skill.id))
   );
 
@@ -103,6 +173,7 @@ export function ExpertsConsole() {
     setError('');
     setCopyMessage('');
     setStreamBytes(0);
+    setStreamStatus('');
     if (trimmedIdea.length < 10) {
       setError('Idea 至少需要 10 个字符。');
       return;
@@ -110,7 +181,7 @@ export function ExpertsConsole() {
 
     setIsGenerating(true);
     setResult(null);
-    setStreamEvents([{ type: 'status', message: '准备连接专家模型...' }]);
+    setStreamStatus('正在连接专家模型...');
     try {
       const response = await expertsService.generateImplementationPlanStream(
         {
@@ -124,15 +195,14 @@ export function ExpertsConsole() {
             if (typeof event.arguments_bytes === 'number') {
               setStreamBytes(event.arguments_bytes);
             }
-            if (event.type !== 'result') {
-              setStreamEvents(events => [...events.slice(-11), event]);
-            } else {
-              setStreamEvents(events => [
-                ...events.slice(-11),
-                { ...event, response: undefined },
-              ]);
+            if (event.type === 'progress') {
+              setStreamStatus('正在生成结构化方案...');
+            }
+            if (event.type === 'tool_call') {
+              setStreamStatus('正在组织最终 Markdown...');
             }
             if (event.type === 'result' && event.response) {
+              setStreamStatus('方案生成完成');
               setResult(event.response);
             }
           },
@@ -264,11 +334,11 @@ export function ExpertsConsole() {
                   <p className="mt-1 text-xs text-text-muted">
                     {skillsQuery.isLoading
                       ? '加载中...'
-                      : `${selectedSkills.length}/${planningSkills.length} 已选`}
+                      : `${selectedSkills.length}/${availableSkills.length} 已选`}
                   </p>
                 </div>
                 <Badge variant="outline" className="text-text-muted">
-                  planning
+                  {usingRecommendedSkills ? 'recommended' : 'planning'}
                 </Badge>
               </div>
 
@@ -279,12 +349,12 @@ export function ExpertsConsole() {
                     检查 skill...
                   </div>
                 ) : null}
-                {!skillsQuery.isLoading && planningSkills.length === 0 ? (
+                {usingRecommendedSkills ? (
                   <div className="rounded-md bg-bg-subtle p-3 text-xs leading-5 text-text-muted">
-                    没有 active planning skill。可以先生成，再去技能页补规则。
+                    当前仓库没有 active planning skill，先使用推荐专家 skill；项目 skill 保存后会优先使用项目规则。
                   </div>
                 ) : null}
-                {planningSkills.map(skill => (
+                {availableSkills.map(skill => (
                   <SkillToggleRow
                     key={skill.id}
                     skill={skill}
@@ -311,6 +381,7 @@ export function ExpertsConsole() {
                 <InlineField label="Model" value="DEEPSEEK_MODEL 或 deepseek-v4-pro" />
                 <InlineField label="Key" value="服务端 DEEPSEEK_API_KEY" />
                 <InlineField label="Tool" value="draft_implementation_plan" />
+                <InlineField label="Output" value="最终 Markdown" />
               </div>
             </section>
           </div>
@@ -355,14 +426,13 @@ export function ExpertsConsole() {
 
             {result ? (
               <div className="grid gap-4 p-4">
-                <ProcessTrace events={streamEvents} bytes={streamBytes} />
                 <PlanSummary result={result} />
                 <pre className="max-h-[calc(100vh-18rem)] overflow-auto whitespace-pre-wrap rounded-md bg-bg-subtle p-4 text-sm leading-6 text-text-main">
                   {result.markdown}
                 </pre>
               </div>
             ) : isGenerating ? (
-              <StreamingPlanState events={streamEvents} bytes={streamBytes} />
+              <StreamingPlanState status={streamStatus} bytes={streamBytes} />
             ) : (
               <div className="flex min-h-[520px] items-center justify-center p-8 text-center">
                 <div className="max-w-sm">
@@ -388,7 +458,7 @@ function SkillToggleRow({
   checked,
   onChange,
 }: {
-  skill: SpecForgeSkillDTO;
+  skill: ExpertSkillOption;
   checked: boolean;
   onChange: (checked: boolean) => void;
 }) {
@@ -404,6 +474,11 @@ function SkillToggleRow({
         <span className="flex items-center gap-2">
           <BookOpen className="h-3.5 w-3.5 text-text-muted" />
           <span className="truncate text-xs font-medium text-text-main">{skill.name}</span>
+          {skill.source === 'recommended' ? (
+            <Badge variant="outline" className="h-5 px-1.5 text-[10px] text-text-muted">
+              推荐
+            </Badge>
+          ) : null}
         </span>
         <span className="mt-1 line-clamp-2 block text-xs leading-5 text-text-muted">
           {skill.description || '无描述'}
@@ -442,7 +517,7 @@ function PlanSummary({ result }: { result: ExpertImplementationPlanResponse }) {
   );
 }
 
-function StreamingPlanState({ events, bytes }: { events: ExpertPlanStreamEvent[]; bytes: number }) {
+function StreamingPlanState({ status, bytes }: { status: string; bytes: number }) {
   return (
     <div className="grid gap-4 p-4">
       <div className="rounded-md border border-primary/20 bg-primary-subtle/30 p-4">
@@ -451,7 +526,7 @@ function StreamingPlanState({ events, bytes }: { events: ExpertPlanStreamEvent[]
           正在流式生成实施方案
         </div>
         <p className="mt-2 text-sm leading-6 text-text-muted">
-          DeepSeek 正在通过 function call 输出结构化方案，结果会在完成解析后自动显示。
+          {status || '完成后会直接显示最终 Markdown。'}
         </p>
         <div className="mt-3 h-2 overflow-hidden rounded-full bg-bg-subtle">
           <div
@@ -460,77 +535,11 @@ function StreamingPlanState({ events, bytes }: { events: ExpertPlanStreamEvent[]
           />
         </div>
         <div className="mt-2 text-xs text-text-muted">
-          已接收 {bytes.toLocaleString()} bytes 结构化参数
+          已接收 {bytes.toLocaleString()} bytes
         </div>
       </div>
-
-      <ProcessTrace events={events} bytes={bytes} />
     </div>
   );
-}
-
-function ProcessTrace({ events, bytes }: { events: ExpertPlanStreamEvent[]; bytes: number }) {
-  const visibleEvents =
-    events.length > 0 ? events : [{ type: 'status' as const, message: '等待模型返回...' }];
-
-  return (
-    <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
-      <div className="flex items-center justify-between gap-3">
-        <div className="text-xs font-medium text-text-main">思考与调用过程</div>
-        <div className="text-xs text-text-muted">{bytes.toLocaleString()} bytes</div>
-      </div>
-      <div className="mt-2 grid gap-2">
-        {visibleEvents.map((event, index) => (
-          <div
-            key={`${event.type}-${index}`}
-            className="flex items-start gap-2 text-xs leading-5 text-text-muted"
-          >
-            <span
-              className={cn(
-                'mt-1 h-1.5 w-1.5 shrink-0 rounded-full',
-                event.type === 'thinking'
-                  ? 'bg-success'
-                  : event.type === 'tool_call'
-                    ? 'bg-primary'
-                    : event.type === 'error'
-                      ? 'bg-error'
-                      : 'bg-text-muted'
-              )}
-            />
-            <span className="min-w-0">
-              <span className="font-medium text-text-main">{eventLabel(event)}</span>
-              {event.phase ? <span className="text-text-subtle"> / {event.phase}</span> : null}
-              <span>：{event.message || event.error || event.type}</span>
-              {event.tool_name ? (
-                <span className="text-text-subtle"> / tool={event.tool_name}</span>
-              ) : null}
-              {event.tool_call_id ? (
-                <span className="text-text-subtle"> / id={event.tool_call_id}</span>
-              ) : null}
-              {typeof event.arguments_bytes === 'number' ? (
-                <span className="text-text-subtle">
-                  {' '}
-                  / {event.arguments_bytes.toLocaleString()} bytes
-                </span>
-              ) : null}
-              {event.details?.length ? (
-                <span className="mt-1 block text-text-subtle">{event.details.join(' · ')}</span>
-              ) : null}
-            </span>
-          </div>
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function eventLabel(event: ExpertPlanStreamEvent) {
-  if (event.type === 'thinking') return '思考';
-  if (event.type === 'tool_call') return '调用';
-  if (event.type === 'progress') return '进度';
-  if (event.type === 'result') return '完成';
-  if (event.type === 'error') return '错误';
-  return '状态';
 }
 
 function InlineField({ label, value }: { label: string; value: string }) {
@@ -542,12 +551,12 @@ function InlineField({ label, value }: { label: string; value: string }) {
   );
 }
 
-function skillTargets(skill: SpecForgeSkillDTO, target: string) {
+function skillTargets(skill: { target_agents?: string[] | null }, target: string) {
   const targets = skill.target_agents ?? [];
   return targets.length === 0 || targets.includes('all') || targets.includes(target);
 }
 
-function skillPayload(skill: SpecForgeSkillDTO) {
+function skillPayload(skill: ExpertSkillOption) {
   return {
     id: skill.id,
     name: skill.name,
