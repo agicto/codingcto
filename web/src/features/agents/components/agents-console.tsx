@@ -2,85 +2,156 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
-import { useSearchParams } from 'next/navigation';
+import { useParams, useSearchParams } from 'next/navigation';
 import {
-  Activity,
-  BookOpen,
+  ArrowLeft,
   Bot,
-  Check,
+  CheckCircle2,
+  ChevronRight,
   Circle,
+  Clock3,
   ClipboardList,
-  Copy,
-  ExternalLink,
-  KeyRound,
-  type LucideIcon,
-  Server,
-  SlidersHorizontal,
-  Terminal,
+  Folder,
+  GitBranch,
+  Loader2,
+  Play,
+  RefreshCw,
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Label } from '@/components/ui/label';
+import { Input } from '@/components/ui/input';
+import { Textarea } from '@/components/ui/textarea';
+import { ROUTES } from '@/constants/routes';
 import {
-  Select,
-  SelectContent,
-  SelectItem,
-  SelectTrigger,
-  SelectValue,
-} from '@/components/ui/select';
-import { Switch } from '@/components/ui/switch';
-import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
-import { ROUTES, buildRoute } from '@/constants/routes';
-import {
+  useCodingCTODirectAgentTasks,
+  useCodingCTODirectTaskEvents,
   useCodingCTORuntimes,
-  useCodingCTOSkills,
-  useGitHubRepositories,
-  useUpsertCodingCTOSkill,
+  useCreateCodingCTODirectAgentTask,
 } from '@/features/codingcto/hooks/use-codingcto';
-import {
-  useCreateDirectAgentTask,
-  useDirectAgentTasks,
-  useDirectTaskEvents,
-} from '@/features/specforge/hooks/use-specforge';
-import { summarizeTaskEvents } from '@/features/specforge/task-event-summary';
 import type {
+  CodingCTODirectAgentTaskDTO,
+  CodingCTODirectTaskEventDTO,
   CodingCTORuntimeDTO,
-  CodingCTOSkillDTO,
 } from '@/features/codingcto/services/codingcto-service';
-import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
-import { useT } from '@/i18n';
 import { cn } from '@/utils';
 
-interface AgentsConsoleProps {
-  selectedAgentId?: string;
-}
-
-interface RuntimeCapability {
+interface CodingCliDefinition {
   id: string;
   label: string;
   command: string;
-  version?: string;
-  dispatchable: boolean;
+  executor?: string;
+  iconLabel: string;
+  iconClassName: string;
 }
 
-interface LocalRuntime {
-  id: string;
-  label: string;
-  description: string;
-  runtimeId: string;
-  hostname: string;
-  executor: string;
-  skillTarget: string;
-  capabilities: RuntimeCapability[];
-  dispatchableCapabilityCount: number;
-  status: string;
+interface CodingCliItem extends CodingCliDefinition {
+  detected: boolean;
+  dispatchable: boolean;
+  source: 'runtime' | 'local' | 'none';
   version?: string;
+  path?: string;
+  runtimeId?: string;
+  hostname?: string;
   lastSeenAt?: string;
 }
 
-const ALL_AGENT_TARGETS = new Set(['*', 'all']);
+interface LocalCliProbeItem {
+  id: string;
+  label: string;
+  command: string;
+  available: boolean;
+  path?: string;
+  version?: string;
+}
+
+interface CodexHistoryThread {
+  id: string;
+  title: string;
+  preview: string;
+  branch: string;
+  source: string;
+  updated_at: string;
+}
+
+interface CodexHistoryProject {
+  id: string;
+  name: string;
+  path: string;
+  current: boolean;
+  updated_at: string;
+  threads: CodexHistoryThread[];
+}
+
 const ONLINE_RUNTIME_STALE_MS = 5 * 60 * 1000;
+
+const codingCliDefinitions: CodingCliDefinition[] = [
+  {
+    id: 'codex_cli',
+    label: 'Codex CLI',
+    command: 'codex',
+    executor: 'codex_cli',
+    iconLabel: 'Cx',
+    iconClassName: 'bg-[#111827] text-white',
+  },
+  {
+    id: 'claude_code_cli',
+    label: 'Claude Code',
+    command: 'claude',
+    executor: 'claude_code_cli',
+    iconLabel: 'Cl',
+    iconClassName: 'bg-[#d97757] text-white',
+  },
+  {
+    id: 'github_copilot',
+    label: 'GitHub Copilot CLI',
+    command: 'copilot',
+    iconLabel: 'Co',
+    iconClassName: 'bg-[#24292f] text-white',
+  },
+  {
+    id: 'gemini',
+    label: 'Gemini CLI',
+    command: 'gemini',
+    iconLabel: 'G',
+    iconClassName: 'bg-[#4285f4] text-white',
+  },
+  {
+    id: 'opencode',
+    label: 'OpenCode',
+    command: 'opencode',
+    iconLabel: 'OC',
+    iconClassName: 'bg-[#2563eb] text-white',
+  },
+  {
+    id: 'openclaw',
+    label: 'OpenClaw',
+    command: 'openclaw',
+    iconLabel: 'Ow',
+    iconClassName: 'bg-[#7c3aed] text-white',
+  },
+  {
+    id: 'cursor_agent',
+    label: 'Cursor Agent',
+    command: 'cursor-agent',
+    iconLabel: 'Cu',
+    iconClassName: 'bg-[#0f172a] text-white',
+  },
+  {
+    id: 'kimi',
+    label: 'Kimi CLI',
+    command: 'kimi',
+    iconLabel: 'Ki',
+    iconClassName: 'bg-[#0891b2] text-white',
+  },
+  {
+    id: 'kiro',
+    label: 'Kiro CLI',
+    command: 'kiro',
+    iconLabel: 'Kr',
+    iconClassName: 'bg-[#be123c] text-white',
+  },
+];
 
 function safeConsoleReturnHref(value: string | null) {
   const trimmed = value?.trim() ?? '';
@@ -93,1049 +164,720 @@ function safeConsoleReturnHref(value: string | null) {
   return trimmed;
 }
 
-export function AgentsConsole({ selectedAgentId }: AgentsConsoleProps) {
-  const t = useT('dashboard.agents');
+function defaultRepositoryIdFromReturnHref(returnHref: string) {
+  const parts = returnHref.split('/').filter(Boolean);
+  const projectSlug = parts.at(-1);
+  if (projectSlug && projectSlug !== 'codingcto' && !/^\d+$/.test(projectSlug)) {
+    return projectSlug;
+  }
+  return 'codingcto';
+}
+
+export function AgentsConsole() {
   const searchParams = useSearchParams();
   const returnHref = safeConsoleReturnHref(searchParams.get('return_to')) ?? ROUTES.CONSOLE.SPECFORGE;
-  const initialRepositoryId = searchParams.get('repository_id')?.trim() ?? '';
-  const { selectedWorkspaceId } = useSelectedWorkspace();
   const runtimesQuery = useCodingCTORuntimes({ status: 'online', limit: 50 });
+  const refetchRuntimes = runtimesQuery.refetch;
   const runtimes = useMemo(
     () => runtimesQuery.data?.runtimes ?? [],
     [runtimesQuery.data?.runtimes]
   );
+  const [localCliProbe, setLocalCliProbe] = useState<LocalCliProbeItem[]>([]);
   const [runtimeNow, setRuntimeNow] = useState(() => Date.now());
+
   useEffect(() => {
     const timer = window.setInterval(() => setRuntimeNow(Date.now()), 60_000);
     return () => window.clearInterval(timer);
   }, []);
-  const localAgents = useMemo(
-    () => localAgentsFromRuntimes(runtimes, runtimeNow),
-    [runtimes, runtimeNow]
-  );
-  const onlineRuntimeCount = useMemo(
-    () => runtimes.filter(runtime => isFreshOnlineRuntime(runtime, runtimeNow)).length,
-    [runtimes, runtimeNow]
-  );
-  const availableCliCount = useMemo(
-    () => localAgents.length,
-    [localAgents]
-  );
-  const repositoriesQuery = useGitHubRepositories(
-    selectedWorkspaceId ? { workspace_id: selectedWorkspaceId } : undefined
-  );
-  const repositories = useMemo(
-    () => repositoriesQuery.data?.repositories ?? [],
-    [repositoriesQuery.data?.repositories]
-  );
-  const [selectedRepoId, setSelectedRepoId] = useState(initialRepositoryId);
-  const effectiveSelectedRepoId =
-    selectedRepoId && repositories.some(repository => repository.repository_id === selectedRepoId)
-      ? selectedRepoId
-      : repositories[0]?.repository_id ?? '';
-  const skillsQuery = useCodingCTOSkills(effectiveSelectedRepoId);
-  const upsertSkill = useUpsertCodingCTOSkill(effectiveSelectedRepoId);
-  const [setupCommand, setSetupCommand] = useState('');
-  const [setupCommandCopied, setSetupCommandCopied] = useState(false);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void refetchRuntimes();
+    }, 3_000);
+    return () => window.clearInterval(timer);
+  }, [refetchRuntimes]);
+
   useEffect(() => {
     let cancelled = false;
-    const query = effectiveSelectedRepoId
-      ? `?repository_id=${encodeURIComponent(effectiveSelectedRepoId)}`
-      : '';
-    fetch(`/api/runtime/setup${query}`)
+    fetch('/api/runtime/local-clis')
       .then(response => (response.ok ? response.json() : null))
-      .then((payload: { command?: string } | null) => {
+      .then((payload: { clis?: LocalCliProbeItem[] } | null) => {
         if (!cancelled) {
-          setSetupCommand(payload?.command ?? '');
+          setLocalCliProbe(payload?.clis ?? []);
         }
       })
       .catch(() => {
         if (!cancelled) {
-          setSetupCommand('');
+          setLocalCliProbe([]);
         }
       });
     return () => {
       cancelled = true;
     };
-  }, [effectiveSelectedRepoId]);
-  const selectedAgent = useMemo(
-    () =>
-      localAgents.find(agent => agent.id === selectedAgentId) ??
-      localAgents.find(agent => agent.id === decodeURIComponent(selectedAgentId ?? '')) ??
-      localAgents.find(agent => agent.runtimeId === decodeURIComponent(selectedAgentId ?? '')) ??
-      localAgents[0],
-    [localAgents, selectedAgentId]
+  }, []);
+
+  const cliItems = useMemo(
+    () => codingCliItemsFromRuntimes(runtimes, runtimeNow, localCliProbe),
+    [localCliProbe, runtimeNow, runtimes]
   );
-  const skills = skillsQuery.data?.skills ?? [];
-  const assignedSkills = selectedAgent
-    ? skills.filter(skill => skillAssignedToAgent(skill, selectedAgent.skillTarget))
-    : [];
-  const isLoading = runtimesQuery.isLoading || repositoriesQuery.isLoading;
-
-  async function setSkillAssigned(skill: CodingCTOSkillDTO, assigned: boolean) {
-    if (!selectedAgent || !effectiveSelectedRepoId) {
-      return;
-    }
-    const currentTargets = (skill.target_agents ?? []).filter(Boolean);
-    const currentWithoutAll = currentTargets.filter(
-      target => !ALL_AGENT_TARGETS.has(target.trim().toLowerCase())
-    );
-    const nextTargets = assigned
-      ? Array.from(new Set([...currentWithoutAll, selectedAgent.skillTarget]))
-      : currentWithoutAll.filter(target => target !== selectedAgent.skillTarget);
-
-    await upsertSkill.mutateAsync({
-      name: skill.name,
-      description: skill.description ?? '',
-      content: skill.content ?? '',
-      active: skill.active,
-      target_agents: nextTargets,
-    });
-  }
-
-  async function copySetupCommand() {
-    if (!setupCommand) {
-      return;
-    }
-    await navigator.clipboard.writeText(setupCommand);
-    setSetupCommandCopied(true);
-    window.setTimeout(() => setSetupCommandCopied(false), 1600);
-  }
+  const detectedCount = cliItems.filter(item => item.detected).length;
+  const dispatchableCount = cliItems.filter(item => item.dispatchable).length;
+  const onlineRuntimeCount = runtimes.filter(runtime => isFreshOnlineRuntime(runtime, runtimeNow)).length;
 
   return (
     <div className="flex h-full flex-col bg-bg-surface">
-      <header className="flex h-14 shrink-0 items-center justify-between border-b border-border-subtle px-6">
-        <div className="flex min-w-0 items-center gap-3">
-          <Bot className="h-5 w-5 shrink-0 text-text-subtle" />
-          <div className="min-w-0">
-            <div className="flex items-center gap-2">
-              <h1 className="truncate text-base font-semibold text-text-main">{t('title')}</h1>
-              <Badge variant="outline" className="hidden text-text-muted sm:inline-flex">
-                {t('onlineCount', { count: availableCliCount })}
-              </Badge>
-              <Badge variant="outline" className="hidden text-text-muted sm:inline-flex">
-                {t('cliCount', { count: onlineRuntimeCount })}
-              </Badge>
-            </div>
-            <p className="hidden truncate text-xs text-text-muted md:block">{t('description')}</p>
-          </div>
-        </div>
-        <div className="flex shrink-0 items-center gap-2">
-          <Link
-            href={returnHref}
-            className="focus-ring inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-[4px] border border-border-subtle bg-bg-surface px-3 text-xs font-medium text-text-main shadow-xs transition-colors hover:bg-bg-subtle hover:text-primary"
-          >
-            <ClipboardList className="h-4 w-4" />
-            <span>{t('actions.openBoard')}</span>
-          </Link>
-          <Link
-            href={ROUTES.CONSOLE.SKILLS}
-            className="focus-ring inline-flex h-8 items-center gap-2 whitespace-nowrap rounded-[4px] border border-border-subtle bg-bg-surface px-3 text-xs font-medium text-text-main shadow-xs transition-colors hover:bg-bg-subtle hover:text-primary"
-          >
-            <BookOpen className="h-4 w-4" />
-            <span>{t('actions.manageSkills')}</span>
-          </Link>
-        </div>
-      </header>
+      <AgentsHeader
+        title="Coding Agent"
+        subtitle="本机 CLI、runtime 心跳和调度入口。"
+        returnHref={returnHref}
+        badges={[
+          `${detectedCount} CLI`,
+          `${onlineRuntimeCount} runtime`,
+          `${dispatchableCount} 可调度`,
+        ]}
+      />
 
       <main className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-8">
-        <div className="mx-auto grid w-full max-w-7xl gap-4 lg:grid-cols-[360px_minmax(0,1fr)]">
-          <section className="overflow-hidden rounded-lg border border-border-subtle bg-bg-surface">
-            <div className="border-b border-border-subtle px-4 py-3">
-              <div className="text-sm font-medium text-text-main">{t('list.title')}</div>
-              <p className="mt-1 text-xs leading-5 text-text-muted">{t('list.description')}</p>
+        <section className="mx-auto w-full max-w-5xl">
+          <div className="mb-3 flex flex-wrap items-end justify-between gap-3">
+            <div>
+              <h2 className="text-sm font-semibold text-text-main">本地 Coding CLI</h2>
+              <p className="mt-1 text-xs leading-5 text-text-muted">
+                ccto daemon 上报 runtime；本机 fallback 只证明已安装，不代表能被平台调度。
+              </p>
             </div>
-            {isLoading ? (
-              <div className="p-4 text-sm text-text-muted">{t('states.loading')}</div>
-            ) : localAgents.length > 0 ? (
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={() => void runtimesQuery.refetch()}
+            >
+              <RefreshCw className="h-4 w-4" />
+              刷新
+            </Button>
+          </div>
+
+          <div className="overflow-hidden rounded-md border border-border-subtle bg-bg-surface">
+            <div className="grid grid-cols-[1fr_auto] gap-3 border-b border-border-subtle bg-bg-subtle px-3 py-2 text-xs font-medium text-text-muted md:grid-cols-[1.5fr_1fr_1fr_auto]">
+              <span>CLI</span>
+              <span className="hidden md:block">来源</span>
+              <span className="hidden md:block">Runtime</span>
+              <span>状态</span>
+            </div>
+            {runtimesQuery.isLoading ? (
+              <div className="flex items-center gap-2 px-3 py-6 text-sm text-text-muted">
+                <Loader2 className="h-4 w-4 animate-spin" />
+                正在检测本地 CLI...
+              </div>
+            ) : (
               <div className="divide-y divide-border-subtle">
-                {localAgents.map(runtime => (
-                  <Link
-                    key={runtime.id}
-                    href={buildRoute(ROUTES.CONSOLE.AGENT, { agentId: encodeURIComponent(runtime.id) })}
-                    className={cn(
-                      'flex items-start gap-3 px-4 py-4 hover:bg-bg-subtle',
-                      selectedAgent?.id === runtime.id && 'bg-bg-subtle'
-                    )}
-                  >
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-bg-subtle text-text-muted">
-                      <Terminal className="h-5 w-5" />
-                    </span>
-                    <span className="min-w-0 flex-1">
-                      <span className="flex items-center gap-2">
-                        <span className="truncate font-medium text-text-main">{runtime.label}</span>
-                        <Circle className="h-2 w-2 shrink-0 fill-success text-success" />
-                      </span>
-                      <span className="mt-1 block truncate text-sm text-text-muted">
-                        {runtime.description}
-                      </span>
-                      <span className="mt-2 flex flex-wrap gap-1.5">
-                        {runtime.capabilities.map(capability => (
-                          <Badge
-                            key={capability.id}
-                            variant="outline"
-                            className={cn(
-                              'max-w-full',
-                              capability.dispatchable ? 'text-success' : 'text-text-muted'
-                            )}
-                          >
-                            <span className="truncate">
-                              {capability.label}
-                              {capability.dispatchable ? ` · ${t('status.dispatchReady')}` : ''}
-                            </span>
-                          </Badge>
-                        ))}
-                      </span>
-                    </span>
-                  </Link>
+                {cliItems.map(item => (
+                  <CodingCliRow key={item.id} item={item} returnHref={returnHref} />
                 ))}
               </div>
-            ) : (
-              <div className="p-6 text-sm leading-6 text-text-muted">
-                <div className="flex h-11 w-11 items-center justify-center rounded-md bg-bg-subtle">
-                  <Server className="h-5 w-5" />
-                </div>
-                <h2 className="mt-4 font-medium text-text-main">{t('empty.title')}</h2>
-                <p className="mt-1">{t('empty.description')}</p>
-              </div>
             )}
-          </section>
+          </div>
 
-          <section className="min-h-[620px] overflow-hidden rounded-lg border border-border-subtle bg-bg-surface">
-            {selectedAgent ? (
-              <AgentDetail
-                runtime={selectedAgent}
-                repositories={repositories}
-                selectedRepoId={effectiveSelectedRepoId}
-                returnHref={returnHref}
-                skills={skills}
-                assignedSkillCount={assignedSkills.length}
-                skillsLoading={skillsQuery.isLoading}
-                saving={upsertSkill.isPending}
-                onRepositoryChange={setSelectedRepoId}
-                onSetSkillAssigned={setSkillAssigned}
-                t={t}
-              />
-            ) : (
-              <RuntimeSetupPanel
-                command={setupCommand}
-                copied={setupCommandCopied}
-                isLoading={isLoading}
-                hasRepository={Boolean(effectiveSelectedRepoId)}
-                onCopy={copySetupCommand}
-                t={t}
-              />
-            )}
-          </section>
-        </div>
+          <div className="mt-4 rounded-md border border-border-subtle bg-bg-subtle p-3">
+            <div className="text-xs font-medium text-text-main">调度协议</div>
+            <p className="mt-1 text-xs leading-5 text-text-muted">
+              ccto daemon 每 5-10 秒 heartbeat；API 发现 direct task 后返回 claim；
+              daemon 用对应 executor 调 CLI，并把事件和结果回写到 agent task。
+            </p>
+          </div>
+        </section>
       </main>
     </div>
   );
 }
 
-function RuntimeSetupPanel({
-  command,
-  copied,
-  isLoading,
-  hasRepository,
-  onCopy,
-  t,
-}: {
-  command: string;
-  copied: boolean;
-  isLoading: boolean;
-  hasRepository: boolean;
-  onCopy: () => void;
-  t: ReturnType<typeof useT<'dashboard.agents'>>;
-}) {
-  if (isLoading) {
-    return (
-      <div className="flex h-full min-h-[620px] items-center justify-center p-6 text-center text-sm text-text-muted">
-        {t('states.loading')}
-      </div>
-    );
+export function AgentDispatchConsole() {
+  const params = useParams<{ agentId?: string }>();
+  const searchParams = useSearchParams();
+  const returnHref = safeConsoleReturnHref(searchParams.get('return_to')) ?? '/console/agents';
+  const agentId = normalizeCliId(params.agentId ?? 'codex_cli');
+  const agent = codingCliDefinitions.find(item => item.id === agentId) ?? codingCliDefinitions[0];
+  const runtimesQuery = useCodingCTORuntimes({ status: 'online', limit: 50 });
+  const refetchRuntimes = runtimesQuery.refetch;
+  const runtimes = useMemo(
+    () => runtimesQuery.data?.runtimes ?? [],
+    [runtimesQuery.data?.runtimes]
+  );
+  const [runtimeNow, setRuntimeNow] = useState(() => Date.now());
+  const dispatchRuntime = useMemo(
+    () => findDispatchRuntime(runtimes, runtimeNow, agent),
+    [agent, runtimeNow, runtimes]
+  );
+  const [repositoryId, setRepositoryId] = useState(() => defaultRepositoryIdFromReturnHref(returnHref));
+  const [prompt, setPrompt] = useState(
+    '请只读验证当前仓库可访问性：返回当前工作目录、git status --short 摘要、可用 CLI 摘要；不要修改文件。'
+  );
+  const [error, setError] = useState('');
+  const [historyProjects, setHistoryProjects] = useState<CodexHistoryProject[]>([]);
+  const [historyLoading, setHistoryLoading] = useState(false);
+  const createTask = useCreateCodingCTODirectAgentTask();
+  const tasksQuery = useCodingCTODirectAgentTasks({
+    repository_id: repositoryId.trim() || undefined,
+    executor: agent.executor,
+    runtime_id: dispatchRuntime?.runtime_id,
+    limit: 8,
+  });
+  const latestTask = tasksQuery.data?.tasks?.[0];
+  const eventsQuery = useCodingCTODirectTaskEvents(latestTask?.id);
+  const events = eventsQuery.data?.events ?? [];
+  const canDispatch = Boolean(agent.executor && dispatchRuntime);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => setRuntimeNow(Date.now()), 60_000);
+    return () => window.clearInterval(timer);
+  }, []);
+
+  useEffect(() => {
+    const timer = window.setInterval(() => {
+      void refetchRuntimes();
+    }, 3_000);
+    return () => window.clearInterval(timer);
+  }, [refetchRuntimes]);
+
+  useEffect(() => {
+    if (agent.id !== 'codex_cli') {
+      setHistoryProjects([]);
+      return;
+    }
+    void loadCodexHistory();
+  }, [agent.id]);
+
+  async function loadCodexHistory() {
+    setHistoryLoading(true);
+    try {
+      const response = await fetch('/api/runtime/codex-history?limit=120');
+      const payload = (await response.json()) as { projects?: CodexHistoryProject[] };
+      setHistoryProjects(payload.projects ?? []);
+    } catch {
+      setHistoryProjects([]);
+    } finally {
+      setHistoryLoading(false);
+    }
+  }
+
+  async function runDirectTask() {
+    setError('');
+    if (!canDispatch || !dispatchRuntime || !agent.executor) {
+      setError('当前 CLI 没有可用 runtime 执行器。');
+      return;
+    }
+    if (!repositoryId.trim()) {
+      setError('Repository id 不能为空。');
+      return;
+    }
+    if (!prompt.trim()) {
+      setError('请输入要调度给 CLI 的任务。');
+      return;
+    }
+
+    try {
+      await createTask.mutateAsync({
+        repository_id: repositoryId.trim(),
+        title: `${agent.label} direct test`,
+        prompt: prompt.trim(),
+        executor: agent.executor,
+        runtime_id: dispatchRuntime.runtime_id,
+      });
+      void tasksQuery.refetch();
+    } catch (err) {
+      setError(err instanceof Error ? err.message : '创建调度任务失败。');
+    }
   }
 
   return (
-    <div className="flex h-full min-h-[620px] flex-col p-6">
-      <div className="max-w-3xl">
-        <div className="flex h-12 w-12 items-center justify-center rounded-lg bg-bg-subtle text-text-muted">
-          <Server className="h-6 w-6" />
-        </div>
-        <h2 className="mt-4 text-lg font-semibold text-text-main">{t('setup.title')}</h2>
-        <p className="mt-2 text-sm leading-6 text-text-muted">{t('setup.description')}</p>
-      </div>
+    <div className="flex h-full flex-col bg-bg-surface">
+      <AgentsHeader
+        title={agent.label}
+        subtitle={`${agent.command} 直接调度测试。`}
+        returnHref={returnHref}
+        badges={[canDispatch ? '可调度' : '未接执行器', dispatchRuntime?.runtime_id ?? 'no runtime']}
+      />
 
-      <div className="mt-5 overflow-hidden rounded-lg border border-border-subtle">
-        <div className="flex items-center justify-between gap-3 border-b border-border-subtle bg-bg-subtle px-4 py-3">
-          <div>
-            <div className="text-sm font-medium text-text-main">{t('setup.commandTitle')}</div>
-            <p className="mt-1 text-xs text-text-muted">{t('setup.commandDescription')}</p>
+      <main className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-8">
+        <section className="mx-auto grid w-full max-w-7xl gap-4 xl:grid-cols-[280px_minmax(0,1fr)_320px]">
+          <CodexHistorySidebar
+            agent={agent}
+            projects={historyProjects}
+            isLoading={historyLoading}
+            onRefresh={loadCodexHistory}
+          />
+
+          <div className="rounded-md border border-border-subtle bg-bg-surface p-4">
+            <div className="flex items-start gap-3">
+              <AgentModelIcon item={agent} active={canDispatch} size="lg" />
+              <div className="min-w-0">
+                <h2 className="text-sm font-semibold text-text-main">直接调度</h2>
+                <p className="mt-1 text-xs leading-5 text-text-muted">
+                  创建 direct agent task；ccto daemon claim 后用本机 {agent.command} 执行，并回写事件与结果。
+                </p>
+              </div>
+            </div>
+
+            <div className="mt-4 grid gap-3">
+              <label className="grid gap-1.5">
+                <span className="text-xs font-medium text-text-muted">Repository id</span>
+                <Input
+                  value={repositoryId}
+                  onChange={event => setRepositoryId(event.target.value)}
+                  placeholder="codingcto"
+                />
+              </label>
+              <label className="grid gap-1.5">
+                <span className="text-xs font-medium text-text-muted">任务</span>
+                <Textarea
+                  className="min-h-36"
+                  value={prompt}
+                  onChange={event => setPrompt(event.target.value)}
+                />
+              </label>
+              {error ? (
+                <div className="rounded-md bg-error-subtle px-3 py-2 text-sm text-error">{error}</div>
+              ) : null}
+              {!canDispatch ? (
+                <div className="rounded-md bg-warning-subtle px-3 py-2 text-sm leading-6 text-warning">
+                  当前只接入了 Codex CLI direct 调度。其他 CLI 可以检测展示，等对应 executor daemon
+                  跑起来后再开放入口。
+                </div>
+              ) : null}
+              <div className="flex flex-wrap items-center gap-2">
+                <Button
+                  type="button"
+                  onClick={runDirectTask}
+                  disabled={!canDispatch || createTask.isPending}
+                  loading={createTask.isPending}
+                >
+                  <Play className="h-4 w-4" />
+                  运行测试
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  onClick={() => {
+                    void runtimesQuery.refetch();
+                    void tasksQuery.refetch();
+                  }}
+                >
+                  <RefreshCw className="h-4 w-4" />
+                  刷新状态
+                </Button>
+              </div>
+            </div>
           </div>
-          <Button
-            variant="outline"
-            size="sm"
-            disabled={!command || !hasRepository}
-            onClick={onCopy}
-          >
-            {copied ? <Check className="h-4 w-4" /> : <Copy className="h-4 w-4" />}
-            {copied ? t('setup.copied') : t('setup.copy')}
-          </Button>
-        </div>
-        <pre className="min-h-40 overflow-x-auto bg-bg-surface p-4 text-xs leading-6 text-text-main">
-          {hasRepository
-            ? redactRuntimeToken(command) || t('setup.commandLoading')
-            : t('setup.noRepositoryCommand')}
-        </pre>
-      </div>
 
-      <div className="mt-4 grid gap-3 sm:grid-cols-3">
-        <InfoBlock label={t('setup.steps.start.label')} value={t('setup.steps.start.value')} />
-        <InfoBlock label={t('setup.steps.detect.label')} value={t('setup.steps.detect.value')} />
-        <InfoBlock label={t('setup.steps.claim.label')} value={t('setup.steps.claim.value')} />
-      </div>
+          <aside className="grid gap-3 xl:self-start">
+            <RuntimeStatusPanel agent={agent} runtime={dispatchRuntime} now={runtimeNow} />
+            <TaskStatusPanel task={latestTask} events={events} isLoading={tasksQuery.isLoading} />
+          </aside>
+        </section>
+      </main>
     </div>
   );
 }
 
-function AgentDetail({
-  runtime,
-  repositories,
-  selectedRepoId,
-  returnHref,
-  skills,
-  assignedSkillCount,
-  skillsLoading,
-  saving,
-  onRepositoryChange,
-  onSetSkillAssigned,
-  t,
+function CodexHistorySidebar({
+  agent,
+  projects,
+  isLoading,
+  onRefresh,
 }: {
-  runtime: LocalRuntime;
-  repositories: Array<{
-    repository_id: string;
-    github_owner?: string;
-    github_repo?: string;
-    full_name?: string;
-  }>;
-  selectedRepoId: string;
-  returnHref: string;
-  skills: CodingCTOSkillDTO[];
-  assignedSkillCount: number;
-  skillsLoading: boolean;
-  saving: boolean;
-  onRepositoryChange: (value: string) => void;
-  onSetSkillAssigned: (skill: CodingCTOSkillDTO, assigned: boolean) => void;
-  t: ReturnType<typeof useT<'dashboard.agents'>>;
+  agent: CodingCliDefinition;
+  projects: CodexHistoryProject[];
+  isLoading: boolean;
+  onRefresh: () => void;
 }) {
-  const selectedRepository = repositories.find(
-    repository => repository.repository_id === selectedRepoId
-  );
+  if (agent.id !== 'codex_cli') {
+    return (
+      <aside className="rounded-md border border-border-subtle bg-bg-surface p-3 xl:self-start">
+        <div className="text-xs font-medium text-text-main">历史项目</div>
+        <p className="mt-2 text-xs leading-5 text-text-muted">这个 CLI 还没有接入本地历史同步。</p>
+      </aside>
+    );
+  }
 
   return (
-    <div className="flex h-full min-h-[620px] flex-col">
-      <div className="grid gap-4 border-b border-border-subtle p-5 md:grid-cols-[1fr_auto]">
-        <div className="flex min-w-0 gap-4">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-bg-subtle text-text-muted">
-            <Bot className="h-7 w-7" />
-          </div>
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h2 className="truncate text-lg font-semibold text-text-main">{runtime.label}</h2>
-              <Badge variant="outline" className="text-success">
-                {t('status.online')}
-              </Badge>
-              <Badge
-                variant="outline"
-                className={runtime.dispatchableCapabilityCount > 0 ? 'text-success' : 'text-text-muted'}
-              >
-                {runtime.dispatchableCapabilityCount > 0
-                  ? t('status.dispatchReady')
-                  : t('status.detectOnly')}
-              </Badge>
+    <aside className="rounded-md border border-border-subtle bg-bg-surface p-3 xl:max-h-[calc(100vh-7.5rem)] xl:self-start xl:overflow-y-auto">
+      <div className="flex items-center justify-between gap-2">
+        <div>
+          <div className="text-xs font-medium text-text-main">Codex 历史项目</div>
+          <p className="mt-1 text-[11px] text-text-muted">同步本机 Codex Desktop / CLI 会话</p>
+        </div>
+        <Button type="button" variant="ghost" size="xs" isIcon onClick={onRefresh} loading={isLoading}>
+          <RefreshCw className="h-3.5 w-3.5" />
+        </Button>
+      </div>
+
+      {isLoading && projects.length === 0 ? (
+        <div className="mt-4 flex items-center gap-2 text-xs text-text-muted">
+          <Loader2 className="h-3.5 w-3.5 animate-spin" />
+          同步中...
+        </div>
+      ) : null}
+
+      <div className="mt-3 grid gap-4">
+        {projects.map(project => (
+          <div key={project.id} className="min-w-0">
+            <div className="mb-1.5 flex min-w-0 items-center gap-2 text-xs font-medium text-text-muted">
+              <Folder className="h-4 w-4 shrink-0" />
+              <span className="truncate">{project.name}</span>
+              {project.current ? (
+                <Badge variant="outline" className="h-5 px-1.5 text-[10px] text-success">
+                  当前
+                </Badge>
+              ) : null}
             </div>
-            <p className="mt-1 text-sm text-text-muted">{runtime.description}</p>
-            <div className="mt-3 rounded-md border border-info/20 bg-info-subtle px-3 py-2 text-xs leading-5 text-info">
-              {t('runtimeHelp')}
-            </div>
-            <div className="mt-3 grid gap-2 text-sm text-text-muted sm:grid-cols-2">
-              <MetaRow icon={Server} label={t('fields.runtime')} value={runtime.runtimeId} />
-              <MetaRow icon={Terminal} label={t('fields.executor')} value={runtime.executor} />
-              <MetaRow icon={KeyRound} label={t('fields.skills')} value={String(assignedSkillCount)} />
-              <MetaRow
-                icon={Activity}
-                label={t('fields.lastSeen')}
-                value={formatRelativeTime(runtime.lastSeenAt, t)}
-              />
-            </div>
-            <div className="mt-4 grid gap-2 sm:grid-cols-2">
-              {runtime.capabilities.map(capability => (
+            <div className="grid gap-1">
+              {project.threads.map(thread => (
                 <div
-                  key={capability.id}
-                  className="rounded-lg border border-border-subtle bg-bg-subtle px-3 py-2"
+                  key={thread.id}
+                  className={cn(
+                    'rounded-md border px-2.5 py-2 text-left',
+                    project.current
+                      ? 'border-success/20 bg-success-subtle/40'
+                      : 'border-border-subtle bg-bg-subtle'
+                  )}
+                  title={thread.preview || thread.title}
                 >
-                  <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm font-medium text-text-main">
-                      {capability.label}
+                  <div className="truncate text-xs font-medium text-text-main">{thread.title}</div>
+                  <div className="mt-1 flex min-w-0 items-center gap-2 text-[11px] text-text-muted">
+                    {thread.branch ? (
+                      <span className="flex min-w-0 items-center gap-1">
+                        <GitBranch className="h-3 w-3 shrink-0" />
+                        <span className="truncate">{thread.branch}</span>
+                      </span>
+                    ) : null}
+                    <span className="ml-auto flex shrink-0 items-center gap-1">
+                      <Clock3 className="h-3 w-3" />
+                      {formatHistoryTime(thread.updated_at)}
                     </span>
-                    <Badge
-                      variant="outline"
-                      className={capability.dispatchable ? 'text-success' : 'text-text-muted'}
-                    >
-                      {capability.dispatchable
-                        ? t('status.dispatchReady')
-                        : t('status.detectOnly')}
-                    </Badge>
-                  </div>
-                  <div className="mt-1 truncate text-xs text-text-muted">
-                    {capability.command}
-                    {capability.version ? ` · ${capability.version}` : ''}
                   </div>
                 </div>
               ))}
             </div>
           </div>
-        </div>
-        <Link
-          href={ROUTES.CONSOLE.SKILLS}
-          className="focus-ring inline-flex h-9 shrink-0 items-center gap-2 self-start whitespace-nowrap rounded-[4px] border border-border-subtle bg-bg-surface px-3 text-sm font-medium text-text-main shadow-xs transition-colors hover:bg-bg-subtle hover:text-primary"
-        >
-          <BookOpen className="h-4 w-4" />
-          <span>{t('actions.manageSkills')}</span>
-          <ExternalLink className="h-3.5 w-3.5 text-text-muted" />
-        </Link>
+        ))}
       </div>
 
-      <Tabs
-        key={runtime.id}
-        defaultValue="activity"
-        className="min-h-0 flex-1 gap-0"
-      >
-        <div className="border-b border-border-subtle px-5 py-3">
-          <TabsList className="bg-transparent p-0">
-            <TabsTrigger value="activity" className="rounded-none border-0 shadow-none">
-              <Activity className="h-4 w-4" />
-              {t('tabs.activity')}
-            </TabsTrigger>
-            <TabsTrigger value="skills" className="rounded-none border-0 shadow-none">
-              <BookOpen className="h-4 w-4" />
-              {t('tabs.skills')}
-            </TabsTrigger>
-            <TabsTrigger value="environment" className="rounded-none border-0 shadow-none">
-              <SlidersHorizontal className="h-4 w-4" />
-              {t('tabs.environment')}
-            </TabsTrigger>
-          </TabsList>
+      {!isLoading && projects.length === 0 ? (
+        <div className="mt-4 rounded-md bg-bg-subtle p-3 text-xs leading-5 text-text-muted">
+          没读到本机 Codex 历史。
         </div>
-
-        <TabsContent value="activity" className="m-0 p-5">
-          <AgentOperationsPanel
-            selectedRepository={selectedRepository}
-            runtime={runtime}
-            assignedSkillCount={assignedSkillCount}
-            returnHref={returnHref}
-            t={t}
-          />
-        </TabsContent>
-        <TabsContent value="skills" className="m-0 min-h-0 p-5">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h3 className="text-sm font-medium text-text-main">{t('skills.title')}</h3>
-              <p className="mt-1 text-sm text-text-muted">{t('skills.description')}</p>
-            </div>
-            {repositories.length > 1 ? (
-              <Select value={selectedRepoId} onValueChange={onRepositoryChange}>
-                <SelectTrigger className="w-full bg-bg-surface sm:w-[280px]">
-                  <SelectValue />
-                </SelectTrigger>
-                <SelectContent>
-                  {repositories.map(repository => (
-                    <SelectItem key={repository.repository_id} value={repository.repository_id}>
-                      {repository.github_owner}/{repository.github_repo}
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : null}
-          </div>
-
-          <div className="mt-4 overflow-hidden rounded-lg border border-border-subtle">
-            <div className="flex items-center justify-between gap-3 border-b border-border-subtle bg-bg-subtle px-4 py-3 text-xs font-medium uppercase tracking-wide text-text-muted">
-              <span>
-                {selectedRepository
-                  ? `${selectedRepository.github_owner}/${selectedRepository.github_repo}`
-                  : t('skills.noRepository')}
-              </span>
-              <span>{t('skills.assignedCount', { count: assignedSkillCount })}</span>
-            </div>
-            {skillsLoading ? (
-              <div className="px-4 py-8 text-sm text-text-muted">{t('states.loading')}</div>
-            ) : skills.length > 0 ? (
-              <div className="divide-y divide-border-subtle">
-                {skills.map(skill => {
-                  const assigned = skillAssignedToAgent(skill, runtime.skillTarget);
-                  return (
-                    <div
-                      key={skill.id}
-                      className="grid gap-4 px-4 py-4 sm:grid-cols-[1fr_auto] sm:items-center"
-                    >
-                      <div className="min-w-0">
-                        <div className="flex flex-wrap items-center gap-2">
-                          <span className="font-medium text-text-main">{skill.name}</span>
-                          <Badge
-                            variant="outline"
-                            className={skill.active ? 'text-success' : 'text-text-muted'}
-                          >
-                            {skill.active ? t('skills.active') : t('skills.inactive')}
-                          </Badge>
-                        </div>
-                        <p className="mt-1 line-clamp-2 text-sm leading-6 text-text-muted">
-                          {skill.description || t('skills.noDescription')}
-                        </p>
-                      </div>
-                      <Label className="flex items-center justify-end gap-3 text-sm text-text-muted">
-                        <span>{assigned ? t('skills.assigned') : t('skills.unassigned')}</span>
-                        <Switch
-                          checked={assigned}
-                          disabled={saving}
-                          onCheckedChange={checked => onSetSkillAssigned(skill, checked)}
-                        />
-                      </Label>
-                    </div>
-                  );
-                })}
-              </div>
-            ) : (
-              <div className="px-4 py-8 text-sm leading-6 text-text-muted">
-                {selectedRepository ? t('skills.empty') : t('skills.noRepositoryHint')}
-              </div>
-            )}
-          </div>
-        </TabsContent>
-        <TabsContent value="environment" className="m-0 p-5">
-          <div className="grid gap-3 sm:grid-cols-2">
-            <InfoBlock label={t('fields.hostname')} value={runtime.hostname} />
-            <InfoBlock label={t('fields.version')} value={runtime.version || t('states.unknown')} />
-            <InfoBlock label={t('fields.runtime')} value={runtime.runtimeId} />
-            <InfoBlock label={t('fields.executor')} value={runtime.executor} />
-          </div>
-        </TabsContent>
-      </Tabs>
-    </div>
+      ) : null}
+    </aside>
   );
 }
 
-function AgentOperationsPanel({
-  selectedRepository,
-  runtime,
-  assignedSkillCount,
+function AgentsHeader({
+  title,
+  subtitle,
   returnHref,
-  t,
+  badges,
 }: {
-  selectedRepository?: {
-    repository_id: string;
-    github_owner?: string;
-    github_repo?: string;
-    full_name?: string;
-  };
-  runtime: LocalRuntime;
-  assignedSkillCount: number;
+  title: string;
+  subtitle: string;
   returnHref: string;
-  t: ReturnType<typeof useT<'dashboard.agents'>>;
+  badges: string[];
 }) {
-  const copy = (
-    key: string,
-    fallback: string,
-    values?: Record<string, string | number | Date>
-  ) => {
-    const translated = t(key, values);
-    return translated.startsWith('dashboard.agents.') ? fallback : translated;
-  };
-  const repositoryLabel = selectedRepository
-    ? selectedRepository.full_name ||
-      `${selectedRepository.github_owner ?? ''}/${selectedRepository.github_repo ?? ''}`.replace(
-        /^\/|\/$/g,
-        ''
-      ) ||
-      selectedRepository.repository_id
-    : copy('operations.unboundRepository', '未绑定仓库');
-  const canDispatch = runtime.dispatchableCapabilityCount > 0 && Boolean(selectedRepository);
-  const deliveryHref = returnHref;
-  const intakeHref = `${ROUTES.CONSOLE.SPECFORGE}?board=intake&new=requirement`;
-  const reviewHref = `${ROUTES.CONSOLE.SPECFORGE}?board=review`;
-  const bindingHref = selectedRepository
-    ? ROUTES.CONSOLE.SKILLS
-    : `${ROUTES.CONSOLE.SETTINGS}?tab=repositories`;
-  const createSmokeTask = useCreateDirectAgentTask();
-  const directTasksQuery = useDirectAgentTasks(
-    selectedRepository
-      ? {
-          repository_id: selectedRepository.repository_id,
-          executor: runtime.executor,
-          runtime_id: runtime.runtimeId,
-          limit: 3,
-        }
-      : undefined,
-    {
-      enabled: Boolean(selectedRepository),
-      refetchInterval: 3000,
-    }
-  );
-  const directTasks = directTasksQuery.data?.tasks ?? [];
-  const latestSmokeTask = directTasks[0];
-  const directTaskEventsQuery = useDirectTaskEvents(latestSmokeTask?.id, undefined, {
-    enabled: Boolean(latestSmokeTask?.id),
-    refetchInterval:
-      latestSmokeTask &&
-      ['dispatched', 'running', 'queued'].includes(latestSmokeTask.status)
-        ? 3000
-        : false,
-  });
-  const directTaskEvents = directTaskEventsQuery.data?.events ?? [];
-  const smokeEventSummary = summarizeTaskEvents(directTaskEvents);
+  const backHref = returnHref === '/console/agents' ? ROUTES.CONSOLE.AGENTS : returnHref;
 
-  async function runSmokeTest() {
-    if (!selectedRepository) {
-      return;
-    }
-    await createSmokeTask.mutateAsync({
-      repository_id: selectedRepository.repository_id,
-      executor: runtime.executor,
-      runtime_id: runtime.runtimeId,
-      title: 'CodingCTO Codex smoke test',
-      prompt: [
-        'Run a read-only CodingCTO smoke test for this local runtime.',
-        'Do not modify files. Do not commit. Do not create a branch. Do not open a PR.',
-        'Inspect only enough to report the current working directory, repository identity if available, and whether the Codex CLI task execution path is working.',
-        'Return a concise result with: status, runtime_check, repository_check, and any blocker.',
-      ].join('\n'),
-    });
+  return (
+    <header className="flex h-14 shrink-0 items-center justify-between border-b border-border-subtle px-6">
+      <div className="flex min-w-0 items-center gap-3">
+        <Bot className="h-5 w-5 shrink-0 text-text-subtle" />
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h1 className="truncate text-base font-semibold text-text-main">{title}</h1>
+            {badges.map(badge => (
+              <Badge key={badge} variant="outline" className="hidden text-text-muted sm:inline-flex">
+                {badge}
+              </Badge>
+            ))}
+          </div>
+          <p className="hidden truncate text-xs text-text-muted md:block">{subtitle}</p>
+        </div>
+      </div>
+      <Button asChild variant="outline" size="sm">
+        <Link href={backHref}>
+          {returnHref === '/console/agents' ? (
+            <ArrowLeft className="h-4 w-4" />
+          ) : (
+            <ClipboardList className="h-4 w-4" />
+          )}
+          <span>{returnHref === '/console/agents' ? '返回列表' : '返回看板'}</span>
+        </Link>
+      </Button>
+    </header>
+  );
+}
+
+function CodingCliRow({ item, returnHref }: { item: CodingCliItem; returnHref: string }) {
+  const href = `/console/agents/${item.id}?return_to=${encodeURIComponent(returnHref)}`;
+  const row = (
+    <div className="grid min-h-16 grid-cols-[1fr_auto] items-center gap-3 px-3 py-2 md:grid-cols-[1.5fr_1fr_1fr_auto]">
+      <div className="flex min-w-0 items-center gap-3">
+        <AgentModelIcon item={item} active={item.detected} />
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <span className="truncate text-sm font-medium text-text-main">{item.label}</span>
+            {item.dispatchable ? <ChevronRight className="h-4 w-4 text-text-muted" /> : null}
+          </div>
+          <div className="mt-0.5 truncate text-xs text-text-muted">{item.command}</div>
+        </div>
+      </div>
+      <div className="hidden min-w-0 text-xs leading-5 text-text-muted md:block">
+        <div className="truncate">{sourceLabel(item)}</div>
+        <div className="truncate">{item.version || 'version unknown'}</div>
+      </div>
+      <div className="hidden min-w-0 text-xs leading-5 text-text-muted md:block">
+        <div className="truncate">{item.runtimeId || 'no runtime'}</div>
+        <div className="truncate">{item.hostname || item.path || 'not detected'}</div>
+      </div>
+      <div className="flex justify-end">
+        <StatusBadge item={item} />
+      </div>
+    </div>
+  );
+
+  if (!item.dispatchable) {
+    return row;
   }
 
   return (
-    <div className="grid gap-4">
-      <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-medium text-text-main">
-              {copy('operations.boundaryTitle', '智能体职责边界')}
-            </h3>
-            <p className="mt-1 text-sm leading-6 text-text-muted">
-              {copy(
-                'operations.boundaryDescription',
-                '这里管理执行能力、健康状态和 Skill 绑定；需求、Prompt、队列和 PR 交付在看板里调度。'
-              )}
-            </p>
-          </div>
-          <Badge
-            variant="outline"
-            className={canDispatch ? 'text-success' : 'text-warning'}
-          >
-            {canDispatch
-              ? copy('operations.dispatchable', '可被看板调度')
-              : copy('operations.needsBinding', '需要绑定')}
-          </Badge>
-        </div>
-        <div className="mt-4 grid gap-2 sm:grid-cols-3">
-          <InfoBlock label={copy('operations.repository', '绑定仓库')} value={repositoryLabel} />
-          <InfoBlock label={copy('operations.runtime', '运行时')} value={runtime.runtimeId} />
-          <InfoBlock
-            label={copy('operations.dispatchCapability', '调度能力')}
-            value={
-              runtime.dispatchableCapabilityCount > 0
-                ? copy('operations.codexExecutable', 'Codex 可执行')
-                : copy('operations.detectOnly', '仅检测')
-            }
-          />
-        </div>
-      </div>
-
-      <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h3 className="text-sm font-medium text-text-main">Codex 调度 Smoke Test</h3>
-            <p className="mt-1 text-sm leading-6 text-text-muted">
-              创建一个只读 direct task，验证平台能否让这个 runtime 领取任务并启动 Codex；不会修改文件、提交或创建 PR。
-            </p>
-          </div>
-          <Button
-            type="button"
-            size="sm"
-            disabled={!canDispatch || createSmokeTask.isPending}
-            onClick={runSmokeTest}
-          >
-            {createSmokeTask.isPending ? '创建中' : '运行只读测试'}
-            <Terminal className="ml-1.5 h-4 w-4" />
-          </Button>
-        </div>
-        <div className="mt-4 grid gap-2 sm:grid-cols-4">
-          <InfoBlock label="目标 runtime" value={runtime.runtimeId} />
-          <InfoBlock label="目标仓库" value={repositoryLabel} />
-          <InfoBlock
-            label="最近任务"
-            value={latestSmokeTask ? `#${latestSmokeTask.id}` : '暂无'}
-          />
-          <InfoBlock label="状态" value={latestSmokeTask?.status || '未创建'} />
-        </div>
-        <div className="mt-3 grid gap-2 sm:grid-cols-4">
-          <InfoBlock
-            label="Runtime claim"
-            value={smokeEventSummary.hasRuntimeClaim ? '有' : '无'}
-          />
-          <InfoBlock
-            label="执行结果"
-            value={smokeEventSummary.hasExecutorResult ? '有' : '无'}
-          />
-          <InfoBlock label="输出事件" value={String(smokeEventSummary.outputEventCount)} />
-          <InfoBlock label="最后事件" value={smokeEventSummary.lastEventLabel} />
-        </div>
-        {latestSmokeTask ? (
-          <div className="mt-3 rounded-md border border-border-subtle bg-bg-subtle p-3 text-xs leading-5 text-text-muted">
-            <div className="flex flex-wrap items-center justify-between gap-2">
-              <div className="font-medium text-text-main">{latestSmokeTask.title}</div>
-              <Badge
-                variant="outline"
-                className={
-                  smokeEventSummary.hasExecutorResult
-                    ? 'text-success'
-                    : directTaskEvents.length
-                      ? 'text-info'
-                      : ''
-                }
-              >
-                {smokeEventSummary.proofLabel}
-              </Badge>
-            </div>
-            {latestSmokeTask.runtime_id ? <div>Runtime: {latestSmokeTask.runtime_id}</div> : null}
-            {latestSmokeTask.started_at ? <div>Started: {latestSmokeTask.started_at}</div> : null}
-            {latestSmokeTask.finished_at ? <div>Finished: {latestSmokeTask.finished_at}</div> : null}
-            {latestSmokeTask.output_log ? (
-              <div className="mt-2 max-h-24 overflow-auto whitespace-pre-wrap">
-                {latestSmokeTask.output_log}
-              </div>
-            ) : null}
-            {latestSmokeTask.failure_reason ? (
-              <div className="mt-2 text-warning">{latestSmokeTask.failure_reason}</div>
-            ) : null}
-          </div>
-        ) : null}
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-3">
-        <ReadinessBlock
-          state={selectedRepository ? 'ready' : 'blocked'}
-          title={copy('operations.readiness.repository.title', '仓库绑定')}
-          description={
-            selectedRepository
-              ? copy(
-                  'operations.readiness.repository.ready',
-                  `当前执行器会面向 ${repositoryLabel} 工作。`,
-                  { repository: repositoryLabel }
-                )
-              : copy(
-                  'operations.readiness.repository.blocked',
-                  '先在仓库设置里绑定目标仓库，运行时才知道在哪个 checkout 执行。'
-                )
-          }
-        />
-        <ReadinessBlock
-          state={runtime.dispatchableCapabilityCount > 0 ? 'ready' : 'blocked'}
-          title={copy('operations.readiness.dispatch.title', 'Codex 调度')}
-          description={
-            runtime.dispatchableCapabilityCount > 0
-              ? copy(
-                  'operations.readiness.dispatch.ready',
-                  '该 runtime 已上报 codex，并且可由平台按任务启动。'
-                )
-              : copy(
-                  'operations.readiness.dispatch.blocked',
-                  '目前只检测到 CLI，尚不能由交付板派发执行。'
-                )
-          }
-        />
-        <ReadinessBlock
-          state={assignedSkillCount > 0 ? 'ready' : 'waiting'}
-          title={copy('operations.readiness.skills.title', 'Skill 注入')}
-          description={
-            assignedSkillCount > 0
-              ? copy(
-                  'operations.readiness.skills.ready',
-                  `${assignedSkillCount} 个 Skill 会在 Prompt 编译时进入约束和检查清单。`,
-                  { count: assignedSkillCount }
-                )
-              : copy(
-                  'operations.readiness.skills.waiting',
-                  '还没有绑定 Skill；可以先跑，但 Prompt 会缺少团队沉淀的约束。'
-                )
-          }
-        />
-      </div>
-
-      <div className="grid gap-3 md:grid-cols-4">
-        <BoardRouteCard
-          title={copy('operations.routes.binding.title', '绑定与技能')}
-          description={copy(
-            'operations.routes.binding.description',
-            '仓库、runtime 和 Skill 是执行前置条件；这里负责配置，不负责派发任务。'
-          )}
-          href={bindingHref}
-          badge={
-            selectedRepository
-              ? copy('operations.routes.binding.skills', '调整 Skill')
-              : copy('operations.routes.binding.repository', '先绑仓库')
-          }
-        />
-        <BoardRouteCard
-          title={copy('operations.routes.delivery.title', '交付看板')}
-          description={copy(
-            'operations.routes.delivery.description',
-            '从 idea、PRD、PR DAG 到 Codex 执行和 PR 交付的主流程。'
-          )}
-          href={deliveryHref}
-          badge={copy('operations.routes.delivery.badge', '主流程')}
-          primary
-        />
-        <BoardRouteCard
-          title={copy('operations.routes.intake.title', '新建需求')}
-          description={copy(
-            'operations.routes.intake.description',
-            '把需求先交给产品、架构、UI/UX、QA 专家生成计划，再决定是否调度。'
-          )}
-          href={intakeHref}
-          badge={copy('operations.routes.intake.badge', '从这里开始')}
-        />
-        <BoardRouteCard
-          title={copy('operations.routes.review.title', '评审队列')}
-          description={copy(
-            'operations.routes.review.description',
-            'CI 失败、review patch、升级摘要和人工决策集中在这里处理。'
-          )}
-          href={reviewHref}
-          badge={copy('operations.routes.review.badge', '失败回收')}
-        />
-      </div>
-
-      <div className="rounded-lg border border-border-subtle bg-bg-subtle p-4">
-        <div className="text-sm font-medium text-text-main">
-          {copy('operations.noCommandTitle', '为什么不在这里下命令')}
-        </div>
-        <div className="mt-3 grid gap-2 text-sm leading-6 text-text-muted">
-          <ProcessBoundaryLine
-            label={copy('operations.boundaries.agents.label', 'Agents 页')}
-            value={copy(
-              'operations.boundaries.agents.value',
-              '回答“有哪些执行器、是否在线、能不能被调度、绑定了哪些 Skill”。'
-            )}
-          />
-          <ProcessBoundaryLine
-            label={copy('operations.boundaries.delivery.label', '交付看板')}
-            value={copy(
-              'operations.boundaries.delivery.value',
-              '回答“要做什么、谁审批、哪个 PR 节点正在跑、测试和 PR 是否通过”。'
-            )}
-          />
-          <ProcessBoundaryLine
-            label={copy('operations.boundaries.review.label', '评审看板')}
-            value={copy(
-              'operations.boundaries.review.value',
-              '回答“哪里失败、谁要决策、是否需要 fix/review_patch、还能自动重试几次”。'
-            )}
-          />
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ReadinessBlock({
-  state,
-  title,
-  description,
-}: {
-  state: 'ready' | 'waiting' | 'blocked';
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
-      <div className="flex items-start gap-3">
-        <span
-          className={cn(
-            'mt-0.5 flex h-5 w-5 shrink-0 items-center justify-center rounded-full border',
-            state === 'ready' && 'border-success bg-success/10 text-success',
-            state === 'waiting' && 'border-warning bg-warning/10 text-warning',
-            state === 'blocked' && 'border-warning bg-warning/10 text-warning'
-          )}
-        >
-          {state === 'ready' ? (
-            <Check className="h-3.5 w-3.5" />
-          ) : (
-            <Circle className="h-2.5 w-2.5 fill-current" />
-          )}
-        </span>
-        <div className="min-w-0">
-          <div className="text-sm font-medium text-text-main">{title}</div>
-          <p className="mt-1 text-xs leading-5 text-text-muted">{description}</p>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function BoardRouteCard({
-  title,
-  description,
-  href,
-  badge,
-  primary = false,
-}: {
-  title: string;
-  description: string;
-  href: string;
-  badge: string;
-  primary?: boolean;
-}) {
-  return (
-    <Link
-      href={href}
-      className={cn(
-        'rounded-lg border border-border-subtle bg-bg-surface p-4 transition-colors hover:border-primary/40 hover:bg-bg-subtle',
-        primary && 'border-primary/40'
-      )}
-    >
-      <div className="flex items-start justify-between gap-3">
-        <ClipboardList className="h-5 w-5 shrink-0 text-primary" />
-        <Badge variant="outline" className={primary ? 'text-primary' : 'text-text-muted'}>
-          {badge}
-        </Badge>
-      </div>
-      <div className="mt-3 text-sm font-medium text-text-main">{title}</div>
-      <p className="mt-2 text-xs leading-5 text-text-muted">{description}</p>
-      <div className="mt-3 flex items-center gap-1 text-xs font-medium text-primary">
-        打开
-        <ExternalLink className="h-3.5 w-3.5" />
-      </div>
+    <Link href={href} className="block transition-colors hover:bg-bg-subtle focus-ring">
+      {row}
     </Link>
   );
 }
 
-function ProcessBoundaryLine({ label, value }: { label: string; value: string }) {
+function StatusBadge({ item }: { item: CodingCliItem }) {
   return (
-    <div className="grid gap-1 rounded-md bg-bg-surface px-3 py-2 sm:grid-cols-[96px_minmax(0,1fr)]">
-      <span className="font-medium text-text-main">{label}</span>
-      <span>{value}</span>
-    </div>
+    <Badge
+      variant="outline"
+      className={cn(
+        'gap-1.5',
+        item.dispatchable
+          ? 'border-success/30 text-success'
+          : item.detected
+            ? 'border-info/30 text-info'
+            : 'border-border-subtle text-text-muted'
+      )}
+    >
+      {item.dispatchable ? <CheckCircle2 className="h-3.5 w-3.5" /> : <Circle className="h-3.5 w-3.5" />}
+      {item.dispatchable
+        ? '可调度'
+        : item.detected
+          ? item.source === 'local'
+            ? '本机已装'
+            : '已检测'
+          : '未检测'}
+    </Badge>
   );
 }
 
-function MetaRow({
-  icon: Icon,
-  label,
-  value,
+function AgentModelIcon({
+  item,
+  active,
+  size = 'md',
 }: {
-  icon: LucideIcon;
-  label: string;
-  value: string;
+  item: Pick<CodingCliDefinition, 'iconLabel' | 'iconClassName'>;
+  active: boolean;
+  size?: 'md' | 'lg';
 }) {
   return (
-    <div className="flex min-w-0 items-center gap-2">
-      <Icon className="h-4 w-4 shrink-0" />
-      <span className="shrink-0">{label}</span>
-      <span className="truncate text-text-main">{value}</span>
-    </div>
+    <span
+      className={cn(
+        'relative flex shrink-0 items-center justify-center rounded-md text-[11px] font-semibold tracking-normal shadow-xs',
+        size === 'lg' ? 'h-11 w-11 text-sm' : 'h-9 w-9',
+        active ? item.iconClassName : 'bg-bg-subtle text-text-muted ring-1 ring-border-subtle'
+      )}
+    >
+      {item.iconLabel}
+      <span
+        className={cn(
+          'absolute -right-0.5 -top-0.5 h-2.5 w-2.5 rounded-full ring-2 ring-bg-surface',
+          active ? 'bg-success' : 'bg-border-strong'
+        )}
+      />
+    </span>
   );
 }
 
-function InfoBlock({ label, value }: { label: string; value: string }) {
+function RuntimeStatusPanel({
+  agent,
+  runtime,
+  now,
+}: {
+  agent: CodingCliDefinition;
+  runtime?: CodingCTORuntimeDTO;
+  now: number;
+}) {
+  const cli = runtime?.available_clis?.find(item => normalizeCliId(item.command || item.name) === agent.id);
   return (
-    <div className="rounded-lg border border-border-subtle px-4 py-3">
-      <div className="text-xs text-text-muted">{label}</div>
-      <div className="mt-1 truncate text-sm font-medium text-text-main">{value}</div>
+    <div className="rounded-md border border-border-subtle bg-bg-surface p-3">
+      <div className="text-xs font-medium text-text-main">Runtime</div>
+      <div className="mt-3 grid gap-2 text-xs leading-5 text-text-muted">
+        <Field label="状态" value={runtime ? 'online' : 'not ready'} />
+        <Field label="runtime_id" value={runtime?.runtime_id ?? 'none'} />
+        <Field label="executor" value={runtime?.executor ?? agent.executor ?? 'not wired'} />
+        <Field label="last_seen" value={runtime ? relativeRuntimeSeen(runtime.last_seen_at, now) : 'none'} />
+        <Field label="path" value={cli?.path ?? 'none'} />
+      </div>
     </div>
   );
 }
 
-function skillAssignedToAgent(skill: CodingCTOSkillDTO, agentId: string) {
-  const targets = skill.target_agents ?? [];
-  return targets.some(target => {
-    const normalized = target.trim().toLowerCase();
-    return normalized === agentId || ALL_AGENT_TARGETS.has(normalized);
-  });
+function TaskStatusPanel({
+  task,
+  events,
+  isLoading,
+}: {
+  task?: CodingCTODirectAgentTaskDTO;
+  events: CodingCTODirectTaskEventDTO[];
+  isLoading: boolean;
+}) {
+  const summary = summarizeTaskEvents(events);
+  const latestOutput =
+    extractAgentMessage(task?.output_log) ||
+    extractAgentMessage(events.findLast(event => event.output)?.output) ||
+    '';
+  const showErrorLog = Boolean(task?.error_log && !(task.status === 'completed' && task.exit_code === 0));
+  return (
+    <div className="rounded-md border border-border-subtle bg-bg-surface p-3">
+      <div className="flex items-center justify-between gap-2">
+        <div className="text-xs font-medium text-text-main">最近测试</div>
+        {isLoading ? <Loader2 className="h-3.5 w-3.5 animate-spin text-text-muted" /> : null}
+      </div>
+      <div className="mt-3 grid gap-2 text-xs leading-5 text-text-muted">
+        <Field label="task" value={task ? `#${task.id}` : 'none'} />
+        <Field label="status" value={task?.status ?? 'not created'} />
+        <Field label="claim" value={summary.hasClaim ? 'yes' : 'no'} />
+        <Field label="result" value={summary.hasResult ? 'yes' : 'no'} />
+      </div>
+      {latestOutput ? (
+        <pre className="mt-3 max-h-48 overflow-auto rounded-md bg-bg-subtle p-2 text-xs leading-5 text-text-muted">
+          {latestOutput}
+        </pre>
+      ) : null}
+      {showErrorLog ? (
+        <pre className="mt-3 max-h-40 overflow-auto rounded-md bg-error-subtle p-2 text-xs leading-5 text-error">
+          {task?.error_log}
+        </pre>
+      ) : null}
+    </div>
+  );
 }
 
-function localAgentsFromRuntimes(runtimes: CodingCTORuntimeDTO[], now: number): LocalRuntime[] {
-  return runtimes
-    .filter(runtime => isFreshOnlineRuntime(runtime, now))
-    .flatMap(runtime => {
-      const capabilities = runtimeCapabilities(runtime);
-      return capabilities.map(capability => {
-        const agentId = `${runtime.runtime_id}:${capability.id}`;
-        const hostname = runtime.hostname || runtime.runtime_id;
-        return {
-          id: agentId,
-          label: agentLabel(capability, runtime),
-          description: `${capability.command} · ${hostname} · ${runtime.runtime_id}`,
-          runtimeId: runtime.runtime_id,
-          hostname,
-          executor: capability.dispatchable ? runtime.executor || 'codex_cli' : capability.id,
-          skillTarget: capability.id,
-          capabilities: [capability],
-          dispatchableCapabilityCount: capability.dispatchable ? 1 : 0,
-          status: runtime.status,
-          version: capability.version || runtime.version,
-          lastSeenAt: runtime.last_seen_at,
-        };
-      });
-    })
-    .sort((a, b) => {
-      if (a.dispatchableCapabilityCount !== b.dispatchableCapabilityCount) {
-        return b.dispatchableCapabilityCount - a.dispatchableCapabilityCount;
+function Field({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="min-w-0">
+      <div className="text-[11px] uppercase text-text-muted">{label}</div>
+      <div className="truncate text-text-main">{value || 'none'}</div>
+    </div>
+  );
+}
+
+function codingCliItemsFromRuntimes(
+  runtimes: CodingCTORuntimeDTO[],
+  now: number,
+  localCliProbe: LocalCliProbeItem[]
+): CodingCliItem[] {
+  const detected = new Map<string, CodingCliItem>();
+
+  for (const runtime of runtimes) {
+    if (!isFreshOnlineRuntime(runtime, now)) {
+      continue;
+    }
+    for (const cli of runtime.available_clis ?? []) {
+      const command = cli.command || cli.name;
+      const id = normalizeCliId(command || cli.name);
+      const definition = definitionForCli(id, command);
+      if (!definition || !cli.available) {
+        continue;
       }
-      const aSeen = new Date(a.lastSeenAt ?? '').getTime();
-      const bSeen = new Date(b.lastSeenAt ?? '').getTime();
-      if (Number.isFinite(aSeen) && Number.isFinite(bSeen) && aSeen !== bSeen) {
-        return bSeen - aSeen;
+      const item: CodingCliItem = {
+        ...definition,
+        detected: true,
+        dispatchable: runtimeCanDispatchCLI(runtime, definition),
+        source: 'runtime',
+        version: cli.version,
+        path: cli.path,
+        runtimeId: runtime.runtime_id,
+        hostname: runtime.hostname,
+        lastSeenAt: runtime.last_seen_at,
+      };
+      const current = detected.get(definition.id);
+      if (!current || (!current.dispatchable && item.dispatchable)) {
+        detected.set(definition.id, item);
       }
-      return a.label.localeCompare(b.label);
+    }
+  }
+
+  for (const localCli of localCliProbe) {
+    const id = normalizeCliId(localCli.command || localCli.id);
+    const definition = definitionForCli(id, localCli.command);
+    if (!definition || !localCli.available || detected.has(definition.id)) {
+      continue;
+    }
+    detected.set(definition.id, {
+      ...definition,
+      detected: true,
+      dispatchable: false,
+      source: 'local',
+      version: localCli.version,
+      path: localCli.path,
     });
-}
+  }
 
-function runtimeCapabilities(runtime: CodingCTORuntimeDTO): RuntimeCapability[] {
-  const availableCLIs = (runtime.available_clis ?? []).filter(cli => cli.available);
-  if (availableCLIs.length === 0) {
-    const executor = runtime.executor || 'codex_cli';
-    return [
-      {
-        id: normalizeAgentId(executor),
-        label: displayAgentName(executor),
-        command: executor,
-        version: runtime.version,
+  const baseItems = codingCliDefinitions.map(definition => {
+    const item = detected.get(definition.id);
+    return (
+      item ?? {
+        ...definition,
+        detected: false,
         dispatchable: false,
-      },
-    ];
-  }
-
-  return availableCLIs.map(cli => {
-    const command = cli.command || cli.name;
-    return {
-      id: normalizeAgentId(command || cli.name),
-      label: displayAgentName(cli.name || command),
-      command,
-      version: cli.version,
-      dispatchable: runtimeCanDispatchCLI(runtime, command),
-    };
+        source: 'none' as const,
+      }
+    );
   });
+  const baseIds = new Set(codingCliDefinitions.map(definition => definition.id));
+  const extraItems = [...detected.values()]
+    .filter(item => !baseIds.has(item.id))
+    .sort((a, b) => a.label.localeCompare(b.label));
+
+  return [...baseItems, ...extraItems];
 }
 
-function runtimeCanDispatchCLI(runtime: CodingCTORuntimeDTO, command: string) {
-  return runtime.executor === 'codex_cli' && command === 'codex';
+function definitionForCli(id: string, command: string) {
+  return (
+    codingCliDefinitions.find(definition => definition.id === id) ??
+    codingCliDefinitions.find(definition => definition.command === command)
+  );
 }
 
-function agentLabel(capability: RuntimeCapability, runtime: CodingCTORuntimeDTO) {
-  if (capability.dispatchable && runtime.executor === 'codex_cli') {
-    return 'Coding Agent';
+function runtimeCanDispatchCLI(runtime: CodingCTORuntimeDTO, definition: CodingCliDefinition) {
+  return Boolean(definition.executor && runtime.executor === definition.executor);
+}
+
+function findDispatchRuntime(
+  runtimes: CodingCTORuntimeDTO[],
+  now: number,
+  definition: CodingCliDefinition
+) {
+  if (!definition.executor) {
+    return undefined;
   }
-  return capability.label;
+  return runtimes.find(runtime => {
+    if (!isFreshOnlineRuntime(runtime, now) || runtime.executor !== definition.executor) {
+      return false;
+    }
+    return runtime.available_clis?.some(
+      cli => cli.available && normalizeCliId(cli.command || cli.name) === definition.id
+    );
+  });
 }
 
 function isFreshOnlineRuntime(runtime: CodingCTORuntimeDTO, now: number) {
@@ -1149,7 +891,7 @@ function isFreshOnlineRuntime(runtime: CodingCTORuntimeDTO, now: number) {
   return now - lastSeen <= ONLINE_RUNTIME_STALE_MS;
 }
 
-function normalizeAgentId(value: string) {
+function normalizeCliId(value: string) {
   const normalized = value
     .trim()
     .toLowerCase()
@@ -1159,55 +901,93 @@ function normalizeAgentId(value: string) {
     codex: 'codex_cli',
     codex_cli: 'codex_cli',
     openai_codex: 'codex_cli',
-    claude_code: 'claude',
-    claude: 'claude',
-    cursor: 'cursor',
+    claude_code: 'claude_code_cli',
+    claude_code_cli: 'claude_code_cli',
+    claude: 'claude_code_cli',
+    cursor: 'cursor_agent',
     cursor_agent: 'cursor_agent',
-    hermes: 'hermes',
+    copilot: 'github_copilot',
+    github_copilot: 'github_copilot',
+    github_copilot_cli: 'github_copilot',
     opencode: 'opencode',
+    openclaw: 'openclaw',
+    gemini: 'gemini',
+    kimi: 'kimi',
+    kiro: 'kiro',
   };
   return aliases[normalized] ?? normalized;
 }
 
-function displayAgentName(value: string) {
-  const normalized = normalizeAgentId(value);
-  const labels: Record<string, string> = {
-    codex_cli: 'Codex',
-    claude: 'Claude',
-    cursor_agent: 'Cursor Agent',
-    cursor: 'Cursor',
-    hermes: 'Hermes',
-    opencode: 'OpenCode',
-  };
-  return labels[normalized] ?? value.replace(/[_-]+/g, ' ');
+function sourceLabel(item: CodingCliItem) {
+  if (item.source === 'runtime') {
+    return 'ccto daemon';
+  }
+  if (item.source === 'local') {
+    return 'local PATH';
+  }
+  return 'not detected';
 }
 
-function formatRelativeTime(value: string | undefined, t: ReturnType<typeof useT<'dashboard.agents'>>) {
-  if (!value) {
-    return t('states.unknown');
+function relativeRuntimeSeen(lastSeenAt: string, now: number) {
+  const lastSeen = new Date(lastSeenAt).getTime();
+  if (!Number.isFinite(lastSeen)) {
+    return 'unknown';
   }
+  const seconds = Math.max(0, Math.round((now - lastSeen) / 1000));
+  if (seconds < 60) {
+    return `${seconds}s ago`;
+  }
+  return `${Math.round(seconds / 60)}m ago`;
+}
+
+function formatHistoryTime(value: string) {
   const timestamp = new Date(value).getTime();
   if (!Number.isFinite(timestamp)) {
-    return t('states.unknown');
+    return '';
   }
   const diffMs = Date.now() - timestamp;
-  const diffMinutes = Math.max(0, Math.round(diffMs / 60000));
-  if (diffMinutes < 1) {
-    return t('time.justNow');
+  const minutes = Math.max(0, Math.round(diffMs / 60_000));
+  if (minutes < 1) {
+    return 'now';
   }
-  if (diffMinutes < 60) {
-    return t('time.minutesAgo', { count: diffMinutes });
+  if (minutes < 60) {
+    return `${minutes}m`;
   }
-  const diffHours = Math.round(diffMinutes / 60);
-  if (diffHours < 24) {
-    return t('time.hoursAgo', { count: diffHours });
+  const hours = Math.round(minutes / 60);
+  if (hours < 24) {
+    return `${hours}h`;
   }
-  return t('time.daysAgo', { count: Math.round(diffHours / 24) });
+  return `${Math.round(hours / 24)}d`;
 }
 
-function redactRuntimeToken(command: string) {
-  return command.replace(
-    /CODINGCTO_RUNTIME_TOKEN='[^']+'/,
-    "CODINGCTO_RUNTIME_TOKEN='<copied-token>'"
-  );
+function summarizeTaskEvents(events: CodingCTODirectTaskEventDTO[]) {
+  return {
+    hasClaim: events.some(event => event.type === 'runtime_claimed'),
+    hasResult: events.some(event => event.type === 'executor_result'),
+  };
+}
+
+function extractAgentMessage(output?: string) {
+  if (!output) {
+    return '';
+  }
+  let latest = '';
+  for (const line of output.split('\n')) {
+    const trimmed = line.trim();
+    if (!trimmed.startsWith('{')) {
+      continue;
+    }
+    try {
+      const event = JSON.parse(trimmed) as {
+        type?: string;
+        item?: { type?: string; text?: string };
+      };
+      if (event.type === 'item.completed' && event.item?.type === 'agent_message') {
+        latest = event.item.text?.trim() ?? latest;
+      }
+    } catch {
+      continue;
+    }
+  }
+  return latest || output.trim();
 }

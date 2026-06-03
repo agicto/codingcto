@@ -4,6 +4,7 @@ import Link from 'next/link';
 import { usePathname } from 'next/navigation';
 import { FormEvent, useState } from 'react';
 import {
+  Bot,
   Building2,
   LucideIcon,
   Settings,
@@ -83,6 +84,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const boardHref = currentProjectId
     ? projectSpecForgeHref(currentProjectId)
     : ROUTES.CONSOLE.SPECFORGE;
+  const agentsHref = `${ROUTES.CONSOLE.AGENTS}?return_to=${encodeURIComponent(boardHref)}`;
   const newRequirementHref = currentProjectId
     ? projectDeliveryIntakeHref(currentProjectId)
     : `${ROUTES.CONSOLE.SPECFORGE}?board=intake&new=requirement`;
@@ -101,6 +103,13 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
       icon: ListChecks,
       description: sidebarT('items.delivery.description'),
       activeOn: 'codingcto',
+    },
+    {
+      title: sidebarT('items.agents.title'),
+      href: agentsHref,
+      icon: Bot,
+      description: sidebarT('items.agents.description'),
+      activeOn: 'agents',
     },
   ];
 

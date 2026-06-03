@@ -315,7 +315,7 @@ function ProjectMvpBoard({
           <MvpStatusMetric label="GitHub" value={githubReady ? 'Ready' : '需检查'} state={githubReady ? 'ready' : 'waiting'} />
         </div>
         <div className="mt-3 rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 text-sm leading-6 text-text-muted">
-          主流程只保留准备、需求、审批、交付。高级配置在设置中处理，不在交付看板里调度。
+          主流程只保留准备、需求、审批、交付。Coding Agent 作为独立左侧菜单入口，不放在看板里。
         </div>
       </section>
 

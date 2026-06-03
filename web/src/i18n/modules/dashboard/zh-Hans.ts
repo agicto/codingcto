@@ -45,9 +45,9 @@ const messages = {
       newRequirement: '新建需求',
     },
     groups: {
-      deliver: '交付',
-      review: '评审',
+      work: '工作',
       platform: '平台',
+      settings: '设置',
     },
     badges: {
       live: '可用',
@@ -56,36 +56,36 @@ const messages = {
     },
     items: {
       delivery: {
-        title: '交付板',
-        description: '需求录入、计划、PR DAG 和执行记录。',
+        title: '看板',
+        description: '看需求、计划、执行和 PR 进度。',
       },
       projects: {
         title: '项目',
-        description: '项目边界和仓库绑定。',
+        description: '管理产品和仓库上下文。',
       },
       agents: {
-        title: '智能体',
-        description: '查看本地运行的智能体，并分配可用技能。',
+        title: 'Coding Agent',
+        description: '查看本地 CLI 和调度状态。',
       },
       review: {
-        title: '评审队列',
-        description: '计划审批、失败 CI 和人工评审会汇总到这里。',
+        title: '检查',
+        description: '处理测试、CI 和人工决策。',
       },
       github: {
-        title: 'GitHub 设置',
-        description: '安装 GitHub App、同步仓库并绑定到项目。',
+        title: 'GitHub',
+        description: '安装 App、同步仓库并绑定项目。',
       },
       repositories: {
-        title: '代码仓库',
-        description: '管理当前工作区关联的 Git 仓库 URL。',
+        title: '仓库',
+        description: '管理工作区可用仓库。',
       },
       skills: {
         title: '技能',
-        description: '管理工作区里智能体可复用的指令。',
+        description: '管理可复用规则。',
       },
       settings: {
         title: '设置',
-        description: '个人资料、偏好和工作区配置。',
+        description: '账号、GitHub 和工作区设置。',
       },
     },
     footer: '设置',
@@ -162,7 +162,7 @@ const messages = {
     },
     engine: {
       title: 'Skill 引擎边界',
-      description: '当前产品不需要先做复杂 function calling。更稳定的顺序是先把技能编译进 Prompt，再由交付看板调度 Codex CLI。',
+      description: '当前产品不需要先做复杂 function calling。更稳定的顺序是先把技能编译进 Prompt，再由看板调度 Codex CLI。',
       badge: 'MVP：Prompt 编译优先',
       rule: '规则：Skill Registry 只管理可复用约束；Prompt Compiler 决定哪些约束进入任务；Runtime Dispatcher 只负责把最终任务交给本地 Codex CLI。',
       status: {
@@ -267,12 +267,12 @@ const messages = {
   },
   agents: {
     title: '智能体',
-    description: '管理本地 runtime、CLI 能力、仓库绑定和 Skill 分配；调度在交付看板完成。',
+    description: '管理本地 runtime、CLI 能力、仓库绑定和 Skill 分配；调度在看板完成。',
     onlineCount: '{count} 个智能体检测到',
     cliCount: '{count} 个 runtime 在线',
     runtimeHelp: '在线的是 CodingCTO runtime，不是这些 CLI 常驻运行。Runtime 收到任务后，才会按需启动已接入调度的 CLI。',
     actions: {
-      openBoard: '打开交付板',
+      openBoard: '打开看板',
       manageSkills: '管理技能',
       openSkills: '打开技能',
     },
@@ -292,6 +292,7 @@ const messages = {
     setup: {
       title: '启动本地 Runtime',
       description: '注册后需要在自己的电脑上启动一个 CodingCTO runtime。它会检测本机的 Codex、Claude Code、Cursor 等 CLI，持续心跳到平台，并在 issue 派发后领取任务执行。',
+      connectionTitle: '本地连接',
       commandTitle: '本地启动命令',
       commandDescription: '在你的代码仓库所在机器上执行；默认使用当前项目路径，也可以把 --repo-dir 改成目标仓库路径。',
       copy: '复制命令',
@@ -334,7 +335,7 @@ const messages = {
         dispatch: {
           title: 'Codex 调度',
           ready: '该 runtime 已上报 codex，并且可由平台按任务启动。',
-          blocked: '目前只检测到 CLI，尚不能由交付板派发执行。',
+          blocked: '目前只检测到 CLI，尚不能由看板派发执行。',
         },
         skills: {
           title: 'Skill 注入',
@@ -350,7 +351,7 @@ const messages = {
           skills: '调整 Skill',
         },
         delivery: {
-          title: '交付看板',
+          title: '看板',
           description: '从 idea、PRD、PR DAG 到 Codex 执行和 PR 交付的主流程。',
           badge: '主流程',
         },
@@ -360,9 +361,9 @@ const messages = {
           badge: '从这里开始',
         },
         review: {
-          title: '评审队列',
-          description: 'CI 失败、review patch、升级摘要和人工决策集中在这里处理。',
-          badge: '失败回收',
+          title: '检查',
+          description: 'CI 失败、review patch 和人工决策回到看板处理。',
+          badge: '失败处理',
         },
       },
       boundaries: {
@@ -371,11 +372,11 @@ const messages = {
           value: '回答“有哪些执行器、是否在线、能不能被调度、绑定了哪些 Skill”。',
         },
         delivery: {
-          label: '交付看板',
+          label: '看板',
           value: '回答“要做什么、谁审批、哪个 PR 节点正在跑、测试和 PR 是否通过”。',
         },
         review: {
-          label: '评审看板',
+          label: '检查',
           value: '回答“哪里失败、谁要决策、是否需要 fix/review_patch、还能自动重试几次”。',
         },
       },
@@ -459,10 +460,10 @@ const messages = {
     },
   },
   console: {
-    eyebrow: '企业交付工作台',
+    eyebrow: 'CodingCTO',
     title: '今天需要关注什么',
-    description: '从这里进入项目、GitHub 绑定和 CodingCTO 交付板。首页只保留真实业务入口，不再展示开发脚手架。',
-    openDelivery: '打开交付板',
+    description: '从项目开始，绑定仓库，然后在看板里调度 Codex。',
+    openDelivery: '打开看板',
     openProjects: '查看项目',
     cards: {
       projects: {
@@ -471,9 +472,9 @@ const messages = {
         action: '管理项目',
       },
       delivery: {
-        title: 'CodingCTO 交付',
-        description: '把需求转成计划、PR DAG、执行任务和可评审的 GitHub PR。',
-        action: '进入交付板',
+        title: '看板',
+        description: '把需求推进到计划、任务、执行、检查和 PR。',
+        action: '进入看板',
       },
       github: {
         title: 'GitHub 设置',
@@ -481,8 +482,8 @@ const messages = {
         action: '配置 GitHub',
       },
       review: {
-        title: '评审队列',
-        description: '待审批计划、失败 CI、人工评审和阻塞项将汇总到这里。',
+        title: '检查',
+        description: '测试、CI、评审和阻塞项会回到看板处理。',
         action: '即将上线',
       },
     },
@@ -491,27 +492,27 @@ const messages = {
       workspace: '先创建或选择工作区。',
       project: '创建项目，并绑定一个主仓库。',
       context: '补齐仓库画像、架构快照和技能。',
-      delivery: '在项目交付板里写需求、审批计划并执行。',
+      delivery: '在项目看板里写需求、审批计划并执行。',
     },
   },
   deliveryEntry: {
-    eyebrow: 'CodingCTO 交付',
+    eyebrow: 'CodingCTO 看板',
     title: '从项目开始，而不是从空白提示词开始',
-    description: '企业级执行需要工作区、项目、GitHub 仓库、代码上下文和权限边界。全局交付页只做入口，真实执行请进入项目交付板。',
+    description: '先选项目和仓库，再用看板推进需求、任务、执行和 PR。',
     primaryAction: '打开项目',
     githubAction: '配置 GitHub',
     cards: {
       project: {
-        title: '项目交付板',
-        description: '推荐入口。项目交付板会自动读取绑定仓库的画像、架构、技能和执行边界。',
+        title: '项目看板',
+        description: '推荐入口。看板会读取仓库画像、架构、技能和执行边界。',
       },
       github: {
         title: 'GitHub 绑定',
         description: '先安装 GitHub App，同步仓库，再把仓库绑定为主仓库、依赖、文档或基础设施。',
       },
       review: {
-        title: '评审队列',
-        description: '计划审批、失败 CI、人工评审和阻塞项会在后续集中到这里。',
+        title: '检查',
+        description: '计划审批、CI 失败和阻塞项会回到看板里处理。',
       },
     },
   },
@@ -685,7 +686,7 @@ const messages = {
       loading: '正在从所选工作区加载项目...',
       emptyForWorkspace: '当前工作区暂无项目。创建项目后即可开始绑定仓库。',
       selectWorkspace: '请选择或创建工作区以列出项目。',
-      emptyDescription: '项目创建完成后，可进入 CodingCTO 交付板绑定 GitHub 仓库并生成执行计划。',
+      emptyDescription: '项目创建完成后，可进入 CodingCTO 看板绑定 GitHub 仓库并生成执行计划。',
       noDescription: '暂无描述。',
       primaryRepoRequired: '需要主仓库',
       status: {
@@ -700,7 +701,7 @@ const messages = {
     },
     newProject: {
       title: '新建项目',
-      description: '先定义产品或系统边界，再进入项目交付板绑定 GitHub 仓库。',
+      description: '先定义产品或系统边界，再进入项目看板绑定 GitHub 仓库。',
       titlePlaceholder: '项目标题',
       descriptionPlaceholder: '这个项目代表哪个产品或系统？',
       statusPlanned: 'Planned',

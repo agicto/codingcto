@@ -478,7 +478,7 @@ export function SpecForgeWorkbench({
   const [selectedExecutor, setSelectedExecutor] = useState('codex_cli');
   const boardParam = searchParams.get('board');
   const [selectedWorkItem, setSelectedWorkItem] = useState<WorkItemID>(() =>
-    workItemFromBoardParam(boardParam) ?? 'orchestration'
+    workItemFromBoardParam(boardParam) ?? 'delivery'
   );
   const [currentRuntimeNow] = useState(() => Date.now());
   const { selectedWorkspaceId } = useSelectedWorkspace();
@@ -815,7 +815,7 @@ export function SpecForgeWorkbench({
   }, [idea, ideaDraftFromURL, requirementDialogOpen]);
 
   useEffect(() => {
-    const nextWorkItem = workItemFromBoardParam(boardParam) ?? 'orchestration';
+    const nextWorkItem = workItemFromBoardParam(boardParam) ?? 'delivery';
     if (nextWorkItem !== selectedWorkItem) {
       setSelectedWorkItem(nextWorkItem);
     }
@@ -1010,7 +1010,7 @@ export function SpecForgeWorkbench({
       setDispatchError(
         `正式调度已被质量门阻塞：${blockedQualityGates
           .map(gate => gate.label)
-          .join('、')}。请先处理交付看板中的阻塞项。`
+          .join('、')}。请先处理看板中的阻塞项。`
       );
       selectWorkItem('review');
       return;
@@ -1172,30 +1172,6 @@ export function SpecForgeWorkbench({
 
   const deliveryStages = [
     {
-      id: 'manual',
-      title: '说明书',
-      tone: 'bg-bg-surface',
-      emptyLabel: '交付流程尚未初始化',
-      items: [
-        {
-          id: 'delivery' as const,
-          key: 'DELIVERY',
-          title: '交付状态看板',
-          description: '集中查看流程门禁、PR 节点 Kanban、下一步和质量风险。',
-          status: hasPlan ? summarizeDeliveryRun(run).headline : '等待需求',
-          icon: ListChecks,
-        },
-        {
-          id: 'orchestration' as const,
-          key: 'TEAM',
-          title: '数字研发团队编排',
-          description: '专家、skills、prompt、任务和 Codex 调度的完整链路。',
-          status: executionReadiness.canDispatch ? 'Codex 可调度' : '等待 runtime',
-          icon: ListChecks,
-        },
-      ],
-    },
-    {
       id: 'intake',
       title: t('stages.intake.title'),
       tone: 'bg-bg-surface',
@@ -1344,73 +1320,77 @@ export function SpecForgeWorkbench({
         <div className="flex items-center gap-3">
           <ListChecks className="h-4 w-4 text-primary" />
           <div>
-            <h1 className="text-base font-semibold">{t('header.title')}</h1>
+            <h1 className="text-base font-semibold">
+              {selectedWorkItem === 'wiki' ? '仓库 Wiki' : t('header.title')}
+            </h1>
             <p className="text-xs text-text-muted">
               {projectLabel ? `${projectLabel} · ` : ''}
-              {t('header.description')}
+              {selectedWorkItem === 'wiki'
+                ? '代码结构、入口、测试命令和风险'
+                : t('header.description')}
             </p>
           </div>
         </div>
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">{t('header.activeRuns', { count: runningCount })}</Badge>
+          {selectedWorkItem === 'wiki' ? null : (
+            <Badge variant="outline">{t('header.activeRuns', { count: runningCount })}</Badge>
+          )}
           <Button variant="outline" size="sm" onClick={openRequirementIntake}>
             新建需求
             <SquarePen className="ml-1.5 h-4 w-4" />
           </Button>
-          <Button variant="outline" size="sm" onClick={openAgentsForCurrentDelivery}>
-            打开智能体
-            <Terminal className="ml-1.5 h-4 w-4" />
-          </Button>
-          <Button variant="outline" size="sm" onClick={() => selectWorkItem('review')}>
-            处理质量门
-            <ShieldAlert className="ml-1.5 h-4 w-4" />
-          </Button>
+          {selectedWorkItem === 'wiki' ? null : (
+            <>
+              <Button variant="outline" size="sm" onClick={openAgentsForCurrentDelivery}>
+                打开智能体
+                <Terminal className="ml-1.5 h-4 w-4" />
+              </Button>
+              <Button variant="outline" size="sm" onClick={() => selectWorkItem('review')}>
+                处理检查项
+                <ShieldAlert className="ml-1.5 h-4 w-4" />
+              </Button>
+            </>
+          )}
         </div>
       </header>
 
       <div className="shrink-0 overflow-x-auto border-b border-border-subtle px-4 py-2">
         <div className="flex min-w-max items-center gap-2">
+          <span className="mr-1 text-xs font-medium text-text-muted">阶段</span>
           {[
             {
               id: 'delivery' as const,
-              label: '交付总览',
-              description: '全局状态',
+              label: '看板',
               active: selectedWorkItem === 'delivery' || selectedWorkItem === 'orchestration',
             },
             {
               id: 'intake' as const,
               label: '需求',
-              description: 'Idea / PRD',
               active: selectedWorkItem === 'intake',
             },
             {
               id: 'wiki' as const,
               label: 'Wiki',
-              description: '仓库知识',
               active: selectedWorkItem === 'wiki' || selectedWorkItem === 'context',
             },
             {
               id: 'plan' as const,
               label: '计划',
-              description: '专家拆解',
               active: selectedWorkItem === 'plan',
             },
             {
               id: 'dag' as const,
-              label: 'Prompt',
-              description: '任务契约',
+              label: '任务',
               active: selectedWorkItem === 'dag',
             },
             {
               id: 'run' as const,
               label: '执行',
-              description: 'Codex 进度',
               active: selectedWorkItem === 'run',
             },
             {
               id: 'review' as const,
-              label: '质量',
-              description: 'CI / 修复',
+              label: '检查',
               active: selectedWorkItem === 'review',
             },
           ].map(board => (
@@ -1419,14 +1399,9 @@ export function SpecForgeWorkbench({
               variant={board.active ? 'secondary' : 'outline'}
               size="sm"
               onClick={() => selectWorkItem(board.id)}
-              className="h-auto min-w-24 justify-start px-3 py-2"
+              className="h-8 rounded-full px-3"
             >
-              <span className="text-left">
-                <span className="block text-sm leading-4">{board.label}</span>
-                <span className="mt-0.5 block text-[11px] leading-4 text-text-muted">
-                  {board.description}
-                </span>
-              </span>
+              {board.label}
             </Button>
           ))}
         </div>
@@ -1434,83 +1409,92 @@ export function SpecForgeWorkbench({
 
       <section
         className={cn(
-          'grid min-h-0 flex-1',
-          pageScroll
-            ? 'gap-3 p-3 2xl:grid-cols-[minmax(0,1fr)_560px]'
-            : 'grid-rows-[minmax(280px,1fr)_minmax(300px,40vh)] overflow-hidden 2xl:grid-cols-[minmax(0,1fr)_560px] 2xl:grid-rows-1'
+          'min-h-0 flex-1',
+          selectedWorkItem === 'wiki'
+            ? 'overflow-y-auto p-4'
+            : cn(
+                'grid',
+                pageScroll
+                  ? 'gap-3 p-3 2xl:grid-cols-[minmax(0,1fr)_560px]'
+                  : 'grid-rows-[minmax(280px,1fr)_minmax(300px,40vh)] overflow-hidden 2xl:grid-cols-[minmax(0,1fr)_560px] 2xl:grid-rows-1'
+              )
         )}
       >
-        <div
-          className={cn(
-            'row-start-2 min-w-0 overflow-x-hidden p-3 2xl:col-start-1 2xl:row-start-auto',
-            pageScroll ? 'overflow-visible pb-0' : 'overflow-y-auto pb-28'
-          )}
-        >
-          <div className="grid min-h-full grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-3 2xl:grid-cols-6">
-            {deliveryStages.map(column => (
-              <div
-                key={column.id}
-                className={cn('flex min-h-[220px] flex-col rounded-xl p-3', column.tone)}
-              >
-                <div className="flex h-8 items-center justify-between text-sm">
-                  <div className="flex items-center gap-2 font-medium">
-                    <CircleDot className="h-3.5 w-3.5 text-text-muted" />
-                    {column.title}
-                    <span className="text-xs text-text-muted">{column.items.length}</span>
-                  </div>
-                  <span className="text-text-muted">+</span>
-                </div>
-                <div className="mt-3 space-y-2">
-                  {column.items.length === 0 ? (
-                    <div className="flex h-40 items-center justify-center px-3 text-center text-sm text-text-muted">
-                      {column.emptyLabel}
+        {selectedWorkItem !== 'wiki' ? (
+          <div
+            className={cn(
+              'row-start-2 min-w-0 overflow-x-hidden p-3 2xl:col-start-1 2xl:row-start-auto',
+              pageScroll ? 'overflow-visible pb-0' : 'overflow-y-auto pb-28'
+            )}
+          >
+            <div className="grid min-h-full grid-cols-[repeat(auto-fit,minmax(190px,1fr))] gap-3 2xl:grid-cols-6">
+              {deliveryStages.map(column => (
+                <div
+                  key={column.id}
+                  className={cn('flex min-h-[220px] flex-col rounded-xl p-3', column.tone)}
+                >
+                  <div className="flex h-8 items-center justify-between text-sm">
+                    <div className="flex items-center gap-2 font-medium">
+                      <CircleDot className="h-3.5 w-3.5 text-text-muted" />
+                      {column.title}
+                      <span className="text-xs text-text-muted">{column.items.length}</span>
                     </div>
-                  ) : (
-                    column.items.map(item => {
-                      const Icon = item.icon;
-                      return (
-                        <button
-                          key={item.id}
-                          onClick={() => selectWorkItem(item.id)}
-                          className={cn(
-                            'w-full rounded-lg border bg-bg-surface p-3 text-left shadow-sm transition hover:border-primary/40',
-                            selectedWorkItem === item.id
-                              ? 'border-primary ring-1 ring-primary'
-                              : 'border-border-subtle'
-                          )}
-                        >
-                          <div className="flex items-center gap-2 text-xs text-text-muted">
-                            <Icon className="h-3.5 w-3.5 text-primary" />
-                            {item.key}
-                          </div>
-                          <div className="mt-2 text-sm font-semibold leading-5 break-words">
-                            {item.title}
-                          </div>
-                          <p className="mt-1 line-clamp-2 text-xs leading-5 text-text-muted">
-                            {item.description}
-                          </p>
-                          <div className="mt-3 flex items-center justify-between text-xs">
-                            <span className="rounded-full bg-muted px-2 py-1 text-text-subtle">
-                              {item.status}
-                            </span>
-                            <span className="text-text-muted">
-                              {selectedWorkItem === item.id ? t('status.current') : '查看'}
-                            </span>
-                          </div>
-                        </button>
-                      );
-                    })
-                  )}
+                    <span className="text-text-muted">+</span>
+                  </div>
+                  <div className="mt-3 space-y-2">
+                    {column.items.length === 0 ? (
+                      <div className="flex h-40 items-center justify-center px-3 text-center text-sm text-text-muted">
+                        {column.emptyLabel}
+                      </div>
+                    ) : (
+                      column.items.map(item => {
+                        const Icon = item.icon;
+                        return (
+                          <button
+                            key={item.id}
+                            onClick={() => selectWorkItem(item.id)}
+                            className={cn(
+                              'w-full rounded-lg border bg-bg-surface p-3 text-left shadow-sm transition hover:border-primary/40',
+                              selectedWorkItem === item.id
+                                ? 'border-primary ring-1 ring-primary'
+                                : 'border-border-subtle'
+                            )}
+                          >
+                            <div className="flex items-center gap-2 text-xs text-text-muted">
+                              <Icon className="h-3.5 w-3.5 text-primary" />
+                              {item.key}
+                            </div>
+                            <div className="mt-2 text-sm font-semibold leading-5 break-words">
+                              {item.title}
+                            </div>
+                            <p className="mt-1 line-clamp-2 text-xs leading-5 text-text-muted">
+                              {item.description}
+                            </p>
+                            <div className="mt-3 flex items-center justify-between text-xs">
+                              <span className="rounded-full bg-muted px-2 py-1 text-text-subtle">
+                                {item.status}
+                              </span>
+                              <span className="text-text-muted">
+                                {selectedWorkItem === item.id ? t('status.current') : '查看'}
+                              </span>
+                            </div>
+                          </button>
+                        );
+                      })
+                    )}
+                  </div>
                 </div>
-              </div>
-            ))}
+              ))}
+            </div>
           </div>
-        </div>
+        ) : null}
 
         <aside
           className={cn(
             'row-start-1 min-h-0 overflow-x-hidden border-t border-border-subtle bg-bg-subtle/60 p-4 2xl:col-start-2 2xl:row-start-auto 2xl:border-l 2xl:border-t-0',
-            pageScroll ? 'overflow-visible pb-4' : 'overflow-y-auto pb-28'
+            pageScroll ? 'overflow-visible pb-4' : 'overflow-y-auto pb-28',
+            selectedWorkItem === 'wiki' &&
+              'row-auto overflow-visible border-0 bg-transparent p-0 pb-0 2xl:col-auto 2xl:border-0'
           )}
         >
           {selectedWorkItem === 'orchestration' && (
@@ -1533,7 +1517,7 @@ export function SpecForgeWorkbench({
           )}
 
           {selectedWorkItem === 'delivery' && (
-            <DetailPanel title="DELIVERY" heading="从需求到 PR 的交付看板">
+            <DetailPanel title="看板" heading="从需求到 PR 的看板">
               <DeliveryBoardOverview
                 hasPlan={hasPlan}
                 approved={approved}
@@ -1596,17 +1580,15 @@ export function SpecForgeWorkbench({
           )}
 
           {selectedWorkItem === 'wiki' && (
-            <DetailPanel title="WIKI" heading="Repo Wiki：给专家写计划的仓库知识库">
+            <DetailPanel title="Wiki" heading="仓库 Wiki">
               <RepoWikiPanel
                 repoId={effectiveRepoId.trim()}
                 repoProfile={activePlan.repoProfile}
                 hasPlan={hasPlan}
                 planSource={planSource}
                 githubRecoveryActions={githubRecoveryActionsByBoard.wiki}
-                onOpenContext={() => selectWorkItem('context')}
                 onCreateRequirement={openRequirementIntake}
                 onReviewPlan={() => selectWorkItem('plan')}
-                onInspectPrompt={() => selectWorkItem('dag')}
               />
             </DetailPanel>
           )}
@@ -2083,7 +2065,7 @@ function GitHubGateRecoveryActions({ actions }: { actions: GitHubReadinessRecove
 function BoardResponsibilityPanel() {
   const boards = [
     {
-      name: '交付看板',
+      name: '看板',
       owner: '需求、计划、Prompt、执行、PR 交付',
       rule: '凡是会改变交付状态、触发 Codex 或影响 PR 的动作，都在这里完成。',
     },
@@ -2482,7 +2464,7 @@ function DeliveryBoardOverview({
       <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="text-sm font-medium text-text-main">交付质量门</div>
+            <div className="text-sm font-medium text-text-main">检查项</div>
             <p className="mt-1 text-sm leading-6 text-text-muted">
               看板只允许在证据、Wiki、测试、风险和恢复路径清楚时调度 Codex。Wiki 当前完整度 {wikiContext.scorePercent}%。
             </p>
@@ -2525,15 +2507,15 @@ function DeliveryBoardOverview({
             onClick={onOpenWiki}
           />
           <ProcessRouteLine
-            label="交付板"
+            label="看板"
             value="管理需求、计划、Prompt、调度启动、PR 状态和下一步。"
             action="留在看板"
             onClick={() => undefined}
           />
           <ProcessRouteLine
-            label="评审队列"
-            value="集中处理质量门、CI 失败、review patch、失败恢复和人工决策。"
-            action="去评审"
+            label="检查"
+            value="处理检查项、CI 失败、review patch、失败恢复和人工决策。"
+            action="看检查"
             onClick={onReview}
           />
         </div>
@@ -2575,7 +2557,7 @@ function DeliveryWorkflowNavigator({
     plan: { label: '评审计划', onClick: onReviewPlan },
     prompt: { label: '检查 Prompt', onClick: onInspectPrompt },
     runtime: { label: '看执行器', onClick: onRun },
-    quality: { label: '处理质量门', onClick: onReview },
+    quality: { label: '处理检查项', onClick: onReview },
     dispatch: { label: '看执行', onClick: onRun },
     review: { label: '去评审', onClick: onReview },
   };
@@ -3364,20 +3346,16 @@ function RepoWikiPanel({
   hasPlan,
   planSource,
   githubRecoveryActions,
-  onOpenContext,
   onCreateRequirement,
   onReviewPlan,
-  onInspectPrompt,
 }: {
   repoId: string;
   repoProfile: RepoProfile;
   hasPlan: boolean;
   planSource: 'api' | 'demo' | 'empty';
   githubRecoveryActions: GitHubReadinessRecoveryAction[];
-  onOpenContext: () => void;
   onCreateRequirement: () => void;
   onReviewPlan: () => void;
-  onInspectPrompt: () => void;
 }) {
   const architectureQuery = useRepoArchitectureStatus(repoId);
   const reindexArchitecture = useReindexRepoArchitecture(repoId);
@@ -3394,7 +3372,11 @@ function RepoWikiPanel({
   const entrypoints = snapshot?.entrypoints ?? [];
   const ciWorkflows = snapshot?.ci_workflows ?? [];
   const planningContext = repoWikiPlanningContext(repoProfile, snapshot);
-  const expertContract = repoWikiExpertContract(planningContext, hasPlan);
+  const wikiNextAction = wikiReady
+    ? riskAreas.length
+      ? 'Wiki 已可用，可以继续写需求或查看计划。'
+      : 'Wiki 已可用，建议补充风险区域。'
+    : '先生成 Wiki，再继续写需求或计划。';
 
   async function generateWiki() {
     if (!repoId) {
@@ -3417,27 +3399,27 @@ function RepoWikiPanel({
     {
       title: '仓库总览',
       detail: snapshot?.summary || repoProfile.summary || '等待生成仓库总览。',
-      status: wikiReady ? '可引用' : '待生成',
+      status: wikiReady ? '可用' : '待生成',
     },
     {
       title: '结构与模块',
       detail: modules.length
         ? `${modules.slice(0, 6).join('、')}${modules.length > 6 ? ` 等 ${modules.length} 项` : ''}`
-        : '生成 Wiki 后会展示核心模块、入口和目录结构。',
+        : '生成后会展示核心模块、入口和目录结构。',
       status: modules.length ? '已提取' : '缺少证据',
     },
     {
-      title: '测试与质量',
+      title: '测试命令',
       detail: testCommands.length
         ? testCommands.join('；')
-        : '生成 Wiki 后会沉淀测试命令、CI 工作流和质量门输入。',
-      status: testCommands.length || ciWorkflows.length ? '可用于计划' : '待补充',
+        : '生成后会展示可运行的测试命令。',
+      status: testCommands.length || ciWorkflows.length ? '可用' : '待补充',
     },
     {
       title: '风险区域',
       detail: riskAreas.length
         ? riskAreas.join('；')
-        : '架构专家会从这里识别迁移、安全、权限和数据风险。',
+        : '生成后会展示迁移、安全、权限和数据风险。',
       status: riskAreas.length ? '已识别' : '待识别',
     },
   ];
@@ -3447,9 +3429,9 @@ function RepoWikiPanel({
       <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <div className="text-sm font-medium text-text-main">Repo Wiki 的角色</div>
+            <div className="text-sm font-medium text-text-main">仓库 Wiki</div>
             <p className="mt-1 text-sm leading-6 text-text-muted">
-              Wiki 是计划前的仓库说明书。产品专家用它理解已有能力和边界；架构专家用它判断影响范围、依赖、测试和风险。
+              用仓库内容生成一份简单说明，帮助团队快速了解结构、入口、测试和风险。
             </p>
           </div>
           <Badge variant="outline" className={qualityGateStateClassName(planningContext.state)}>
@@ -3460,17 +3442,13 @@ function RepoWikiPanel({
           <ManualMetric label="目标仓库" value={repoId || '未选择'} />
           <ManualMetric label="默认分支" value={repoProfile.defaultBranch || 'main'} />
           <ManualMetric label="模块" value={String(modules.length)} />
-          <ManualMetric label="计划来源" value={planSource === 'api' ? '真实计划' : planSource === 'empty' ? '待生成' : '演示'} />
+          <ManualMetric label="来源" value={planSource === 'api' ? '真实仓库' : planSource === 'empty' ? '待生成' : '演示'} />
         </div>
         <div className="mt-4 flex flex-col gap-3 rounded-md bg-bg-subtle p-3 md:flex-row md:items-center md:justify-between">
           <div>
             <div className="text-sm font-medium text-text-main">下一步</div>
             <p className="mt-1 text-sm leading-6 text-text-muted">
-              {wikiReady
-                ? hasPlan
-                  ? planningContext.nextAction
-                  : `${planningContext.nextAction} 继续录入需求后，专家会基于这些证据生成 PRD 和技术计划。`
-                : '先生成 Repo Wiki，再让产品和架构专家基于仓库事实写计划。'}
+              {wikiNextAction}
             </p>
           </div>
           <div className="flex flex-wrap gap-2">
@@ -3483,7 +3461,7 @@ function RepoWikiPanel({
               {reindexArchitecture.isPending ? '生成中' : '生成 Wiki'}
             </Button>
             <Button type="button" onClick={hasPlan ? onReviewPlan : onCreateRequirement}>
-              {hasPlan ? '去计划' : '用 Wiki 写需求'}
+              {hasPlan ? '查看计划' : '新建需求'}
               <ArrowRight className="ml-1.5 h-4 w-4" />
             </Button>
           </div>
@@ -3496,24 +3474,6 @@ function RepoWikiPanel({
         ) : null}
       </div>
 
-      <RepoWikiPlanningContextPanel summary={planningContext} />
-
-      <RepoWikiExpertPlanningBoard
-        summary={planningContext}
-        contract={expertContract}
-        hasPlan={hasPlan}
-        onCreateRequirement={onCreateRequirement}
-        onReviewPlan={onReviewPlan}
-        onInspectPrompt={onInspectPrompt}
-      />
-
-      <RepoWikiExpertContractPanel
-        contract={expertContract}
-        onCreateRequirement={onCreateRequirement}
-        onReviewPlan={onReviewPlan}
-        onInspectPrompt={onInspectPrompt}
-      />
-
       <div className="grid gap-3 md:grid-cols-2">
         {wikiSections.map(section => (
           <div key={section.title} className="rounded-lg border border-border-subtle bg-bg-surface p-4">
@@ -3524,40 +3484,6 @@ function RepoWikiPanel({
             <p className="mt-2 text-sm leading-6 text-text-muted">{section.detail}</p>
           </div>
         ))}
-      </div>
-
-      <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <div className="text-sm font-medium text-text-main">专家如何使用 Wiki</div>
-            <p className="mt-1 text-sm leading-6 text-text-muted">
-              生成计划时，Wiki 会作为 repo context 进入专家链路：先解释现有系统，再约束 PR DAG 和 Prompt。
-            </p>
-          </div>
-          <Button type="button" variant="outline" size="sm" onClick={onOpenContext}>
-            管理画像和 Skill
-          </Button>
-        </div>
-        <div className="mt-3 grid gap-2">
-          <ProcessRouteLine
-            label="产品专家"
-            value="用 Wiki 判断现有产品能力、术语、已有入口和验收边界，避免写出脱离仓库的 PRD。"
-            action="录入需求"
-            onClick={onCreateRequirement}
-          />
-          <ProcessRouteLine
-            label="架构专家"
-            value="用模块、入口、CI、风险和测试命令生成技术计划、影响范围和迁移策略。"
-            action="看计划"
-            onClick={onReviewPlan}
-          />
-          <ProcessRouteLine
-            label="Coding Agent"
-            value="最终 Prompt 会引用 Wiki 中的文件范围、测试命令、non-goals 和质量门。"
-            action="检查 Prompt"
-            onClick={onInspectPrompt}
-          />
-        </div>
       </div>
 
       <div className="grid gap-3 md:grid-cols-2">
@@ -5740,7 +5666,7 @@ function PreDispatchRunGuide({
       label: '4. PR 与回收',
       detail:
         blockedGateCount > 0
-          ? `${blockedGateCount} 个质量门需要评审；失败后进入评审队列或 review_patch。`
+          ? `${blockedGateCount} 个质量门需要检查；失败后回到看板或创建 review_patch。`
           : '通过后会进入 PR、CI、评审和可合并状态。',
       state: blockedGateCount > 0 ? 'blocked' : 'waiting',
     },
@@ -6217,7 +6143,7 @@ function PlanReview({
                   当前有 {blockedQualityGates.length} 个质量门阻塞。请先处理风险、测试或恢复决策，再启动 Codex。
                 </span>
                 <Button type="button" variant="outline" size="sm" onClick={onReviewQualityGates}>
-                  去评审队列
+                  查看检查项
                   <ArrowRight className="ml-1.5 h-4 w-4" />
                 </Button>
               </div>

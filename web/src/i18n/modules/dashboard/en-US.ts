@@ -47,9 +47,9 @@ const messages: DashboardMessages = {
       newRequirement: 'New requirement',
     },
     groups: {
-      deliver: 'Deliver',
-      review: 'Review',
+      work: 'Work',
       platform: 'Platform',
+      settings: 'Settings',
     },
     badges: {
       live: 'Live',
@@ -58,36 +58,36 @@ const messages: DashboardMessages = {
     },
     items: {
       delivery: {
-        title: 'Delivery Board',
-        description: 'Requirement intake, plans, PR DAGs, and runs.',
+        title: 'Board',
+        description: 'Track requirements, plans, runs, and PRs.',
       },
       projects: {
         title: 'Projects',
-        description: 'Project boundaries and repository bindings.',
+        description: 'Manage products and repository context.',
       },
       agents: {
-        title: 'Agents',
-        description: 'Inspect locally running agents and assign available skills.',
+        title: 'Coding Agent',
+        description: 'Check local CLI and dispatch status.',
       },
       review: {
-        title: 'Review Queue',
-        description: 'Plan approvals, failed CI, and human review actions will appear here.',
+        title: 'Check',
+        description: 'Handle tests, CI, and human decisions.',
       },
       github: {
-        title: 'GitHub setup',
-        description: 'Install the GitHub App, sync repositories, and bind them to projects.',
+        title: 'GitHub',
+        description: 'Install the App, sync repositories, and bind projects.',
       },
       repositories: {
-        title: 'Code repositories',
-        description: 'Manage Git repository URLs linked to the current workspace.',
+        title: 'Repositories',
+        description: 'Manage workspace repositories.',
       },
       skills: {
         title: 'Skills',
-        description: 'Manage reusable agent instructions for this workspace.',
+        description: 'Manage reusable rules.',
       },
       settings: {
         title: 'Settings',
-        description: 'Profile, preferences, and workspace configuration.',
+        description: 'Account, GitHub, and workspace settings.',
       },
     },
     footer: 'Settings',
@@ -164,7 +164,7 @@ const messages: DashboardMessages = {
     },
     engine: {
       title: 'Skill engine boundary',
-      description: 'The product does not need complex function calling first. The stable path is to compile skills into prompts, then let the delivery board dispatch Codex CLI.',
+      description: 'The product does not need complex function calling first. The stable path is to compile skills into prompts, then let the board dispatch Codex CLI.',
       badge: 'MVP: prompt compiler first',
       rule: 'Rule: Skill Registry manages reusable constraints; Prompt Compiler decides which constraints enter the task; Runtime Dispatcher hands the final task to local Codex CLI.',
       status: {
@@ -269,7 +269,7 @@ const messages: DashboardMessages = {
   },
   agents: {
     title: 'Agents',
-    description: 'Manage local runtimes, CLI capabilities, repository binding, and skill assignment. Scheduling happens on delivery boards.',
+    description: 'Manage local runtimes, CLI capabilities, repository binding, and skill assignment. Scheduling happens on the board.',
     onlineCount: '{count} agents detected',
     cliCount: '{count} runtimes online',
     runtimeHelp: 'The CodingCTO runtime is online; these CLIs are not long-running processes. The runtime launches a wired CLI only when it receives a task.',
@@ -294,6 +294,7 @@ const messages: DashboardMessages = {
     setup: {
       title: 'Start a local runtime',
       description: 'After registration, run a CodingCTO runtime on your machine. It detects local CLIs such as Codex, Claude Code, and Cursor, sends heartbeats to the platform, and claims work after an issue is dispatched.',
+      connectionTitle: 'Local connection',
       commandTitle: 'Local start command',
       commandDescription: 'Run this on the machine with your checkout. It defaults to the current project path; change --repo-dir when targeting another repository.',
       copy: 'Copy command',
@@ -336,7 +337,7 @@ const messages: DashboardMessages = {
         dispatch: {
           title: 'Codex dispatch',
           ready: 'This runtime reported codex and can be launched by platform tasks.',
-          blocked: 'The CLI was detected, but the delivery board cannot dispatch it yet.',
+          blocked: 'The CLI was detected, but the board cannot dispatch it yet.',
         },
         skills: {
           title: 'Skill injection',
@@ -461,10 +462,10 @@ const messages: DashboardMessages = {
     },
   },
   console: {
-    eyebrow: 'Enterprise delivery workspace',
+    eyebrow: 'CodingCTO',
     title: 'What needs attention today',
-    description: 'Start from projects, GitHub binding, and the CodingCTO delivery board. This home page now keeps only real business entry points.',
-    openDelivery: 'Open delivery board',
+    description: 'Start from a project, bind a repository, then dispatch Codex from the board.',
+    openDelivery: 'Open board',
     openProjects: 'View projects',
     cards: {
       projects: {
@@ -473,9 +474,9 @@ const messages: DashboardMessages = {
         action: 'Manage projects',
       },
       delivery: {
-        title: 'CodingCTO delivery',
-        description: 'Turn requirements into plans, PR DAGs, execution tasks, and reviewable GitHub pull requests.',
-        action: 'Open delivery board',
+        title: 'Board',
+        description: 'Move requirements through plan, task, run, check, and PR.',
+        action: 'Open board',
       },
       github: {
         title: 'GitHub setup',
@@ -483,8 +484,8 @@ const messages: DashboardMessages = {
         action: 'Configure GitHub',
       },
       review: {
-        title: 'Review Queue',
-        description: 'Plan approvals, failed CI, human review, and blockers will be collected here.',
+        title: 'Check',
+        description: 'Tests, CI, reviews, and blockers return to the board.',
         action: 'Coming soon',
       },
     },
@@ -493,27 +494,27 @@ const messages: DashboardMessages = {
       workspace: 'Create or select a workspace.',
       project: 'Create a project and bind one primary repository.',
       context: 'Complete repo profiles, architecture snapshots, and skills.',
-      delivery: 'Write requirements, approve plans, and execute from the project delivery board.',
+      delivery: 'Write requirements, approve plans, and execute from the project board.',
     },
   },
   deliveryEntry: {
-    eyebrow: 'CodingCTO delivery',
+    eyebrow: 'CodingCTO board',
     title: 'Start from a project, not a blank prompt',
-    description: 'Enterprise execution needs a workspace, project, GitHub repositories, repo context, and scope guardrails. The global delivery page is now an entry point; real execution should happen inside a project delivery board.',
+    description: 'Choose a project and repository, then move requirements, tasks, runs, and PRs on the board.',
     primaryAction: 'Open projects',
     githubAction: 'Configure GitHub',
     cards: {
       project: {
-        title: 'Project delivery board',
-        description: 'Recommended entry. The project board loads bound repo profiles, architecture snapshots, skills, and guardrails automatically.',
+        title: 'Project board',
+        description: 'Recommended entry. The board loads repo profiles, architecture snapshots, skills, and guardrails.',
       },
       github: {
         title: 'GitHub binding',
         description: 'Install the GitHub App, sync repositories, then bind repos as primary, dependency, docs, or infra.',
       },
       review: {
-        title: 'Review Queue',
-        description: 'Plan approvals, failed CI, human review, and blockers will be collected here next.',
+        title: 'Check',
+        description: 'Plan approvals, failed CI, and blockers return to the board.',
       },
     },
   },
@@ -704,7 +705,7 @@ const messages: DashboardMessages = {
     },
     newProject: {
       title: 'New project',
-      description: 'Define the product or system boundary first, then open the project delivery board to bind GitHub repositories.',
+      description: 'Define the product or system boundary first, then open the project board to bind GitHub repositories.',
       titlePlaceholder: 'Project title',
       descriptionPlaceholder: 'What product or system does this project represent?',
       statusPlanned: 'Planned',

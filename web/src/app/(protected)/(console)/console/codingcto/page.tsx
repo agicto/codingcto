@@ -31,7 +31,7 @@ export default function CodingCTOPage() {
   if (projectsQuery.isLoading || projects.length > 0) {
     return (
       <div className="mx-auto w-full max-w-4xl px-4 py-10 text-sm text-text-muted md:px-8">
-        正在进入项目交付板...
+        正在进入项目看板...
       </div>
     );
   }
