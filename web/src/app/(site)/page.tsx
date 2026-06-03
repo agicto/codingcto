@@ -1,459 +1,274 @@
 import Link from 'next/link';
-import Image from 'next/image';
-import {
-  ArrowRight,
-  Bot,
-  CheckCircle2,
-  FileCheck2,
-  GitPullRequestArrow,
-  Play,
-  Sparkles,
+import { getTranslations } from 'next-intl/server';
+import { Button } from '@/components/ui/button';
+import { Card, CardContent } from '@/components/ui/card';
+import { Badge } from '@/components/ui/badge';
+import { 
+  ArrowRight, 
+  Shield, 
+  Globe, 
+  Terminal, 
+  Sparkles, 
+  Palette,
+  Atom,
+  Database,
+  ShieldCheck
 } from 'lucide-react';
 
-import { Button } from '@/components/ui/button';
-import { Logo } from '@/components/ui/icons';
+/**
+ * CodingCTO homepage
+ * Unified design language with Auth and Console sections
+ */
+export default async function HomePage() {
+  const t = await getTranslations('site');
+  const features = featuresData(t);
 
-const navItems = ['Product', 'How It Works', 'Features', 'Pricing', 'Docs', 'Company'];
-
-const metrics = [
-  ['10x', 'Faster Delivery'],
-  ['90%', 'Less Manual Work'],
-  ['100%', 'Production Ready'],
-  ['24/7', 'AI Engineering'],
-];
-
-const expertImages = [
-  {
-    title: 'Product Expert',
-    src: '/landing/product-expert.png',
-  },
-  {
-    title: 'Architecture Expert',
-    src: '/landing/architecture-expert.png',
-  },
-  {
-    title: 'QA Expert',
-    src: '/landing/qa-expert.png',
-  },
-  {
-    title: 'Code Review Expert',
-    src: '/landing/code-review-expert.png',
-  },
-];
-
-const qualityChecks = [
-  ['API Tests', 'All endpoints verified'],
-  ['UI Tests', 'Components validated'],
-  ['E2E Tests', 'Critical flows tested'],
-  ['Security', 'Vulnerabilities scanned'],
-  ['Code Review', 'Standards & quality'],
-  ['Acceptance Criteria', 'All criteria satisfied'],
-];
-
-export default function HomePage() {
   return (
-    <main className="min-h-screen bg-[#fbfdff] text-[#07143d]">
-      <HeroSection />
-      <FeatureSection
-        id="product"
-        eyebrow="01  Digital Engineering Team"
-        title="A World-Class Engineering Team. Built Into Every Repository."
-        description="CodingCTO gives each project a product, architecture, QA, and review layer before agents write code."
-      >
-        <div className="grid gap-5 md:grid-cols-4">
-          {expertImages.map(expert => (
-            <ExpertImageCard key={expert.title} src={expert.src} title={expert.title} />
-          ))}
+    <div className="flex flex-col">
+      {/* Hero Section - with glow effects like Auth */}
+      <section className="relative overflow-hidden bg-bg-canvas">
+        {/* Animated Background Elements */}
+        <div className="absolute inset-0 pointer-events-none">
+          {/* Large gradient orbs */}
+          <div className="absolute top-[-20%] left-[-10%] w-[50%] h-[50%] rounded-full bg-primary/15 blur-3xl" />
+          <div className="absolute bottom-[-30%] right-[-15%] w-[60%] h-[60%] rounded-full bg-primary-deeper/10 blur-3xl" />
+          <div className="absolute top-[30%] right-[20%] w-[30%] h-[30%] rounded-full bg-primary/5 blur-2xl" />
+          
+          {/* Decorative circles */}
+          <div className="absolute top-[15%] right-[25%] w-32 h-32 rounded-full border border-primary/10" />
+          <div className="absolute top-[18%] right-[27%] w-24 h-24 rounded-full border border-primary/5" />
+          <div className="absolute bottom-[20%] left-[8%] w-40 h-40 rounded-full border border-primary/10" />
+          
+          {/* Grid Pattern */}
+          <div 
+            className="absolute inset-0 opacity-[0.02]"
+            style={{
+              backgroundImage: `linear-gradient(var(--primary) 1px, transparent 1px), linear-gradient(90deg, var(--primary) 1px, transparent 1px)`,
+              backgroundSize: '60px 60px',
+            }}
+          />
         </div>
-      </FeatureSection>
 
-      <FeatureSection
-        id="features"
-        eyebrow="02  Repository Intelligence"
-        title="Understands Before It Executes."
-        description="CodingCTO scans your repository context first: architecture, standards, dependencies, tests, APIs, and project-specific skills."
-      >
-        <RepositoryIntelligence />
-      </FeatureSection>
+        <div className="container relative py-20 md:py-28 lg:py-36">
+          <div className="mx-auto max-w-4xl text-center">
+            {/* Badge */}
+            <Badge variant="secondary" className="mb-6 px-4 py-1.5 text-sm font-medium">
+              <Sparkles className="mr-1.5 h-3.5 w-3.5" />
+              {t('hero.eyebrow')}
+            </Badge>
 
-      <FeatureSection
-        eyebrow="03  Execution Plan"
-        title="Every Requirement Becomes An Execution Plan."
-        description="From intent to plan: structured, traceable, and ready for automated implementation."
-      >
-        <ExecutionPlan />
-      </FeatureSection>
-
-      <FeatureSection
-        eyebrow="04  AI Agent Orchestra"
-        title="Orchestrates The Best Coding Agents."
-        description="CodingCTO routes, reviews, and merges agent output into one coherent delivery path."
-      >
-        <AgentOrchestra />
-      </FeatureSection>
-
-      <FeatureSection
-        eyebrow="05  QA & Review"
-        title="Never Ship Unverified Code."
-        description="Automated testing, security checks, and expert review happen before the pull request is considered ready."
-      >
-        <QualityReview />
-      </FeatureSection>
-
-      <FeatureSection
-        eyebrow="06  Production PR"
-        title="From Idea To Production PR."
-        description="A production-ready pull request with full context, tests, review state, and traceability."
-      >
-        <ProductionPr />
-      </FeatureSection>
-
-      <SiteFooter />
-    </main>
-  );
-}
-
-function HeroSection() {
-  return (
-    <section className="relative overflow-hidden border-b border-[#dbe7ff]">
-      <div className="absolute inset-0 bg-[linear-gradient(115deg,#ffffff_0%,#fbfdff_46%,#eef5ff_100%)]" />
-      <div className="absolute inset-0 bg-[linear-gradient(rgba(17,99,255,0.055)_1px,transparent_1px),linear-gradient(90deg,rgba(17,99,255,0.055)_1px,transparent_1px)] bg-[size:54px_54px] [mask-image:linear-gradient(105deg,transparent_0%,black_40%,black_84%,transparent_100%)]" />
-
-      <div className="container relative px-4 py-6 md:px-6 lg:px-10">
-        <header className="flex items-center justify-between gap-6">
-          <Link href="/" aria-label="CodingCTO home">
-            <Logo className="h-8 w-auto md:h-9" />
-          </Link>
-          <nav className="hidden items-center gap-10 text-sm font-medium text-[#172958] lg:flex">
-            {navItems.map(item => (
-              <a
-                key={item}
-                href={`#${item.toLowerCase().replaceAll(' ', '-')}`}
-                className="transition-colors hover:text-[#1163ff]"
-              >
-                {item}
-              </a>
-            ))}
-          </nav>
-          <div className="flex items-center gap-3">
-            <Button
-              asChild
-              variant="outline"
-              className="hidden h-11 rounded-md border-[#d2dff4] bg-white/70 px-7 text-[#07143d] md:inline-flex"
-            >
-              <Link href="/login">Sign in</Link>
-            </Button>
-            <Button
-              asChild
-              className="h-11 rounded-md bg-[#1163ff] px-7 shadow-[0_12px_28px_rgba(17,99,255,0.22)] hover:bg-[#0d55df]"
-            >
-              <Link href="/console/projects">
-                Get Started
-                <ArrowRight className="size-4" />
-              </Link>
-            </Button>
-          </div>
-        </header>
-
-        <div className="grid min-h-[650px] items-center gap-10 py-12 lg:grid-cols-[0.88fr_1.12fr] lg:py-14">
-          <div className="max-w-2xl">
-            <div className="inline-flex items-center gap-2 rounded-md border border-[#dbe7ff] bg-white/72 px-4 py-2 text-xs font-semibold uppercase tracking-[0.2em] text-[#1163ff] shadow-sm">
-              <Sparkles className="size-3.5" />
-              AI CTO for Engineering Teams
-            </div>
-            <h1 className="mt-7 text-5xl font-bold leading-[1.05] tracking-normal text-[#061037] md:text-6xl xl:text-7xl">
-              The CTO Behind
-              <br />
-              Your <span className="text-[#1163ff]">Coding Agents</span>
+            {/* Title */}
+            <h1 className="text-4xl font-bold tracking-tight md:text-5xl lg:text-6xl">
+              {t('hero.titlePrefix')}{' '}
+              <span className="bg-linear-to-r from-primary to-primary-deeper bg-clip-text text-transparent">
+                {t('hero.titleHighlight')}
+              </span>
             </h1>
-            <p className="mt-6 max-w-xl text-lg leading-8 text-[#485b86] md:text-xl">
-              CodingCTO turns requirements into production-ready pull requests through a digital
-              engineering team built into every repository.
+
+            {/* Description */}
+            <p className="mt-6 text-lg text-text-muted md:text-xl max-w-2xl mx-auto">
+              {t('hero.description')}
             </p>
-            <div className="mt-8 flex flex-wrap gap-4">
-              <Button
-                asChild
-                size="lg"
-                className="h-12 rounded-md bg-[#1163ff] px-8 shadow-[0_16px_35px_rgba(17,99,255,0.24)] hover:bg-[#0d55df]"
-              >
-                <Link href="/console/projects">
-                  Get Started for Free
-                  <ArrowRight className="size-4" />
-                </Link>
-              </Button>
-              <Button
-                asChild
-                size="lg"
-                variant="outline"
-                className="h-12 rounded-md border-[#d2dff4] bg-white/72 px-7 text-[#07143d]"
-              >
-                <Link href="#how-it-works">
-                  <Play className="size-4" />
-                  Watch Demo
-                </Link>
-              </Button>
-            </div>
-            <div className="mt-8 grid max-w-2xl grid-cols-2 rounded-lg border border-[#dbe7ff] bg-white/72 shadow-[0_16px_45px_rgba(17,99,255,0.07)] md:grid-cols-4">
-              {metrics.map(([value, label]) => (
-                <div key={label} className="border-[#dbe4f3] px-5 py-4 md:border-r md:last:border-r-0">
-                  <div className="text-2xl font-semibold text-[#1163ff]">{value}</div>
-                  <div className="mt-1 text-xs text-[#506187]">{label}</div>
-                </div>
-              ))}
+
+            {/* CTA Buttons */}
+            <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
+              <Link href="/register">
+                <Button size="lg" className="h-12 px-8 gap-2 shadow-button-primary">
+                  {t('hero.getStarted')}
+                  <ArrowRight className="h-4 w-4" />
+                </Button>
+              </Link>
+              <Link href="/console">
+                <Button variant="outline" size="lg" className="h-12 px-8">
+                  {t('hero.viewDemo')}
+                </Button>
+              </Link>
             </div>
           </div>
-
-          <HeroMachine />
         </div>
-      </div>
-    </section>
-  );
-}
+      </section>
 
-function HeroMachine() {
-  return (
-    <div className="relative overflow-hidden lg:overflow-visible">
-      <Image
-        src="/landing/hero-cto-machine.png"
-        alt="CodingCTO orchestration engine"
-        width={1448}
-        height={1086}
-        priority
-        className="h-auto w-full scale-110 object-contain lg:scale-125"
-      />
-    </div>
-  );
-}
-
-function FeatureSection({
-  id,
-  eyebrow,
-  title,
-  description,
-  children,
-}: {
-  id?: string;
-  eyebrow: string;
-  title: string;
-  description: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <section id={id} className="border-b border-[#dbe7ff] bg-white">
-      <div className="container grid gap-8 px-4 py-14 md:px-6 lg:grid-cols-[280px_1fr] lg:px-10 lg:py-16">
-        <div>
-          <div className="text-xs font-semibold uppercase tracking-[0.2em] text-[#1163ff]">{eyebrow}</div>
-          <h2 className="mt-7 text-3xl font-semibold leading-tight tracking-normal text-[#07143d] md:text-4xl">
-            {title}
-          </h2>
-          <p className="mt-5 text-sm leading-7 text-[#506187]">{description}</p>
-        </div>
-        <div>{children}</div>
-      </div>
-    </section>
-  );
-}
-
-function ExpertImageCard({ src, title }: { src: string; title: string }) {
-  return (
-    <Image
-      src={src}
-      alt={title}
-      width={1122}
-      height={1402}
-      className="h-auto w-full rounded-lg object-contain"
-    />
-  );
-}
-
-function RepositoryIntelligence() {
-  return (
-    <Image
-      src="/landing/repository-intelligence.png"
-      alt="Repository intelligence analysis"
-      width={1448}
-      height={1086}
-      className="h-auto w-full rounded-lg object-contain"
-    />
-  );
-}
-
-function ExecutionPlan() {
-  return (
-    <div className="grid gap-5 lg:grid-cols-[1fr_auto_1.35fr_auto_1fr] lg:items-center">
-      <PlanCard title="Requirement">
-        <div className="rounded-md border border-[#dbe7ff] bg-[#fbfdff] p-4 text-sm leading-6 text-[#506187]">
-          As a team owner, I want to add team-based billing so multiple members can be managed
-          under one plan.
-        </div>
-        <div className="mt-4 flex gap-3 text-xs text-[#506187]">
-          <span>Priority: High</span>
-          <span>Type: Feature</span>
-        </div>
-      </PlanCard>
-      <ArrowRight className="mx-auto hidden size-6 text-[#8db8ff] lg:block" />
-      <PlanCard title="Plan Generation">
-        <div className="grid h-52 grid-cols-3 gap-2 rounded-md border border-[#dbe7ff] bg-[#f8fbff] p-4">
-          {Array.from({ length: 9 }).map((_, index) => (
-            <div key={index} className="rounded border border-[#bdd3ff] bg-white/70" />
-          ))}
-        </div>
-      </PlanCard>
-      <ArrowRight className="mx-auto hidden size-6 text-[#8db8ff] lg:block" />
-      <PlanCard title="Execution Plan">
-        {['Feature Spec', 'Technical Design', 'PR Breakdown', 'Test Plan', 'Acceptance Criteria'].map(item => (
-          <div key={item} className="mb-3 flex items-center gap-3 rounded-md border border-[#dbe7ff] bg-[#fbfdff] px-4 py-3 text-sm font-medium">
-            <FileCheck2 className="size-4 text-[#1163ff]" />
-            {item}
-          </div>
-        ))}
-      </PlanCard>
-    </div>
-  );
-}
-
-function PlanCard({ title, children }: { title: string; children: React.ReactNode }) {
-  return (
-    <div className="rounded-lg border border-[#dbe7ff] bg-white p-5 shadow-[0_16px_42px_rgba(17,99,255,0.05)]">
-      <div className="mb-4 flex items-center gap-2 text-sm font-semibold text-[#07143d]">
-        <FileCheck2 className="size-4 text-[#1163ff]" />
-        {title}
-      </div>
-      {children}
-    </div>
-  );
-}
-
-function AgentOrchestra() {
-  return (
-    <div className="relative min-h-72 rounded-lg border border-[#dbe7ff] bg-[#fbfdff] p-8">
-      <div className="mx-auto flex w-52 flex-col items-center rounded-lg border border-[#a9c8ff] bg-white p-4 shadow-sm">
-        <Logo className="h-6 w-auto" />
-        <span className="mt-2 text-xs font-semibold text-[#506187]">CodingCTO Orchestrator</span>
-      </div>
-      <div className="mt-12 grid gap-5 md:grid-cols-3">
-        <AgentCard name="Codex" detail="Deep Code Generation" />
-        <AgentCard name="Cursor" detail="Context-Aware Execution" />
-        <AgentCard name="Claude" detail="Reasoning & Refinement" />
-      </div>
-      <div className="mx-auto mt-8 flex w-fit items-center gap-3 rounded-lg border border-[#dbe7ff] bg-white px-8 py-4 shadow-sm">
-        <GitPullRequestArrow className="size-5 text-[#1163ff]" />
-        <div>
-          <div className="text-sm font-semibold">Production PR</div>
-          <div className="text-xs text-[#506187]">Verified. Reviewed. Ready.</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function AgentCard({ name, detail }: { name: string; detail: string }) {
-  return (
-    <div className="rounded-lg border border-[#dbe7ff] bg-white p-5 shadow-sm">
-      <div className="flex items-center gap-3">
-        <Bot className="size-6 text-[#07143d]" />
-        <div>
-          <div className="text-sm font-semibold">{name}</div>
-          <div className="text-xs text-[#506187]">{detail}</div>
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function QualityReview() {
-  return (
-    <div className="grid gap-6 lg:grid-cols-[1fr_0.7fr]">
-      <div className="rounded-lg border border-[#dbe7ff] bg-white p-6 shadow-[0_16px_42px_rgba(17,99,255,0.05)]">
-        <div className="mb-4 text-sm font-semibold">Quality Checks</div>
-        <div className="space-y-3">
-          {qualityChecks.map(([title, detail]) => (
-            <div key={title} className="flex items-start gap-3">
-              <CheckCircle2 className="mt-0.5 size-5 text-[#28a957]" />
-              <div>
-                <div className="text-sm font-semibold">{title}</div>
-                <div className="text-xs text-[#506187]">{detail}</div>
-              </div>
-            </div>
-          ))}
-        </div>
-      </div>
-      <div className="rounded-lg border border-[#dbe7ff] bg-white p-6 shadow-[0_16px_42px_rgba(17,99,255,0.05)]">
-        <div className="rounded-lg border border-[#dbe7ff] bg-[#fbfdff] p-5 text-center">
-          <CheckCircle2 className="mx-auto size-10 text-[#28a957]" />
-          <div className="mt-3 text-2xl font-semibold text-[#28a957]">Passed</div>
-          <div className="mt-1 text-xs text-[#506187]">All checks successful</div>
-        </div>
-        <div className="mt-5 space-y-3 text-sm">
-          {[
-            ['Risk', 'Low'],
-            ['Coverage', '98%'],
-            ['Security', 'No issues'],
-            ['Performance', 'Good'],
-          ].map(([label, value]) => (
-            <div key={label} className="flex justify-between border-b border-[#edf3ff] pb-2">
-              <span className="text-[#506187]">{label}</span>
-              <span className="font-semibold text-[#169447]">{value}</span>
-            </div>
-          ))}
-        </div>
-        <div className="mt-5 flex items-center gap-2 rounded-md bg-[#ecfff3] px-4 py-3 text-sm font-semibold text-[#169447]">
-          <CheckCircle2 className="size-4" />
-          Ready To Merge
-        </div>
-      </div>
-    </div>
-  );
-}
-
-function ProductionPr() {
-  return (
-    <Image
-      src="/landing/production-pr.png"
-      alt="Production-ready pull request"
-      width={1586}
-      height={992}
-      className="h-auto w-full rounded-lg object-contain"
-    />
-  );
-}
-
-function SiteFooter() {
-  return (
-    <footer className="bg-[#051638] text-white">
-      <div className="container px-4 py-12 md:px-6 lg:px-10">
-        <div className="grid gap-10 lg:grid-cols-[1fr_1fr] lg:items-end">
-          <div>
-            <Logo className="h-8 w-auto [--logo-ink:#ffffff]" />
-            <h2 className="mt-8 text-3xl font-semibold leading-tight tracking-normal">
-              The CTO Behind Your Coding Agents.
-              <br />
-              <span className="text-[#2e7bff]">Build Software That Evolves Itself.</span>
+      {/* Features Section */}
+      <section className="py-20 md:py-28 bg-bg-subtle/30">
+        <div className="container">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
+              {t('features.title')}
             </h2>
-            <p className="mt-4 max-w-xl text-sm leading-6 text-[#9fb1d2]">
-              An engineering operating system for the future of software delivery.
+            <p className="mt-4 text-text-muted max-w-2xl mx-auto">
+              {t('features.description')}
             </p>
           </div>
-          <div className="grid grid-cols-2 gap-6 md:grid-cols-4">
-            {['Intelligent By Design', 'Engineered For Trust', 'Built For Scale', 'Always Evolving'].map(item => (
-              <div key={item} className="rounded-lg border border-white/10 p-4 text-sm text-[#c4d2ee]">
-                <Sparkles className="mb-4 size-5 text-[#7babff]" />
-                {item}
+
+          <div className="grid gap-4 md:grid-cols-2 lg:grid-cols-4">
+            {features.map((feature, index) => (
+              <Card 
+                key={index} 
+                className="group bg-bg-surface border-border/50 hover:shadow-premium hover:-translate-y-1 transition-all duration-300"
+              >
+                <CardContent className="p-6">
+                  <div className="flex h-12 w-12 items-center justify-center rounded-xl bg-primary/10 text-primary group-hover:bg-primary group-hover:text-primary-foreground transition-all duration-300">
+                    <feature.icon className="h-6 w-6" />
+                  </div>
+                  <h3 className="mt-4 text-lg font-semibold">{feature.title}</h3>
+                  <p className="mt-2 text-sm text-text-muted leading-relaxed">
+                    {feature.description}
+                  </p>
+                </CardContent>
+              </Card>
+            ))}
+          </div>
+        </div>
+      </section>
+
+      {/* Tech Stack Section */}
+      <section className="py-20 md:py-28">
+        <div className="container">
+          <div className="text-center mb-12">
+            <h2 className="text-3xl font-bold tracking-tight md:text-4xl">
+              {t('stack.title')}
+            </h2>
+            <p className="mt-4 text-text-muted">
+              {t('stack.description')}
+            </p>
+          </div>
+
+          <div className="flex flex-wrap items-center justify-center gap-6 md:gap-10">
+            {techStackData.map((tech, index) => (
+              <div 
+                key={index}
+                className="flex items-center gap-3 px-5 py-3 rounded-xl bg-bg-surface border border-border/50 hover:border-primary/30 hover:shadow-md transition-all duration-300"
+              >
+                {tech.icon}
+                <span className="font-medium">{tech.name}</span>
               </div>
             ))}
           </div>
         </div>
-        <div className="mt-10 flex flex-col gap-4 border-t border-white/10 pt-6 text-xs text-[#9fb1d2] md:flex-row md:items-center md:justify-between">
-          <div className="flex flex-wrap gap-6">
-            {navItems.concat(['Careers', 'Privacy', 'Terms']).map(item => (
-              <a key={item} href="#" className="hover:text-white">
-                {item}
-              </a>
-            ))}
-          </div>
-          <div>© 2026 CodingCTO. All rights reserved.</div>
+      </section>
+
+      {/* CTA Section - Using primary gradient like Auth */}
+      <section className="relative overflow-hidden bg-linear-to-br from-primary via-primary/95 to-primary-deeper py-20 md:py-28">
+        {/* Background decorations */}
+        <div className="absolute inset-0 pointer-events-none">
+          <div className="absolute top-[-20%] right-[-10%] w-[40%] h-[40%] rounded-full bg-white/10 blur-3xl" />
+          <div className="absolute bottom-[-20%] left-[-10%] w-[30%] h-[30%] rounded-full bg-primary-deeper/30 blur-2xl" />
         </div>
-      </div>
-    </footer>
+
+        <div className="container relative text-center text-white">
+          <h2 className="text-3xl font-bold tracking-tight md:text-4xl lg:text-5xl">
+            {t('cta.title')}
+          </h2>
+          <p className="mt-4 text-white/80 max-w-xl mx-auto md:text-lg">
+            {t('cta.description')}
+          </p>
+          <div className="mt-10 flex flex-wrap items-center justify-center gap-4">
+            <Link href="/register">
+              <Button size="lg" variant="secondary" className="h-12 px-8 gap-2">
+                {t('cta.getStarted')}
+                <ArrowRight className="h-4 w-4" />
+              </Button>
+            </Link>
+            <a 
+              href="https://github.com/agicto/codingcto"
+              target="_blank" 
+              rel="noopener noreferrer"
+            >
+              <Button 
+                size="lg" 
+                variant="outline" 
+                className="h-12 px-8 bg-transparent border-white/30 text-white hover:bg-white/10 hover:text-white"
+              >
+                {t('cta.viewGitHub')}
+              </Button>
+            </a>
+          </div>
+        </div>
+      </section>
+    </div>
   );
 }
+
+// Features data
+type SiteTranslator = Awaited<ReturnType<typeof getTranslations>>;
+
+const featuresData = (t: SiteTranslator) => [
+  {
+    title: t('features.items.auth.title'),
+    description: t('features.items.auth.description'),
+    icon: Shield,
+  },
+  {
+    title: t('features.items.console.title'),
+    description: t('features.items.console.description'),
+    icon: Terminal,
+  },
+  {
+    title: t('features.items.context.title'),
+    description: t('features.items.context.description'),
+    icon: Globe,
+  },
+  {
+    title: t('features.items.review.title'),
+    description: t('features.items.review.description'),
+    icon: Palette,
+  },
+];
+
+// Tech stack data
+const techStackData = [
+  {
+    name: 'Next.js 16',
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-6 w-6" fill="currentColor">
+        <path d="M11.572 0c-.176 0-.31.001-.358.007a19.76 19.76 0 01-.364.033C7.443.346 4.25 2.185 2.228 5.012a11.875 11.875 0 00-2.119 5.243c-.096.659-.108.854-.108 1.747s.012 1.089.108 1.748c.652 4.506 3.86 8.292 8.209 9.695.779.25 1.6.422 2.534.525.363.04 1.935.04 2.299 0 1.611-.178 2.977-.577 4.323-1.264.207-.106.247-.134.219-.158-.02-.013-.9-1.193-1.955-2.62l-1.919-2.592-2.404-3.558a338.739 338.739 0 00-2.422-3.556c-.009-.002-.018 1.579-.023 3.51-.007 3.38-.01 3.515-.052 3.595a.426.426 0 01-.206.214c-.075.037-.14.044-.495.044H7.81l-.108-.068a.438.438 0 01-.157-.171l-.05-.106.006-4.703.007-4.705.072-.092a.645.645 0 01.174-.143c.096-.047.134-.051.54-.051.478 0 .558.018.682.154.035.038 1.337 1.999 2.895 4.361a10760.433 10760.433 0 004.735 7.17l1.9 2.879.096-.063a12.317 12.317 0 002.466-2.163 11.944 11.944 0 002.824-6.134c.096-.66.108-.854.108-1.748 0-.893-.012-1.088-.108-1.747-.652-4.506-3.859-8.292-8.208-9.695a12.597 12.597 0 00-2.499-.523A33.119 33.119 0 0011.573 0z"/>
+      </svg>
+    ),
+  },
+  {
+    name: 'React 19',
+    icon: <Atom className="h-6 w-6" />,
+  },
+  {
+    name: 'TypeScript',
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-6 w-6" fill="currentColor">
+        <path d="M1.125 0C.502 0 0 .502 0 1.125v21.75C0 23.498.502 24 1.125 24h21.75c.623 0 1.125-.502 1.125-1.125V1.125C24 .502 23.498 0 22.875 0zm17.363 9.75c.612 0 1.154.037 1.627.111a6.38 6.38 0 0 1 1.306.34v2.458a3.95 3.95 0 0 0-.643-.361 5.093 5.093 0 0 0-.717-.26 5.453 5.453 0 0 0-1.426-.2c-.3 0-.573.028-.819.086a2.1 2.1 0 0 0-.623.242c-.17.104-.3.229-.393.374a.888.888 0 0 0-.14.49c0 .196.053.373.156.529.104.156.252.304.443.444s.423.276.696.41c.273.135.582.274.926.416.47.197.892.407 1.266.628.374.222.695.473.963.753.268.279.472.598.614.957.142.359.214.776.214 1.253 0 .657-.125 1.21-.373 1.656a3.033 3.033 0 0 1-1.012 1.085 4.38 4.38 0 0 1-1.487.596c-.566.12-1.163.18-1.79.18a9.916 9.916 0 0 1-1.84-.164 5.544 5.544 0 0 1-1.512-.493v-2.63a5.033 5.033 0 0 0 3.237 1.2c.333 0 .624-.03.872-.09.249-.06.456-.144.623-.25.166-.108.29-.234.373-.38a1.023 1.023 0 0 0-.074-1.089 2.12 2.12 0 0 0-.537-.5 5.597 5.597 0 0 0-.807-.444 27.72 27.72 0 0 0-1.007-.436c-.918-.383-1.602-.852-2.053-1.405-.45-.553-.676-1.222-.676-2.005 0-.614.123-1.141.369-1.582.246-.441.58-.804 1.004-1.089a4.494 4.494 0 0 1 1.47-.629 7.536 7.536 0 0 1 1.77-.201zm-15.113.188h9.563v2.166H9.506v9.646H6.789v-9.646H3.375z"/>
+      </svg>
+    ),
+  },
+  {
+    name: 'Tailwind CSS 4',
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-6 w-6" fill="currentColor">
+        <path d="M12.001,4.8c-3.2,0-5.2,1.6-6,4.8c1.2-1.6,2.6-2.2,4.2-1.8c0.913,0.228,1.565,0.89,2.288,1.624 C13.666,10.618,15.027,12,18.001,12c3.2,0,5.2-1.6,6-4.8c-1.2,1.6-2.6,2.2-4.2,1.8c-0.913-0.228-1.565-0.89-2.288-1.624 C16.337,6.182,14.976,4.8,12.001,4.8z M6.001,12c-3.2,0-5.2,1.6-6,4.8c1.2-1.6,2.6-2.2,4.2-1.8c0.913,0.228,1.565,0.89,2.288,1.624 c1.177,1.194,2.538,2.576,5.512,2.576c3.2,0,5.2-1.6,6-4.8c-1.2,1.6-2.6,2.2-4.2,1.8c-0.913-0.228-1.565-0.89-2.288-1.624 C10.337,13.382,8.976,12,6.001,12z"/>
+      </svg>
+    ),
+  },
+  {
+    name: 'Zustand',
+    icon: <Database className="h-6 w-6" />,
+  },
+  {
+    name: 'React Query',
+    icon: (
+      <svg viewBox="0 0 24 24" className="h-6 w-6" fill="currentColor">
+        <path d="M6.306 14.691c-.834.96 -.76 2.296-.088 3.011 1.232 1.313 4.268 1.106 6.949-.674.27-.179.533-.37.79-.573a13.18 13.18 0 0 1-1.61-.903c-.28.13-.556.247-.835.346-1.725.614-3.422.607-4.528-.177-.477-.339-.804-.844-.678-1.03zm6.234-6.022c-.18-.072-.365-.142-.553-.206a14.007 14.007 0 0 1 .938-1.594c-2.036-3.016-4.758-4.623-6.466-3.657-.912.515-1.311 1.65-1.255 3.054.013.318.046.649.097.987.188-.02.379-.034.572-.043a13.13 13.13 0 0 1 .168-1.238c.12-.577.396-1.129.896-1.412 1.176-.664 3.221.277 4.915 2.347.156.19.307.388.454.595-.242.174-.475.36-.699.556-.197-.232-.4-.454-.61-.662-.77-.766-1.58-1.37-2.373-1.78-.232-.12-.458-.218-.676-.293zm5.612 1.082c-1.145-.212-2.47-.262-3.86-.15a13.2 13.2 0 0 1-.853 1.65 14.007 14.007 0 0 1 2.68.27c1.074.23 2.012.59 2.75 1.082.307.204.577.449.795.73.252.324.354.641.252.858-.3.635-1.826.87-3.795.529-.273-.047-.547-.104-.82-.169-.058.19-.12.38-.188.567.32.07.648.13.98.177 2.355.334 4.348-.01 4.94-.997.327-.546.226-1.252-.227-1.905-.5-.722-1.304-1.286-2.33-1.701a11.1 11.1 0 0 0-.324-.04z"/>
+      </svg>
+    ),
+  },
+  {
+    name: 'Zod Validation',
+    icon: <ShieldCheck className="h-6 w-6" />,
+  },
+  {
+    name: 'Radix UI',
+    icon: (
+      <svg viewBox="0 0 25 25" className="h-6 w-6" fill="currentColor">
+        <path d="M12 25C7.58173 25 4 21.4183 4 17C4 12.5817 7.58173 9 12 9V25Z"/>
+        <path d="M12 0H4V8H12V0Z"/>
+        <path d="M17 8C19.2091 8 21 6.20914 21 4C21 1.79086 19.2091 0 17 0C14.7909 0 13 1.79086 13 4C13 6.20914 14.7909 8 17 8Z"/>
+      </svg>
+    ),
+  },
+];

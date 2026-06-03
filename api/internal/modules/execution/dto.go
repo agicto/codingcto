@@ -12,6 +12,21 @@ type DispatchExecutionRunRequest struct {
 	RequireRuntimeReady bool `json:"require_runtime_ready" binding:"omitempty"`
 }
 
+type CreateDirectAgentTaskRequest struct {
+	RepositoryID string `json:"repository_id" binding:"required,max=255"`
+	Title        string `json:"title" binding:"omitempty,max=255"`
+	Prompt       string `json:"prompt" binding:"required,max=200000"`
+	Executor     string `json:"executor" binding:"omitempty,max=100"`
+	RuntimeID    string `json:"runtime_id" binding:"omitempty,max=100"`
+}
+
+type ListDirectAgentTasksRequest struct {
+	Limit        int    `form:"limit" binding:"omitempty,min=1,max=50"`
+	RepositoryID string `form:"repository_id" binding:"omitempty,max=255"`
+	Executor     string `form:"executor" binding:"omitempty,max=100"`
+	RuntimeID    string `form:"runtime_id" binding:"omitempty,max=100"`
+}
+
 type RuntimeHeartbeatRequest struct {
 	RuntimeID       string                             `json:"runtime_id" binding:"required,max=100"`
 	Executor        string                             `json:"executor" binding:"omitempty,max=100"`
@@ -81,6 +96,7 @@ type RuntimeListResponse struct {
 
 type ClaimAgentTaskResponse struct {
 	Task             *ClaimedAgentTask            `json:"task,omitempty"`
+	DirectTask       *ClaimedDirectAgentTask      `json:"direct_task,omitempty"`
 	PRNode           *ClaimedTaskPRNode           `json:"pr_node,omitempty"`
 	Prompt           *ClaimedTaskPrompt           `json:"prompt,omitempty"`
 	ExecutionContext *ClaimedTaskExecutionContext `json:"execution_context,omitempty"`
@@ -102,6 +118,18 @@ type ClaimedAgentTask struct {
 	SessionID     string `json:"session_id,omitempty"`
 	Workdir       string `json:"workdir,omitempty"`
 	ProcessRef    string `json:"process_ref,omitempty"`
+}
+
+type ClaimedDirectAgentTask struct {
+	ID           uint   `json:"id"`
+	RepositoryID string `json:"repository_id"`
+	Title        string `json:"title"`
+	Executor     string `json:"executor"`
+	Status       string `json:"status"`
+	RuntimeID    string `json:"runtime_id"`
+	SessionID    string `json:"session_id,omitempty"`
+	Workdir      string `json:"workdir,omitempty"`
+	ProcessRef   string `json:"process_ref,omitempty"`
 }
 
 type ClaimedTaskPRNode struct {
@@ -163,6 +191,14 @@ type CreateTaskEventRequest struct {
 
 type TaskEventsResponse struct {
 	Events []*domain.SpecForgeTaskEvent `json:"events"`
+}
+
+type DirectAgentTaskListResponse struct {
+	Tasks []*domain.CodingCTODirectAgentTask `json:"tasks"`
+}
+
+type DirectTaskEventsResponse struct {
+	Events []*domain.CodingCTODirectTaskEvent `json:"events"`
 }
 
 type PinAgentTaskSessionRequest struct {

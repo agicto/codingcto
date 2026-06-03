@@ -24,8 +24,8 @@ export function ciReviewActionFromResponse(
   if (state === 'fix_attempt_queued' && fixAttempt) {
     return {
       state,
-      label: 'Fix queued',
-      headline: `Attempt ${fixAttempt.attempt_number}: ${fixAttempt.failure_type}`,
+      label: '修复已排队',
+      headline: `第 ${fixAttempt.attempt_number} 次修复：${fixAttempt.failure_type}`,
       nextAction: response.next_action || fixAttempt.recommended_action,
       tone: 'info',
       fixAttempt,
@@ -36,16 +36,16 @@ export function ciReviewActionFromResponse(
   if (state === 'needs_user_decision') {
     return {
       state,
-      label: 'Decision needed',
+      label: '需要决策',
       headline:
         escalationSummary?.reason ||
         fixAttempt?.blocked_reason ||
-        'CI verification needs a human decision.',
+        'CI 验证需要人工决策。',
       nextAction:
         response.next_action ||
         escalationSummary?.recommended_option ||
         fixAttempt?.recommended_action ||
-        'Review the failed workflow and choose the next delivery action.',
+        '请查看失败的 workflow，并选择下一步交付动作。',
       tone: 'warning',
       fixAttempt,
       escalationSummary,
@@ -55,9 +55,9 @@ export function ciReviewActionFromResponse(
   if (state === 'ci_passed') {
     return {
       state,
-      label: 'CI passed',
-      headline: 'The PR node is ready for review.',
-      nextAction: response.next_action || 'Review the pull request in GitHub.',
+      label: 'CI 已通过',
+      headline: '这个 PR 节点已准备好评审。',
+      nextAction: response.next_action || '请在 GitHub 中评审 Pull Request。',
       tone: 'success',
       fixAttempt,
       escalationSummary,
@@ -67,9 +67,9 @@ export function ciReviewActionFromResponse(
   if (state === 'ci_running') {
     return {
       state,
-      label: 'CI running',
-      headline: 'GitHub Actions is still running for this PR node.',
-      nextAction: response.next_action || 'Wait for CI to complete, then verify again.',
+      label: 'CI 运行中',
+      headline: '这个 PR 节点的 GitHub Actions 仍在运行。',
+      nextAction: response.next_action || '等待 CI 完成后，再重新验证。',
       tone: 'info',
       fixAttempt,
       escalationSummary,
@@ -78,9 +78,9 @@ export function ciReviewActionFromResponse(
 
   return {
     state,
-    label: 'Review CI',
-    headline: 'CI verification is not ready yet.',
-    nextAction: response.next_action || 'Open or update the pull request, then wait for CI.',
+    label: '检查 CI',
+    headline: 'CI 验证还没有准备好。',
+    nextAction: response.next_action || '请先打开或更新 Pull Request，然后等待 CI。',
     tone: 'default',
     fixAttempt,
     escalationSummary,

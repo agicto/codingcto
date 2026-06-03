@@ -10,7 +10,7 @@ export async function GET(request: NextRequest) {
 
   const searchParams = request.nextUrl.searchParams;
   const repositoryId = searchParams.get('repository_id')?.trim() || '<repository-id>';
-  const apiTarget = process.env.LUAS_API_PROXY_TARGET ?? 'http://localhost:2010';
+  const apiTarget = process.env.LUAS_API_PROXY_TARGET ?? 'http://localhost:8025';
   const apiBaseURL = new URL('/v1', apiTarget).toString().replace(/\/$/, '');
   const workspaceRoot = process.cwd().replace(/\/web$/, '');
   const apiDir = `${workspaceRoot}/api`;
@@ -19,7 +19,7 @@ export async function GET(request: NextRequest) {
   const command = [
     `cd ${shellQuote(apiDir)}`,
     `export CODINGCTO_RUNTIME_TOKEN=${shellQuote(session.apiAccessToken)}`,
-    'go run ./cmd/specforge-runtime \\',
+    'go run ./cmd/ccto daemon \\',
     `  --api-base-url ${shellQuote(apiBaseURL)} \\`,
     `  --runtime-id ${shellQuote(runtimeId)} \\`,
     `  --repo-dir ${shellQuote(repoDir)} \\`,

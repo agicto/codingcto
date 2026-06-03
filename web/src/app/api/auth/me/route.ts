@@ -7,7 +7,8 @@ import {
 import { ErrorCode } from '@/http/codes';
 
 export async function GET() {
-  if (process.env.LUAS_AUTH_BACKEND_ENABLED === 'true') {
+  const backendAuthEnabled = process.env.LUAS_AUTH_BACKEND_ENABLED === 'true';
+  if (backendAuthEnabled) {
     const payload = await getSessionPayload();
     if (!payload?.apiAccessToken) {
       await clearSessionCookie();

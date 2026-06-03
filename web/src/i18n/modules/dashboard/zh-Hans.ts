@@ -220,17 +220,17 @@ const messages = {
   },
   agents: {
     title: '智能体',
-    description: '检测正在运行的本地 runtime，以及它能在收到任务时调起的 CLI。',
-    onlineCount: '{count} 个运行时在线',
-    cliCount: '{count} 个 CLI 可用',
+    description: '把本地 runtime 上报的 CLI 能力展开成可调度的 Coding Agent。',
+    onlineCount: '{count} 个智能体检测到',
+    cliCount: '{count} 个 runtime 在线',
     runtimeHelp: '在线的是 CodingCTO runtime，不是这些 CLI 常驻运行。Runtime 收到任务后，才会按需启动已接入调度的 CLI。',
     actions: {
       manageSkills: '管理技能',
       openSkills: '打开技能',
     },
     list: {
-      title: '本地运行时',
-      description: '来自在线 runtime 心跳；CLI 是该 runtime 上报的本机能力。',
+      title: 'Coding Agent 列表',
+      description: '来自在线 runtime 心跳；每个可用 CLI 展开为一个智能体。',
     },
     states: {
       loading: '加载中...',
@@ -281,7 +281,7 @@ const messages = {
     },
     tabs: {
       activity: '动态',
-      tasks: 'Tasks',
+      tasks: '任务',
       skills: '技能',
       environment: '环境变量',
     },
@@ -292,6 +292,36 @@ const messages = {
     tasks: {
       title: '最近没有完成的 task',
       description: '这个智能体还没有完成过任何 task。',
+      runTitle: '直接调度 Codex',
+      runDescription: '输入一个明确的小任务，CodingCTO 会派发给当前本地 runtime，并由 Codex CLI 在本机仓库执行。',
+      targetRepository: '目标仓库',
+      noRepository: '未选择仓库',
+      promptPlaceholder: '例如：在 README 增加一行说明，标记这是 CodingCTO direct task smoke test。',
+      promptHint: '建议先派发很小、可回滚的任务。运行时会在 --repo-dir 指向的本地仓库里执行。',
+      blocked: {
+        noRepository: '请先选择一个目标仓库。',
+        notDispatchable: '这个智能体目前只是被 runtime 检测到，还没有接入平台调度。',
+        noPrompt: '输入任务说明后即可派发给 Codex。',
+      },
+      dispatch: 'Run with Codex',
+      dispatching: '派发中',
+      recentTitle: '最近任务',
+      recentDescription: '页面会自动刷新 direct task 状态。',
+      emptyDescription: '还没有 direct task。上方输入一个任务后派发。',
+      noTaskTitle: '未选择任务',
+      noTaskDescription: '选择最近任务后，这里会显示事件和结果。',
+      promptLabel: 'Prompt',
+      eventsTitle: '事件日志',
+      noEvents: '暂无事件。runtime claim 后会开始写入。',
+      resultTitle: '执行结果',
+      status: {
+        dispatched: '已派发',
+        running: '执行中',
+        completed: '已完成',
+        failed: '失败',
+        cancelled: '已取消',
+        unknown: '未知',
+      },
     },
     skills: {
       title: '分配技能',
@@ -373,23 +403,17 @@ const messages = {
   specForge: {
     demoIdea: '添加团队邀请流程。工作区管理员可以通过邮箱邀请成员，受邀用户通过安全链接接受邀请。',
     header: {
-      title: 'PR 交付流程',
-      description: '把一个需求变成可审批计划、Codex 执行和可评审 PR',
-      activeRuns: '{count} 个运行中',
-      analyzeRepo: '仓库上下文',
-      manualPlan: '计划评审',
-      pipeline: 'PR 流程',
-    },
-    workflow: {
-      requirement: '写清需求',
-      repository: '读取仓库上下文',
-      plan: '审批计划',
-      delivery: '执行并交付 PR',
+      title: '项目指挥台',
+      description: '从需求到计划、提示词、Codex 执行和 PR 交付',
+      activeRuns: '{count} 个执行中节点',
+      analyzeRepo: '分析仓库',
+      manualPlan: '手动计划',
+      pipeline: '流水线',
     },
     tabs: {
-      allWork: '需求',
+      allWork: '全部工作',
       plans: '计划',
-      runs: '执行',
+      runs: '运行',
     },
     progress: {
       awaiting: '等待计划审批；{reason}',
@@ -414,15 +438,15 @@ const messages = {
     },
     stages: {
       intake: {
-        title: '需求',
+        title: '需求录入',
         empty: '等待需求',
-        itemTitle: '写清需求',
+        itemTitle: '捕获产品意图',
         itemDescription: '描述功能目标、约束和验收边界。',
       },
       context: {
-        title: '仓库',
+        title: '仓库理解',
         empty: '未选择仓库',
-        itemTitle: '读取仓库上下文',
+        itemTitle: '分析仓库和技能',
       },
       planning: {
         title: '计划',
@@ -437,7 +461,7 @@ const messages = {
       execution: {
         title: '执行',
         empty: '尚未开始运行',
-        itemTitle: '运行 Codex',
+        itemTitle: '运行 Codex 并交付 PR',
       },
       delivery: {
         title: 'PR 交付',
@@ -502,6 +526,8 @@ const messages = {
       openProject: '打开项目',
       configureGitHub: '配置 GitHub',
       openAgents: '查看智能体',
+      signInBackend: '使用后端登录',
+      cancel: '取消',
     },
     metrics: {
       workspaces: {
@@ -534,16 +560,17 @@ const messages = {
       selectPlaceholder: '选择工作区',
       empty: '暂无工作区。创建后才能解锁项目和 CodingCTO 流程。',
       noDescription: '暂无工作区描述。',
+      selected: 'Workspace：{name}',
       id: 'ID: {id}',
     },
     projects: {
       title: '交付项目',
       description: '每个项目都应该绑定主仓库，并沉淀为后续计划、执行和评审的上下文。',
       count: '{count} 个项目',
-      loading: '正在加载项目...',
-      emptyForWorkspace: '暂无项目。创建项目后即可开始绑定仓库。',
-      selectWorkspace: '暂无项目。',
-      emptyDescription: '项目创建完成后，可进入项目绑定 GitHub 仓库并生成执行计划。',
+      loading: '正在从所选工作区加载项目...',
+      emptyForWorkspace: '当前工作区暂无项目。创建项目后即可开始绑定仓库。',
+      selectWorkspace: '请选择或创建工作区以列出项目。',
+      emptyDescription: '项目创建完成后，可进入 CodingCTO 交付板绑定 GitHub 仓库并生成执行计划。',
       noDescription: '暂无描述。',
       primaryRepoRequired: '需要主仓库',
       status: {
@@ -582,6 +609,10 @@ const messages = {
           title: '进入 CodingCTO 交付',
           description: '用仓库上下文生成计划、执行任务并产出可评审的 PR。',
         },
+        repository: {
+          title: 'GitHub 仓库',
+          description: '绑定可写入的主仓库，然后生成计划和 PR。',
+        },
       },
     },
     messages: {
@@ -593,6 +624,9 @@ const messages = {
       projectRequired: '请填写项目名称和标识。',
       slugInvalid: '标识至少需要 2 个字符，请使用小写字母、数字或连字符。',
       projectCreateFailed: '项目创建失败。请检查 API 连接和标识是否唯一。',
+      repositoryRequired: '请先选择一个已连接的 GitHub 仓库。',
+      repositoryBound: '主仓库 {repoId} 已绑定到当前项目。',
+      repositoryBindFailed: '仓库无法绑定。请确认它属于当前工作区后重试。',
     },
   },
   projectDelivery: {
@@ -638,6 +672,94 @@ const messages = {
         bound: '{role} 仓库 {repoId} 已绑定。',
         bindFailed: '仓库无法绑定。请确认它已经在设置中连接，并且属于当前工作区。',
       },
+    },
+    e2e: {
+      title: '端到端试跑',
+      description: '用当前仓库跑一遍真实交付链路：创建 Issue、生成计划、调用本地 Codex，并打开 PR。',
+      defaultIssueTitle: 'CodingCTO 端到端试跑：记录一次自动化交付',
+      defaultIssueBody:
+        '请添加一个 .codingcto/e2e-smoke.md 文件，用中文记录本次试跑已完成：创建 GitHub Issue、生成计划、调用本地 Codex CLI、提交代码并创建 PR。请保持改动很小，只提交这个说明文件。',
+      issueTitleLabel: '试跑 Issue 标题',
+      issueBodyLabel: '试跑 Issue 内容',
+      readiness: {
+        title: '运行前检查',
+        description: '检查 GitHub App 安装、仓库权限和访问令牌，确认能创建 Issue、推送分支并打开 PR。',
+        error: '暂时读不到检查结果，请确认 API 服务正常，并重新登录后再试。',
+        checkingRepository: '正在检查当前主仓库...',
+        noChecks: '还有运行前检查未通过，请先处理后再试。',
+        status: {
+          ready: '准备就绪',
+          blocked: '需处理',
+          checking: '检查中',
+        },
+      },
+      button: {
+        running: '试跑进行中...',
+        blocked: '先处理检查项',
+        start: '开始端到端试跑',
+      },
+      timeline: {
+        title: '执行时间线',
+        empty: '开始后会实时显示每一步进展：仓库检查、Issue、计划、派发、Codex 执行和 PR。',
+      },
+      steps: {
+        repository: {
+          title: '检查仓库绑定',
+        },
+        issue: {
+          title: '创建 GitHub Issue',
+        },
+        plan: {
+          title: '生成执行计划',
+          detail: '生成 {count} 个 PR 节点',
+        },
+        approve: {
+          title: '确认计划',
+          detail: '计划 #{id} 已确认',
+        },
+        run: {
+          title: '启动执行',
+        },
+        dispatch: {
+          title: '派发给本地运行器',
+        },
+        codexWaiting: {
+          title: '等待 Codex 执行',
+          detail: '任务已派发，等待本地运行器认领后调用 Codex CLI。',
+        },
+        codexDone: {
+          title: 'Codex 执行完成',
+          detail: '本地运行器已完成代码修改、提交并推送分支。',
+        },
+        pr: {
+          title: '创建 GitHub Pull Request',
+          detail: 'PR #{number}',
+          missing: '任务已完成，但没有返回 PR 链接。',
+        },
+        error: {
+          title: '流程中断',
+        },
+      },
+      errors: {
+        noRepository: '当前项目还没有绑定主仓库，请先完成仓库配置。',
+        noExecutableNode: '计划里没有可执行的 PR 节点。',
+        noDispatchedTask: '还没有派发出可执行任务，请确认本地运行器在线。',
+        codexFailed: 'Codex CLI 执行失败。',
+        flowFailed: '试跑中断，请查看上一步状态后重试。',
+        timeout: '本地运行器还没有完成任务。请确认运行器仍在运行，并查看智能体页面的心跳状态。',
+      },
+      stepStatus: {
+        running: '进行中',
+        success: '完成',
+        error: '失败',
+        pending: '等待',
+      },
+      checkStatus: {
+        ok: '通过',
+        warning: '提醒',
+        error: '缺失',
+      },
+      linkLabel: '查看详情',
     },
     readiness: {
       projectScoped: '项目级',

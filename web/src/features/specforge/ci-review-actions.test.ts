@@ -59,7 +59,7 @@ describe('ciReviewActionFromResponse', () => {
       })
     );
 
-    expect(action.label).toBe('Fix queued');
+    expect(action.label).toBe('修复已排队');
     expect(action.headline).toContain('type_error');
     expect(action.tone).toBe('info');
     expect(action.fixAttempt?.action_kind).toBe('auto_fix');
@@ -90,7 +90,7 @@ describe('ciReviewActionFromResponse', () => {
       })
     );
 
-    expect(action.label).toBe('Decision needed');
+    expect(action.label).toBe('需要决策');
     expect(action.headline).toContain('Migration failure');
     expect(action.nextAction).toBe('Pause auto-fix and replan.');
     expect(action.tone).toBe('warning');
@@ -104,7 +104,7 @@ describe('ciReviewActionFromResponse', () => {
       })
     );
 
-    expect(action.label).toBe('CI passed');
+    expect(action.label).toBe('CI 已通过');
     expect(action.tone).toBe('success');
     expect(action.nextAction).toContain('Review');
   });

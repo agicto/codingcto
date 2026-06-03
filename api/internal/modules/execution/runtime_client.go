@@ -19,6 +19,8 @@ type RuntimeAPIClient interface {
 	ClaimTask(ctx context.Context, runtimeID string, req *ClaimAgentTaskRequest) (*ClaimAgentTaskResponse, error)
 	CreateTaskEvent(ctx context.Context, taskID uint, req *CreateTaskEventRequest) (*domain.SpecForgeTaskEvent, error)
 	SubmitTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.SpecForgeExecutionBundle, error)
+	CreateDirectTaskEvent(ctx context.Context, taskID uint, req *CreateTaskEventRequest) (*domain.CodingCTODirectTaskEvent, error)
+	SubmitDirectTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.CodingCTODirectAgentTask, error)
 	Deregister(ctx context.Context, req *RuntimeDeregisterRequest) (*domain.SpecForgeRuntimeSweepResult, error)
 }
 
@@ -87,6 +89,28 @@ func (c *RuntimeHTTPClient) SubmitTaskResult(ctx context.Context, taskID uint, r
 	}
 	var out domain.SpecForgeExecutionBundle
 	if err := c.do(ctx, http.MethodPost, fmt.Sprintf("/tasks/%d/result", taskID), req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *RuntimeHTTPClient) CreateDirectTaskEvent(ctx context.Context, taskID uint, req *CreateTaskEventRequest) (*domain.CodingCTODirectTaskEvent, error) {
+	if taskID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	var out domain.CodingCTODirectTaskEvent
+	if err := c.do(ctx, http.MethodPost, fmt.Sprintf("/agent-tasks/%d/events", taskID), req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *RuntimeHTTPClient) SubmitDirectTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.CodingCTODirectAgentTask, error) {
+	if taskID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	var out domain.CodingCTODirectAgentTask
+	if err := c.do(ctx, http.MethodPost, fmt.Sprintf("/agent-tasks/%d/result", taskID), req, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

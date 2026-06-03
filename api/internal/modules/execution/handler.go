@@ -274,6 +274,114 @@ func (h *Handler) DispatchRun(c *gin.Context) {
 	response.Success(c, run)
 }
 
+func (h *Handler) CreateDirectAgentTask(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	var req CreateDirectAgentTaskRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+	task, err := h.service.CreateDirectAgentTask(c.Request.Context(), userID, &req)
+	if err != nil {
+		response.HandleError(c, "Failed to create direct agent task", err)
+		return
+	}
+	response.Success(c, task)
+}
+
+func (h *Handler) ListDirectAgentTasks(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	var req ListDirectAgentTasksRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		response.BadRequest(c, "Invalid request parameters", err)
+		return
+	}
+	result, err := h.service.ListDirectAgentTasks(c.Request.Context(), userID, &req)
+	if err != nil {
+		response.HandleError(c, "Failed to list direct agent tasks", err)
+		return
+	}
+	response.Success(c, result)
+}
+
+func (h *Handler) GetDirectAgentTask(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || taskID == 0 {
+		response.HandleError(c, "Invalid task id", err)
+		return
+	}
+	task, err := h.service.GetDirectAgentTask(c.Request.Context(), userID, uint(taskID))
+	if err != nil {
+		response.HandleError(c, "Failed to get direct agent task", err)
+		return
+	}
+	response.Success(c, task)
+}
+
+func (h *Handler) ListDirectTaskEvents(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || taskID == 0 {
+		response.HandleError(c, "Invalid task id", err)
+		return
+	}
+	afterSeq, _ := strconv.Atoi(c.Query("after_seq"))
+	events, err := h.service.ListDirectTaskEvents(c.Request.Context(), userID, uint(taskID), afterSeq)
+	if err != nil {
+		response.HandleError(c, "Failed to list direct task events", err)
+		return
+	}
+	response.Success(c, DirectTaskEventsResponse{Events: events})
+}
+
+func (h *Handler) CreateDirectTaskEvent(c *gin.Context) {
+	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || taskID == 0 {
+		response.HandleError(c, "Invalid task id", err)
+		return
+	}
+	var req CreateTaskEventRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+	event, err := h.service.CreateDirectTaskEvent(c.Request.Context(), uint(taskID), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to create direct task event", err)
+		return
+	}
+	response.Success(c, event)
+}
+
+func (h *Handler) SubmitDirectTaskResult(c *gin.Context) {
+	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || taskID == 0 {
+		response.HandleError(c, "Invalid task id", err)
+		return
+	}
+	var req SubmitTaskResultRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+	task, err := h.service.SubmitDirectTaskResult(c.Request.Context(), uint(taskID), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to submit direct task result", err)
+		return
+	}
+	response.Success(c, task)
+}
+
 func (h *Handler) CancelRun(c *gin.Context) {
 	runID, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || runID == 0 {
