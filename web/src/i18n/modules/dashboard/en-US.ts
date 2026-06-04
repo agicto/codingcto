@@ -126,13 +126,20 @@ const messages: DashboardMessages = {
     },
     repository: {
       title: 'Skill storage repository',
-      description: 'The current backend stores skills by repository; this page uses the selected workspace repository.',
+      description: 'Legacy repository storage is still supported for migration.',
       connect: 'Connect repository',
+    },
+    project: {
+      title: 'Skill project',
+      description: 'Skills are assigned at the project level; the primary repository is only the execution target.',
+      create: 'Create project',
+      noProject: 'No project',
     },
     empty: {
       title: 'No skills yet',
       description: 'Create the first skill, import one from URL, or copy one from a connected runtime. Then every agent in the workspace can use it.',
       noRepository: 'Connect a GitHub repository before creating workspace skills.',
+      noProject: 'Create a project before adding skills.',
     },
     states: {
       loading: 'Loading...',
@@ -217,12 +224,12 @@ const messages: DashboardMessages = {
       note: 'Import ignores symlinks, unreadable files, large files, and oversized directories.',
     },
     messages: {
-      saveFailed: 'Skill could not be saved. Confirm the backend is available and the repository is connected.',
+      saveFailed: 'Skill could not be saved. Confirm the backend is available and the project has a primary repository.',
     },
   },
   agents: {
     title: 'Agents',
-    description: 'Expand local runtime CLI capabilities into Coding Agents you can inspect and dispatch.',
+    description: 'Inspect local runtime agents that are wired for platform dispatch.',
     onlineCount: '{count} agents detected',
     cliCount: '{count} runtimes online',
     runtimeHelp: 'The CodingCTO runtime is online; these CLIs are not long-running processes. The runtime launches a wired CLI only when it receives a task.',
@@ -232,7 +239,7 @@ const messages: DashboardMessages = {
     },
     list: {
       title: 'Coding Agent list',
-      description: 'Detected from online runtime heartbeats; each available CLI is shown as one agent.',
+      description: 'Detected from online runtime heartbeats; only dispatchable executors are shown as agents.',
     },
     states: {
       loading: 'Loading...',
@@ -251,7 +258,7 @@ const messages: DashboardMessages = {
       copy: 'Copy command',
       copied: 'Copied',
       commandLoading: 'Generating start command...',
-      noRepositoryCommand: 'Bind a GitHub repository first, then CodingCTO can generate a runtime command for it.',
+      noRepositoryCommand: 'Bind a primary GitHub repository to the project first, then CodingCTO can generate a runtime command for it.',
       steps: {
         start: {
           label: '1. Start',
@@ -294,8 +301,8 @@ const messages: DashboardMessages = {
     tasks: {
       title: 'No completed tasks yet',
       description: 'This agent has not completed any task yet.',
-      runTitle: 'Dispatch Codex directly',
-      runDescription: 'Enter a small task. CodingCTO will dispatch it to this local runtime and Codex CLI will execute it in the local repository.',
+      runTitle: 'Dispatch {agent} directly',
+      runDescription: 'Enter a small task. CodingCTO will dispatch it to this local runtime and {agent} will execute it in the local repository.',
       targetRepository: 'Target repository',
       noRepository: 'No repository selected',
       promptPlaceholder: 'For example: add one README line marking this as a CodingCTO direct task smoke test.',
@@ -303,9 +310,9 @@ const messages: DashboardMessages = {
       blocked: {
         noRepository: 'Select a target repository first.',
         notDispatchable: 'This agent is detected by the runtime, but is not wired for platform dispatch yet.',
-        noPrompt: 'Enter a task description to dispatch it to Codex.',
+        noPrompt: 'Enter a task description to dispatch it to {agent}.',
       },
-      dispatch: 'Run with Codex',
+      dispatch: 'Run with {agent}',
       dispatching: 'Dispatching',
       recentTitle: 'Recent tasks',
       recentDescription: 'Direct task status refreshes automatically.',
@@ -334,9 +341,9 @@ const messages: DashboardMessages = {
       active: 'active',
       inactive: 'inactive',
       noDescription: 'No description yet.',
-      empty: 'This repository has no skills yet. Create or import one from the Skills page.',
-      noRepository: 'No repository selected',
-      noRepositoryHint: 'Connect a GitHub repository before assigning skills to agents.',
+      empty: 'This project has no skills yet. Create or import one from the Skills page.',
+      noRepository: 'No project selected',
+      noRepositoryHint: 'Bind a primary GitHub repository to the project before assigning skills to agents.',
     },
     time: {
       justNow: 'just now',

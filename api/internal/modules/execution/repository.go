@@ -694,9 +694,10 @@ func (r *repository) ListDirectAgentTasks(ctx context.Context, createdBy uint, r
 	return tasks, nil
 }
 
-func (r *repository) HasClaimableDirectAgentTask(ctx context.Context, runtimeID, executor string) (bool, error) {
+func (r *repository) HasClaimableDirectAgentTask(ctx context.Context, runtimeID, executor, repositoryID string) (bool, error) {
 	runtimeID = strings.TrimSpace(runtimeID)
 	executor = strings.TrimSpace(executor)
+	repositoryID = strings.TrimSpace(repositoryID)
 	if runtimeID == "" {
 		return false, domain.ErrInvalidInput
 	}
@@ -706,6 +707,9 @@ func (r *repository) HasClaimableDirectAgentTask(ctx context.Context, runtimeID,
 	if executor != "" {
 		query = query.Where("executor = ?", executor)
 	}
+	if repositoryID != "" {
+		query = query.Where("repository_id = ?", repositoryID)
+	}
 	var count int64
 	if err := query.Count(&count).Error; err != nil {
 		return false, err
@@ -713,9 +717,10 @@ func (r *repository) HasClaimableDirectAgentTask(ctx context.Context, runtimeID,
 	return count > 0, nil
 }
 
-func (r *repository) ClaimDirectAgentTask(ctx context.Context, runtimeID, executor, sessionID, workdir string) (*domain.CodingCTODirectAgentTask, error) {
+func (r *repository) ClaimDirectAgentTask(ctx context.Context, runtimeID, executor, repositoryID, sessionID, workdir string) (*domain.CodingCTODirectAgentTask, error) {
 	runtimeID = strings.TrimSpace(runtimeID)
 	executor = strings.TrimSpace(executor)
+	repositoryID = strings.TrimSpace(repositoryID)
 	if runtimeID == "" {
 		return nil, domain.ErrInvalidInput
 	}
@@ -728,6 +733,9 @@ func (r *repository) ClaimDirectAgentTask(ctx context.Context, runtimeID, execut
 			Where("(runtime_id = '' OR runtime_id IS NULL OR runtime_id = ?)", runtimeID)
 		if executor != "" {
 			query = query.Where("executor = ?", executor)
+		}
+		if repositoryID != "" {
+			query = query.Where("repository_id = ?", repositoryID)
 		}
 		if err := query.Order("dispatched_at ASC, id ASC").First(&po).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {

@@ -503,8 +503,8 @@ type SpecForgeExecutionRepository interface {
 	CreateDirectAgentTask(ctx context.Context, task *CodingCTODirectAgentTask) error
 	FindDirectAgentTaskByID(ctx context.Context, taskID uint) (*CodingCTODirectAgentTask, error)
 	ListDirectAgentTasks(ctx context.Context, createdBy uint, repositoryID, executor, runtimeID string, limit int) ([]*CodingCTODirectAgentTask, error)
-	HasClaimableDirectAgentTask(ctx context.Context, runtimeID, executor string) (bool, error)
-	ClaimDirectAgentTask(ctx context.Context, runtimeID, executor, sessionID, workdir string) (*CodingCTODirectAgentTask, error)
+	HasClaimableDirectAgentTask(ctx context.Context, runtimeID, executor, repositoryID string) (bool, error)
+	ClaimDirectAgentTask(ctx context.Context, runtimeID, executor, repositoryID, sessionID, workdir string) (*CodingCTODirectAgentTask, error)
 	UpdateDirectAgentTask(ctx context.Context, task *CodingCTODirectAgentTask) error
 	CreateDirectTaskEvent(ctx context.Context, event *CodingCTODirectTaskEvent) error
 	ListDirectTaskEvents(ctx context.Context, taskID uint, afterSeq int) ([]*CodingCTODirectTaskEvent, error)

@@ -39,18 +39,21 @@ import {
   useCodingCTODirectAgentTasks,
   useCodingCTODirectTaskEvents,
   useCodingCTORuntimes,
-  useCodingCTOSkills,
   useCreateCodingCTODirectAgentTask,
-  useGitHubRepositories,
-  useUpsertCodingCTOSkill,
 } from '@/features/codingcto/hooks/use-codingcto';
 import type {
   CodingCTODirectAgentTaskDTO,
   CodingCTODirectTaskEventDTO,
   CodingCTORuntimeDTO,
-  CodingCTOSkillDTO,
 } from '@/features/codingcto/services/codingcto-service';
+import { primaryRepositoryContext } from '@/features/project/project-context';
+import { useProjectContext, useProjects } from '@/features/project/hooks/use-projects';
 import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
+import {
+  useSpecForgeProjectSkills,
+  useUpsertSpecForgeProjectSkill,
+} from '@/features/specforge/hooks/use-specforge';
+import type { SpecForgeSkillDTO } from '@/features/specforge/services/specforge-service';
 import { useT } from '@/i18n';
 import { cn } from '@/utils';
 
@@ -64,6 +67,7 @@ interface RuntimeCapability {
   command: string;
   version?: string;
   dispatchable: boolean;
+  logo: AgentLogoKey;
 }
 
 interface LocalRuntime {
@@ -75,11 +79,17 @@ interface LocalRuntime {
   executor: string;
   skillTarget: string;
   capabilities: RuntimeCapability[];
+  logo: AgentLogoKey;
   dispatchableCapabilityCount: number;
   status: string;
   version?: string;
   lastSeenAt?: string;
 }
+
+type AgentLogoKey = 'codex' | 'kimi' | 'claude' | 'cursor' | 'opencode' | 'terminal';
+type TaskEventLogEntry = CodingCTODirectTaskEventDTO & {
+  displayId: string;
+};
 
 const ALL_AGENT_TARGETS = new Set(['*', 'all']);
 const ONLINE_RUNTIME_STALE_MS = 5 * 60 * 1000;
@@ -109,26 +119,41 @@ export function AgentsConsole({ selectedAgentId }: AgentsConsoleProps) {
     () => localAgents.length,
     [localAgents]
   );
-  const repositoriesQuery = useGitHubRepositories(
-    selectedWorkspaceId ? { workspace_id: selectedWorkspaceId } : undefined
+  const projectsQuery = useProjects(selectedWorkspaceId ?? '');
+  const projects = useMemo(
+    () => projectsQuery.data?.projects ?? [],
+    [projectsQuery.data?.projects]
   );
-  const repositories = useMemo(
-    () => repositoriesQuery.data?.repositories ?? [],
-    [repositoriesQuery.data?.repositories]
+  const [selectedProjectId, setSelectedProjectId] = useState('');
+  const selectedProject = useMemo(
+    () =>
+      projects.find(project => String(project.id) === selectedProjectId) ??
+      projects.find(project => project.status === 'active') ??
+      projects[0],
+    [projects, selectedProjectId]
   );
-  const [selectedRepoId, setSelectedRepoId] = useState('');
-  const effectiveSelectedRepoId =
-    selectedRepoId && repositories.some(repository => repository.repository_id === selectedRepoId)
-      ? selectedRepoId
-      : repositories[0]?.repository_id ?? '';
-  const skillsQuery = useCodingCTOSkills(effectiveSelectedRepoId);
-  const upsertSkill = useUpsertCodingCTOSkill(effectiveSelectedRepoId);
+  const projectContextQuery = useProjectContext(selectedProject?.id ?? 0);
+  const projectContext = projectContextQuery.data?.context;
+  const primaryRepository = primaryRepositoryContext(projectContext);
+  const executionRepositoryId =
+    primaryRepository?.repository.repository_id ??
+    projectContext?.execution_repository_id ??
+    projectContext?.primary_repository_id ??
+    '';
+  const selectedRepository = executionRepositoryId
+    ? {
+        repository_id: executionRepositoryId,
+        full_name: executionRepositoryId,
+      }
+    : undefined;
+  const skillsQuery = useSpecForgeProjectSkills(selectedProject?.id);
+  const upsertSkill = useUpsertSpecForgeProjectSkill(selectedProject?.id);
   const [setupCommand, setSetupCommand] = useState('');
   const [setupCommandCopied, setSetupCommandCopied] = useState(false);
   useEffect(() => {
     let cancelled = false;
-    const query = effectiveSelectedRepoId
-      ? `?repository_id=${encodeURIComponent(effectiveSelectedRepoId)}`
+    const query = executionRepositoryId
+      ? `?repository_id=${encodeURIComponent(executionRepositoryId)}`
       : '';
     fetch(`/api/runtime/setup${query}`)
       .then(response => (response.ok ? response.json() : null))
@@ -145,23 +170,30 @@ export function AgentsConsole({ selectedAgentId }: AgentsConsoleProps) {
     return () => {
       cancelled = true;
     };
-  }, [effectiveSelectedRepoId]);
+  }, [executionRepositoryId]);
   const selectedAgent = useMemo(
     () =>
       localAgents.find(agent => agent.id === selectedAgentId) ??
       localAgents.find(agent => agent.id === decodeURIComponent(selectedAgentId ?? '')) ??
-      localAgents.find(agent => agent.runtimeId === decodeURIComponent(selectedAgentId ?? '')) ??
+      localAgents.find(agent => agent.runtimeId === runtimeIdFromRouteParam(selectedAgentId)) ??
       localAgents[0],
     [localAgents, selectedAgentId]
   );
-  const skills = skillsQuery.data?.skills ?? [];
+  const skills = useMemo(
+    () =>
+      (skillsQuery.data?.project_skills ?? [])
+        .map(projectSkill => projectSkill.skill)
+        .filter((skill): skill is SpecForgeSkillDTO => Boolean(skill)),
+    [skillsQuery.data?.project_skills]
+  );
   const assignedSkills = selectedAgent
     ? skills.filter(skill => skillAssignedToAgent(skill, selectedAgent.skillTarget))
     : [];
-  const isLoading = runtimesQuery.isLoading || repositoriesQuery.isLoading;
+  const isLoading =
+    runtimesQuery.isLoading || projectsQuery.isLoading || projectContextQuery.isLoading;
 
-  async function setSkillAssigned(skill: CodingCTOSkillDTO, assigned: boolean) {
-    if (!selectedAgent || !effectiveSelectedRepoId) {
+  async function setSkillAssigned(skill: SpecForgeSkillDTO, assigned: boolean) {
+    if (!selectedAgent || !selectedProject?.id || !executionRepositoryId) {
       return;
     }
     const currentTargets = (skill.target_agents ?? []).filter(Boolean);
@@ -173,6 +205,7 @@ export function AgentsConsole({ selectedAgentId }: AgentsConsoleProps) {
       : currentWithoutAll.filter(target => target !== selectedAgent.skillTarget);
 
     await upsertSkill.mutateAsync({
+      repository_id: executionRepositoryId,
       name: skill.name,
       description: skill.description ?? '',
       content: skill.content ?? '',
@@ -237,8 +270,8 @@ export function AgentsConsole({ selectedAgentId }: AgentsConsoleProps) {
                       selectedAgent?.id === runtime.id && 'bg-bg-subtle'
                     )}
                   >
-                    <span className="flex h-10 w-10 shrink-0 items-center justify-center rounded-md bg-bg-subtle text-text-muted">
-                      <Terminal className="h-5 w-5" />
+                    <span className="shrink-0">
+                      <AgentLogo logo={runtime.logo} label={runtime.label} size="md" />
                     </span>
                     <span className="min-w-0 flex-1">
                       <span className="flex items-center gap-2">
@@ -258,6 +291,7 @@ export function AgentsConsole({ selectedAgentId }: AgentsConsoleProps) {
                               capability.dispatchable ? 'text-success' : 'text-text-muted'
                             )}
                           >
+                            <AgentLogo logo={capability.logo} label={capability.label} size="xs" />
                             <span className="truncate">
                               {capability.label}
                               {capability.dispatchable ? ` · ${t('status.dispatchReady')}` : ''}
@@ -284,13 +318,15 @@ export function AgentsConsole({ selectedAgentId }: AgentsConsoleProps) {
             {selectedAgent ? (
               <AgentDetail
                 runtime={selectedAgent}
-                repositories={repositories}
-                selectedRepoId={effectiveSelectedRepoId}
+                projects={projects}
+                selectedProjectId={String(selectedProject?.id ?? '')}
+                selectedProjectName={selectedProject?.name}
+                selectedRepository={selectedRepository}
                 skills={skills}
                 assignedSkillCount={assignedSkills.length}
                 skillsLoading={skillsQuery.isLoading}
                 saving={upsertSkill.isPending}
-                onRepositoryChange={setSelectedRepoId}
+                onProjectChange={setSelectedProjectId}
                 onSetSkillAssigned={setSkillAssigned}
                 t={t}
               />
@@ -299,7 +335,7 @@ export function AgentsConsole({ selectedAgentId }: AgentsConsoleProps) {
                 command={setupCommand}
                 copied={setupCommandCopied}
                 isLoading={isLoading}
-                hasRepository={Boolean(effectiveSelectedRepoId)}
+                hasRepository={Boolean(executionRepositoryId)}
                 onCopy={copySetupCommand}
                 t={t}
               />
@@ -378,35 +414,40 @@ function RuntimeSetupPanel({
 
 function AgentDetail({
   runtime,
-  repositories,
-  selectedRepoId,
+  projects,
+  selectedProjectId,
+  selectedProjectName,
+  selectedRepository,
   skills,
   assignedSkillCount,
   skillsLoading,
   saving,
-  onRepositoryChange,
+  onProjectChange,
   onSetSkillAssigned,
   t,
 }: {
   runtime: LocalRuntime;
-  repositories: Array<{
+  projects: Array<{
+    id: number;
+    name: string;
+    status?: string;
+  }>;
+  selectedProjectId: string;
+  selectedProjectName?: string;
+  selectedRepository?: {
     repository_id: string;
     github_owner?: string;
     github_repo?: string;
     full_name?: string;
-  }>;
-  selectedRepoId: string;
-  skills: CodingCTOSkillDTO[];
+  };
+  skills: SpecForgeSkillDTO[];
   assignedSkillCount: number;
   skillsLoading: boolean;
   saving: boolean;
-  onRepositoryChange: (value: string) => void;
-  onSetSkillAssigned: (skill: CodingCTOSkillDTO, assigned: boolean) => void;
+  onProjectChange: (value: string) => void;
+  onSetSkillAssigned: (skill: SpecForgeSkillDTO, assigned: boolean) => void;
   t: ReturnType<typeof useT<'dashboard.agents'>>;
 }) {
-  const selectedRepository = repositories.find(
-    repository => repository.repository_id === selectedRepoId
-  );
   const [directPrompt, setDirectPrompt] = useState('');
   const [selectedDirectTaskId, setSelectedDirectTaskId] = useState<number | undefined>();
   useEffect(() => {
@@ -415,7 +456,7 @@ function AgentDetail({
   }, [runtime.id]);
   const directTasksQuery = useCodingCTODirectAgentTasks({
     limit: 8,
-    repository_id: selectedRepoId,
+    repository_id: selectedRepository?.repository_id,
     executor: runtime.executor,
     runtime_id: runtime.runtimeId,
   });
@@ -431,11 +472,11 @@ function AgentDetail({
 
   async function submitDirectTask() {
     const prompt = directPrompt.trim();
-    if (!prompt || !selectedRepoId || runtime.dispatchableCapabilityCount === 0) {
+    if (!prompt || !selectedRepository?.repository_id || runtime.dispatchableCapabilityCount === 0) {
       return;
     }
     const task = await createDirectTask.mutateAsync({
-      repository_id: selectedRepoId,
+      repository_id: selectedRepository.repository_id,
       prompt,
       executor: runtime.executor,
       runtime_id: runtime.runtimeId,
@@ -448,8 +489,8 @@ function AgentDetail({
     <div className="flex h-full min-h-[620px] flex-col">
       <div className="grid gap-4 border-b border-border-subtle p-5 md:grid-cols-[1fr_auto]">
         <div className="flex min-w-0 gap-4">
-          <div className="flex h-14 w-14 shrink-0 items-center justify-center rounded-lg bg-bg-subtle text-text-muted">
-            <Bot className="h-7 w-7" />
+          <div className="shrink-0">
+            <AgentLogo logo={runtime.logo} label={runtime.label} size="lg" />
           </div>
           <div className="min-w-0">
             <div className="flex flex-wrap items-center gap-2">
@@ -474,6 +515,7 @@ function AgentDetail({
               <MetaRow icon={Server} label={t('fields.runtime')} value={runtime.runtimeId} />
               <MetaRow icon={Terminal} label={t('fields.executor')} value={runtime.executor} />
               <MetaRow icon={KeyRound} label={t('fields.skills')} value={String(assignedSkillCount)} />
+              <MetaRow icon={BookOpen} label="Project" value={selectedProjectName ?? 'No project'} />
               <MetaRow
                 icon={Activity}
                 label={t('fields.lastSeen')}
@@ -487,8 +529,11 @@ function AgentDetail({
                   className="rounded-lg border border-border-subtle bg-bg-subtle px-3 py-2"
                 >
                   <div className="flex items-center justify-between gap-2">
-                    <span className="truncate text-sm font-medium text-text-main">
-                      {capability.label}
+                    <span className="flex min-w-0 items-center gap-2">
+                      <AgentLogo logo={capability.logo} label={capability.label} size="sm" />
+                      <span className="truncate text-sm font-medium text-text-main">
+                        {capability.label}
+                      </span>
                     </span>
                     <Badge
                       variant="outline"
@@ -571,15 +616,15 @@ function AgentDetail({
               <h3 className="text-sm font-medium text-text-main">{t('skills.title')}</h3>
               <p className="mt-1 text-sm text-text-muted">{t('skills.description')}</p>
             </div>
-            {repositories.length > 1 ? (
-              <Select value={selectedRepoId} onValueChange={onRepositoryChange}>
+            {projects.length > 1 ? (
+              <Select value={selectedProjectId} onValueChange={onProjectChange}>
                 <SelectTrigger className="w-full bg-bg-surface sm:w-[280px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {repositories.map(repository => (
-                    <SelectItem key={repository.repository_id} value={repository.repository_id}>
-                      {repository.github_owner}/{repository.github_repo}
+                  {projects.map(project => (
+                    <SelectItem key={project.id} value={String(project.id)}>
+                      {project.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
@@ -590,9 +635,7 @@ function AgentDetail({
           <div className="mt-4 overflow-hidden rounded-lg border border-border-subtle">
             <div className="flex items-center justify-between gap-3 border-b border-border-subtle bg-bg-subtle px-4 py-3 text-xs font-medium uppercase tracking-wide text-text-muted">
               <span>
-                {selectedRepository
-                  ? `${selectedRepository.github_owner}/${selectedRepository.github_repo}`
-                  : t('skills.noRepository')}
+                {selectedProjectName ?? t('skills.noRepository')}
               </span>
               <span>{t('skills.assignedCount', { count: assignedSkillCount })}</span>
             </div>
@@ -694,12 +737,15 @@ function DirectTaskPanel({
     Boolean(selectedRepository?.repository_id) &&
     runtime.dispatchableCapabilityCount > 0 &&
     !isCreating;
+  const dispatchAgentName =
+    runtime.capabilities.find(capability => capability.dispatchable)?.label ||
+    displayAgentName(runtime.executor);
   const dispatchBlockReason = !selectedRepository?.repository_id
     ? t('tasks.blocked.noRepository')
     : runtime.dispatchableCapabilityCount === 0
       ? t('tasks.blocked.notDispatchable')
       : !prompt.trim()
-        ? t('tasks.blocked.noPrompt')
+        ? t('tasks.blocked.noPrompt', { agent: dispatchAgentName })
         : '';
   const repositoryLabel = selectedRepository
     ? selectedRepository.full_name ||
@@ -715,8 +761,12 @@ function DirectTaskPanel({
       <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h3 className="text-sm font-medium text-text-main">{t('tasks.runTitle')}</h3>
-            <p className="mt-1 text-sm leading-6 text-text-muted">{t('tasks.runDescription')}</p>
+            <h3 className="text-sm font-medium text-text-main">
+              {t('tasks.runTitle', { agent: dispatchAgentName })}
+            </h3>
+            <p className="mt-1 text-sm leading-6 text-text-muted">
+              {t('tasks.runDescription', { agent: dispatchAgentName })}
+            </p>
           </div>
           <Badge
             variant="outline"
@@ -743,7 +793,7 @@ function DirectTaskPanel({
           </p>
           <Button disabled={!canDispatch} onClick={onSubmit}>
             {isCreating ? <RefreshCw className="h-4 w-4 animate-spin" /> : <Play className="h-4 w-4" />}
-            {isCreating ? t('tasks.dispatching') : t('tasks.dispatch')}
+            {isCreating ? t('tasks.dispatching') : t('tasks.dispatch', { agent: dispatchAgentName })}
           </Button>
         </div>
       </div>
@@ -879,15 +929,16 @@ function TaskEventLog({
   t: ReturnType<typeof useT<'dashboard.agents'>>;
 }) {
   const hasResult = selectedTask.output_log || selectedTask.error_log;
+  const displayEvents = useMemo(() => compactTaskEventsForDisplay(events), [events]);
   return (
     <div className="overflow-hidden rounded-md border border-border-subtle">
       <div className="border-b border-border-subtle bg-bg-subtle px-3 py-2 text-xs font-medium uppercase text-text-muted">
         {t('tasks.eventsTitle')}
       </div>
-      {events.length > 0 ? (
+      {displayEvents.length > 0 ? (
         <div className="max-h-72 divide-y divide-border-subtle overflow-y-auto">
-          {events.map(event => (
-            <div key={event.id} className="px-3 py-2">
+          {displayEvents.map(event => (
+            <div key={event.displayId} className="px-3 py-2">
               <div className="flex items-center justify-between gap-2 text-xs text-text-muted">
                 <span>
                   #{event.seq} · {event.type}
@@ -916,6 +967,63 @@ function TaskEventLog({
       ) : null}
     </div>
   );
+}
+
+function compactTaskEventsForDisplay(events: CodingCTODirectTaskEventDTO[]): TaskEventLogEntry[] {
+  const visibleEvents: TaskEventLogEntry[] = [];
+  const suppressedCounts = new Map<string, number>();
+  let firstSuppressedEvent: CodingCTODirectTaskEventDTO | undefined;
+  let totalSuppressed = 0;
+
+  for (const event of events) {
+    const noiseKey = noisyTaskEventKey(event);
+    if (noiseKey) {
+      suppressedCounts.set(noiseKey, (suppressedCounts.get(noiseKey) ?? 0) + 1);
+      firstSuppressedEvent ??= event;
+      totalSuppressed += 1;
+      continue;
+    }
+    visibleEvents.push({ ...event, displayId: String(event.id) });
+  }
+
+  if (!firstSuppressedEvent || totalSuppressed === 0) {
+    return visibleEvents;
+  }
+
+  const output = Array.from(suppressedCounts.entries())
+    .sort(([left], [right]) => left.localeCompare(right))
+    .map(([key, count]) => `${key}: ${count}`)
+    .join('\n');
+
+  visibleEvents.push({
+    ...firstSuppressedEvent,
+    id: -firstSuppressedEvent.id,
+    seq: firstSuppressedEvent.seq,
+    type: 'executor_log_suppressed',
+    tool: firstSuppressedEvent.tool,
+    content: `Suppressed ${totalSuppressed} noisy CLI warning lines.`,
+    output,
+    displayId: `suppressed-${firstSuppressedEvent.id}-${totalSuppressed}`,
+  });
+
+  return visibleEvents;
+}
+
+function noisyTaskEventKey(event: CodingCTODirectTaskEventDTO) {
+  if (event.type !== 'executor_stderr') {
+    return '';
+  }
+  const output = event.output ?? event.content ?? '';
+  if (output.includes('codex_core_plugins::manifest: ignoring interface.defaultPrompt')) {
+    return 'codex plugin manifest defaultPrompt warning';
+  }
+  if (output.includes('codex_core_skills::loader: ignoring interface.icon_small')) {
+    return 'codex skill icon_small warning';
+  }
+  if (output.includes('codex_core_skills::loader: ignoring interface.icon_large')) {
+    return 'codex skill icon_large warning';
+  }
+  return '';
 }
 
 function MetaRow({
@@ -954,7 +1062,59 @@ function InfoBlock({ label, value }: { label: string; value: string }) {
   );
 }
 
-function skillAssignedToAgent(skill: CodingCTOSkillDTO, agentId: string) {
+function AgentLogo({
+  logo,
+  label,
+  size = 'md',
+}: {
+  logo: AgentLogoKey;
+  label: string;
+  size?: 'xs' | 'sm' | 'md' | 'lg';
+}) {
+  const sizeClassName = {
+    xs: 'h-4 w-4 rounded-[4px] p-0.5',
+    sm: 'h-6 w-6 rounded-md p-1',
+    md: 'h-10 w-10 rounded-md p-2',
+    lg: 'h-14 w-14 rounded-lg p-2.5',
+  }[size];
+  const logoSource = agentLogoSource(logo);
+
+  return (
+    <span
+      aria-label={`${label} logo`}
+      className={cn(
+        'inline-flex shrink-0 items-center justify-center border border-border-subtle bg-white shadow-sm',
+        sizeClassName,
+        logo === 'terminal' && 'bg-bg-subtle font-semibold text-text-muted'
+      )}
+    >
+      {logoSource ? (
+        <img src={logoSource} alt="" className="h-full w-full object-contain" draggable={false} />
+      ) : (
+        'CLI'
+      )}
+    </span>
+  );
+}
+
+function agentLogoSource(logo: AgentLogoKey) {
+  switch (logo) {
+    case 'codex':
+      return '/agent-logos/openai.svg';
+    case 'kimi':
+      return '/agent-logos/kimi.ico';
+    case 'claude':
+      return '/agent-logos/claude.png';
+    case 'cursor':
+      return '/agent-logos/cursor.svg';
+    case 'opencode':
+      return '/agent-logos/opencode.png';
+    default:
+      return '';
+  }
+}
+
+function skillAssignedToAgent(skill: SpecForgeSkillDTO, agentId: string) {
   const targets = skill.target_agents ?? [];
   return targets.some(target => {
     const normalized = target.trim().toLowerCase();
@@ -965,26 +1125,30 @@ function skillAssignedToAgent(skill: CodingCTOSkillDTO, agentId: string) {
 function localAgentsFromRuntimes(runtimes: CodingCTORuntimeDTO[], now: number): LocalRuntime[] {
   return runtimes
     .filter(runtime => isFreshOnlineRuntime(runtime, now))
-    .flatMap(runtime => {
+    .map(runtime => {
       const capabilities = runtimeCapabilities(runtime);
-      return capabilities.map(capability => {
-        const agentId = `${runtime.runtime_id}:${capability.id}`;
-        const hostname = runtime.hostname || runtime.runtime_id;
-        return {
-          id: agentId,
-          label: agentLabel(capability, runtime),
-          description: `${capability.command} · ${hostname} · ${runtime.runtime_id}`,
-          runtimeId: runtime.runtime_id,
-          hostname,
-          executor: capability.dispatchable ? runtime.executor || 'codex_cli' : capability.id,
-          skillTarget: capability.id,
-          capabilities: [capability],
-          dispatchableCapabilityCount: capability.dispatchable ? 1 : 0,
-          status: runtime.status,
-          version: capability.version || runtime.version,
-          lastSeenAt: runtime.last_seen_at,
-        };
-      });
+      const executorId = normalizeAgentId(runtime.executor || '');
+      const dispatchableCapability =
+        capabilities.find(capability => capability.dispatchable) ??
+        capabilities.find(capability => capability.id === executorId) ??
+        capabilities[0];
+      const hostname = runtime.hostname || runtime.runtime_id;
+      const dispatchableCapabilityCount = capabilities.filter(capability => capability.dispatchable).length;
+      return {
+        id: runtime.runtime_id,
+        label: agentLabel(dispatchableCapability, runtime),
+        description: `${dispatchableCapability.command} · ${hostname} · ${runtime.runtime_id}`,
+        runtimeId: runtime.runtime_id,
+        hostname,
+        executor: runtime.executor || dispatchableCapability.id,
+        skillTarget: dispatchableCapability.id,
+        capabilities: dispatchableCapability ? [dispatchableCapability] : [],
+        logo: dispatchableCapability.logo,
+        dispatchableCapabilityCount,
+        status: runtime.status,
+        version: dispatchableCapability.version || runtime.version,
+        lastSeenAt: runtime.last_seen_at,
+      };
     })
     .sort((a, b) => {
       if (a.dispatchableCapabilityCount !== b.dispatchableCapabilityCount) {
@@ -999,6 +1163,11 @@ function localAgentsFromRuntimes(runtimes: CodingCTORuntimeDTO[], now: number): 
     });
 }
 
+function runtimeIdFromRouteParam(value: string | undefined) {
+  const decoded = decodeURIComponent(value ?? '');
+  return decoded.split(':')[0];
+}
+
 function runtimeCapabilities(runtime: CodingCTORuntimeDTO): RuntimeCapability[] {
   const availableCLIs = (runtime.available_clis ?? []).filter(cli => cli.available);
   if (availableCLIs.length === 0) {
@@ -1010,6 +1179,7 @@ function runtimeCapabilities(runtime: CodingCTORuntimeDTO): RuntimeCapability[] 
         command: executor,
         version: runtime.version,
         dispatchable: false,
+        logo: agentLogoForExecutor(executor),
       },
     ];
   }
@@ -1022,12 +1192,16 @@ function runtimeCapabilities(runtime: CodingCTORuntimeDTO): RuntimeCapability[] 
       command,
       version: cli.version,
       dispatchable: runtimeCanDispatchCLI(runtime, command),
+      logo: agentLogoForExecutor(command || cli.name),
     };
   });
 }
 
 function runtimeCanDispatchCLI(runtime: CodingCTORuntimeDTO, command: string) {
-  return runtime.executor === 'codex_cli' && command === 'codex';
+  return (
+    (runtime.executor === 'codex_cli' && command === 'codex') ||
+    (runtime.executor === 'kimi_cli' && command === 'kimi')
+  );
 }
 
 function agentLabel(capability: RuntimeCapability, runtime: CodingCTORuntimeDTO) {
@@ -1058,6 +1232,8 @@ function normalizeAgentId(value: string) {
     codex: 'codex_cli',
     codex_cli: 'codex_cli',
     openai_codex: 'codex_cli',
+    kimi: 'kimi_cli',
+    kimi_cli: 'kimi_cli',
     claude_code: 'claude',
     claude: 'claude',
     cursor: 'cursor',
@@ -1072,6 +1248,7 @@ function displayAgentName(value: string) {
   const normalized = normalizeAgentId(value);
   const labels: Record<string, string> = {
     codex_cli: 'Codex',
+    kimi_cli: 'Kimi',
     claude: 'Claude',
     cursor_agent: 'Cursor Agent',
     cursor: 'Cursor',
@@ -1079,6 +1256,26 @@ function displayAgentName(value: string) {
     opencode: 'OpenCode',
   };
   return labels[normalized] ?? value.replace(/[_-]+/g, ' ');
+}
+
+function agentLogoForExecutor(value: string): AgentLogoKey {
+  const normalized = normalizeAgentId(value);
+  if (normalized === 'codex_cli') {
+    return 'codex';
+  }
+  if (normalized === 'kimi_cli') {
+    return 'kimi';
+  }
+  if (normalized === 'claude') {
+    return 'claude';
+  }
+  if (normalized === 'cursor' || normalized === 'cursor_agent') {
+    return 'cursor';
+  }
+  if (normalized === 'opencode') {
+    return 'opencode';
+  }
+  return 'terminal';
 }
 
 function formatRelativeTime(value: string | undefined, t: ReturnType<typeof useT<'dashboard.agents'>>) {

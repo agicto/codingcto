@@ -581,12 +581,25 @@ func hasDispatchReadyRuntime(executor string, runtimes []*domain.SpecForgeRuntim
 		if !runtimeSandboxWritable(runtime.Sandbox) {
 			continue
 		}
-		if executor == ExecutorNameCodexCLI && !runtimeHasAvailableCLI(runtime, "codex") {
+		if requiredCommand := executorCLICommand(executor); requiredCommand != "" && !runtimeHasAvailableCLI(runtime, requiredCommand) {
 			continue
 		}
 		return true
 	}
 	return false
+}
+
+func executorCLICommand(executor string) string {
+	switch strings.TrimSpace(executor) {
+	case ExecutorNameCodexCLI:
+		return "codex"
+	case ExecutorNameKimiCLI:
+		return "kimi"
+	case ExecutorNameClaudeCodeCLI:
+		return "claude"
+	default:
+		return ""
+	}
 }
 
 func runtimeHasAvailableCLI(runtime *domain.SpecForgeRuntime, command string) bool {
@@ -665,7 +678,7 @@ func (s *service) HeartbeatRuntime(ctx context.Context, req *RuntimeHeartbeatReq
 		return nil, fmt.Errorf("check claimable task: %w", err)
 	}
 	if !pending {
-		pending, err = s.repo.HasClaimableDirectAgentTask(ctx, runtime.RuntimeID, runtime.Executor)
+		pending, err = s.repo.HasClaimableDirectAgentTask(ctx, runtime.RuntimeID, runtime.Executor, strings.TrimSpace(req.RepositoryID))
 		if err != nil {
 			return nil, fmt.Errorf("check claimable direct task: %w", err)
 		}
@@ -792,7 +805,7 @@ func (s *service) ClaimTask(ctx context.Context, runtimeID string, req *ClaimAge
 	if req == nil {
 		req = &ClaimAgentTaskRequest{}
 	}
-	directTask, err := s.repo.ClaimDirectAgentTask(ctx, runtimeID, req.Executor, req.SessionID, req.Workdir)
+	directTask, err := s.repo.ClaimDirectAgentTask(ctx, runtimeID, req.Executor, req.RepositoryID, req.SessionID, req.Workdir)
 	if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		return nil, fmt.Errorf("claim direct agent task: %w", err)
 	}
@@ -854,9 +867,10 @@ func (s *service) CreateDirectAgentTask(ctx context.Context, userID uint, req *C
 		return nil, fmt.Errorf("create direct agent task: %w", err)
 	}
 	_, _ = s.CreateDirectTaskEvent(ctx, task.ID, &CreateTaskEventRequest{
-		Type:    "direct_task_dispatched",
-		Tool:    executor,
-		Content: "CodingCTO dispatched a direct agent task.",
+		RuntimeID: task.RuntimeID,
+		Type:      "direct_task_dispatched",
+		Tool:      executor,
+		Content:   "CodingCTO dispatched a direct agent task.",
 	})
 	return task, nil
 }
@@ -902,6 +916,13 @@ func (s *service) CreateDirectTaskEvent(ctx context.Context, taskID uint, req *C
 	if taskID == 0 || req == nil || strings.TrimSpace(req.Type) == "" {
 		return nil, domain.ErrInvalidInput
 	}
+	task, err := s.repo.FindDirectAgentTaskByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureRuntimeCanUpdateDirectTask(task, strings.TrimSpace(req.RuntimeID), false); err != nil {
+		return nil, err
+	}
 	event := &domain.CodingCTODirectTaskEvent{
 		TaskID:  taskID,
 		Type:    strings.TrimSpace(req.Type),
@@ -935,6 +956,9 @@ func (s *service) SubmitDirectTaskResult(ctx context.Context, taskID uint, req *
 	if err != nil {
 		return nil, err
 	}
+	if err := ensureRuntimeCanUpdateDirectTask(task, strings.TrimSpace(req.RuntimeID), true); err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	task.RuntimeID = firstNonEmpty(req.RuntimeID, task.RuntimeID)
 	task.SessionID = firstNonEmpty(req.SessionID, task.SessionID)
@@ -964,6 +988,27 @@ func (s *service) SubmitDirectTaskResult(ctx context.Context, taskID uint, req *
 		return nil, fmt.Errorf("submit direct task result: %w", err)
 	}
 	return task, nil
+}
+
+func ensureRuntimeCanUpdateDirectTask(task *domain.CodingCTODirectAgentTask, runtimeID string, requireRunning bool) error {
+	if task == nil {
+		return domain.ErrInvalidInput
+	}
+	if requireRunning && task.Status != domain.AgentTaskStatusRunning {
+		return domain.ErrConflict
+	}
+	runtimeID = strings.TrimSpace(runtimeID)
+	taskRuntimeID := strings.TrimSpace(task.RuntimeID)
+	if taskRuntimeID == "" && runtimeID == "" {
+		if requireRunning {
+			return domain.ErrConflict
+		}
+		return nil
+	}
+	if runtimeID == "" || taskRuntimeID == "" || taskRuntimeID != runtimeID {
+		return domain.ErrConflict
+	}
+	return nil
 }
 
 func (s *service) buildDirectClaimResponse(_ context.Context, task *domain.CodingCTODirectAgentTask) *ClaimAgentTaskResponse {
@@ -1421,6 +1466,8 @@ func (s *service) SubmitTaskResult(ctx context.Context, taskID uint, req *Submit
 			return nil, domain.ErrConflict
 		}
 		task.RuntimeID = runtimeID
+	} else if strings.TrimSpace(task.RuntimeID) != "" {
+		return nil, domain.ErrConflict
 	}
 	if sessionID := strings.TrimSpace(req.SessionID); sessionID != "" {
 		task.SessionID = sessionID
@@ -1451,6 +1498,9 @@ func (s *service) CreateTaskEvent(ctx context.Context, taskID uint, req *CreateT
 		return nil, err
 	}
 	if task.Status != domain.AgentTaskStatusDispatched && task.Status != domain.AgentTaskStatusRunning {
+		return nil, domain.ErrConflict
+	}
+	if runtimeID := strings.TrimSpace(req.RuntimeID); runtimeID != "" && strings.TrimSpace(task.RuntimeID) != "" && task.RuntimeID != runtimeID {
 		return nil, domain.ErrConflict
 	}
 	event := &domain.SpecForgeTaskEvent{

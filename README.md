@@ -55,20 +55,33 @@ make run      # start server on :2010
 
 See [api/README.md](api/README.md) for the full Go backend guide. Some internal module names still use `luas` for compatibility with the original scaffold history.
 
-### Local Codex Runtime
+### Local AI CLI Runtime
 
-After the API has an approved plan and dispatched execution task, a local Codex runtime can claim and execute work:
+After the API has an approved plan and dispatched execution task, a local runtime can claim and execute work with Codex CLI or Kimi CLI:
 
 ```bash
 cd api
 go run ./cmd/ccto daemon \
   --api-base-url http://localhost:2010/v1 \
-  --token "$CODINGCTO_RUNTIME_TOKEN" \
+  --token "${CODINGCTO_RUNTIME_TOKEN:-local-runtime-token}" \
   --repo-dir /path/to/local/repo \
-  --repository-id github_owner__repo
+  --repository-id github_owner__repo \
+  --executor codex_cli
 ```
 
-The runtime sends heartbeat events, claims `codex_cli` tasks, checks out the PR node branch in the local repo, runs `codex exec`, streams task events back to the API, and submits the task result. Use `--once` for a single claim/execute cycle during local testing.
+```bash
+cd api
+go run ./cmd/ccto daemon \
+  --api-base-url http://localhost:2010/v1 \
+  --token "${CODINGCTO_RUNTIME_TOKEN:-local-runtime-token}" \
+  --runtime-id local-kimi-runtime \
+  --repo-dir /path/to/local/repo \
+  --repository-id github_owner__repo \
+  --executor kimi_cli \
+  --kimi-path kimi
+```
+
+The runtime sends heartbeat events, claims matching executor tasks, checks out the PR node branch in the local repo, runs the selected AI CLI adapter, streams task events back to the API, and submits the task result. Use `--once` for a single claim/execute cycle during local testing.
 
 ### Web (`web/`)
 

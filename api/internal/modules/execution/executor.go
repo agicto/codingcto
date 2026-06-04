@@ -16,6 +16,7 @@ import (
 const (
 	ExecutorNameCodexCLI      = "codex_cli"
 	ExecutorNameClaudeCodeCLI = "claude_code_cli"
+	ExecutorNameKimiCLI       = "kimi_cli"
 )
 
 type CodeExecutor interface {
@@ -75,6 +76,7 @@ type ExecutorLogs struct {
 type ExecutorFactoryConfig struct {
 	CodexPath      string
 	ClaudePath     string
+	KimiPath       string
 	SandboxMode    string
 	ApprovalPolicy string
 	Timeout        time.Duration
@@ -134,6 +136,9 @@ func NewExecutorFactory(cfg ExecutorFactoryConfig, runner CommandRunner) *Execut
 	if strings.TrimSpace(cfg.ClaudePath) == "" {
 		cfg.ClaudePath = "claude"
 	}
+	if strings.TrimSpace(cfg.KimiPath) == "" {
+		cfg.KimiPath = "kimi"
+	}
 	if strings.TrimSpace(cfg.SandboxMode) == "" {
 		cfg.SandboxMode = "workspace-write"
 	}
@@ -180,6 +185,14 @@ func (f *ExecutorFactory) Create(name string) (CodeExecutor, error) {
 	case ExecutorNameClaudeCodeCLI:
 		return newExecutorAdapter(newClaudeCodeExecutor(ClaudeCodeExecutorConfig{
 			ExecutablePath: f.cfg.ClaudePath,
+			Timeout:        f.cfg.Timeout,
+			ExtraArgs:      append([]string(nil), f.cfg.ExtraArgs...),
+			GitAuthorName:  f.cfg.GitAuthorName,
+			GitAuthorEmail: f.cfg.GitAuthorEmail,
+		}, f.runner)), nil
+	case ExecutorNameKimiCLI:
+		return newExecutorAdapter(newKimiCLIExecutor(KimiCLIExecutorConfig{
+			ExecutablePath: f.cfg.KimiPath,
 			Timeout:        f.cfg.Timeout,
 			ExtraArgs:      append([]string(nil), f.cfg.ExtraArgs...),
 			GitAuthorName:  f.cfg.GitAuthorName,
@@ -239,7 +252,7 @@ type executorRunConfig struct {
 	extraArgs      []string
 	gitAuthorName  string
 	gitAuthorEmail string
-	buildArgs      func(execContext ExecutionContext) []string
+	buildArgs      func(execContext ExecutionContext, prompt CompiledExecutionPrompt) []string
 	stdinPayload   func(prompt CompiledExecutionPrompt) string
 }
 
@@ -254,6 +267,14 @@ type CodexCLIExecutorConfig struct {
 }
 
 type ClaudeCodeExecutorConfig struct {
+	ExecutablePath string
+	Timeout        time.Duration
+	ExtraArgs      []string
+	GitAuthorName  string
+	GitAuthorEmail string
+}
+
+type KimiCLIExecutorConfig struct {
 	ExecutablePath string
 	Timeout        time.Duration
 	ExtraArgs      []string
@@ -285,7 +306,7 @@ func newCodexCLIExecutor(cfg CodexCLIExecutorConfig, runner CommandRunner) *cliE
 			extraArgs:      append([]string(nil), cfg.ExtraArgs...),
 			gitAuthorName:  cfg.GitAuthorName,
 			gitAuthorEmail: cfg.GitAuthorEmail,
-			buildArgs: func(execContext ExecutionContext) []string {
+			buildArgs: func(execContext ExecutionContext, prompt CompiledExecutionPrompt) []string {
 				args := []string{}
 				if strings.EqualFold(strings.TrimSpace(cfg.SandboxMode), "danger-full-access") &&
 					strings.EqualFold(strings.TrimSpace(cfg.ApprovalPolicy), "never") {
@@ -327,7 +348,7 @@ func newClaudeCodeExecutor(cfg ClaudeCodeExecutorConfig, runner CommandRunner) *
 			extraArgs:      append([]string(nil), cfg.ExtraArgs...),
 			gitAuthorName:  cfg.GitAuthorName,
 			gitAuthorEmail: cfg.GitAuthorEmail,
-			buildArgs: func(execContext ExecutionContext) []string {
+			buildArgs: func(execContext ExecutionContext, prompt CompiledExecutionPrompt) []string {
 				args := []string{
 					"--print",
 					"--output-format", "stream-json",
@@ -338,6 +359,40 @@ func newClaudeCodeExecutor(cfg ClaudeCodeExecutorConfig, runner CommandRunner) *
 			},
 			stdinPayload: func(prompt CompiledExecutionPrompt) string {
 				return prompt.PromptText
+			},
+		},
+		runner: runner,
+	}
+}
+
+func newKimiCLIExecutor(cfg KimiCLIExecutorConfig, runner CommandRunner) *cliExecutor {
+	if strings.TrimSpace(cfg.ExecutablePath) == "" {
+		cfg.ExecutablePath = "kimi"
+	}
+	if cfg.Timeout <= 0 {
+		cfg.Timeout = 30 * time.Minute
+	}
+	if runner == nil {
+		runner = OSCommandRunner{}
+	}
+	return &cliExecutor{
+		name: ExecutorNameKimiCLI,
+		cfg: executorRunConfig{
+			executablePath: cfg.ExecutablePath,
+			timeout:        cfg.Timeout,
+			extraArgs:      append([]string(nil), cfg.ExtraArgs...),
+			gitAuthorName:  cfg.GitAuthorName,
+			gitAuthorEmail: cfg.GitAuthorEmail,
+			buildArgs: func(execContext ExecutionContext, prompt CompiledExecutionPrompt) []string {
+				args := []string{
+					"-p", prompt.PromptText,
+					"--output-format", "stream-json",
+				}
+				args = append(args, cfg.ExtraArgs...)
+				return args
+			},
+			stdinPayload: func(prompt CompiledExecutionPrompt) string {
+				return ""
 			},
 		},
 		runner: runner,
@@ -406,7 +461,7 @@ func (e *cliExecutor) Run(
 		Tool:    e.name,
 	})
 
-	args := e.cfg.buildArgs(execContext)
+	args := e.cfg.buildArgs(execContext, prompt)
 	start := time.Now()
 	stdoutLines := []string{}
 	stderrLines := []string{}
@@ -628,6 +683,8 @@ func (e *cliExecutor) prefix() string {
 	switch e.name {
 	case ExecutorNameClaudeCodeCLI:
 		return "claude executor"
+	case ExecutorNameKimiCLI:
+		return "kimi executor"
 	default:
 		return "codex executor"
 	}

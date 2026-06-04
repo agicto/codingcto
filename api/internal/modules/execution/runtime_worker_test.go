@@ -57,16 +57,19 @@ func TestRuntimeWorkerClaimsExecutesAndSubmitsTask(t *testing.T) {
 	require.Equal(t, "workspace-write", client.heartbeatReq.Sandbox.Mode)
 	require.Equal(t, 1, client.heartbeatReq.LocalSkillCount)
 	require.Equal(t, "runtime_123", client.claimRuntimeID)
+	require.Equal(t, "repo_123", client.claimReq.RepositoryID)
 	require.Equal(t, "session_123", client.claimReq.SessionID)
 	require.Equal(t, "/workspace/repo", client.claimReq.Workdir)
 	require.Equal(t, "/workspace/repo", executor.context.Workdir)
 	require.Equal(t, "specforge/pr-001", executor.context.BranchName)
 	require.Equal(t, "Implement PR-001", executor.prompt.PromptText)
-	require.Len(t, client.events, 2)
+	require.Len(t, client.events, 3)
 	require.Equal(t, "runtime_claimed", client.events[0].Type)
+	require.Equal(t, "executor_git_summary", client.events[2].Type)
 	require.NotNil(t, client.submitReq)
 	require.Equal(t, "completed", client.submitReq.Status)
-	require.Equal(t, "ok", client.submitReq.Output)
+	require.Contains(t, client.submitReq.Output, "ok")
+	require.Contains(t, client.submitReq.Output, "executor_git_summary")
 	require.Equal(t, 0, client.submitReq.ExitCode)
 	require.Empty(t, client.submitReq.FailureReason)
 }
@@ -157,8 +160,44 @@ func TestRuntimeWorkerClaimsExecutesAndSubmitsDirectTask(t *testing.T) {
 	require.Equal(t, "direct-99", executor.context.RunID)
 	require.Equal(t, "Update README", executor.prompt.PromptText)
 	require.Equal(t, "completed", client.directSubmitReq.Status)
-	require.Equal(t, "done", client.directSubmitReq.Output)
+	require.Contains(t, client.directSubmitReq.Output, "done")
+	require.Contains(t, client.directSubmitReq.Output, "executor_git_summary")
 	require.Contains(t, eventTypes(client.directEvents), "runtime_claimed")
+	require.Contains(t, eventTypes(client.directEvents), "executor_git_summary")
+}
+
+func TestDirectRuntimeProgressReporterSuppressesKnownCodexNoise(t *testing.T) {
+	client := &fakeRuntimeClient{}
+	reporter := &directRuntimeProgressReporter{
+		client:    client,
+		taskID:    99,
+		runtimeID: "runtime_123",
+		tool:      ExecutorNameCodexCLI,
+	}
+
+	require.NoError(t, reporter.OnEvent(context.Background(), ExecutionProgressEvent{
+		Type:   "executor_stderr",
+		Tool:   ExecutorNameCodexCLI,
+		Output: "2026-06-03T15:50:08Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'",
+	}))
+	require.NoError(t, reporter.OnEvent(context.Background(), ExecutionProgressEvent{
+		Type:   "executor_stderr",
+		Tool:   ExecutorNameCodexCLI,
+		Output: "real stderr line",
+	}))
+	require.NoError(t, reporter.OnEvent(context.Background(), ExecutionProgressEvent{
+		Type:   "executor_stderr",
+		Tool:   ExecutorNameCodexCLI,
+		Output: "2026-06-03T15:50:17Z  WARN codex_core_skills::loader: ignoring interface.icon_small: icon path must not contain '..'",
+	}))
+	require.NoError(t, reporter.Flush(context.Background()))
+
+	require.Len(t, client.directEvents, 2)
+	require.Equal(t, "executor_stderr", client.directEvents[0].Type)
+	require.Equal(t, "real stderr line", client.directEvents[0].Output)
+	require.Equal(t, "executor_log_suppressed", client.directEvents[1].Type)
+	require.Contains(t, client.directEvents[1].Content, "2 noisy CLI warning lines")
+	require.Contains(t, client.directEvents[1].Output, "codex skill icon_small warning: 2")
 }
 
 type fakeRuntimeClient struct {

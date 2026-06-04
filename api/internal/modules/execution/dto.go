@@ -30,6 +30,7 @@ type ListDirectAgentTasksRequest struct {
 type RuntimeHeartbeatRequest struct {
 	RuntimeID       string                             `json:"runtime_id" binding:"required,max=100"`
 	Executor        string                             `json:"executor" binding:"omitempty,max=100"`
+	RepositoryID    string                             `json:"repository_id" binding:"omitempty,max=255"`
 	Hostname        string                             `json:"hostname" binding:"omitempty,max=255"`
 	Version         string                             `json:"version" binding:"omitempty,max=100"`
 	AvailableCLIs   []domain.SpecForgeRuntimeCLI       `json:"available_clis" binding:"omitempty,max=20,dive"`
@@ -76,9 +77,10 @@ type FixAgentTaskRequest struct {
 }
 
 type ClaimAgentTaskRequest struct {
-	Executor  string `json:"executor" binding:"omitempty,max=100"`
-	SessionID string `json:"session_id" binding:"omitempty,max=255"`
-	Workdir   string `json:"workdir" binding:"omitempty,max=500"`
+	Executor     string `json:"executor" binding:"omitempty,max=100"`
+	RepositoryID string `json:"repository_id" binding:"omitempty,max=255"`
+	SessionID    string `json:"session_id" binding:"omitempty,max=255"`
+	Workdir      string `json:"workdir" binding:"omitempty,max=500"`
 }
 
 type RuntimeHeartbeatResponse struct {
@@ -182,11 +184,12 @@ type SubmitTaskResultRequest struct {
 }
 
 type CreateTaskEventRequest struct {
-	Type    string `json:"type" binding:"required,max=50"`
-	Tool    string `json:"tool" binding:"omitempty,max=100"`
-	Content string `json:"content" binding:"omitempty,max=200000"`
-	Input   string `json:"input" binding:"omitempty,max=200000"`
-	Output  string `json:"output" binding:"omitempty,max=200000"`
+	RuntimeID string `json:"runtime_id" binding:"omitempty,max=100"`
+	Type      string `json:"type" binding:"required,max=50"`
+	Tool      string `json:"tool" binding:"omitempty,max=100"`
+	Content   string `json:"content" binding:"omitempty,max=200000"`
+	Input     string `json:"input" binding:"omitempty,max=200000"`
+	Output    string `json:"output" binding:"omitempty,max=200000"`
 }
 
 type TaskEventsResponse struct {

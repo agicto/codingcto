@@ -2,9 +2,12 @@ package execution
 
 import (
 	"context"
+	"encoding/json"
 	"fmt"
 	"os"
+	"sort"
 	"strings"
+	"sync"
 	"time"
 
 	"github.com/zgiai/luas/api/internal/domain"
@@ -33,21 +36,44 @@ type RuntimeWorker struct {
 }
 
 type runtimeProgressReporter struct {
-	client RuntimeAPIClient
-	taskID uint
-	tool   string
+	client              RuntimeAPIClient
+	taskID              uint
+	runtimeID           string
+	tool                string
+	mu                  sync.Mutex
+	suppressedLogCounts map[string]int
 }
 
 type directRuntimeProgressReporter struct {
-	client RuntimeAPIClient
-	taskID uint
-	tool   string
+	client              RuntimeAPIClient
+	taskID              uint
+	runtimeID           string
+	tool                string
+	mu                  sync.Mutex
+	suppressedLogCounts map[string]int
+}
+
+type flushableRuntimeProgressReporter interface {
+	ProgressReporter
+	Flush(ctx context.Context) error
 }
 
 type RuntimeWorkerResult struct {
 	Claimed         bool
 	TaskID          uint
 	ExecutionResult *ExecutionResult
+}
+
+type RuntimeGitSummary struct {
+	Workdir       string   `json:"workdir"`
+	Branch        string   `json:"branch,omitempty"`
+	Head          string   `json:"head,omitempty"`
+	ChangedFiles  []string `json:"changed_files,omitempty"`
+	StagedFiles   []string `json:"staged_files,omitempty"`
+	Untracked     []string `json:"untracked,omitempty"`
+	Dirty         bool     `json:"dirty"`
+	SummaryStatus string   `json:"summary_status"`
+	Error         string   `json:"error,omitempty"`
 }
 
 func NewRuntimeWorker(cfg RuntimeWorkerConfig, client RuntimeAPIClient, executor CodeExecutor) *RuntimeWorker {
@@ -72,6 +98,7 @@ func (w *RuntimeWorker) RunOnce(ctx context.Context) (*RuntimeWorkerResult, erro
 	heartbeat, err := w.client.Heartbeat(ctx, &RuntimeHeartbeatRequest{
 		RuntimeID:       w.cfg.RuntimeID,
 		Executor:        w.cfg.Executor,
+		RepositoryID:    w.cfg.RepositoryID,
 		Hostname:        w.cfg.Hostname,
 		Version:         w.cfg.Version,
 		AvailableCLIs:   w.cfg.AvailableCLIs,
@@ -87,9 +114,10 @@ func (w *RuntimeWorker) RunOnce(ctx context.Context) (*RuntimeWorkerResult, erro
 	}
 
 	claim, err := w.client.ClaimTask(ctx, w.cfg.RuntimeID, &ClaimAgentTaskRequest{
-		Executor:  w.cfg.Executor,
-		SessionID: w.cfg.SessionID,
-		Workdir:   w.cfg.RepoDir,
+		Executor:     w.cfg.Executor,
+		RepositoryID: w.cfg.RepositoryID,
+		SessionID:    w.cfg.SessionID,
+		Workdir:      w.cfg.RepoDir,
 	})
 	if err != nil {
 		return nil, err
@@ -146,16 +174,20 @@ func (w *RuntimeWorker) executeClaim(ctx context.Context, claim *ClaimAgentTaskR
 	}
 
 	_, _ = w.client.CreateTaskEvent(ctx, taskID, &CreateTaskEventRequest{
-		Type:    "runtime_claimed",
-		Tool:    w.executor.Name(),
-		Content: "Runtime claimed task and is starting executor.",
+		RuntimeID: w.cfg.RuntimeID,
+		Type:      "runtime_claimed",
+		Tool:      w.executor.Name(),
+		Content:   "Runtime claimed task and is starting executor.",
 	})
+	var reporter flushableRuntimeProgressReporter
 	if progressExecutor, ok := w.executor.(ProgressReportingExecutor); ok {
-		progressExecutor.SetProgressReporter(&runtimeProgressReporter{
-			client: w.client,
-			taskID: taskID,
-			tool:   w.executor.Name(),
-		})
+		reporter = &runtimeProgressReporter{
+			client:    w.client,
+			taskID:    taskID,
+			runtimeID: w.cfg.RuntimeID,
+			tool:      w.executor.Name(),
+		}
+		progressExecutor.SetProgressReporter(reporter)
 	}
 	result, runErr := w.executor.Run(ctx, ExecutionContext{
 		RunID:      fmt.Sprintf("%d", claim.Task.RunID),
@@ -177,10 +209,23 @@ func (w *RuntimeWorker) executeClaim(ctx context.Context, claim *ClaimAgentTaskR
 		}
 		result = &ExecutionResult{Status: "failed", Error: errorLine, ExitCode: -1}
 	}
+	if reporter != nil {
+		_ = reporter.Flush(ctx)
+	}
+	gitSummary := collectRuntimeGitSummary(ctx, workdir)
+	appendGitSummaryToResult(result, gitSummary)
+	gitSummaryOutput := marshalRuntimeGitSummary(gitSummary)
 	_, _ = w.client.CreateTaskEvent(ctx, taskID, &CreateTaskEventRequest{
-		Type:   "executor_result",
-		Tool:   w.executor.Name(),
-		Output: result.Output,
+		RuntimeID: w.cfg.RuntimeID,
+		Type:      "executor_result",
+		Tool:      w.executor.Name(),
+		Output:    result.Output,
+	})
+	_, _ = w.client.CreateTaskEvent(ctx, taskID, &CreateTaskEventRequest{
+		RuntimeID: w.cfg.RuntimeID,
+		Type:      "executor_git_summary",
+		Tool:      "git",
+		Output:    gitSummaryOutput,
 	})
 	submitErr := w.submitResult(ctx, claim, workdir, result, runErr)
 	if submitErr != nil {
@@ -207,16 +252,20 @@ func (w *RuntimeWorker) executeDirectClaim(ctx context.Context, claim *ClaimAgen
 	}
 
 	_, _ = w.client.CreateDirectTaskEvent(ctx, taskID, &CreateTaskEventRequest{
-		Type:    "runtime_claimed",
-		Tool:    w.executor.Name(),
-		Content: "Runtime claimed direct task and is starting executor.",
+		RuntimeID: w.cfg.RuntimeID,
+		Type:      "runtime_claimed",
+		Tool:      w.executor.Name(),
+		Content:   "Runtime claimed direct task and is starting executor.",
 	})
+	var reporter flushableRuntimeProgressReporter
 	if progressExecutor, ok := w.executor.(ProgressReportingExecutor); ok {
-		progressExecutor.SetProgressReporter(&directRuntimeProgressReporter{
-			client: w.client,
-			taskID: taskID,
-			tool:   w.executor.Name(),
-		})
+		reporter = &directRuntimeProgressReporter{
+			client:    w.client,
+			taskID:    taskID,
+			runtimeID: w.cfg.RuntimeID,
+			tool:      w.executor.Name(),
+		}
+		progressExecutor.SetProgressReporter(reporter)
 	}
 	result, runErr := w.executor.Run(ctx, ExecutionContext{
 		RunID:      fmt.Sprintf("direct-%d", taskID),
@@ -238,6 +287,17 @@ func (w *RuntimeWorker) executeDirectClaim(ctx context.Context, claim *ClaimAgen
 		}
 		result = &ExecutionResult{Status: "failed", Error: errorLine, ExitCode: -1}
 	}
+	if reporter != nil {
+		_ = reporter.Flush(ctx)
+	}
+	gitSummary := collectRuntimeGitSummary(ctx, workdir)
+	appendGitSummaryToResult(result, gitSummary)
+	_, _ = w.client.CreateDirectTaskEvent(ctx, taskID, &CreateTaskEventRequest{
+		RuntimeID: w.cfg.RuntimeID,
+		Type:      "executor_git_summary",
+		Tool:      "git",
+		Output:    marshalRuntimeGitSummary(gitSummary),
+	})
 	submitErr := w.submitDirectResult(ctx, claim, workdir, result, runErr)
 	if submitErr != nil {
 		return result, submitErr
@@ -299,6 +359,112 @@ func (w *RuntimeWorker) submitDirectResult(ctx context.Context, claim *ClaimAgen
 	return err
 }
 
+func collectRuntimeGitSummary(ctx context.Context, workdir string) RuntimeGitSummary {
+	summary := RuntimeGitSummary{
+		Workdir:       strings.TrimSpace(workdir),
+		SummaryStatus: "unavailable",
+	}
+	if summary.Workdir == "" {
+		summary.Error = "workdir is empty"
+		return summary
+	}
+	runner := OSCommandRunner{}
+	inside, err := runner.Run(ctx, CommandSpec{
+		Executable: "git",
+		Args:       []string{"rev-parse", "--is-inside-work-tree"},
+		Dir:        summary.Workdir,
+	})
+	if err != nil || inside.ExitCode != 0 || strings.TrimSpace(inside.Stdout) != "true" {
+		summary.Error = commandResultError("inspect git worktree", inside, err)
+		return summary
+	}
+	if branch, err := runner.Run(ctx, CommandSpec{
+		Executable: "git",
+		Args:       []string{"branch", "--show-current"},
+		Dir:        summary.Workdir,
+	}); err == nil && branch.ExitCode == 0 {
+		summary.Branch = strings.TrimSpace(branch.Stdout)
+	}
+	if head, err := runner.Run(ctx, CommandSpec{
+		Executable: "git",
+		Args:       []string{"rev-parse", "--short", "HEAD"},
+		Dir:        summary.Workdir,
+	}); err == nil && head.ExitCode == 0 {
+		summary.Head = strings.TrimSpace(head.Stdout)
+	}
+	status, err := runner.Run(ctx, CommandSpec{
+		Executable: "git",
+		Args:       []string{"status", "--porcelain"},
+		Dir:        summary.Workdir,
+	})
+	if err != nil || status.ExitCode != 0 {
+		summary.Error = commandResultError("inspect git status", status, err)
+		return summary
+	}
+	for _, line := range strings.Split(strings.TrimRight(status.Stdout, "\n"), "\n") {
+		if strings.TrimSpace(line) == "" {
+			continue
+		}
+		if len(line) < 4 {
+			summary.ChangedFiles = append(summary.ChangedFiles, strings.TrimSpace(line))
+			continue
+		}
+		code := line[:2]
+		path := strings.TrimSpace(line[3:])
+		if path == "" {
+			continue
+		}
+		summary.ChangedFiles = append(summary.ChangedFiles, path)
+		if code == "??" {
+			summary.Untracked = append(summary.Untracked, path)
+			continue
+		}
+		if code[0] != ' ' {
+			summary.StagedFiles = append(summary.StagedFiles, path)
+		}
+	}
+	summary.Dirty = len(summary.ChangedFiles) > 0
+	summary.SummaryStatus = "ok"
+	return summary
+}
+
+func appendGitSummaryToResult(result *ExecutionResult, summary RuntimeGitSummary) {
+	if result == nil {
+		return
+	}
+	payload := marshalRuntimeGitSummary(summary)
+	if strings.TrimSpace(payload) == "" {
+		return
+	}
+	if strings.TrimSpace(result.Output) == "" {
+		result.Output = payload
+		return
+	}
+	result.Output = strings.TrimSpace(result.Output) + "\n\n[executor_git_summary]\n" + payload
+}
+
+func marshalRuntimeGitSummary(summary RuntimeGitSummary) string {
+	data, err := json.Marshal(summary)
+	if err != nil {
+		return ""
+	}
+	return string(data)
+}
+
+func commandResultError(action string, result CommandResult, err error) string {
+	parts := []string{action}
+	if err != nil {
+		parts = append(parts, err.Error())
+	}
+	if strings.TrimSpace(result.Stderr) != "" {
+		parts = append(parts, strings.TrimSpace(result.Stderr))
+	}
+	if result.ExitCode != 0 {
+		parts = append(parts, fmt.Sprintf("exit_code=%d", result.ExitCode))
+	}
+	return strings.Join(parts, ": ")
+}
+
 func trimRuntimeResultField(value string) string {
 	const maxResultFieldBytes = 200000
 	if len(value) <= maxResultFieldBytes {
@@ -318,11 +484,33 @@ func (r *runtimeProgressReporter) OnEvent(ctx context.Context, event ExecutionPr
 	if r == nil || r.client == nil || r.taskID == 0 || strings.TrimSpace(event.Type) == "" {
 		return nil
 	}
+	if r.recordSuppressedNoise(event) {
+		return nil
+	}
 	_, err := r.client.CreateTaskEvent(ctx, r.taskID, &CreateTaskEventRequest{
-		Type:    strings.TrimSpace(event.Type),
-		Tool:    firstNonEmpty(strings.TrimSpace(event.Tool), r.tool),
-		Content: strings.TrimSpace(event.Content),
-		Output:  strings.TrimSpace(event.Output),
+		RuntimeID: r.runtimeID,
+		Type:      strings.TrimSpace(event.Type),
+		Tool:      firstNonEmpty(strings.TrimSpace(event.Tool), r.tool),
+		Content:   strings.TrimSpace(event.Content),
+		Output:    strings.TrimSpace(event.Output),
+	})
+	return err
+}
+
+func (r *runtimeProgressReporter) Flush(ctx context.Context) error {
+	if r == nil || r.client == nil || r.taskID == 0 {
+		return nil
+	}
+	output, count := r.suppressedNoiseSummary()
+	if count == 0 {
+		return nil
+	}
+	_, err := r.client.CreateTaskEvent(ctx, r.taskID, &CreateTaskEventRequest{
+		RuntimeID: r.runtimeID,
+		Type:      "executor_log_suppressed",
+		Tool:      firstNonEmpty(r.tool, "runtime"),
+		Content:   fmt.Sprintf("Suppressed %d noisy CLI warning lines.", count),
+		Output:    output,
 	})
 	return err
 }
@@ -331,13 +519,116 @@ func (r *directRuntimeProgressReporter) OnEvent(ctx context.Context, event Execu
 	if r == nil || r.client == nil || r.taskID == 0 {
 		return nil
 	}
+	if r.recordSuppressedNoise(event) {
+		return nil
+	}
 	_, err := r.client.CreateDirectTaskEvent(ctx, r.taskID, &CreateTaskEventRequest{
-		Type:    firstNonEmpty(event.Type, "executor_progress"),
-		Tool:    firstNonEmpty(event.Tool, r.tool),
-		Content: event.Content,
-		Output:  event.Output,
+		RuntimeID: r.runtimeID,
+		Type:      firstNonEmpty(event.Type, "executor_progress"),
+		Tool:      firstNonEmpty(event.Tool, r.tool),
+		Content:   event.Content,
+		Output:    event.Output,
 	})
 	return err
+}
+
+func (r *directRuntimeProgressReporter) Flush(ctx context.Context) error {
+	if r == nil || r.client == nil || r.taskID == 0 {
+		return nil
+	}
+	output, count := r.suppressedNoiseSummary()
+	if count == 0 {
+		return nil
+	}
+	_, err := r.client.CreateDirectTaskEvent(ctx, r.taskID, &CreateTaskEventRequest{
+		RuntimeID: r.runtimeID,
+		Type:      "executor_log_suppressed",
+		Tool:      firstNonEmpty(r.tool, "runtime"),
+		Content:   fmt.Sprintf("Suppressed %d noisy CLI warning lines.", count),
+		Output:    output,
+	})
+	return err
+}
+
+func (r *runtimeProgressReporter) recordSuppressedNoise(event ExecutionProgressEvent) bool {
+	key := noisyRuntimeProgressKey(event)
+	if key == "" {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.suppressedLogCounts == nil {
+		r.suppressedLogCounts = map[string]int{}
+	}
+	r.suppressedLogCounts[key]++
+	return true
+}
+
+func (r *runtimeProgressReporter) suppressedNoiseSummary() (string, int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return formatSuppressedRuntimeLogs(r.suppressedLogCounts)
+}
+
+func (r *directRuntimeProgressReporter) recordSuppressedNoise(event ExecutionProgressEvent) bool {
+	key := noisyRuntimeProgressKey(event)
+	if key == "" {
+		return false
+	}
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	if r.suppressedLogCounts == nil {
+		r.suppressedLogCounts = map[string]int{}
+	}
+	r.suppressedLogCounts[key]++
+	return true
+}
+
+func (r *directRuntimeProgressReporter) suppressedNoiseSummary() (string, int) {
+	r.mu.Lock()
+	defer r.mu.Unlock()
+	return formatSuppressedRuntimeLogs(r.suppressedLogCounts)
+}
+
+func noisyRuntimeProgressKey(event ExecutionProgressEvent) string {
+	if strings.TrimSpace(event.Type) != "executor_stderr" {
+		return ""
+	}
+	output := strings.TrimSpace(event.Output)
+	switch {
+	case strings.Contains(output, "codex_core_plugins::manifest: ignoring interface.defaultPrompt"):
+		return "codex plugin manifest defaultPrompt warning"
+	case strings.Contains(output, "codex_core_skills::loader: ignoring interface.icon_small"):
+		return "codex skill icon_small warning"
+	case strings.Contains(output, "codex_core_skills::loader: ignoring interface.icon_large"):
+		return "codex skill icon_large warning"
+	default:
+		return ""
+	}
+}
+
+func formatSuppressedRuntimeLogs(counts map[string]int) (string, int) {
+	if len(counts) == 0 {
+		return "", 0
+	}
+	keys := make([]string, 0, len(counts))
+	total := 0
+	for key, count := range counts {
+		if count <= 0 {
+			continue
+		}
+		keys = append(keys, key)
+		total += count
+	}
+	if total == 0 {
+		return "", 0
+	}
+	sort.Strings(keys)
+	lines := make([]string, 0, len(keys))
+	for _, key := range keys {
+		lines = append(lines, fmt.Sprintf("%s: %d", key, counts[key]))
+	}
+	return strings.Join(lines, "\n"), total
 }
 
 func runtimeFailureReason(result *ExecutionResult, runErr error) string {

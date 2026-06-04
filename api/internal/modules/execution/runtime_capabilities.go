@@ -18,6 +18,7 @@ import (
 
 type RuntimeCapabilityProbeConfig struct {
 	CodexPath      string
+	KimiPath       string
 	RepoDir        string
 	SandboxMode    string
 	ApprovalPolicy string
@@ -33,8 +34,8 @@ type RuntimeCapabilityReport struct {
 func DetectRuntimeCapabilities(cfg RuntimeCapabilityProbeConfig) RuntimeCapabilityReport {
 	roots := detectRuntimeSkillRoots(cfg.RepoDir)
 	return RuntimeCapabilityReport{
-		AvailableCLIs:   detectRuntimeCLIs(cfg.CodexPath),
-		Sandbox:         detectRuntimeSandbox(cfg.SandboxMode, cfg.ApprovalPolicy),
+		AvailableCLIs:   detectRuntimeCLIs(cfg.CodexPath, cfg.KimiPath),
+		Sandbox:         detectRuntimeSandbox(cfg.SandboxMode, cfg.ApprovalPolicy, cfg.RepoDir),
 		SkillRoots:      roots,
 		LocalSkillCount: countRuntimeSkills(roots),
 	}
@@ -132,7 +133,7 @@ func runtimeCapabilitiesHash(clis []domain.SpecForgeRuntimeCLI, sandbox *domain.
 	return hex.EncodeToString(sum[:])
 }
 
-func detectRuntimeCLIs(codexPath string) []domain.SpecForgeRuntimeCLI {
+func detectRuntimeCLIs(codexPath, kimiPath string) []domain.SpecForgeRuntimeCLI {
 	candidates := []struct {
 		name     string
 		command  string
@@ -145,7 +146,7 @@ func detectRuntimeCLIs(codexPath string) []domain.SpecForgeRuntimeCLI {
 		{name: "OpenCode", command: "opencode"},
 		{name: "OpenClaw", command: "openclaw"},
 		{name: "Cursor Agent", command: "cursor-agent"},
-		{name: "Kimi CLI", command: "kimi"},
+		{name: "Kimi CLI", command: "kimi", override: strings.TrimSpace(kimiPath)},
 		{name: "Kiro CLI", command: "kiro"},
 	}
 	out := make([]domain.SpecForgeRuntimeCLI, 0, len(candidates))
@@ -185,13 +186,16 @@ func runtimeCLIVersion(path string) string {
 	return limitRuntimeCapabilityString(line, 160)
 }
 
-func detectRuntimeSandbox(mode, approvalPolicy string) *domain.SpecForgeRuntimeSandbox {
+func detectRuntimeSandbox(mode, approvalPolicy, repoDir string) *domain.SpecForgeRuntimeSandbox {
 	mode = firstNonEmpty(mode, "workspace-write")
 	approvalPolicy = firstNonEmpty(approvalPolicy, "never")
 	networkAccess := mode != "read-only"
 	reason := "Codex CLI sandbox policy reported by the local runtime."
 	if runtime.GOOS == "darwin" && mode == "workspace-write" {
 		reason = "macOS Codex runtimes may require broader filesystem permissions while preserving the reported workspace-write intent."
+	}
+	if repoHealth := detectRuntimeRepoHealth(repoDir); repoHealth != "" {
+		reason = reason + " " + repoHealth
 	}
 	return normalizeRuntimeSandbox(&domain.SpecForgeRuntimeSandbox{
 		Provider:       "codex_cli",
@@ -201,6 +205,42 @@ func detectRuntimeSandbox(mode, approvalPolicy string) *domain.SpecForgeRuntimeS
 		ApprovalPolicy: approvalPolicy,
 		Reason:         reason,
 	})
+}
+
+func detectRuntimeRepoHealth(repoDir string) string {
+	repoDir = strings.TrimSpace(repoDir)
+	if repoDir == "" {
+		return "Repo health: repo_dir_missing."
+	}
+	if info, err := os.Stat(repoDir); err != nil || !info.IsDir() {
+		return "Repo health: repo_dir_unavailable."
+	}
+	inside := runRuntimeGitProbe(repoDir, "rev-parse", "--is-inside-work-tree")
+	if strings.TrimSpace(inside) != "true" {
+		return "Repo health: not_a_git_worktree."
+	}
+	branch := firstNonEmpty(runRuntimeGitProbe(repoDir, "branch", "--show-current"), "detached")
+	remote := firstNonEmpty(runRuntimeGitProbe(repoDir, "remote", "get-url", "origin"), "origin_missing")
+	status := runRuntimeGitProbe(repoDir, "status", "--porcelain")
+	dirty := "clean"
+	if strings.TrimSpace(status) != "" {
+		dirty = "dirty"
+	}
+	return "Repo health: git_worktree branch=" + limitRuntimeCapabilityString(branch, 80) +
+		" status=" + dirty +
+		" remote=" + limitRuntimeCapabilityString(remote, 180) + "."
+}
+
+func runRuntimeGitProbe(repoDir string, args ...string) string {
+	ctx, cancel := context.WithTimeout(context.Background(), 2*time.Second)
+	defer cancel()
+	command := exec.CommandContext(ctx, "git", args...)
+	command.Dir = repoDir
+	output, err := command.CombinedOutput()
+	if err != nil {
+		return ""
+	}
+	return strings.TrimSpace(strings.SplitN(string(output), "\n", 2)[0])
 }
 
 func detectRuntimeSkillRoots(repoDir string) []domain.SpecForgeRuntimeSkillRoot {

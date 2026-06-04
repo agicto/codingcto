@@ -124,13 +124,20 @@ const messages = {
     },
     repository: {
       title: '技能存储仓库',
-      description: '当前后端按仓库保存技能；这里会使用所选工作区仓库。',
+      description: '仓库级技能仅作为兼容层保留。',
       connect: '连接仓库',
+    },
+    project: {
+      title: '技能所属项目',
+      description: '技能按项目分配；主仓库只作为执行落点。',
+      create: '创建项目',
+      noProject: '未选择项目',
     },
     empty: {
       title: '还没有技能',
       description: '创建第一个技能，从 URL 导入，或从已连接的运行时复制。之后工作区里每个智能体都能用它。',
       noRepository: '请先连接一个 GitHub 仓库，然后再创建工作区技能。',
+      noProject: '请先创建项目，然后再添加技能。',
     },
     states: {
       loading: '加载中...',
@@ -215,12 +222,12 @@ const messages = {
       note: '导入时会忽略软链接、不可读文件、超大文件以及超大目录。',
     },
     messages: {
-      saveFailed: '技能保存失败。请确认后端可用并且仓库已连接。',
+      saveFailed: '技能保存失败。请确认后端可用，并且项目已绑定主仓库。',
     },
   },
   agents: {
     title: '智能体',
-    description: '把本地 runtime 上报的 CLI 能力展开成可调度的 Coding Agent。',
+    description: '查看已经接入平台调度的本地 runtime 智能体。',
     onlineCount: '{count} 个智能体检测到',
     cliCount: '{count} 个 runtime 在线',
     runtimeHelp: '在线的是 CodingCTO runtime，不是这些 CLI 常驻运行。Runtime 收到任务后，才会按需启动已接入调度的 CLI。',
@@ -230,7 +237,7 @@ const messages = {
     },
     list: {
       title: 'Coding Agent 列表',
-      description: '来自在线 runtime 心跳；每个可用 CLI 展开为一个智能体。',
+      description: '来自在线 runtime 心跳；这里只展示已接入调度的执行器。',
     },
     states: {
       loading: '加载中...',
@@ -249,7 +256,7 @@ const messages = {
       copy: '复制命令',
       copied: '已复制',
       commandLoading: '正在生成启动命令...',
-      noRepositoryCommand: '请先绑定一个 GitHub 仓库，系统会为该仓库生成 runtime 启动命令。',
+      noRepositoryCommand: '请先给项目绑定一个主 GitHub 仓库，系统会为项目执行仓库生成 runtime 启动命令。',
       steps: {
         start: {
           label: '1. 启动',
@@ -292,8 +299,8 @@ const messages = {
     tasks: {
       title: '最近没有完成的 task',
       description: '这个智能体还没有完成过任何 task。',
-      runTitle: '直接调度 Codex',
-      runDescription: '输入一个明确的小任务，CodingCTO 会派发给当前本地 runtime，并由 Codex CLI 在本机仓库执行。',
+      runTitle: '直接调度 {agent}',
+      runDescription: '输入一个明确的小任务，CodingCTO 会派发给当前本地 runtime，并由 {agent} 在本机仓库执行。',
       targetRepository: '目标仓库',
       noRepository: '未选择仓库',
       promptPlaceholder: '例如：在 README 增加一行说明，标记这是 CodingCTO direct task smoke test。',
@@ -301,9 +308,9 @@ const messages = {
       blocked: {
         noRepository: '请先选择一个目标仓库。',
         notDispatchable: '这个智能体目前只是被 runtime 检测到，还没有接入平台调度。',
-        noPrompt: '输入任务说明后即可派发给 Codex。',
+        noPrompt: '输入任务说明后即可派发给 {agent}。',
       },
-      dispatch: 'Run with Codex',
+      dispatch: '使用 {agent} 运行',
       dispatching: '派发中',
       recentTitle: '最近任务',
       recentDescription: '页面会自动刷新 direct task 状态。',
@@ -332,9 +339,9 @@ const messages = {
       active: '启用',
       inactive: '停用',
       noDescription: '暂无描述。',
-      empty: '这个仓库还没有技能。请先到技能页面创建或导入。',
-      noRepository: '未选择仓库',
-      noRepositoryHint: '请先连接一个 GitHub 仓库，然后再给智能体分配技能。',
+      empty: '这个项目还没有技能。请先到技能页面创建或导入。',
+      noRepository: '未选择项目',
+      noRepositoryHint: '请先给项目绑定一个主 GitHub 仓库，然后再给智能体分配技能。',
     },
     time: {
       justNow: '刚刚',

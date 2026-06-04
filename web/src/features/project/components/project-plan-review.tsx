@@ -72,6 +72,7 @@ import type { PlanBundle, PRNode } from '@/features/specforge/types';
 
 const executorOptions = [
   { value: 'codex_cli', label: 'Codex CLI' },
+  { value: 'kimi_cli', label: 'Kimi CLI' },
   { value: 'claude_code_cli', label: 'Claude Code CLI' },
 ] as const;
 
@@ -138,7 +139,7 @@ function ProjectPlanReview({
     () => initialPlan.prNodes[0]?.id ?? ''
   );
   const [promptMode, setPromptMode] = useState<PromptMode>('implementation');
-  const [selectedExecutor, setSelectedExecutor] = useState<'codex_cli' | 'claude_code_cli'>(
+  const [selectedExecutor, setSelectedExecutor] = useState<'codex_cli' | 'kimi_cli' | 'claude_code_cli'>(
     'codex_cli'
   );
   const [compiledPrompt, setCompiledPrompt] = useState<SpecForgeCompiledPromptDTO>();

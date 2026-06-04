@@ -11,6 +11,7 @@ import {
   Info,
   LinkIcon,
   Plus,
+  Sparkles,
 } from 'lucide-react';
 
 import { Badge } from '@/components/ui/badge';
@@ -35,13 +36,15 @@ import {
 import { Switch } from '@/components/ui/switch';
 import { Textarea } from '@/components/ui/textarea';
 import { ROUTES } from '@/constants/routes';
+import { primaryRepositoryContext } from '@/features/project/project-context';
+import { useProjectContext, useProjects } from '@/features/project/hooks/use-projects';
 import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
 import {
-  useGitHubRepositories,
   useSpecForgeRuntimes,
-  useSpecForgeSkills,
-  useUpsertSpecForgeSkill,
+  useSpecForgeProjectSkills,
+  useUpsertSpecForgeProjectSkill,
 } from '@/features/specforge/hooks/use-specforge';
+import { productDevelopmentSkillTemplates } from '@/features/specforge/skill-templates';
 import type { SpecForgeSkillDTO } from '@/features/specforge/services/specforge-service';
 import { useT } from '@/i18n';
 import { cn } from '@/utils';
@@ -51,30 +54,42 @@ type SkillDialogMode = 'choose' | 'manual' | 'url' | 'runtime';
 export function SkillsConsole() {
   const t = useT('dashboard.skills');
   const { selectedWorkspaceId } = useSelectedWorkspace();
-  const repositoriesQuery = useGitHubRepositories(
-    selectedWorkspaceId ? { workspace_id: selectedWorkspaceId } : undefined
+  const projectsQuery = useProjects(selectedWorkspaceId ?? '');
+  const projects = useMemo(
+    () => projectsQuery.data?.projects ?? [],
+    [projectsQuery.data?.projects]
   );
-  const repositories = useMemo(
-    () => repositoriesQuery.data?.repositories ?? [],
-    [repositoriesQuery.data?.repositories]
+  const [selectedProjectId, setSelectedProjectId] = useState('');
+  const selectedProject = useMemo(
+    () =>
+      projects.find(project => String(project.id) === selectedProjectId) ??
+      projects.find(project => project.status === 'active') ??
+      projects[0],
+    [projects, selectedProjectId]
   );
-  const [selectedRepoId, setSelectedRepoId] = useState('');
-  const effectiveSelectedRepoId =
-    selectedRepoId && repositories.some(repository => repository.repository_id === selectedRepoId)
-      ? selectedRepoId
-      : repositories[0]?.repository_id ?? '';
-  const skillsQuery = useSpecForgeSkills(effectiveSelectedRepoId);
-  const upsertSkill = useUpsertSpecForgeSkill(effectiveSelectedRepoId);
+  const projectContextQuery = useProjectContext(selectedProject?.id ?? 0);
+  const projectContext = projectContextQuery.data?.context;
+  const primaryRepository = primaryRepositoryContext(projectContext);
+  const executionRepositoryId =
+    primaryRepository?.repository.repository_id ??
+    projectContext?.execution_repository_id ??
+    projectContext?.primary_repository_id ??
+    '';
+  const skillsQuery = useSpecForgeProjectSkills(selectedProject?.id);
+  const upsertSkill = useUpsertSpecForgeProjectSkill(selectedProject?.id);
   const runtimesQuery = useSpecForgeRuntimes({ limit: 20 });
   const runtimes = useMemo(
     () => runtimesQuery.data?.runtimes ?? [],
     [runtimesQuery.data?.runtimes]
   );
-  const skills = skillsQuery.data?.skills ?? [];
-  const selectedRepo = repositories.find(
-    repository => repository.repository_id === effectiveSelectedRepoId
+  const skills = useMemo(
+    () =>
+      (skillsQuery.data?.project_skills ?? [])
+        .map(projectSkill => projectSkill.skill)
+        .filter((skill): skill is SpecForgeSkillDTO => Boolean(skill)),
+    [skillsQuery.data?.project_skills]
   );
-  const canSaveSkill = Boolean(effectiveSelectedRepoId);
+  const canSaveSkill = Boolean(selectedProject?.id && executionRepositoryId);
 
   const [dialogOpen, setDialogOpen] = useState(false);
   const [dialogMode, setDialogMode] = useState<SkillDialogMode>('choose');
@@ -82,8 +97,11 @@ export function SkillsConsole() {
   const [description, setDescription] = useState('');
   const [content, setContent] = useState('');
   const [sourceUrl, setSourceUrl] = useState('');
+  const [targetAgents, setTargetAgents] = useState<string[]>(['all']);
   const [active, setActive] = useState(true);
   const [message, setMessage] = useState('');
+  const [bulkMessage, setBulkMessage] = useState('');
+  const [isCreatingRolePack, setIsCreatingRolePack] = useState(false);
 
   function openNewSkillDialog() {
     setDialogMode('choose');
@@ -91,6 +109,7 @@ export function SkillsConsole() {
     setDescription('');
     setContent('');
     setSourceUrl('');
+    setTargetAgents(['all']);
     setActive(true);
     setMessage('');
     setDialogOpen(true);
@@ -102,6 +121,7 @@ export function SkillsConsole() {
     setDescription(skill.description ?? '');
     setContent(skill.content ?? '');
     setSourceUrl('');
+    setTargetAgents(skill.target_agents?.length ? skill.target_agents : ['all']);
     setActive(skill.active);
     setMessage('');
     setDialogOpen(true);
@@ -114,16 +134,18 @@ export function SkillsConsole() {
       content.trim() ||
       `# ${trimmedName}\n\n${trimmedDescription || t('manual.defaultContent')}\n`;
 
-    if (!effectiveSelectedRepoId || !trimmedName) {
+    if (!selectedProject?.id || !executionRepositoryId || !trimmedName) {
       return;
     }
 
     try {
       await upsertSkill.mutateAsync({
+        repository_id: executionRepositoryId,
         name: trimmedName,
         description: trimmedDescription,
         content: trimmedContent,
         active,
+        target_agents: targetAgents,
       });
       setDialogOpen(false);
     } catch {
@@ -134,16 +156,18 @@ export function SkillsConsole() {
   async function importFromUrl() {
     const trimmedUrl = sourceUrl.trim();
     const derivedName = name.trim() || skillNameFromUrl(trimmedUrl);
-    if (!effectiveSelectedRepoId || !trimmedUrl || !derivedName) {
+    if (!selectedProject?.id || !executionRepositoryId || !trimmedUrl || !derivedName) {
       return;
     }
 
     try {
       await upsertSkill.mutateAsync({
+        repository_id: executionRepositoryId,
         name: derivedName,
         description: description.trim() || t('url.importedDescription'),
         content: `# ${derivedName}\n\n${t('url.source')}: ${trimmedUrl}\n`,
         active: true,
+        target_agents: ['all'],
       });
       setDialogOpen(false);
     } catch {
@@ -151,8 +175,35 @@ export function SkillsConsole() {
     }
   }
 
-  const isLoading = repositoriesQuery.isLoading || skillsQuery.isLoading;
-  const hasRepository = repositories.length > 0;
+  async function createProductDevelopmentSkillPack() {
+    if (!selectedProject?.id || !executionRepositoryId || isCreatingRolePack) {
+      return;
+    }
+
+    setIsCreatingRolePack(true);
+    setBulkMessage('');
+    try {
+      for (const template of productDevelopmentSkillTemplates) {
+        await upsertSkill.mutateAsync({
+          repository_id: executionRepositoryId,
+          name: template.name,
+          description: template.description,
+          content: template.content,
+          active: true,
+          target_agents: template.targetAgents?.length ? template.targetAgents : ['all'],
+        });
+      }
+      setBulkMessage(`已创建 ${productDevelopmentSkillTemplates.length} 个产品开发角色技能。`);
+    } catch {
+      setBulkMessage(t('messages.saveFailed'));
+    } finally {
+      setIsCreatingRolePack(false);
+    }
+  }
+
+  const isLoading =
+    projectsQuery.isLoading || projectContextQuery.isLoading || skillsQuery.isLoading;
+  const hasProject = projects.length > 0;
   const hasSkills = skills.length > 0;
 
   return (
@@ -174,32 +225,49 @@ export function SkillsConsole() {
             </div>
           </div>
         </div>
-        <Button size="sm" onClick={openNewSkillDialog}>
-          <Plus className="h-4 w-4" />
-          {t('actions.new')}
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button
+            size="sm"
+            variant="outline"
+            onClick={createProductDevelopmentSkillPack}
+            disabled={!canSaveSkill || isCreatingRolePack}
+          >
+            <Sparkles className="h-4 w-4" />
+            {isCreatingRolePack ? 'Creating roles' : 'Create product roles'}
+          </Button>
+          <Button size="sm" onClick={openNewSkillDialog}>
+            <Plus className="h-4 w-4" />
+            {t('actions.new')}
+          </Button>
+        </div>
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-8">
         <div className="mx-auto flex w-full max-w-5xl flex-col gap-4">
-          {repositories.length > 1 ? (
+          {projects.length > 1 ? (
             <div className="flex flex-wrap items-center justify-between gap-3 rounded-lg border border-border-subtle bg-bg-subtle px-3 py-2">
               <div className="min-w-0">
-                <div className="text-sm font-medium text-text-main">{t('repository.title')}</div>
-                <p className="mt-0.5 text-xs text-text-muted">{t('repository.description')}</p>
+                <div className="text-sm font-medium text-text-main">{t('project.title')}</div>
+                <p className="mt-0.5 text-xs text-text-muted">{t('project.description')}</p>
               </div>
-              <Select value={effectiveSelectedRepoId} onValueChange={setSelectedRepoId}>
+              <Select value={String(selectedProject?.id ?? '')} onValueChange={setSelectedProjectId}>
                 <SelectTrigger className="w-full bg-bg-surface sm:w-[280px]">
                   <SelectValue />
                 </SelectTrigger>
                 <SelectContent>
-                  {repositories.map(repository => (
-                    <SelectItem key={repository.repository_id} value={repository.repository_id}>
-                      {repository.github_owner}/{repository.github_repo}
+                  {projects.map(project => (
+                    <SelectItem key={project.id} value={String(project.id)}>
+                      {project.name}
                     </SelectItem>
                   ))}
                 </SelectContent>
               </Select>
+            </div>
+          ) : null}
+
+          {bulkMessage ? (
+            <div className="rounded-lg border border-border-subtle bg-bg-subtle px-4 py-3 text-sm text-text-muted">
+              {bulkMessage}
             </div>
           ) : null}
 
@@ -233,17 +301,24 @@ export function SkillsConsole() {
                       <span className="mt-1 line-clamp-2 text-sm leading-6 text-text-muted">
                         {skill.description || t('states.noDescription')}
                       </span>
+                      <span className="mt-2 flex flex-wrap gap-1.5">
+                        {formatTargetAgents(skill.target_agents).map(target => (
+                          <Badge key={target} variant="outline" className="text-text-muted">
+                            {target}
+                          </Badge>
+                        ))}
+                      </span>
                     </span>
                   </span>
                   <span className="hidden shrink-0 text-xs text-text-muted sm:block">
-                    {selectedRepo?.github_owner}/{selectedRepo?.github_repo}
+                    {selectedProject?.name ?? t('project.noProject')}
                   </span>
                 </button>
               ))}
             </div>
           ) : (
             <EmptySkillsState
-              hasRepository={hasRepository}
+              hasProject={hasProject}
               onCreate={openNewSkillDialog}
               t={t}
             />
@@ -308,11 +383,11 @@ export function SkillsConsole() {
 }
 
 function EmptySkillsState({
-  hasRepository,
+  hasProject,
   onCreate,
   t,
 }: {
-  hasRepository: boolean;
+  hasProject: boolean;
   onCreate: () => void;
   t: ReturnType<typeof useT<'dashboard.skills'>>;
 }) {
@@ -324,10 +399,10 @@ function EmptySkillsState({
         </div>
         <h2 className="mt-4 text-lg font-semibold text-text-main">{t('empty.title')}</h2>
         <p className="mt-2 text-sm leading-6 text-text-muted">
-          {hasRepository ? t('empty.description') : t('empty.noRepository')}
+          {hasProject ? t('empty.description') : t('empty.noProject')}
         </p>
         <div className="mt-6 flex justify-center">
-          {hasRepository ? (
+          {hasProject ? (
             <Button onClick={onCreate}>
               <Plus className="h-4 w-4" />
               {t('actions.new')}
@@ -337,7 +412,7 @@ function EmptySkillsState({
               href={`${ROUTES.CONSOLE.SETTINGS}?tab=repositories`}
               className={buttonVariants()}
             >
-              {t('repository.connect')}
+              {t('project.create')}
             </Link>
           )}
         </div>
@@ -678,4 +753,26 @@ function skillNameFromUrl(value: string) {
   } catch {
     return value.split('/').filter(Boolean).at(-1) ?? '';
   }
+}
+
+function formatTargetAgents(targetAgents: string[] | undefined) {
+  const targets = targetAgents?.filter(Boolean) ?? [];
+  if (targets.length === 0) {
+    return ['No target'];
+  }
+  const labels: Record<string, string> = {
+    all: 'All roles',
+    '*': 'All roles',
+    planning: 'Planning',
+    implementation: 'Implementation',
+    execution: 'Execution',
+    review: 'Review',
+    review_patch: 'Review patch',
+    fix: 'Fix',
+    codex_cli: 'Codex',
+    kimi_cli: 'Kimi',
+    claude: 'Claude',
+    cursor_agent: 'Cursor',
+  };
+  return targets.map(target => labels[target] ?? target);
 }

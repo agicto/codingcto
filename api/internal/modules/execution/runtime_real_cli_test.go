@@ -24,6 +24,7 @@ func TestRuntimeWorkerRunsRealCLIExecutors(t *testing.T) {
 		executable string
 		codexPath  string
 		claudePath string
+		kimiPath   string
 	}{
 		{
 			name:       "codex",
@@ -31,6 +32,7 @@ func TestRuntimeWorkerRunsRealCLIExecutors(t *testing.T) {
 			executable: envOrFirst("SPECFORGE_REAL_CODEX_PATH", "CODEX_CLI_PATH", "codex"),
 			codexPath:  envOrFirst("SPECFORGE_REAL_CODEX_PATH", "CODEX_CLI_PATH", "codex"),
 			claudePath: "claude",
+			kimiPath:   "kimi",
 		},
 		{
 			name:       "claude",
@@ -38,6 +40,15 @@ func TestRuntimeWorkerRunsRealCLIExecutors(t *testing.T) {
 			executable: envOrFirst("SPECFORGE_REAL_CLAUDE_PATH", "CLAUDE_CODE_CLI_PATH", "claude"),
 			codexPath:  "codex",
 			claudePath: envOrFirst("SPECFORGE_REAL_CLAUDE_PATH", "CLAUDE_CODE_CLI_PATH", "claude"),
+			kimiPath:   "kimi",
+		},
+		{
+			name:       "kimi",
+			executor:   ExecutorNameKimiCLI,
+			executable: envOrFirst("SPECFORGE_REAL_KIMI_PATH", "KIMI_CLI_PATH", "kimi"),
+			codexPath:  "codex",
+			claudePath: "claude",
+			kimiPath:   envOrFirst("SPECFORGE_REAL_KIMI_PATH", "KIMI_CLI_PATH", "kimi"),
 		},
 	}
 
@@ -77,6 +88,7 @@ func TestRuntimeWorkerRunsRealCLIExecutors(t *testing.T) {
 			executor := NewExecutorFactory(ExecutorFactoryConfig{
 				CodexPath:      tc.codexPath,
 				ClaudePath:     tc.claudePath,
+				KimiPath:       tc.kimiPath,
 				SandboxMode:    "workspace-write",
 				ApprovalPolicy: "never",
 				Timeout:        2 * time.Minute,

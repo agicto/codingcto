@@ -42,8 +42,8 @@ export function PlanReview({
   plan: PlanBundle;
   decisionOverrides: Record<string, string>;
   selectedExecutionNodeIds: string[];
-  selectedExecutor: 'codex_cli' | 'claude_code_cli';
-  executorOptions: readonly { value: 'codex_cli' | 'claude_code_cli'; label: string }[];
+  selectedExecutor: 'codex_cli' | 'kimi_cli' | 'claude_code_cli';
+  executorOptions: readonly { value: 'codex_cli' | 'kimi_cli' | 'claude_code_cli'; label: string }[];
   approved: boolean;
   isStarting: boolean;
   executionReadiness: ExecutionReadiness;
@@ -51,7 +51,7 @@ export function PlanReview({
   showSkillPipeline?: boolean;
   onDecisionOverrideChange: (key: string, value: string) => void;
   onExecutionNodeSelectionChange: (nodeIds: string[]) => void;
-  onExecutorChange: (value: 'codex_cli' | 'claude_code_cli') => void;
+  onExecutorChange: (value: 'codex_cli' | 'kimi_cli' | 'claude_code_cli') => void;
   onApprove: () => void;
 }) {
   const { productSpec, implementationPlan } = plan;
@@ -110,7 +110,7 @@ export function PlanReview({
               value={selectedExecutor}
               disabled={approved || isStarting}
               onChange={event =>
-                onExecutorChange(event.target.value as 'codex_cli' | 'claude_code_cli')
+                onExecutorChange(event.target.value as 'codex_cli' | 'kimi_cli' | 'claude_code_cli')
               }
               className="flex h-10 w-full rounded-md border border-border-subtle bg-bg-surface px-3 text-sm text-text-main outline-none ring-0 transition-colors focus:border-primary"
             >

@@ -391,6 +391,7 @@ function RepoSkillsPanel({ repoId, projectId }: { repoId: string; projectId?: nu
   const [name, setName] = useState('Repo coding guidelines');
   const [description, setDescription] = useState('Instructions injected into CodingCTO prompts.');
   const [content, setContent] = useState('');
+  const [targetAgents, setTargetAgents] = useState<string[]>(['all']);
   const [active, setActive] = useState(true);
   const [savedSkill, setSavedSkill] = useState<SpecForgeSkillDTO>();
 
@@ -404,6 +405,10 @@ function RepoSkillsPanel({ repoId, projectId }: { repoId: string; projectId?: nu
   const latestSkill = savedSkill ?? latestProjectSkill ?? skills[0];
   const savedCount = projectId ? projectSkills.length : skills.length;
   const isSaving = upsertSkill.isPending || upsertProjectSkill.isPending;
+  const skillScopeLabel = projectId ? 'Project skills' : 'Repo skills';
+  const skillScopeDescription = projectId
+    ? 'Store project-level role and delivery instructions; the primary repository remains the execution target.'
+    : 'Store repository instructions for planning, prompt compilation, and project skill runs.';
 
   async function saveSkill() {
     const trimmedName = name.trim();
@@ -419,6 +424,7 @@ function RepoSkillsPanel({ repoId, projectId }: { repoId: string; projectId?: nu
         description: description.trim(),
         content: trimmedContent,
         active,
+        target_agents: targetAgents,
       });
       if (response.project_skill.skill) {
         setSavedSkill(response.project_skill.skill);
@@ -431,6 +437,7 @@ function RepoSkillsPanel({ repoId, projectId }: { repoId: string; projectId?: nu
       description: description.trim(),
       content: trimmedContent,
       active,
+      target_agents: targetAgents,
     });
     setSavedSkill(response.skill);
   }
@@ -439,6 +446,7 @@ function RepoSkillsPanel({ repoId, projectId }: { repoId: string; projectId?: nu
     setName(template.name);
     setDescription(template.description);
     setContent(template.content);
+    setTargetAgents(template.targetAgents?.length ? template.targetAgents : ['all']);
     setActive(true);
   }
 
@@ -448,10 +456,10 @@ function RepoSkillsPanel({ repoId, projectId }: { repoId: string; projectId?: nu
         <div>
           <div className="flex items-center gap-2 text-sm font-medium">
             <ListChecks className="h-4 w-4 text-primary" />
-            Repo skills
+            {skillScopeLabel}
           </div>
           <p className="mt-1 text-sm leading-6 text-text-muted">
-            Store repository instructions for planning, prompt compilation, and project skill runs.
+            {skillScopeDescription}
           </p>
         </div>
         <Badge
