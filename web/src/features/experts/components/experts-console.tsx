@@ -1,6 +1,6 @@
 'use client';
 
-import { useMemo, useState } from 'react';
+import { useMemo, useState, type ReactNode } from 'react';
 import {
   BookOpen,
   Brain,
@@ -427,9 +427,7 @@ export function ExpertsConsole() {
             {result ? (
               <div className="grid gap-4 p-4">
                 <PlanSummary result={result} />
-                <pre className="max-h-[calc(100vh-18rem)] overflow-auto whitespace-pre-wrap rounded-md bg-bg-subtle p-4 text-sm leading-6 text-text-main">
-                  {result.markdown}
-                </pre>
+                <MarkdownDocument markdown={result.markdown} />
               </div>
             ) : isGenerating ? (
               <StreamingPlanState status={streamStatus} bytes={streamBytes} />
@@ -450,6 +448,63 @@ export function ExpertsConsole() {
         </section>
       </main>
     </div>
+  );
+}
+
+type MarkdownBlock =
+  | { type: 'heading'; level: 1 | 2 | 3; text: string }
+  | { type: 'paragraph'; text: string }
+  | { type: 'list'; items: Array<{ depth: number; text: string }> };
+
+function MarkdownDocument({ markdown }: { markdown: string }) {
+  const blocks = useMemo(() => parseMarkdown(markdown), [markdown]);
+
+  return (
+    <article className="max-h-[calc(100vh-18rem)] overflow-auto rounded-md bg-bg-subtle px-5 py-4 text-sm leading-7 text-text-main">
+      {blocks.map((block, index) => {
+        if (block.type === 'heading') {
+          const Tag = block.level === 1 ? 'h1' : block.level === 2 ? 'h2' : 'h3';
+          return (
+            <Tag
+              key={`${block.type}-${index}`}
+              className={cn(
+                'font-semibold text-text-main',
+                block.level === 1 && 'text-lg',
+                block.level === 2 && 'mt-6 border-t border-border-subtle pt-4 text-base',
+                block.level === 3 && 'mt-4 text-sm'
+              )}
+            >
+              {renderInlineMarkdown(block.text)}
+            </Tag>
+          );
+        }
+
+        if (block.type === 'list') {
+          return (
+            <ul key={`${block.type}-${index}`} className="my-2 grid gap-1.5">
+              {block.items.map((item, itemIndex) => (
+                <li
+                  key={`${item.text}-${itemIndex}`}
+                  className={cn(
+                    'flex items-start gap-2 text-text-muted',
+                    item.depth > 0 && 'ml-5'
+                  )}
+                >
+                  <span className="mt-3 h-1 w-1 shrink-0 rounded-full bg-text-muted" />
+                  <span className="min-w-0">{renderInlineMarkdown(item.text)}</span>
+                </li>
+              ))}
+            </ul>
+          );
+        }
+
+        return (
+          <p key={`${block.type}-${index}`} className="my-2 text-text-muted">
+            {renderInlineMarkdown(block.text)}
+          </p>
+        );
+      })}
+    </article>
   );
 }
 
@@ -575,4 +630,86 @@ function repositoryPayload(repository?: GitHubRepositoryDTO) {
     full_name: `${repository.github_owner}/${repository.github_repo}`,
     default_branch: repository.default_branch,
   };
+}
+
+function parseMarkdown(markdown: string): MarkdownBlock[] {
+  const blocks: MarkdownBlock[] = [];
+  const lines = markdown.split(/\r?\n/);
+  let paragraph: string[] = [];
+  let list: Array<{ depth: number; text: string }> = [];
+
+  function flushParagraph() {
+    if (paragraph.length > 0) {
+      blocks.push({ type: 'paragraph', text: paragraph.join(' ') });
+      paragraph = [];
+    }
+  }
+
+  function flushList() {
+    if (list.length > 0) {
+      blocks.push({ type: 'list', items: list });
+      list = [];
+    }
+  }
+
+  for (const line of lines) {
+    const trimmed = line.trim();
+    if (!trimmed) {
+      flushParagraph();
+      flushList();
+      continue;
+    }
+
+    const heading = trimmed.match(/^(#{1,3})\s+(.+)$/);
+    if (heading) {
+      flushParagraph();
+      flushList();
+      blocks.push({
+        type: 'heading',
+        level: heading[1].length as 1 | 2 | 3,
+        text: heading[2],
+      });
+      continue;
+    }
+
+    const bullet = line.match(/^(\s*)-\s+(.+)$/);
+    if (bullet) {
+      flushParagraph();
+      list.push({
+        depth: bullet[1].length > 0 ? 1 : 0,
+        text: bullet[2],
+      });
+      continue;
+    }
+
+    flushList();
+    paragraph.push(trimmed);
+  }
+
+  flushParagraph();
+  flushList();
+  return blocks;
+}
+
+function renderInlineMarkdown(text: string): ReactNode[] {
+  return text.split(/(`[^`]+`|\*\*[^*]+\*\*)/g).map((part, index) => {
+    if (part.startsWith('**') && part.endsWith('**')) {
+      return (
+        <strong key={`${part}-${index}`} className="font-semibold text-text-main">
+          {part.slice(2, -2)}
+        </strong>
+      );
+    }
+    if (part.startsWith('`') && part.endsWith('`')) {
+      return (
+        <code
+          key={`${part}-${index}`}
+          className="rounded border border-border-subtle bg-bg-surface px-1 py-0.5 font-mono text-[0.85em] text-text-main"
+        >
+          {part.slice(1, -1)}
+        </code>
+      );
+    }
+    return <span key={`${part}-${index}`}>{part}</span>;
+  });
 }
