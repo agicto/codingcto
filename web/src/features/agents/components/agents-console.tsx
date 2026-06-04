@@ -14,6 +14,7 @@ import {
   KeyRound,
   Play,
   RefreshCw,
+  Square,
   type LucideIcon,
   Server,
   SlidersHorizontal,
@@ -39,6 +40,7 @@ import {
   useCodingCTODirectAgentTasks,
   useCodingCTODirectTaskEvents,
   useCodingCTORuntimes,
+  useCancelCodingCTODirectAgentTask,
   useCreateCodingCTODirectAgentTask,
 } from '@/features/codingcto/hooks/use-codingcto';
 import type {
@@ -81,6 +83,8 @@ interface LocalRuntime {
   capabilities: RuntimeCapability[];
   logo: AgentLogoKey;
   dispatchableCapabilityCount: number;
+  maxConcurrency: number;
+  runningCount: number;
   status: string;
   version?: string;
   lastSeenAt?: string;
@@ -317,6 +321,7 @@ export function AgentsConsole({ selectedAgentId }: AgentsConsoleProps) {
           <section className="min-h-[620px] overflow-hidden rounded-lg border border-border-subtle bg-bg-surface">
             {selectedAgent ? (
               <AgentDetail
+                key={selectedAgent.id}
                 runtime={selectedAgent}
                 projects={projects}
                 selectedProjectId={String(selectedProject?.id ?? '')}
@@ -450,10 +455,6 @@ function AgentDetail({
 }) {
   const [directPrompt, setDirectPrompt] = useState('');
   const [selectedDirectTaskId, setSelectedDirectTaskId] = useState<number | undefined>();
-  useEffect(() => {
-    setSelectedDirectTaskId(undefined);
-    setDirectPrompt('');
-  }, [runtime.id]);
   const directTasksQuery = useCodingCTODirectAgentTasks({
     limit: 8,
     repository_id: selectedRepository?.repository_id,
@@ -469,6 +470,7 @@ function AgentDetail({
   const liveDirectTask = liveDirectTaskQuery.data ?? selectedDirectTask;
   const directTaskEventsQuery = useCodingCTODirectTaskEvents(liveDirectTask?.id);
   const directEvents = directTaskEventsQuery.data?.events ?? [];
+  const cancelDirectTask = useCancelCodingCTODirectAgentTask();
 
   async function submitDirectTask() {
     const prompt = directPrompt.trim();
@@ -483,6 +485,11 @@ function AgentDetail({
     });
     setSelectedDirectTaskId(task.id);
     setDirectPrompt('');
+  }
+
+  async function cancelSelectedDirectTask(taskId: number) {
+    const task = await cancelDirectTask.mutateAsync(taskId);
+    setSelectedDirectTaskId(task.id);
   }
 
   return (
@@ -605,7 +612,9 @@ function AgentDetail({
             isCreating={createDirectTask.isPending}
             isLoading={directTasksQuery.isLoading}
             isRefreshing={liveDirectTaskQuery.isFetching || directTaskEventsQuery.isFetching}
+            isCancelling={cancelDirectTask.isPending}
             onSubmit={submitDirectTask}
+            onCancel={cancelSelectedDirectTask}
             onSelectTask={setSelectedDirectTaskId}
             t={t}
           />
@@ -708,7 +717,9 @@ function DirectTaskPanel({
   isCreating,
   isLoading,
   isRefreshing,
+  isCancelling,
   onSubmit,
+  onCancel,
   onSelectTask,
   t,
 }: {
@@ -728,7 +739,9 @@ function DirectTaskPanel({
   isCreating: boolean;
   isLoading: boolean;
   isRefreshing: boolean;
+  isCancelling: boolean;
   onSubmit: () => void;
+  onCancel: (taskId: number) => void;
   onSelectTask: (taskId: number) => void;
   t: ReturnType<typeof useT<'dashboard.agents'>>;
 }) {
@@ -755,6 +768,9 @@ function DirectTaskPanel({
       ) ||
       selectedRepository.repository_id
     : t('tasks.noRepository');
+  const canCancelSelectedTask = Boolean(
+    selectedTask?.id && !isDirectTaskTerminal(selectedTask.status)
+  );
 
   return (
     <div className="grid gap-4">
@@ -780,6 +796,14 @@ function DirectTaskPanel({
         <div className="mt-3 grid gap-2 text-xs text-text-muted sm:grid-cols-2">
           <InfoBlock label={t('tasks.targetRepository')} value={repositoryLabel} />
           <InfoBlock label={t('fields.runtime')} value={runtime.runtimeId} />
+          <InfoBlock
+            label={t('tasks.slots')}
+            value={t('tasks.slotUsage', {
+              running: runtime.runningCount,
+              max: runtime.maxConcurrency,
+            })}
+          />
+          <InfoBlock label={t('fields.executor')} value={runtime.executor} />
         </div>
         <Textarea
           className="mt-4 min-h-28"
@@ -845,7 +869,24 @@ function DirectTaskPanel({
                 {selectedTask ? `#${selectedTask.id} · ${selectedTask.repository_id}` : t('tasks.noTaskDescription')}
               </p>
             </div>
-            {selectedTask ? <TaskStatusBadge status={selectedTask.status} t={t} /> : null}
+            <div className="flex shrink-0 items-center gap-2">
+              {selectedTask ? <TaskStatusBadge status={selectedTask.status} t={t} /> : null}
+              {selectedTask && canCancelSelectedTask ? (
+                <Button
+                  size="sm"
+                  variant="outline"
+                  disabled={isCancelling}
+                  onClick={() => onCancel(selectedTask.id)}
+                >
+                  {isCancelling ? (
+                    <RefreshCw className="h-4 w-4 animate-spin" />
+                  ) : (
+                    <Square className="h-4 w-4" />
+                  )}
+                  {isCancelling ? t('tasks.cancelling') : t('tasks.cancel')}
+                </Button>
+              ) : null}
+            </div>
           </div>
           {selectedTask ? (
             <div className="grid gap-4 p-4">
@@ -853,10 +894,27 @@ function DirectTaskPanel({
                 {isRefreshing ? <RefreshCw className="h-3.5 w-3.5 animate-spin" /> : null}
                 <span>{formatRelativeTime(selectedTask.updated_at, t)}</span>
                 {selectedTask.runtime_id ? <span>· {selectedTask.runtime_id}</span> : null}
+                {selectedTask.started_at && !selectedTask.finished_at ? (
+                  <span>
+                    · {t('tasks.elapsed', { elapsed: formatElapsedTime(selectedTask.started_at) })}
+                  </span>
+                ) : null}
+                {selectedTask.last_progress_at ? (
+                  <span>
+                    · {t('tasks.lastProgress', {
+                      time: formatRelativeTime(selectedTask.last_progress_at, t),
+                    })}
+                  </span>
+                ) : null}
                 {typeof selectedTask.exit_code === 'number' ? (
                   <span>· exit {selectedTask.exit_code}</span>
                 ) : null}
               </div>
+              {selectedTask.failure_reason ? (
+                <div className="rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 text-xs text-text-muted">
+                  {t('tasks.failureReason')}: {selectedTask.failure_reason}
+                </div>
+              ) : null}
               <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
                 <div className="text-xs font-medium uppercase text-text-muted">{t('tasks.promptLabel')}</div>
                 <p className="mt-2 whitespace-pre-wrap text-sm leading-6 text-text-main">
@@ -1145,6 +1203,8 @@ function localAgentsFromRuntimes(runtimes: CodingCTORuntimeDTO[], now: number): 
         capabilities: dispatchableCapability ? [dispatchableCapability] : [],
         logo: dispatchableCapability.logo,
         dispatchableCapabilityCount,
+        maxConcurrency: Math.max(1, runtime.max_concurrency ?? 1),
+        runningCount: Math.max(0, runtime.running_count ?? 0),
         status: runtime.status,
         version: dispatchableCapability.version || runtime.version,
         lastSeenAt: runtime.last_seen_at,
@@ -1276,6 +1336,30 @@ function agentLogoForExecutor(value: string): AgentLogoKey {
     return 'opencode';
   }
   return 'terminal';
+}
+
+function isDirectTaskTerminal(status: string) {
+  return ['completed', 'failed', 'cancelled'].includes(status);
+}
+
+function formatElapsedTime(value: string | undefined) {
+  if (!value) {
+    return '0m';
+  }
+  const timestamp = new Date(value).getTime();
+  if (!Number.isFinite(timestamp)) {
+    return '0m';
+  }
+  const elapsedSeconds = Math.max(0, Math.floor((Date.now() - timestamp) / 1000));
+  if (elapsedSeconds < 60) {
+    return `${elapsedSeconds}s`;
+  }
+  const elapsedMinutes = Math.floor(elapsedSeconds / 60);
+  if (elapsedMinutes < 60) {
+    return `${elapsedMinutes}m`;
+  }
+  const elapsedHours = Math.floor(elapsedMinutes / 60);
+  return `${elapsedHours}h ${elapsedMinutes % 60}m`;
 }
 
 function formatRelativeTime(value: string | undefined, t: ReturnType<typeof useT<'dashboard.agents'>>) {

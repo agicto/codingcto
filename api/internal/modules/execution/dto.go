@@ -37,6 +37,7 @@ type RuntimeHeartbeatRequest struct {
 	Sandbox         *domain.SpecForgeRuntimeSandbox    `json:"sandbox" binding:"omitempty"`
 	SkillRoots      []domain.SpecForgeRuntimeSkillRoot `json:"skill_roots" binding:"omitempty,max=20,dive"`
 	LocalSkillCount int                                `json:"local_skill_count" binding:"omitempty,min=0,max=10000"`
+	MaxConcurrency  int                                `json:"max_concurrency" binding:"omitempty,min=1,max=100"`
 }
 
 type RuntimeSweepRequest struct {
@@ -176,7 +177,7 @@ type SubmitTaskResultRequest struct {
 	SessionID     string `json:"session_id" binding:"omitempty,max=255"`
 	Workdir       string `json:"workdir" binding:"omitempty,max=500"`
 	ProcessRef    string `json:"process_ref" binding:"omitempty,max=255"`
-	Status        string `json:"status" binding:"required,oneof=completed failed timeout"`
+	Status        string `json:"status" binding:"required,oneof=completed failed timeout cancelled"`
 	Output        string `json:"output" binding:"omitempty,max=200000"`
 	Error         string `json:"error" binding:"omitempty,max=200000"`
 	ExitCode      int    `json:"exit_code" binding:"omitempty"`

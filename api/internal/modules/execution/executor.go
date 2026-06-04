@@ -524,6 +524,8 @@ func (e *cliExecutor) Run(
 	}
 	if runCtx.Err() == context.DeadlineExceeded {
 		status = "timeout"
+	} else if runCtx.Err() == context.Canceled {
+		status = "cancelled"
 	}
 
 	if err == nil && result.ExitCode == 0 && strings.TrimSpace(execContext.BranchName) != "" {

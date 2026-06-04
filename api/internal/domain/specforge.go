@@ -177,6 +177,8 @@ type SpecForgeRuntime struct {
 	Sandbox          *SpecForgeRuntimeSandbox    `json:"sandbox,omitempty"`
 	SkillRoots       []SpecForgeRuntimeSkillRoot `json:"skill_roots,omitempty"`
 	LocalSkillCount  int                         `json:"local_skill_count"`
+	MaxConcurrency   int                         `json:"max_concurrency,omitempty"`
+	RunningCount     int                         `json:"running_count,omitempty"`
 	CapabilitiesHash string                      `json:"capabilities_hash,omitempty"`
 	LastSeenAt       time.Time                   `json:"last_seen_at"`
 	CreatedAt        time.Time                   `json:"created_at"`
@@ -506,6 +508,7 @@ type SpecForgeExecutionRepository interface {
 	HasClaimableDirectAgentTask(ctx context.Context, runtimeID, executor, repositoryID string) (bool, error)
 	ClaimDirectAgentTask(ctx context.Context, runtimeID, executor, repositoryID, sessionID, workdir string) (*CodingCTODirectAgentTask, error)
 	UpdateDirectAgentTask(ctx context.Context, task *CodingCTODirectAgentTask) error
+	CountRunningTasksByRuntimeIDs(ctx context.Context, runtimeIDs []string) (map[string]int, error)
 	CreateDirectTaskEvent(ctx context.Context, event *CodingCTODirectTaskEvent) error
 	ListDirectTaskEvents(ctx context.Context, taskID uint, afterSeq int) ([]*CodingCTODirectTaskEvent, error)
 }

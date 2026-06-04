@@ -32,6 +32,7 @@ func Run(commandName, version string) int {
 	repoDir := flags.String("repo-dir", envOrDefault("CODINGCTO_RUNTIME_REPO_DIR", os.Getenv("SPECFORGE_RUNTIME_REPO_DIR")), "Local repository directory used by the selected AI CLI")
 	once := flags.Bool("once", false, "Run one heartbeat/claim/execute cycle and exit")
 	pollInterval := flags.Duration("poll-interval", envDurationOrDefault("CODINGCTO_RUNTIME_POLL_INTERVAL", envDurationOrDefault("SPECFORGE_RUNTIME_POLL_INTERVAL", 10*time.Second)), "Polling interval for daemon mode")
+	maxConcurrency := flags.Int("max-concurrency", envIntOrDefault("CODINGCTO_RUNTIME_MAX_CONCURRENCY", envIntOrDefault("SPECFORGE_RUNTIME_MAX_CONCURRENCY", 1)), "Maximum task slots this runtime should advertise")
 	executorName := flags.String("executor", envOrDefault("CODINGCTO_RUNTIME_EXECUTOR", envOrDefault("SPECFORGE_RUNTIME_EXECUTOR", execution.ExecutorNameCodexCLI)), "Executor kind: codex_cli, kimi_cli, or claude_code_cli")
 	codexPath := flags.String("codex-path", envOrDefault("CODEX_CLI_PATH", "codex"), "Codex CLI executable path")
 	claudePath := flags.String("claude-path", envOrDefault("CLAUDE_CODE_CLI_PATH", "claude"), "Claude Code CLI executable path")
@@ -83,6 +84,7 @@ func Run(commandName, version string) int {
 		Sandbox:         capabilities.Sandbox,
 		SkillRoots:      capabilities.SkillRoots,
 		LocalSkillCount: capabilities.LocalSkillCount,
+		MaxConcurrency:  *maxConcurrency,
 	}, client, executor)
 
 	ctx, stop := signal.NotifyContext(context.Background(), os.Interrupt, syscall.SIGTERM)
@@ -116,6 +118,18 @@ func envOrDefault(key, fallback string) string {
 		return value
 	}
 	return fallback
+}
+
+func envIntOrDefault(key string, fallback int) int {
+	value := strings.TrimSpace(os.Getenv(key))
+	if value == "" {
+		return fallback
+	}
+	var parsed int
+	if _, err := fmt.Sscanf(value, "%d", &parsed); err != nil || parsed <= 0 {
+		return fallback
+	}
+	return parsed
 }
 
 func envDurationOrDefault(key string, fallback time.Duration) time.Duration {

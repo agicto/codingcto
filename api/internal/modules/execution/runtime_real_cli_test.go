@@ -147,6 +147,10 @@ func (c *runtimeRealCLIFakeClient) SubmitTaskResult(ctx context.Context, taskID 
 	return &domain.SpecForgeExecutionBundle{}, nil
 }
 
+func (c *runtimeRealCLIFakeClient) GetDirectTask(ctx context.Context, taskID uint, runtimeID string) (*domain.CodingCTODirectAgentTask, error) {
+	return &domain.CodingCTODirectAgentTask{ID: taskID, RuntimeID: runtimeID, Status: domain.AgentTaskStatusRunning}, nil
+}
+
 func (c *runtimeRealCLIFakeClient) CreateDirectTaskEvent(ctx context.Context, taskID uint, req *CreateTaskEventRequest) (*domain.CodingCTODirectTaskEvent, error) {
 	c.events = append(c.events, req)
 	return &domain.CodingCTODirectTaskEvent{TaskID: taskID, Type: req.Type, Tool: req.Tool, Content: req.Content, Output: req.Output}, nil

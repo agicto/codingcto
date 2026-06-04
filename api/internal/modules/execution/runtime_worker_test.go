@@ -166,6 +166,32 @@ func TestRuntimeWorkerClaimsExecutesAndSubmitsDirectTask(t *testing.T) {
 	require.Contains(t, eventTypes(client.directEvents), "executor_git_summary")
 }
 
+func TestRuntimeWorkerSubmitsCancelledWhenDirectTaskIsCancelledByPlatform(t *testing.T) {
+	client := &fakeRuntimeClient{
+		heartbeat:        &RuntimeHeartbeatResponse{ClaimPending: true},
+		directTaskStatus: domain.AgentTaskStatusCancelled,
+		claim: &ClaimAgentTaskResponse{
+			DirectTask:       &ClaimedDirectAgentTask{ID: 99, RepositoryID: "repo_123", Executor: ExecutorNameCodexCLI, RuntimeID: "runtime_123"},
+			Prompt:           &ClaimedTaskPrompt{ID: 99, Type: "implementation", Version: "direct-v1", PromptText: "Update README"},
+			ExecutionContext: &ClaimedTaskExecutionContext{RepositoryID: "repo_123"},
+		},
+	}
+	executor := &fakeRuntimeExecutor{
+		waitForCancel: true,
+		result:        &ExecutionResult{Status: "completed", Output: "partial", ExitCode: 0},
+	}
+	worker := NewRuntimeWorker(RuntimeWorkerConfig{RuntimeID: "runtime_123", RepositoryID: "repo_123", RepoDir: "/workspace/repo"}, client, executor)
+
+	result, err := worker.RunOnce(context.Background())
+
+	require.NoError(t, err)
+	require.True(t, result.Claimed)
+	require.Equal(t, "cancelled", result.ExecutionResult.Status)
+	require.Equal(t, "cancelled", client.directSubmitReq.Status)
+	require.Equal(t, "user_cancelled", client.directSubmitReq.FailureReason)
+	require.Contains(t, eventTypes(client.directEvents), "executor_cancel_requested")
+}
+
 func TestDirectRuntimeProgressReporterSuppressesKnownCodexNoise(t *testing.T) {
 	client := &fakeRuntimeClient{}
 	reporter := &directRuntimeProgressReporter{
@@ -201,15 +227,16 @@ func TestDirectRuntimeProgressReporterSuppressesKnownCodexNoise(t *testing.T) {
 }
 
 type fakeRuntimeClient struct {
-	heartbeat       *RuntimeHeartbeatResponse
-	heartbeatReq    *RuntimeHeartbeatRequest
-	claim           *ClaimAgentTaskResponse
-	claimRuntimeID  string
-	claimReq        *ClaimAgentTaskRequest
-	events          []*CreateTaskEventRequest
-	submitReq       *SubmitTaskResultRequest
-	directEvents    []*CreateTaskEventRequest
-	directSubmitReq *SubmitTaskResultRequest
+	heartbeat        *RuntimeHeartbeatResponse
+	heartbeatReq     *RuntimeHeartbeatRequest
+	claim            *ClaimAgentTaskResponse
+	claimRuntimeID   string
+	claimReq         *ClaimAgentTaskRequest
+	events           []*CreateTaskEventRequest
+	submitReq        *SubmitTaskResultRequest
+	directEvents     []*CreateTaskEventRequest
+	directSubmitReq  *SubmitTaskResultRequest
+	directTaskStatus string
 }
 
 func (c *fakeRuntimeClient) Heartbeat(ctx context.Context, req *RuntimeHeartbeatRequest) (*RuntimeHeartbeatResponse, error) {
@@ -236,6 +263,14 @@ func (c *fakeRuntimeClient) SubmitTaskResult(ctx context.Context, taskID uint, r
 	return &domain.SpecForgeExecutionBundle{}, nil
 }
 
+func (c *fakeRuntimeClient) GetDirectTask(ctx context.Context, taskID uint, runtimeID string) (*domain.CodingCTODirectAgentTask, error) {
+	status := c.directTaskStatus
+	if status == "" {
+		status = domain.AgentTaskStatusRunning
+	}
+	return &domain.CodingCTODirectAgentTask{ID: taskID, RuntimeID: runtimeID, Status: status}, nil
+}
+
 func (c *fakeRuntimeClient) CreateDirectTaskEvent(ctx context.Context, taskID uint, req *CreateTaskEventRequest) (*domain.CodingCTODirectTaskEvent, error) {
 	c.directEvents = append(c.directEvents, req)
 	return &domain.CodingCTODirectTaskEvent{TaskID: taskID, Type: req.Type}, nil
@@ -251,11 +286,12 @@ func (c *fakeRuntimeClient) Deregister(ctx context.Context, req *RuntimeDeregist
 }
 
 type fakeRuntimeExecutor struct {
-	ran     bool
-	context ExecutionContext
-	prompt  CompiledExecutionPrompt
-	result  *ExecutionResult
-	err     error
+	ran           bool
+	context       ExecutionContext
+	prompt        CompiledExecutionPrompt
+	result        *ExecutionResult
+	err           error
+	waitForCancel bool
 }
 
 func (e *fakeRuntimeExecutor) Name() string {
@@ -272,6 +308,9 @@ func (e *fakeRuntimeExecutor) Run(ctx context.Context, execContext ExecutionCont
 	e.ran = true
 	e.context = execContext
 	e.prompt = prompt
+	if e.waitForCancel {
+		<-ctx.Done()
+	}
 	if e.result == nil {
 		return &ExecutionResult{Status: "completed", ExitCode: 0}, e.err
 	}

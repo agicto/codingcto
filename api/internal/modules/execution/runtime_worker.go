@@ -27,6 +27,7 @@ type RuntimeWorkerConfig struct {
 	Sandbox         *domain.SpecForgeRuntimeSandbox
 	SkillRoots      []domain.SpecForgeRuntimeSkillRoot
 	LocalSkillCount int
+	MaxConcurrency  int
 }
 
 type RuntimeWorker struct {
@@ -105,6 +106,7 @@ func (w *RuntimeWorker) RunOnce(ctx context.Context) (*RuntimeWorkerResult, erro
 		Sandbox:         w.cfg.Sandbox,
 		SkillRoots:      w.cfg.SkillRoots,
 		LocalSkillCount: w.cfg.LocalSkillCount,
+		MaxConcurrency:  normalizeRuntimeMaxConcurrency(w.cfg.MaxConcurrency),
 	})
 	if err != nil {
 		return nil, err
@@ -267,7 +269,10 @@ func (w *RuntimeWorker) executeDirectClaim(ctx context.Context, claim *ClaimAgen
 		}
 		progressExecutor.SetProgressReporter(reporter)
 	}
-	result, runErr := w.executor.Run(ctx, ExecutionContext{
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
+	cancelWatcherDone := w.watchDirectTaskCancellation(runCtx, cancelRun, taskID)
+	result, runErr := w.executor.Run(runCtx, ExecutionContext{
 		RunID:      fmt.Sprintf("direct-%d", taskID),
 		TaskID:     taskID,
 		Workdir:    workdir,
@@ -280,12 +285,23 @@ func (w *RuntimeWorker) executeDirectClaim(ctx context.Context, claim *ClaimAgen
 		Version:    claim.Prompt.Version,
 		PromptText: claim.Prompt.PromptText,
 	})
+	cancelRun()
+	cancelledByWatcher := false
+	if cancelWatcherDone != nil {
+		cancelledByWatcher = <-cancelWatcherDone
+	}
 	if result == nil {
 		errorLine := "executor returned no result"
 		if runErr != nil && strings.TrimSpace(runErr.Error()) != "" {
 			errorLine = runErr.Error()
 		}
 		result = &ExecutionResult{Status: "failed", Error: errorLine, ExitCode: -1}
+	}
+	if cancelledByWatcher {
+		result.Status = "cancelled"
+		if result.Error == "" {
+			result.Error = "direct task cancelled"
+		}
 	}
 	if reporter != nil {
 		_ = reporter.Flush(ctx)
@@ -313,6 +329,45 @@ func (w *RuntimeWorker) submitRejectedClaim(ctx context.Context, claim *ClaimAge
 func (w *RuntimeWorker) submitRejectedDirectClaim(ctx context.Context, claim *ClaimAgentTaskResponse, reason, detail string) (*ExecutionResult, error) {
 	result := &ExecutionResult{Status: "failed", Error: detail, ExitCode: -1}
 	return result, w.submitDirectResult(ctx, claim, strings.TrimSpace(w.cfg.RepoDir), result, fmt.Errorf("%s", detail), reason)
+}
+
+func (w *RuntimeWorker) watchDirectTaskCancellation(ctx context.Context, cancel context.CancelFunc, taskID uint) <-chan bool {
+	done := make(chan bool, 1)
+	if w == nil || w.client == nil || taskID == 0 || strings.TrimSpace(w.cfg.RuntimeID) == "" {
+		done <- false
+		close(done)
+		return done
+	}
+	go func() {
+		defer close(done)
+		ticker := time.NewTicker(2 * time.Second)
+		defer ticker.Stop()
+		for {
+			select {
+			case <-ctx.Done():
+				done <- false
+				return
+			case <-ticker.C:
+				task, err := w.client.GetDirectTask(ctx, taskID, w.cfg.RuntimeID)
+				if err != nil || task == nil {
+					continue
+				}
+				if task.Status != domain.AgentTaskStatusCancelled {
+					continue
+				}
+				_, _ = w.client.CreateDirectTaskEvent(context.Background(), taskID, &CreateTaskEventRequest{
+					RuntimeID: w.cfg.RuntimeID,
+					Type:      "executor_cancel_requested",
+					Tool:      w.executor.Name(),
+					Content:   "Runtime received cancellation and is stopping the executor.",
+				})
+				cancel()
+				done <- true
+				return
+			}
+		}
+	}()
+	return done
 }
 
 func (w *RuntimeWorker) submitResult(ctx context.Context, claim *ClaimAgentTaskResponse, workdir string, result *ExecutionResult, runErr error, reasons ...string) error {
@@ -638,6 +693,9 @@ func runtimeFailureReason(result *ExecutionResult, runErr error) string {
 	if runErr == nil && result.Status == "completed" && result.ExitCode == 0 {
 		return ""
 	}
+	if result.Status == "cancelled" {
+		return "user_cancelled"
+	}
 	if result.Status == "timeout" {
 		return "executor_timeout"
 	}
@@ -647,7 +705,7 @@ func runtimeFailureReason(result *ExecutionResult, runErr error) string {
 func normalizeRuntimeResultStatus(status string, exitCode int) string {
 	status = strings.TrimSpace(status)
 	switch status {
-	case "completed", "failed", "timeout":
+	case "completed", "failed", "timeout", "cancelled":
 		return status
 	}
 	if exitCode == 0 {

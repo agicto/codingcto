@@ -783,6 +783,48 @@ func (r *repository) UpdateDirectAgentTask(ctx context.Context, task *domain.Cod
 	return nil
 }
 
+func (r *repository) CountRunningTasksByRuntimeIDs(ctx context.Context, runtimeIDs []string) (map[string]int, error) {
+	runtimeIDs = compactStrings(runtimeIDs)
+	counts := make(map[string]int, len(runtimeIDs))
+	if len(runtimeIDs) == 0 {
+		return counts, nil
+	}
+	for _, runtimeID := range runtimeIDs {
+		counts[runtimeID] = 0
+	}
+
+	type runtimeCount struct {
+		RuntimeID string
+		Count     int
+	}
+	var taskCounts []runtimeCount
+	if err := r.db.WithContext(ctx).
+		Model(&AgentTaskPO{}).
+		Select("runtime_id, COUNT(*) as count").
+		Where("runtime_id IN ? AND status = ?", runtimeIDs, domain.AgentTaskStatusRunning).
+		Group("runtime_id").
+		Scan(&taskCounts).Error; err != nil {
+		return nil, err
+	}
+	for _, count := range taskCounts {
+		counts[count.RuntimeID] += count.Count
+	}
+
+	var directCounts []runtimeCount
+	if err := r.db.WithContext(ctx).
+		Model(&DirectAgentTaskPO{}).
+		Select("runtime_id, COUNT(*) as count").
+		Where("runtime_id IN ? AND status = ?", runtimeIDs, domain.AgentTaskStatusRunning).
+		Group("runtime_id").
+		Scan(&directCounts).Error; err != nil {
+		return nil, err
+	}
+	for _, count := range directCounts {
+		counts[count.RuntimeID] += count.Count
+	}
+	return counts, nil
+}
+
 func (r *repository) CreateDirectTaskEvent(ctx context.Context, event *domain.CodingCTODirectTaskEvent) error {
 	if event == nil || event.TaskID == 0 || strings.TrimSpace(event.Type) == "" {
 		return domain.ErrInvalidInput

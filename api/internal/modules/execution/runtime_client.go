@@ -19,6 +19,7 @@ type RuntimeAPIClient interface {
 	ClaimTask(ctx context.Context, runtimeID string, req *ClaimAgentTaskRequest) (*ClaimAgentTaskResponse, error)
 	CreateTaskEvent(ctx context.Context, taskID uint, req *CreateTaskEventRequest) (*domain.SpecForgeTaskEvent, error)
 	SubmitTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.SpecForgeExecutionBundle, error)
+	GetDirectTask(ctx context.Context, taskID uint, runtimeID string) (*domain.CodingCTODirectAgentTask, error)
 	CreateDirectTaskEvent(ctx context.Context, taskID uint, req *CreateTaskEventRequest) (*domain.CodingCTODirectTaskEvent, error)
 	SubmitDirectTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.CodingCTODirectAgentTask, error)
 	Deregister(ctx context.Context, req *RuntimeDeregisterRequest) (*domain.SpecForgeRuntimeSweepResult, error)
@@ -89,6 +90,18 @@ func (c *RuntimeHTTPClient) SubmitTaskResult(ctx context.Context, taskID uint, r
 	}
 	var out domain.SpecForgeExecutionBundle
 	if err := c.do(ctx, http.MethodPost, fmt.Sprintf("/tasks/%d/result", taskID), req, &out); err != nil {
+		return nil, err
+	}
+	return &out, nil
+}
+
+func (c *RuntimeHTTPClient) GetDirectTask(ctx context.Context, taskID uint, runtimeID string) (*domain.CodingCTODirectAgentTask, error) {
+	if taskID == 0 || strings.TrimSpace(runtimeID) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	var out domain.CodingCTODirectAgentTask
+	path := fmt.Sprintf("/runtime/agent-tasks/%d?runtime_id=%s", taskID, url.QueryEscape(strings.TrimSpace(runtimeID)))
+	if err := c.do(ctx, http.MethodGet, path, nil, &out); err != nil {
 		return nil, err
 	}
 	return &out, nil

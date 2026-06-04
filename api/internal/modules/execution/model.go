@@ -67,6 +67,7 @@ type RuntimePO struct {
 	SandboxJSON       string `gorm:"column:sandbox;type:jsonb;not null;default:'{}'"`
 	SkillRootsJSON    string `gorm:"column:skill_roots;type:jsonb;not null;default:'[]'"`
 	LocalSkillCount   int    `gorm:"not null;default:0"`
+	MaxConcurrency    int    `gorm:"not null;default:1"`
 	CapabilitiesHash  string `gorm:"size:64;index"`
 	LastSeenAt        time.Time
 	CreatedAt         time.Time
@@ -237,6 +238,7 @@ func newRuntimePO(runtime *domain.SpecForgeRuntime) *RuntimePO {
 		SandboxJSON:       mustMarshalRuntimeJSON(runtime.Sandbox, "{}"),
 		SkillRootsJSON:    mustMarshalRuntimeJSON(runtime.SkillRoots, "[]"),
 		LocalSkillCount:   runtime.LocalSkillCount,
+		MaxConcurrency:    normalizeRuntimeMaxConcurrency(runtime.MaxConcurrency),
 		CapabilitiesHash:  runtime.CapabilitiesHash,
 		LastSeenAt:        runtime.LastSeenAt,
 		CreatedAt:         runtime.CreatedAt,
@@ -267,11 +269,19 @@ func (po *RuntimePO) toDomain() *domain.SpecForgeRuntime {
 		Sandbox:          sandbox,
 		SkillRoots:       skillRoots,
 		LocalSkillCount:  po.LocalSkillCount,
+		MaxConcurrency:   normalizeRuntimeMaxConcurrency(po.MaxConcurrency),
 		CapabilitiesHash: po.CapabilitiesHash,
 		LastSeenAt:       po.LastSeenAt,
 		CreatedAt:        po.CreatedAt,
 		UpdatedAt:        po.UpdatedAt,
 	}
+}
+
+func normalizeRuntimeMaxConcurrency(value int) int {
+	if value <= 0 {
+		return 1
+	}
+	return value
 }
 
 func mustMarshalRuntimeJSON(value any, fallback string) string {
