@@ -111,6 +111,7 @@ export interface RuntimeHeartbeatPayload {
   sandbox?: SpecForgeRuntimeSandboxDTO;
   skill_roots?: SpecForgeRuntimeSkillRootDTO[];
   local_skill_count?: number;
+  max_concurrency?: number;
 }
 
 export interface RuntimeSweepPayload {
@@ -601,6 +602,8 @@ export interface SpecForgeRuntimeDTO {
   sandbox?: SpecForgeRuntimeSandboxDTO;
   skill_roots?: SpecForgeRuntimeSkillRootDTO[];
   local_skill_count?: number;
+  max_concurrency?: number;
+  running_count?: number;
   capabilities_hash?: string;
   last_seen_at: string;
   created_at: string;

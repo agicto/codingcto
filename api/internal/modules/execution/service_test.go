@@ -2905,9 +2905,10 @@ func (r *memoryExecutionRepo) ListDirectAgentTasks(ctx context.Context, createdB
 	return out, nil
 }
 
-func (r *memoryExecutionRepo) HasClaimableDirectAgentTask(ctx context.Context, runtimeID, executor string) (bool, error) {
+func (r *memoryExecutionRepo) HasClaimableDirectAgentTask(ctx context.Context, runtimeID, executor, repositoryID string) (bool, error) {
 	runtimeID = strings.TrimSpace(runtimeID)
 	executor = strings.TrimSpace(executor)
+	repositoryID = strings.TrimSpace(repositoryID)
 	if runtimeID == "" {
 		return false, domain.ErrInvalidInput
 	}
@@ -2918,6 +2919,9 @@ func (r *memoryExecutionRepo) HasClaimableDirectAgentTask(ctx context.Context, r
 		if executor != "" && task.Executor != executor {
 			continue
 		}
+		if repositoryID != "" && task.RepositoryID != repositoryID {
+			continue
+		}
 		if task.RuntimeID == "" || task.RuntimeID == runtimeID {
 			return true, nil
 		}
@@ -2925,9 +2929,10 @@ func (r *memoryExecutionRepo) HasClaimableDirectAgentTask(ctx context.Context, r
 	return false, nil
 }
 
-func (r *memoryExecutionRepo) ClaimDirectAgentTask(ctx context.Context, runtimeID, executor, sessionID, workdir string) (*domain.CodingCTODirectAgentTask, error) {
+func (r *memoryExecutionRepo) ClaimDirectAgentTask(ctx context.Context, runtimeID, executor, repositoryID, sessionID, workdir string) (*domain.CodingCTODirectAgentTask, error) {
 	runtimeID = strings.TrimSpace(runtimeID)
 	executor = strings.TrimSpace(executor)
+	repositoryID = strings.TrimSpace(repositoryID)
 	if runtimeID == "" {
 		return nil, domain.ErrInvalidInput
 	}
@@ -2936,6 +2941,9 @@ func (r *memoryExecutionRepo) ClaimDirectAgentTask(ctx context.Context, runtimeI
 			continue
 		}
 		if executor != "" && task.Executor != executor {
+			continue
+		}
+		if repositoryID != "" && task.RepositoryID != repositoryID {
 			continue
 		}
 		if task.RuntimeID != "" && task.RuntimeID != runtimeID {
@@ -2963,6 +2971,25 @@ func (r *memoryExecutionRepo) UpdateDirectAgentTask(ctx context.Context, task *d
 	copied := *task
 	r.directTasks[task.ID] = &copied
 	return nil
+}
+
+func (r *memoryExecutionRepo) CountRunningTasksByRuntimeIDs(ctx context.Context, runtimeIDs []string) (map[string]int, error) {
+	counts := map[string]int{}
+	for _, runtimeID := range runtimeIDs {
+		runtimeID = strings.TrimSpace(runtimeID)
+		if runtimeID != "" {
+			counts[runtimeID] = 0
+		}
+	}
+	for _, task := range r.directTasks {
+		if task == nil || task.Status != domain.AgentTaskStatusRunning {
+			continue
+		}
+		if _, ok := counts[task.RuntimeID]; ok {
+			counts[task.RuntimeID]++
+		}
+	}
+	return counts, nil
 }
 
 func (r *memoryExecutionRepo) CreateDirectTaskEvent(ctx context.Context, event *domain.CodingCTODirectTaskEvent) error {

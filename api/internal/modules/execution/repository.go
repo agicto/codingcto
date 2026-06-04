@@ -694,9 +694,10 @@ func (r *repository) ListDirectAgentTasks(ctx context.Context, createdBy uint, r
 	return tasks, nil
 }
 
-func (r *repository) HasClaimableDirectAgentTask(ctx context.Context, runtimeID, executor string) (bool, error) {
+func (r *repository) HasClaimableDirectAgentTask(ctx context.Context, runtimeID, executor, repositoryID string) (bool, error) {
 	runtimeID = strings.TrimSpace(runtimeID)
 	executor = strings.TrimSpace(executor)
+	repositoryID = strings.TrimSpace(repositoryID)
 	if runtimeID == "" {
 		return false, domain.ErrInvalidInput
 	}
@@ -706,6 +707,9 @@ func (r *repository) HasClaimableDirectAgentTask(ctx context.Context, runtimeID,
 	if executor != "" {
 		query = query.Where("executor = ?", executor)
 	}
+	if repositoryID != "" {
+		query = query.Where("repository_id = ?", repositoryID)
+	}
 	var count int64
 	if err := query.Count(&count).Error; err != nil {
 		return false, err
@@ -713,9 +717,10 @@ func (r *repository) HasClaimableDirectAgentTask(ctx context.Context, runtimeID,
 	return count > 0, nil
 }
 
-func (r *repository) ClaimDirectAgentTask(ctx context.Context, runtimeID, executor, sessionID, workdir string) (*domain.CodingCTODirectAgentTask, error) {
+func (r *repository) ClaimDirectAgentTask(ctx context.Context, runtimeID, executor, repositoryID, sessionID, workdir string) (*domain.CodingCTODirectAgentTask, error) {
 	runtimeID = strings.TrimSpace(runtimeID)
 	executor = strings.TrimSpace(executor)
+	repositoryID = strings.TrimSpace(repositoryID)
 	if runtimeID == "" {
 		return nil, domain.ErrInvalidInput
 	}
@@ -728,6 +733,9 @@ func (r *repository) ClaimDirectAgentTask(ctx context.Context, runtimeID, execut
 			Where("(runtime_id = '' OR runtime_id IS NULL OR runtime_id = ?)", runtimeID)
 		if executor != "" {
 			query = query.Where("executor = ?", executor)
+		}
+		if repositoryID != "" {
+			query = query.Where("repository_id = ?", repositoryID)
 		}
 		if err := query.Order("dispatched_at ASC, id ASC").First(&po).Error; err != nil {
 			if errors.Is(err, gorm.ErrRecordNotFound) {
@@ -773,6 +781,48 @@ func (r *repository) UpdateDirectAgentTask(ctx context.Context, task *domain.Cod
 	}
 	task.UpdatedAt = po.UpdatedAt
 	return nil
+}
+
+func (r *repository) CountRunningTasksByRuntimeIDs(ctx context.Context, runtimeIDs []string) (map[string]int, error) {
+	runtimeIDs = compactStrings(runtimeIDs)
+	counts := make(map[string]int, len(runtimeIDs))
+	if len(runtimeIDs) == 0 {
+		return counts, nil
+	}
+	for _, runtimeID := range runtimeIDs {
+		counts[runtimeID] = 0
+	}
+
+	type runtimeCount struct {
+		RuntimeID string
+		Count     int
+	}
+	var taskCounts []runtimeCount
+	if err := r.db.WithContext(ctx).
+		Model(&AgentTaskPO{}).
+		Select("runtime_id, COUNT(*) as count").
+		Where("runtime_id IN ? AND status = ?", runtimeIDs, domain.AgentTaskStatusRunning).
+		Group("runtime_id").
+		Scan(&taskCounts).Error; err != nil {
+		return nil, err
+	}
+	for _, count := range taskCounts {
+		counts[count.RuntimeID] += count.Count
+	}
+
+	var directCounts []runtimeCount
+	if err := r.db.WithContext(ctx).
+		Model(&DirectAgentTaskPO{}).
+		Select("runtime_id, COUNT(*) as count").
+		Where("runtime_id IN ? AND status = ?", runtimeIDs, domain.AgentTaskStatusRunning).
+		Group("runtime_id").
+		Scan(&directCounts).Error; err != nil {
+		return nil, err
+	}
+	for _, count := range directCounts {
+		counts[count.RuntimeID] += count.Count
+	}
+	return counts, nil
 }
 
 func (r *repository) CreateDirectTaskEvent(ctx context.Context, event *domain.CodingCTODirectTaskEvent) error {

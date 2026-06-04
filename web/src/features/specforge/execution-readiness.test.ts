@@ -65,6 +65,45 @@ describe('executionReadinessForExecutor', () => {
     expect(result.canDispatch).toBe(false);
   });
 
+  it('allows dispatch when a writable kimi runtime is online', () => {
+    const result = executionReadinessForExecutor({
+      runtimes: [
+        runtime({
+          executor: 'kimi_cli',
+          availableClis: [{ name: 'Kimi CLI', command: 'kimi', available: true }],
+          sandbox: {
+            provider: 'kimi_cli',
+            mode: 'workspace-write',
+            networkAccess: true,
+            writable: true,
+          },
+        }),
+      ],
+      executor: 'kimi_cli',
+      now,
+      allowFallback: false,
+    });
+
+    expect(result.canDispatch).toBe(true);
+    expect(result.reason).toContain('Kimi CLI');
+  });
+
+  it('rejects kimi runtimes without kimi cli capability', () => {
+    const result = executionReadinessForExecutor({
+      runtimes: [
+        runtime({
+          executor: 'kimi_cli',
+          availableClis: [{ name: 'Codex CLI', command: 'codex', available: true }],
+        }),
+      ],
+      executor: 'kimi_cli',
+      now,
+      allowFallback: false,
+    });
+
+    expect(result.canDispatch).toBe(false);
+  });
+
   it('keeps standalone demo execution usable', () => {
     const result = executionReadinessForExecutor({
       runtimes: [],

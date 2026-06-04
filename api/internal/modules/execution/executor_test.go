@@ -78,6 +78,30 @@ func TestCodexCLIExecutorBypassesApprovalsForDangerFullAccess(t *testing.T) {
 	}, runner.spec.Args)
 }
 
+func TestKimiCLIExecutorBuildsNonInteractivePromptCommand(t *testing.T) {
+	runner := &captureRunner{result: CommandResult{Stdout: "done", ExitCode: 0}}
+	executor := newExecutorAdapter(newKimiCLIExecutor(KimiCLIExecutorConfig{
+		ExecutablePath: "kimi-test",
+		Timeout:        time.Minute,
+		ExtraArgs:      []string{"--model", "moonshot"},
+	}, runner))
+
+	result, err := executor.Run(context.Background(), ExecutionContext{
+		Workdir: "/tmp/repo",
+		Env:     map[string]string{"KIMI_API_KEY": "test-key"},
+	}, CompiledExecutionPrompt{
+		PromptText: "Implement PR-001 with Kimi",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "completed", result.Status)
+	require.Equal(t, "kimi-test", runner.spec.Executable)
+	require.Equal(t, "/tmp/repo", runner.spec.Dir)
+	require.Equal(t, []string{"-p", "Implement PR-001 with Kimi", "--output-format", "stream-json", "--model", "moonshot"}, runner.spec.Args)
+	require.Empty(t, runner.spec.Stdin)
+	require.Equal(t, map[string]string{"KIMI_API_KEY": "test-key"}, runner.spec.Env)
+}
+
 func TestCodexCLIExecutorChecksOutBranchBeforeRunningPrompt(t *testing.T) {
 	runner := &captureRunner{results: []CommandResult{
 		{ExitCode: 0},

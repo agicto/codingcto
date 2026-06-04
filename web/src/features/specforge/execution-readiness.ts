@@ -27,7 +27,7 @@ export function executionReadinessForExecutor({
     return {
       canDispatch: true,
       healthyRuntimeCount: healthyRuntimes.length,
-      reason: '已有可写的 Codex CLI 运行器在线。',
+      reason: `已有可写的 ${executorLabel(targetExecutor)} 运行器在线。`,
     };
   }
 
@@ -42,7 +42,7 @@ export function executionReadinessForExecutor({
   return {
     canDispatch: false,
     healthyRuntimeCount: 0,
-    reason: '请先启动带 Codex CLI 的 CodingCTO 运行器，再派发这个计划。',
+    reason: `请先启动带 ${executorLabel(targetExecutor)} 的 CodingCTO 运行器，再派发这个计划。`,
   };
 }
 
@@ -55,9 +55,27 @@ function runtimeCanDispatch(runtime: ExecutorRuntime, executor: string, now: num
     return false;
   }
 
-  if (executor === 'codex_cli') {
-    return runtime.availableClis.some(cli => cli.command === 'codex' && cli.available);
+  const requiredCommand = executorCommand(executor);
+  if (requiredCommand) {
+    return runtime.availableClis.some(cli => cli.command === requiredCommand && cli.available);
   }
 
   return true;
+}
+
+function executorCommand(executor: string) {
+  const commands: Record<string, string> = {
+    codex_cli: 'codex',
+    kimi_cli: 'kimi',
+  };
+  return commands[executor] ?? '';
+}
+
+function executorLabel(executor: string) {
+  const labels: Record<string, string> = {
+    codex_cli: 'Codex CLI',
+    kimi_cli: 'Kimi CLI',
+    claude_code_cli: 'Claude Code',
+  };
+  return labels[executor] ?? executor;
 }

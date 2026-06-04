@@ -30,12 +30,14 @@ type ListDirectAgentTasksRequest struct {
 type RuntimeHeartbeatRequest struct {
 	RuntimeID       string                             `json:"runtime_id" binding:"required,max=100"`
 	Executor        string                             `json:"executor" binding:"omitempty,max=100"`
+	RepositoryID    string                             `json:"repository_id" binding:"omitempty,max=255"`
 	Hostname        string                             `json:"hostname" binding:"omitempty,max=255"`
 	Version         string                             `json:"version" binding:"omitempty,max=100"`
 	AvailableCLIs   []domain.SpecForgeRuntimeCLI       `json:"available_clis" binding:"omitempty,max=20,dive"`
 	Sandbox         *domain.SpecForgeRuntimeSandbox    `json:"sandbox" binding:"omitempty"`
 	SkillRoots      []domain.SpecForgeRuntimeSkillRoot `json:"skill_roots" binding:"omitempty,max=20,dive"`
 	LocalSkillCount int                                `json:"local_skill_count" binding:"omitempty,min=0,max=10000"`
+	MaxConcurrency  int                                `json:"max_concurrency" binding:"omitempty,min=1,max=100"`
 }
 
 type RuntimeSweepRequest struct {
@@ -76,9 +78,10 @@ type FixAgentTaskRequest struct {
 }
 
 type ClaimAgentTaskRequest struct {
-	Executor  string `json:"executor" binding:"omitempty,max=100"`
-	SessionID string `json:"session_id" binding:"omitempty,max=255"`
-	Workdir   string `json:"workdir" binding:"omitempty,max=500"`
+	Executor     string `json:"executor" binding:"omitempty,max=100"`
+	RepositoryID string `json:"repository_id" binding:"omitempty,max=255"`
+	SessionID    string `json:"session_id" binding:"omitempty,max=255"`
+	Workdir      string `json:"workdir" binding:"omitempty,max=500"`
 }
 
 type RuntimeHeartbeatResponse struct {
@@ -174,7 +177,7 @@ type SubmitTaskResultRequest struct {
 	SessionID     string `json:"session_id" binding:"omitempty,max=255"`
 	Workdir       string `json:"workdir" binding:"omitempty,max=500"`
 	ProcessRef    string `json:"process_ref" binding:"omitempty,max=255"`
-	Status        string `json:"status" binding:"required,oneof=completed failed timeout"`
+	Status        string `json:"status" binding:"required,oneof=completed failed timeout cancelled"`
 	Output        string `json:"output" binding:"omitempty,max=200000"`
 	Error         string `json:"error" binding:"omitempty,max=200000"`
 	ExitCode      int    `json:"exit_code" binding:"omitempty"`
@@ -182,11 +185,12 @@ type SubmitTaskResultRequest struct {
 }
 
 type CreateTaskEventRequest struct {
-	Type    string `json:"type" binding:"required,max=50"`
-	Tool    string `json:"tool" binding:"omitempty,max=100"`
-	Content string `json:"content" binding:"omitempty,max=200000"`
-	Input   string `json:"input" binding:"omitempty,max=200000"`
-	Output  string `json:"output" binding:"omitempty,max=200000"`
+	RuntimeID string `json:"runtime_id" binding:"omitempty,max=100"`
+	Type      string `json:"type" binding:"required,max=50"`
+	Tool      string `json:"tool" binding:"omitempty,max=100"`
+	Content   string `json:"content" binding:"omitempty,max=200000"`
+	Input     string `json:"input" binding:"omitempty,max=200000"`
+	Output    string `json:"output" binding:"omitempty,max=200000"`
 }
 
 type TaskEventsResponse struct {

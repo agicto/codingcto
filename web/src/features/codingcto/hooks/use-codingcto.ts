@@ -68,3 +68,16 @@ export function useCreateCodingCTODirectAgentTask() {
     },
   });
 }
+
+export function useCancelCodingCTODirectAgentTask() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (taskId: number) => codingCTOService.cancelDirectAgentTask(taskId),
+    onSuccess: task => {
+      queryClient.invalidateQueries({ queryKey: codingCTOKeys.directTasks });
+      queryClient.invalidateQueries({ queryKey: codingCTOKeys.directTaskEvents(task.id) });
+      queryClient.setQueryData(codingCTOKeys.directTask(task.id), task);
+    },
+  });
+}

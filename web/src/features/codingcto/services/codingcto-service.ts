@@ -86,6 +86,9 @@ export const codingCTOService = {
   getDirectAgentTask: (taskId: number) =>
     request.get<CodingCTODirectAgentTaskDTO>(`/agent-tasks/${taskId}`),
 
+  cancelDirectAgentTask: (taskId: number) =>
+    request.post<CodingCTODirectAgentTaskDTO, undefined>(`/agent-tasks/${taskId}/cancel`),
+
   listDirectTaskEvents: (taskId: number) =>
     request.get<{ events: CodingCTODirectTaskEventDTO[] }>(`/agent-tasks/${taskId}/events`),
 };

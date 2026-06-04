@@ -48,6 +48,8 @@ type Service interface {
 	CreateDirectAgentTask(ctx context.Context, userID uint, req *CreateDirectAgentTaskRequest) (*domain.CodingCTODirectAgentTask, error)
 	ListDirectAgentTasks(ctx context.Context, userID uint, req *ListDirectAgentTasksRequest) (*DirectAgentTaskListResponse, error)
 	GetDirectAgentTask(ctx context.Context, userID, taskID uint) (*domain.CodingCTODirectAgentTask, error)
+	GetDirectAgentTaskForRuntime(ctx context.Context, taskID uint, runtimeID string) (*domain.CodingCTODirectAgentTask, error)
+	CancelDirectAgentTask(ctx context.Context, userID, taskID uint) (*domain.CodingCTODirectAgentTask, error)
 	CreateDirectTaskEvent(ctx context.Context, taskID uint, req *CreateTaskEventRequest) (*domain.CodingCTODirectTaskEvent, error)
 	ListDirectTaskEvents(ctx context.Context, userID, taskID uint, afterSeq int) ([]*domain.CodingCTODirectTaskEvent, error)
 	SubmitDirectTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.CodingCTODirectAgentTask, error)
@@ -582,12 +584,25 @@ func hasDispatchReadyRuntime(executor string, runtimes []*domain.SpecForgeRuntim
 		if !runtimeSandboxWritable(runtime.Sandbox) {
 			continue
 		}
-		if executor == ExecutorNameCodexCLI && !runtimeHasAvailableCLI(runtime, "codex") {
+		if requiredCommand := executorCLICommand(executor); requiredCommand != "" && !runtimeHasAvailableCLI(runtime, requiredCommand) {
 			continue
 		}
 		return true
 	}
 	return false
+}
+
+func executorCLICommand(executor string) string {
+	switch strings.TrimSpace(executor) {
+	case ExecutorNameCodexCLI:
+		return "codex"
+	case ExecutorNameKimiCLI:
+		return "kimi"
+	case ExecutorNameClaudeCodeCLI:
+		return "claude"
+	default:
+		return ""
+	}
 }
 
 func runtimeHasAvailableCLI(runtime *domain.SpecForgeRuntime, command string) bool {
@@ -655,6 +670,7 @@ func (s *service) HeartbeatRuntime(ctx context.Context, req *RuntimeHeartbeatReq
 		Sandbox:         normalizeRuntimeSandbox(req.Sandbox),
 		SkillRoots:      normalizeRuntimeSkillRoots(req.SkillRoots),
 		LocalSkillCount: req.LocalSkillCount,
+		MaxConcurrency:  normalizeRuntimeMaxConcurrency(req.MaxConcurrency),
 		LastSeenAt:      time.Now(),
 	}
 	runtime.CapabilitiesHash = runtimeCapabilitiesHash(runtime.AvailableCLIs, runtime.Sandbox, runtime.SkillRoots, runtime.LocalSkillCount)
@@ -666,10 +682,13 @@ func (s *service) HeartbeatRuntime(ctx context.Context, req *RuntimeHeartbeatReq
 		return nil, fmt.Errorf("check claimable task: %w", err)
 	}
 	if !pending {
-		pending, err = s.repo.HasClaimableDirectAgentTask(ctx, runtime.RuntimeID, runtime.Executor)
+		pending, err = s.repo.HasClaimableDirectAgentTask(ctx, runtime.RuntimeID, runtime.Executor, strings.TrimSpace(req.RepositoryID))
 		if err != nil {
 			return nil, fmt.Errorf("check claimable direct task: %w", err)
 		}
+	}
+	if err := s.attachRuntimeRunningCounts(ctx, []*domain.SpecForgeRuntime{runtime}); err != nil {
+		return nil, err
 	}
 	return &RuntimeHeartbeatResponse{Runtime: runtime, ClaimPending: pending}, nil
 }
@@ -714,7 +733,37 @@ func (s *service) ListRuntimes(ctx context.Context, req *ListRuntimesRequest) (*
 	if err != nil {
 		return nil, fmt.Errorf("list runtimes: %w", err)
 	}
+	if err := s.attachRuntimeRunningCounts(ctx, runtimes); err != nil {
+		return nil, err
+	}
 	return &RuntimeListResponse{Runtimes: runtimes}, nil
+}
+
+func (s *service) attachRuntimeRunningCounts(ctx context.Context, runtimes []*domain.SpecForgeRuntime) error {
+	runtimeIDs := make([]string, 0, len(runtimes))
+	for _, runtime := range runtimes {
+		if runtime == nil {
+			continue
+		}
+		runtime.MaxConcurrency = normalizeRuntimeMaxConcurrency(runtime.MaxConcurrency)
+		if strings.TrimSpace(runtime.RuntimeID) != "" {
+			runtimeIDs = append(runtimeIDs, runtime.RuntimeID)
+		}
+	}
+	if len(runtimeIDs) == 0 {
+		return nil
+	}
+	counts, err := s.repo.CountRunningTasksByRuntimeIDs(ctx, runtimeIDs)
+	if err != nil {
+		return fmt.Errorf("count running runtime tasks: %w", err)
+	}
+	for _, runtime := range runtimes {
+		if runtime == nil {
+			continue
+		}
+		runtime.RunningCount = counts[runtime.RuntimeID]
+	}
+	return nil
 }
 
 func (s *service) ListRuntimePendingTasks(ctx context.Context, runtimeID, executor string) (*RuntimePendingTasksResponse, error) {
@@ -793,7 +842,7 @@ func (s *service) ClaimTask(ctx context.Context, runtimeID string, req *ClaimAge
 	if req == nil {
 		req = &ClaimAgentTaskRequest{}
 	}
-	directTask, err := s.repo.ClaimDirectAgentTask(ctx, runtimeID, req.Executor, req.SessionID, req.Workdir)
+	directTask, err := s.repo.ClaimDirectAgentTask(ctx, runtimeID, req.Executor, req.RepositoryID, req.SessionID, req.Workdir)
 	if err != nil && !errors.Is(err, domain.ErrNotFound) {
 		return nil, fmt.Errorf("claim direct agent task: %w", err)
 	}
@@ -855,9 +904,10 @@ func (s *service) CreateDirectAgentTask(ctx context.Context, userID uint, req *C
 		return nil, fmt.Errorf("create direct agent task: %w", err)
 	}
 	_, _ = s.CreateDirectTaskEvent(ctx, task.ID, &CreateTaskEventRequest{
-		Type:    "direct_task_dispatched",
-		Tool:    executor,
-		Content: "CodingCTO dispatched a direct agent task.",
+		RuntimeID: task.RuntimeID,
+		Type:      "direct_task_dispatched",
+		Tool:      executor,
+		Content:   "CodingCTO dispatched a direct agent task.",
 	})
 	return task, nil
 }
@@ -899,9 +949,59 @@ func (s *service) GetDirectAgentTask(ctx context.Context, userID, taskID uint) (
 	return task, nil
 }
 
+func (s *service) GetDirectAgentTaskForRuntime(ctx context.Context, taskID uint, runtimeID string) (*domain.CodingCTODirectAgentTask, error) {
+	if taskID == 0 || strings.TrimSpace(runtimeID) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	task, err := s.repo.FindDirectAgentTaskByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if strings.TrimSpace(task.RuntimeID) != strings.TrimSpace(runtimeID) {
+		return nil, domain.ErrNotFound
+	}
+	return task, nil
+}
+
+func (s *service) CancelDirectAgentTask(ctx context.Context, userID, taskID uint) (*domain.CodingCTODirectAgentTask, error) {
+	if userID == 0 || taskID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	task, err := s.GetDirectAgentTask(ctx, userID, taskID)
+	if err != nil {
+		return nil, err
+	}
+	switch task.Status {
+	case domain.AgentTaskStatusCompleted, domain.AgentTaskStatusFailed, domain.AgentTaskStatusCancelled:
+		return task, nil
+	}
+	now := time.Now()
+	task.Status = domain.AgentTaskStatusCancelled
+	task.FailureReason = "user_cancelled"
+	task.FinishedAt = &now
+	task.LastProgressAt = &now
+	if err := s.repo.UpdateDirectAgentTask(ctx, task); err != nil {
+		return nil, fmt.Errorf("cancel direct agent task: %w", err)
+	}
+	_, _ = s.CreateDirectTaskEvent(ctx, task.ID, &CreateTaskEventRequest{
+		RuntimeID: task.RuntimeID,
+		Type:      "direct_task_cancelled",
+		Tool:      task.Executor,
+		Content:   "User requested direct task cancellation.",
+	})
+	return task, nil
+}
+
 func (s *service) CreateDirectTaskEvent(ctx context.Context, taskID uint, req *CreateTaskEventRequest) (*domain.CodingCTODirectTaskEvent, error) {
 	if taskID == 0 || req == nil || strings.TrimSpace(req.Type) == "" {
 		return nil, domain.ErrInvalidInput
+	}
+	task, err := s.repo.FindDirectAgentTaskByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if err := ensureRuntimeCanUpdateDirectTask(task, strings.TrimSpace(req.RuntimeID), false); err != nil {
+		return nil, err
 	}
 	event := &domain.CodingCTODirectTaskEvent{
 		TaskID:  taskID,
@@ -936,6 +1036,13 @@ func (s *service) SubmitDirectTaskResult(ctx context.Context, taskID uint, req *
 	if err != nil {
 		return nil, err
 	}
+	resultStatus := strings.TrimSpace(req.Status)
+	if task.Status == domain.AgentTaskStatusCancelled && resultStatus != "cancelled" {
+		return nil, domain.ErrConflict
+	}
+	if err := ensureRuntimeCanUpdateDirectTask(task, strings.TrimSpace(req.RuntimeID), resultStatus != "cancelled"); err != nil {
+		return nil, err
+	}
 	now := time.Now()
 	task.RuntimeID = firstNonEmpty(req.RuntimeID, task.RuntimeID)
 	task.SessionID = firstNonEmpty(req.SessionID, task.SessionID)
@@ -947,13 +1054,18 @@ func (s *service) SubmitDirectTaskResult(ctx context.Context, taskID uint, req *
 	task.FailureReason = strings.TrimSpace(req.FailureReason)
 	task.FinishedAt = &now
 	task.LastProgressAt = &now
-	switch strings.TrimSpace(req.Status) {
+	switch resultStatus {
 	case "completed":
 		task.Status = domain.AgentTaskStatusCompleted
 	case "timeout":
 		task.Status = domain.AgentTaskStatusFailed
 		if task.FailureReason == "" {
 			task.FailureReason = "execution_timeout"
+		}
+	case "cancelled":
+		task.Status = domain.AgentTaskStatusCancelled
+		if task.FailureReason == "" {
+			task.FailureReason = "user_cancelled"
 		}
 	default:
 		task.Status = domain.AgentTaskStatusFailed
@@ -965,6 +1077,27 @@ func (s *service) SubmitDirectTaskResult(ctx context.Context, taskID uint, req *
 		return nil, fmt.Errorf("submit direct task result: %w", err)
 	}
 	return task, nil
+}
+
+func ensureRuntimeCanUpdateDirectTask(task *domain.CodingCTODirectAgentTask, runtimeID string, requireRunning bool) error {
+	if task == nil {
+		return domain.ErrInvalidInput
+	}
+	if requireRunning && task.Status != domain.AgentTaskStatusRunning {
+		return domain.ErrConflict
+	}
+	runtimeID = strings.TrimSpace(runtimeID)
+	taskRuntimeID := strings.TrimSpace(task.RuntimeID)
+	if taskRuntimeID == "" && runtimeID == "" {
+		if requireRunning {
+			return domain.ErrConflict
+		}
+		return nil
+	}
+	if runtimeID == "" || taskRuntimeID == "" || taskRuntimeID != runtimeID {
+		return domain.ErrConflict
+	}
+	return nil
 }
 
 func (s *service) buildDirectClaimResponse(_ context.Context, task *domain.CodingCTODirectAgentTask) *ClaimAgentTaskResponse {
@@ -1422,6 +1555,8 @@ func (s *service) SubmitTaskResult(ctx context.Context, taskID uint, req *Submit
 			return nil, domain.ErrConflict
 		}
 		task.RuntimeID = runtimeID
+	} else if strings.TrimSpace(task.RuntimeID) != "" {
+		return nil, domain.ErrConflict
 	}
 	if sessionID := strings.TrimSpace(req.SessionID); sessionID != "" {
 		task.SessionID = sessionID
@@ -1452,6 +1587,9 @@ func (s *service) CreateTaskEvent(ctx context.Context, taskID uint, req *CreateT
 		return nil, err
 	}
 	if task.Status != domain.AgentTaskStatusDispatched && task.Status != domain.AgentTaskStatusRunning {
+		return nil, domain.ErrConflict
+	}
+	if runtimeID := strings.TrimSpace(req.RuntimeID); runtimeID != "" && strings.TrimSpace(task.RuntimeID) != "" && task.RuntimeID != runtimeID {
 		return nil, domain.ErrConflict
 	}
 	event := &domain.SpecForgeTaskEvent{
@@ -1673,7 +1811,15 @@ func (s *service) finalizeTaskResult(ctx context.Context, task *domain.SpecForge
 	task.ExitCode = &result.ExitCode
 	task.FinishedAt = &finishedAt
 	task.LastProgressAt = &finishedAt
-	if runErr != nil || result.Status != "completed" || result.ExitCode != 0 {
+	if strings.TrimSpace(result.Status) == "cancelled" {
+		task.Status = domain.AgentTaskStatusCancelled
+		task.FailureReason = executionFailureReason(result, runErr)
+		task.ProcessStatus = domain.AgentProcessStatusCancelled
+		task.CurrentPhase = "cancelled"
+		if strings.TrimSpace(failureReasonOverride) != "" {
+			task.FailureReason = strings.TrimSpace(failureReasonOverride)
+		}
+	} else if runErr != nil || result.Status != "completed" || result.ExitCode != 0 {
 		task.Status = domain.AgentTaskStatusFailed
 		task.FailureReason = executionFailureReason(result, runErr)
 		task.ProcessStatus = processStatusForResult(result, runErr)
@@ -3214,6 +3360,9 @@ func markTaskFailed(task *domain.SpecForgeAgentTask, reason, detail string, exit
 }
 
 func executionFailureReason(result *ExecutionResult, runErr error) string {
+	if result != nil && strings.TrimSpace(result.Status) == "cancelled" {
+		return "user_cancelled"
+	}
 	if result != nil && strings.TrimSpace(result.Status) == "timeout" {
 		return "executor_timeout"
 	}
@@ -3224,6 +3373,9 @@ func executionFailureReason(result *ExecutionResult, runErr error) string {
 }
 
 func processStatusForResult(result *ExecutionResult, runErr error) string {
+	if result != nil && strings.TrimSpace(result.Status) == "cancelled" {
+		return domain.AgentProcessStatusCancelled
+	}
 	if result != nil && strings.TrimSpace(result.Status) == "timeout" {
 		return domain.AgentProcessStatusTimedOut
 	}

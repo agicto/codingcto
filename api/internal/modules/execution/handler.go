@@ -327,6 +327,42 @@ func (h *Handler) GetDirectAgentTask(c *gin.Context) {
 	response.Success(c, task)
 }
 
+func (h *Handler) GetDirectAgentTaskForRuntime(c *gin.Context) {
+	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || taskID == 0 {
+		response.HandleError(c, "Invalid task id", err)
+		return
+	}
+	runtimeID := strings.TrimSpace(c.GetHeader("X-CodingCTO-Runtime-ID"))
+	if runtimeID == "" {
+		runtimeID = strings.TrimSpace(c.Query("runtime_id"))
+	}
+	task, err := h.service.GetDirectAgentTaskForRuntime(c.Request.Context(), uint(taskID), runtimeID)
+	if err != nil {
+		response.HandleError(c, "Failed to get runtime direct agent task", err)
+		return
+	}
+	response.Success(c, task)
+}
+
+func (h *Handler) CancelDirectAgentTask(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	taskID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || taskID == 0 {
+		response.HandleError(c, "Invalid task id", err)
+		return
+	}
+	task, err := h.service.CancelDirectAgentTask(c.Request.Context(), userID, uint(taskID))
+	if err != nil {
+		response.HandleError(c, "Failed to cancel direct agent task", err)
+		return
+	}
+	response.Success(c, task)
+}
+
 func (h *Handler) ListDirectTaskEvents(c *gin.Context) {
 	userID, ok := handler.GetUserID(c)
 	if !ok {
