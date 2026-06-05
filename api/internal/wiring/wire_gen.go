@@ -17,6 +17,7 @@ import (
 	"github.com/zgiai/luas/api/internal/modules/apikey"
 	"github.com/zgiai/luas/api/internal/modules/audit"
 	"github.com/zgiai/luas/api/internal/modules/execution"
+	"github.com/zgiai/luas/api/internal/modules/expert"
 	"github.com/zgiai/luas/api/internal/modules/githubintegration"
 	"github.com/zgiai/luas/api/internal/modules/planning"
 	"github.com/zgiai/luas/api/internal/modules/project"
@@ -50,10 +51,13 @@ func InitApplication() (*app.Application, error) {
 	apikeyRepository := apikey.NewRepository(db)
 	apikeyService := apikey.NewService(apikeyRepository)
 	apikeyHandler := apikey.NewHandler(apikeyService)
+	expertRepository := expert.NewRepository(db)
+	expertService := expert.NewService(expertRepository)
+	expertHandler := expert.NewHandler(expertService)
 	planningRepository := planning.NewRepository(db)
 	repocontextRepository := repocontext.NewRepository(db)
 	projectRepository := project.NewRepository(db)
-	planningService := planning.NewService(planningRepository, repocontextRepository, planningRepository, projectRepository)
+	planningService := planning.NewService(planningRepository, repocontextRepository, planningRepository, projectRepository, expertService)
 	planningHandler := planning.NewHandler(planningService)
 	githubintegrationRepository := githubintegration.NewRepository(db)
 	repositoryClientFactory := githubintegration.NewDefaultRepositoryClientFactory()
@@ -86,7 +90,7 @@ func InitApplication() (*app.Application, error) {
 	userMailer := user.NewUserMailer(service)
 	userService := user.NewService(userRepository, userRepository, jwtService, eventBus, userMailer)
 	userHandler := user.NewHandler(userService, userService, userService, jwtService, userMailer)
-	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, projectHandler, verificationHandler, workspaceHandler, userHandler)
+	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, expertHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, projectHandler, verificationHandler, workspaceHandler, userHandler)
 	if err != nil {
 		return nil, err
 	}
@@ -118,10 +122,13 @@ func InitApplicationWithConfig(cfg *config.Config) (*app.Application, error) {
 	apikeyRepository := apikey.NewRepository(db)
 	apikeyService := apikey.NewService(apikeyRepository)
 	apikeyHandler := apikey.NewHandler(apikeyService)
+	expertRepository := expert.NewRepository(db)
+	expertService := expert.NewService(expertRepository)
+	expertHandler := expert.NewHandler(expertService)
 	planningRepository := planning.NewRepository(db)
 	repocontextRepository := repocontext.NewRepository(db)
 	projectRepository := project.NewRepository(db)
-	planningService := planning.NewService(planningRepository, repocontextRepository, planningRepository, projectRepository)
+	planningService := planning.NewService(planningRepository, repocontextRepository, planningRepository, projectRepository, expertService)
 	planningHandler := planning.NewHandler(planningService)
 	githubintegrationRepository := githubintegration.NewRepository(db)
 	repositoryClientFactory := githubintegration.NewDefaultRepositoryClientFactory()
@@ -154,7 +161,7 @@ func InitApplicationWithConfig(cfg *config.Config) (*app.Application, error) {
 	userMailer := user.NewUserMailer(service)
 	userService := user.NewService(userRepository, userRepository, jwtService, eventBus, userMailer)
 	userHandler := user.NewHandler(userService, userService, userService, jwtService, userMailer)
-	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, projectHandler, verificationHandler, workspaceHandler, userHandler)
+	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, expertHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, projectHandler, verificationHandler, workspaceHandler, userHandler)
 	if err != nil {
 		return nil, err
 	}

@@ -29,8 +29,9 @@ runtime -> POST /v1/agent-tasks/:id/events
 runtime -> POST /v1/agent-tasks/:id/result
 ```
 
-The stable in-process envelope is
-`CodingAgentConnectorProtocolVersion = codingcto.agent.connector.v1`.
+The stable in-process envelope uses
+`CodingAgentConnectorProtocolVersion = codingcto.agent.protocol.v1`; the shared
+wire-shaped types live in `internal/contracts/agent`.
 
 ## Connector shape
 

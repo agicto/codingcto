@@ -46,6 +46,13 @@ func TestPRNodeTaskEnvelopeBuildsStableProtocolPayload(t *testing.T) {
 	require.Equal(t, uint(42), envelope.Prompt.PRNodeID)
 	require.Equal(t, "Implement PR-001", envelope.Prompt.PromptText)
 	require.Equal(t, "PR-001", envelope.PRNode.NodeKey)
+
+	protocolEnvelope := envelope.ToProtocol()
+	require.Equal(t, envelope.ProtocolVersion, protocolEnvelope.ProtocolVersion)
+	require.Equal(t, envelope.Kind, protocolEnvelope.Kind)
+	require.Equal(t, uint(42), protocolEnvelope.Prompt.PRNodeID)
+	require.Equal(t, "Implement PR-001", protocolEnvelope.Prompt.Text)
+	require.Equal(t, "PR-001", protocolEnvelope.PRNode.NodeKey)
 }
 
 func TestDirectTaskEnvelopeUsesDirectRunIDAndRuntimeOverrides(t *testing.T) {

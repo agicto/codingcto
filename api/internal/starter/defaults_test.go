@@ -10,25 +10,26 @@ import (
 func TestDefaultManifestsRegisterDefaultAssets(t *testing.T) {
 	registry := NewRegistry()
 
-	manifests := DefaultManifests(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	require.Len(t, manifests, 10)
+	manifests := DefaultManifests(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	require.Len(t, manifests, 11)
 	assert.Equal(t, "audit", manifests[0].Name())
 	assert.Equal(t, "apikey", manifests[1].Name())
-	assert.Equal(t, "workspace", manifests[2].Name())
-	assert.Equal(t, "planning", manifests[3].Name())
-	assert.Equal(t, "repocontext", manifests[4].Name())
-	assert.Equal(t, "execution", manifests[5].Name())
-	assert.Equal(t, "githubintegration", manifests[6].Name())
-	assert.Equal(t, "project", manifests[7].Name())
-	assert.Equal(t, "verification", manifests[8].Name())
-	assert.Equal(t, "user", manifests[9].Name())
+	assert.Equal(t, "expert", manifests[2].Name())
+	assert.Equal(t, "workspace", manifests[3].Name())
+	assert.Equal(t, "planning", manifests[4].Name())
+	assert.Equal(t, "repocontext", manifests[5].Name())
+	assert.Equal(t, "execution", manifests[6].Name())
+	assert.Equal(t, "githubintegration", manifests[7].Name())
+	assert.Equal(t, "project", manifests[8].Name())
+	assert.Equal(t, "verification", manifests[9].Name())
+	assert.Equal(t, "user", manifests[10].Name())
 
 	for _, manifest := range manifests {
 		require.NoError(t, registry.ApplyManifest(manifest))
 	}
 
 	migrations := registry.Migrations()
-	assert.Len(t, migrations, 41)
+	assert.Len(t, migrations, 42)
 	assert.Contains(t, migrations, "2026_04_26_000000_create_audit_logs_table")
 	assert.Contains(t, migrations, "2026_04_27_000002_add_business_fields_to_audit_logs")
 	assert.Contains(t, migrations, "2025_06_18_000000_create_users_table")
@@ -69,6 +70,7 @@ func TestDefaultManifestsRegisterDefaultAssets(t *testing.T) {
 	assert.Contains(t, migrations, "2026_05_31_000028_add_policy_metadata_to_specforge_fix_attempts")
 	assert.Contains(t, migrations, "2026_06_02_000029_create_codingcto_direct_agent_tasks")
 	assert.Contains(t, migrations, "2026_06_04_000030_add_runtime_concurrency")
+	assert.Contains(t, migrations, "2026_06_04_000030_create_codingcto_expert_tables")
 
 	seeders := registry.Seeders()
 	require.Len(t, seeders, 1)

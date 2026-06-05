@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	agentcontract "github.com/zgiai/luas/api/internal/contracts/agent"
 	"github.com/zgiai/luas/api/internal/domain"
 )
 
@@ -184,7 +185,7 @@ func (s *service) GenerateExpertImplementationPlan(ctx context.Context, userID u
 	}
 	normalizeExpertPlan(&plan)
 
-	return &ExpertImplementationPlanResponse{
+	result := &ExpertImplementationPlanResponse{
 		Plan:     &plan,
 		Markdown: renderExpertPlanMarkdown(&plan),
 		Provider: "deepseek",
@@ -195,7 +196,11 @@ func (s *service) GenerateExpertImplementationPlan(ctx context.Context, userID u
 			FinishReason: finishReason,
 		},
 		Usage: completion.Usage,
-	}, nil
+	}
+	if err := s.recordExpertImplementationPlanRuns(ctx, userID, req, result); err != nil {
+		return nil, err
+	}
+	return result, nil
 }
 
 func (s *service) GenerateExpertImplementationPlanStream(ctx context.Context, userID uint, req *GenerateExpertImplementationPlanRequest, emit func(ExpertPlanStreamEvent) error) error {
@@ -374,6 +379,9 @@ func (s *service) GenerateExpertImplementationPlanStream(ctx context.Context, us
 	if err != nil {
 		return err
 	}
+	if err := s.recordExpertImplementationPlanRuns(ctx, userID, req, result); err != nil {
+		return err
+	}
 	return emit(ExpertPlanStreamEvent{
 		Type:       "result",
 		Phase:      "done",
@@ -382,6 +390,48 @@ func (s *service) GenerateExpertImplementationPlanStream(ctx context.Context, us
 		ToolCallID: accumulator.id,
 		Response:   result,
 	})
+}
+
+func (s *service) recordExpertImplementationPlanRuns(ctx context.Context, userID uint, req *GenerateExpertImplementationPlanRequest, result *ExpertImplementationPlanResponse) error {
+	if s.expertRunner == nil || req == nil || result == nil || len(req.ExpertIDs) == 0 {
+		return nil
+	}
+	repositoryID := ""
+	if req.Repository != nil {
+		repositoryID = strings.TrimSpace(req.Repository.RepositoryID)
+		if repositoryID == "" {
+			repositoryID = strings.TrimSpace(req.Repository.FullName)
+		}
+	}
+	mode := strings.TrimSpace(req.Mode)
+	if mode == "" {
+		mode = "standard"
+	}
+	expertBundle, err := s.expertRunner.RunPlanningExperts(ctx, userID, &domain.SpecForgeExpertPlanningRequest{
+		ExpertIDs:    req.ExpertIDs,
+		RepositoryID: repositoryID,
+		Idea:         req.Idea,
+		Mode:         "expert_implementation_plan:" + mode,
+		Context: map[string]any{
+			"provider":       result.Provider,
+			"model":          result.Model,
+			"tool_name":      result.ToolCall.Name,
+			"tool_call_id":   result.ToolCall.ID,
+			"finish_reason":  result.ToolCall.FinishReason,
+			"selected_count": len(req.ExpertIDs),
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("record expert implementation plan runs: %w", err)
+	}
+	for _, run := range expertBundle.Runs {
+		if run != nil && run.ID != 0 {
+			result.ExpertRunRefs = append(result.ExpertRunRefs, agentcontract.FormatExpertRunRef(run.ID))
+		}
+	}
+	result.ExpertRunRefs = normalizePlanList(result.ExpertRunRefs)
+	result.SkillVersionRefs = normalizePlanList(append(result.SkillVersionRefs, expertBundle.SkillVersionRefs...))
+	return nil
 }
 
 func buildDeepSeekExpertPlanRequest(req *GenerateExpertImplementationPlanRequest, mode, model string) (*deepSeekChatRequest, error) {

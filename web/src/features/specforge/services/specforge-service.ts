@@ -32,6 +32,7 @@ export interface ReindexRepoArchitecturePayload {
 export interface CreateIdeaPayload {
   input: string;
   type?: 'feature' | 'bugfix' | 'refactor' | 'docs' | 'test';
+  expert_ids?: number[];
 }
 
 export interface ApprovePlanPayload {

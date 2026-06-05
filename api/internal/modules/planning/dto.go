@@ -3,12 +3,14 @@ package planning
 import (
 	"strings"
 
+	agentcontract "github.com/zgiai/luas/api/internal/contracts/agent"
 	"github.com/zgiai/luas/api/internal/domain"
 )
 
 type CreateIdeaRequest struct {
-	Input string `json:"input" binding:"required,min=10,max=5000"`
-	Type  string `json:"type" binding:"omitempty,oneof=feature bugfix refactor docs test"`
+	Input     string `json:"input" binding:"required,min=10,max=5000"`
+	Type      string `json:"type" binding:"omitempty,oneof=feature bugfix refactor docs test"`
+	ExpertIDs []uint `json:"expert_ids" binding:"omitempty,max=20,dive,min=1"`
 }
 
 type ApprovePlanRequest struct {
@@ -25,6 +27,7 @@ type GenerateExpertImplementationPlanRequest struct {
 	Mode       string                 `json:"mode" binding:"omitempty,oneof=mvp standard deep"`
 	Repository *ExpertRepositoryInput `json:"repository" binding:"omitempty"`
 	Skills     []ExpertSkillInput     `json:"skills" binding:"omitempty,max=12,dive"`
+	ExpertIDs  []uint                 `json:"expert_ids" binding:"omitempty,max=20,dive,min=1"`
 }
 
 type ExpertRepositoryInput struct {
@@ -75,12 +78,14 @@ type CompiledPromptResponse struct {
 }
 
 type ExpertImplementationPlanResponse struct {
-	Plan     *ExpertImplementationPlan `json:"plan"`
-	Markdown string                    `json:"markdown"`
-	Provider string                    `json:"provider"`
-	Model    string                    `json:"model"`
-	ToolCall ExpertToolCallResponse    `json:"tool_call"`
-	Usage    map[string]any            `json:"usage"`
+	Plan             *ExpertImplementationPlan      `json:"plan"`
+	Markdown         string                         `json:"markdown"`
+	Provider         string                         `json:"provider"`
+	Model            string                         `json:"model"`
+	ToolCall         agentcontract.ToolCallResponse `json:"tool_call"`
+	Usage            map[string]any                 `json:"usage"`
+	ExpertRunRefs    []string                       `json:"expert_run_refs,omitempty"`
+	SkillVersionRefs []string                       `json:"skill_version_refs,omitempty"`
 }
 
 type ExpertPlanStreamEvent struct {
@@ -96,11 +101,7 @@ type ExpertPlanStreamEvent struct {
 	Error          string                            `json:"error,omitempty"`
 }
 
-type ExpertToolCallResponse struct {
-	Name         string `json:"name"`
-	ID           string `json:"id,omitempty"`
-	FinishReason string `json:"finish_reason,omitempty"`
-}
+type ExpertToolCallResponse = agentcontract.ToolCallResponse
 
 type ExpertImplementationPlan struct {
 	Title         string             `json:"title"`

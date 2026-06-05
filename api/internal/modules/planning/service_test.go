@@ -20,7 +20,7 @@ func TestCreateIdeaBuildsReviewablePlanBundle(t *testing.T) {
 		CIProvider:    "github_actions",
 		RiskAreas:     []string{"database"},
 	}}
-	svc := NewService(repo, profileRepo, repo, nil)
+	svc := NewService(repo, profileRepo, repo, nil, nil)
 
 	bundle, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
@@ -57,7 +57,7 @@ func TestCreateIdeaBuildsFrontendAndBackendPRDAGFromRepoProfile(t *testing.T) {
 		CIProvider:    "github_actions",
 		AppStructure:  []string{"api/internal/modules", "web/src/features"},
 	}}
-	svc := NewService(repo, profileRepo, repo, nil)
+	svc := NewService(repo, profileRepo, repo, nil, nil)
 
 	bundle, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite UI and API for workspace admins",
@@ -90,7 +90,7 @@ func TestCreateIdeaAddsMilestoneGuardrailForOverlargeIdeas(t *testing.T) {
 		AppStructure:  []string{"api/internal/modules", "web/src/features"},
 		RiskAreas:     []string{"auth", "billing"},
 	}}
-	svc := NewService(repo, profileRepo, repo, nil)
+	svc := NewService(repo, profileRepo, repo, nil, nil)
 
 	bundle, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add workspace invite with database schema, admin UI, email notifications, role permissions, audit log, Stripe billing limits, and Slack integration",
@@ -108,7 +108,7 @@ func TestCreateIdeaAddsMilestoneGuardrailForOverlargeIdeas(t *testing.T) {
 
 func TestApprovePlanRecordsApproverAndRejectsSecondApproval(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, &memoryProfileRepo{}, repo, nil)
+	svc := NewService(repo, &memoryProfileRepo{}, repo, nil, nil)
 
 	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
@@ -134,7 +134,7 @@ func TestApprovePlanRecordsApproverAndRejectsSecondApproval(t *testing.T) {
 
 func TestApprovePlanRejectsInvalidPRDAG(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, &memoryProfileRepo{}, repo, nil)
+	svc := NewService(repo, &memoryProfileRepo{}, repo, nil, nil)
 	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
 	})
@@ -149,7 +149,7 @@ func TestApprovePlanRejectsInvalidPRDAG(t *testing.T) {
 
 func TestPlanReviewResponseExposesPRDAGReview(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, &memoryProfileRepo{}, repo, nil)
+	svc := NewService(repo, &memoryProfileRepo{}, repo, nil, nil)
 	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
 	})
@@ -176,7 +176,7 @@ func TestCompilePromptPersistsVersionedPromptForPRNode(t *testing.T) {
 		Warnings:          []string{"No frontend routes were detected from the repository tree."},
 		LastIndexedAt:     time.Date(2026, 5, 29, 9, 30, 0, 0, time.UTC),
 	}}
-	svc := NewService(repo, profileRepo, repo, nil)
+	svc := NewService(repo, profileRepo, repo, nil, nil)
 
 	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
@@ -227,7 +227,7 @@ func TestCompilePromptPersistsVersionedPromptForPRNode(t *testing.T) {
 
 func TestUpsertSkillPersistsRepoInstruction(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, &memoryProfileRepo{}, repo, nil)
+	svc := NewService(repo, &memoryProfileRepo{}, repo, nil, nil)
 	active := true
 
 	skill, err := svc.UpsertSkill(context.Background(), 42, "repo_123", &UpsertSkillRequest{
@@ -272,7 +272,7 @@ func TestUpsertProjectSkillBindsSkillToProject(t *testing.T) {
 			},
 		},
 	}
-	svc := NewService(repo, &memoryProfileRepo{}, repo, projectRepo)
+	svc := NewService(repo, &memoryProfileRepo{}, repo, projectRepo, nil)
 
 	projectSkill, err := svc.UpsertProjectSkill(context.Background(), 42, 77, &UpsertProjectSkillRequest{
 		RepositoryID: "repo_primary",
@@ -326,7 +326,7 @@ func TestCreateProjectRequirementRecordsSkillRunPipeline(t *testing.T) {
 			},
 		},
 	}
-	svc := NewService(repo, profileRepo, repo, projectRepo)
+	svc := NewService(repo, profileRepo, repo, projectRepo, nil)
 	_, err := svc.UpsertProjectSkill(context.Background(), 42, 77, &UpsertProjectSkillRequest{
 		RepositoryID: "repo_web",
 		Name:         "Planning SOP",
@@ -387,7 +387,7 @@ func TestCreateProjectRequirementIncludesArchitectureEvidence(t *testing.T) {
 			{ID: 1, ProjectID: 77, RepositoryID: "repo_api", Role: domain.ProjectRepositoryRolePrimary, Active: true},
 		},
 	}
-	svc := NewService(repo, profileRepo, repo, projectRepo)
+	svc := NewService(repo, profileRepo, repo, projectRepo, nil)
 
 	bundle, err := svc.CreateProjectRequirement(context.Background(), 42, 77, &CreateIdeaRequest{
 		Input: "Add architecture evidence to execution prompts",
@@ -439,7 +439,7 @@ func TestCompilePromptEscalatesMissingProjectArchitectureEvidence(t *testing.T) 
 			{ID: 1, ProjectID: 77, RepositoryID: "repo_api", Role: domain.ProjectRepositoryRolePrimary, Active: true},
 		},
 	}
-	svc := NewService(repo, profileRepo, repo, projectRepo)
+	svc := NewService(repo, profileRepo, repo, projectRepo, nil)
 
 	bundle, err := svc.CreateProjectRequirement(context.Background(), 42, 77, &CreateIdeaRequest{
 		Input: "Add architecture evidence to execution prompts",
@@ -461,7 +461,7 @@ func TestCompilePromptEscalatesMissingProjectArchitectureEvidence(t *testing.T) 
 
 func TestCompilePromptInjectsActiveRepoSkills(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, &memoryProfileRepo{}, repo, nil)
+	svc := NewService(repo, &memoryProfileRepo{}, repo, nil, nil)
 	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
 	})
@@ -532,7 +532,7 @@ func TestCreateProjectIdeaUsesProjectContextProfilesAndSkills(t *testing.T) {
 			{ID: 2, ProjectID: 9, RepositoryID: "repo_web", Role: domain.ProjectRepositoryRoleDependency, Active: true},
 		},
 	}
-	svc := NewService(repo, profileRepo, repo, projectRepo)
+	svc := NewService(repo, profileRepo, repo, projectRepo, nil)
 	_, err := svc.UpsertSkill(context.Background(), 42, "repo_web", &UpsertSkillRequest{
 		Name:    "ui-boundaries",
 		Content: "Keep project console UI minimal and task-focused.",
@@ -576,7 +576,7 @@ func TestCreateProjectRequirementRequiresActivePrimaryRepository(t *testing.T) {
 			{ID: 2, ProjectID: 9, RepositoryID: "repo_web", Role: domain.ProjectRepositoryRoleDependency, Active: true},
 		},
 	}
-	svc := NewService(repo, profileRepo, repo, projectRepo)
+	svc := NewService(repo, profileRepo, repo, projectRepo, nil)
 
 	_, err := svc.CreateProjectRequirement(context.Background(), 42, 9, &CreateIdeaRequest{
 		Input: "Add team invite UI and API for workspace admins",
@@ -601,7 +601,7 @@ func TestGenerateRequirementPlanCreatesNextVersionAndApprovalRejectsStalePlan(t 
 			{ID: 1, ProjectID: 9, RepositoryID: "repo_api", Role: domain.ProjectRepositoryRolePrimary, Active: true},
 		},
 	}
-	svc := NewService(repo, profileRepo, repo, projectRepo)
+	svc := NewService(repo, profileRepo, repo, projectRepo, nil)
 
 	v1, err := svc.CreateProjectRequirement(context.Background(), 42, 9, &CreateIdeaRequest{
 		Input: "Add team invite UI and API for workspace admins",
@@ -651,7 +651,7 @@ func TestCompilePromptInjectsProjectContextSkills(t *testing.T) {
 			{ID: 2, ProjectID: 9, RepositoryID: "repo_web", Role: domain.ProjectRepositoryRoleDependency, Active: true},
 		},
 	}
-	svc := NewService(repo, profileRepo, repo, projectRepo)
+	svc := NewService(repo, profileRepo, repo, projectRepo, nil)
 	_, err := svc.UpsertSkill(context.Background(), 42, "repo_web", &UpsertSkillRequest{
 		Name:         "module-boundaries",
 		Content:      "Web code talks to API over HTTP only.",
@@ -680,7 +680,7 @@ func TestCompilePromptInjectsProjectContextSkills(t *testing.T) {
 
 func TestCompilePromptInjectsFixModeInstructions(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, &memoryProfileRepo{}, repo, nil)
+	svc := NewService(repo, &memoryProfileRepo{}, repo, nil, nil)
 	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
 	})
@@ -700,7 +700,7 @@ func TestCompilePromptInjectsFixModeInstructions(t *testing.T) {
 
 func TestCompilePromptInjectsReviewPatchModeInstructions(t *testing.T) {
 	repo := &memoryRepo{}
-	svc := NewService(repo, &memoryProfileRepo{}, repo, nil)
+	svc := NewService(repo, &memoryProfileRepo{}, repo, nil, nil)
 	created, err := svc.CreateIdea(context.Background(), 42, "repo_123", &CreateIdeaRequest{
 		Input: "Add team invite feature for workspace admins",
 	})

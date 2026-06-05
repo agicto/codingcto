@@ -5,14 +5,15 @@ import (
 	"strconv"
 	"strings"
 
+	agentcontract "github.com/zgiai/luas/api/internal/contracts/agent"
 	"github.com/zgiai/luas/api/internal/domain"
 )
 
 const (
-	CodingAgentConnectorProtocolVersion = "codingcto.agent.connector.v1"
+	CodingAgentConnectorProtocolVersion = agentcontract.ProtocolVersion
 
-	CodingAgentTaskKindPRNode = "pr_node"
-	CodingAgentTaskKindDirect = "direct"
+	CodingAgentTaskKindPRNode = agentcontract.TaskKindPRNode
+	CodingAgentTaskKindDirect = agentcontract.TaskKindDirect
 )
 
 // CodingAgentConnector is the stable boundary between CodingCTO runtime tasks
@@ -46,6 +47,48 @@ type CodingAgentTaskEnvelope struct {
 	Env             map[string]string
 	Prompt          CompiledExecutionPrompt
 	PRNode          *ClaimedTaskPRNode
+}
+
+func (e CodingAgentTaskEnvelope) ToProtocol() agentcontract.AgentTaskEnvelope {
+	envelope := agentcontract.AgentTaskEnvelope{
+		ProtocolVersion: e.ProtocolVersion,
+		Kind:            e.Kind,
+		RuntimeID:       e.RuntimeID,
+		Executor:        e.Executor,
+		SessionID:       e.SessionID,
+		TaskID:          e.TaskID,
+		RunID:           e.RunID,
+		RepositoryID:    e.RepositoryID,
+		BranchName:      e.BranchName,
+		Workdir:         e.Workdir,
+		Env:             e.Env,
+		Prompt: agentcontract.AgentPrompt{
+			ID:       e.Prompt.ID,
+			PRNodeID: e.Prompt.PRNodeID,
+			Type:     e.Prompt.Type,
+			Version:  e.Prompt.Version,
+			Text:     e.Prompt.PromptText,
+		},
+	}
+	if e.PRNode != nil {
+		envelope.PRNode = &agentcontract.AgentPRNode{
+			ID:                 e.PRNode.ID,
+			RepositoryID:       e.PRNode.RepositoryID,
+			NodeKey:            e.PRNode.NodeKey,
+			Title:              e.PRNode.Title,
+			Type:               e.PRNode.Type,
+			Goal:               e.PRNode.Goal,
+			DependsOn:          append([]string(nil), e.PRNode.DependsOn...),
+			ExpectedFiles:      append([]string(nil), e.PRNode.ExpectedFiles...),
+			NonGoals:           append([]string(nil), e.PRNode.NonGoals...),
+			AcceptanceCriteria: append([]string(nil), e.PRNode.AcceptanceCriteria...),
+			TestCommands:       append([]string(nil), e.PRNode.TestCommands...),
+			BranchName:         e.PRNode.BranchName,
+			EvidenceRefs:       append([]string(nil), e.PRNode.EvidenceRefs...),
+		}
+		envelope.EvidenceRefs = append(envelope.EvidenceRefs, e.PRNode.EvidenceRefs...)
+	}
+	return envelope
 }
 
 func NewCLIConnector(executor CodeExecutor) CodingAgentConnector {

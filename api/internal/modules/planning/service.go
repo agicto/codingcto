@@ -13,6 +13,7 @@ import (
 	"strings"
 	"time"
 
+	agentcontract "github.com/zgiai/luas/api/internal/contracts/agent"
 	"github.com/zgiai/luas/api/internal/domain"
 )
 
@@ -44,6 +45,7 @@ type service struct {
 	skillRepo        domain.SpecForgeSkillRepository
 	pipelineRepo     domain.SpecForgeSkillPipelineRepository
 	projectRepo      domain.SpecForgeProjectRepositoryStore
+	expertRunner     domain.SpecForgeExpertPlanningRunner
 }
 
 type repoArchitectureStore interface {
@@ -54,7 +56,7 @@ type projectPlanHistoryStore interface {
 	FindLatestPlanBundleByProjectID(ctx context.Context, projectID uint) (*domain.SpecForgePlanBundle, error)
 }
 
-func NewService(repo domain.SpecForgePlanningRepository, profileRepo domain.SpecForgeRepoProfileRepository, skillRepo domain.SpecForgeSkillRepository, projectRepo domain.SpecForgeProjectRepositoryStore) *service {
+func NewService(repo domain.SpecForgePlanningRepository, profileRepo domain.SpecForgeRepoProfileRepository, skillRepo domain.SpecForgeSkillRepository, projectRepo domain.SpecForgeProjectRepositoryStore, expertRunner domain.SpecForgeExpertPlanningRunner) *service {
 	var pipelineRepo domain.SpecForgeSkillPipelineRepository
 	if repo, ok := skillRepo.(domain.SpecForgeSkillPipelineRepository); ok {
 		pipelineRepo = repo
@@ -63,7 +65,7 @@ func NewService(repo domain.SpecForgePlanningRepository, profileRepo domain.Spec
 	if repo, ok := profileRepo.(repoArchitectureStore); ok {
 		architectureRepo = repo
 	}
-	return &service{repo: repo, profileRepo: profileRepo, architectureRepo: architectureRepo, skillRepo: skillRepo, pipelineRepo: pipelineRepo, projectRepo: projectRepo}
+	return &service{repo: repo, profileRepo: profileRepo, architectureRepo: architectureRepo, skillRepo: skillRepo, pipelineRepo: pipelineRepo, projectRepo: projectRepo, expertRunner: expertRunner}
 }
 
 func (s *service) CreateIdea(ctx context.Context, userID uint, repoID string, req *CreateIdeaRequest) (*domain.SpecForgePlanBundle, error) {
@@ -90,6 +92,9 @@ func (s *service) CreateIdea(ctx context.Context, userID uint, repoID string, re
 		return nil, err
 	}
 	if err := s.recordPlanSkillRuns(ctx, userID, bundle); err != nil {
+		return nil, err
+	}
+	if err := s.recordExpertPlanningRuns(ctx, userID, bundle, req); err != nil {
 		return nil, err
 	}
 	return bundle, nil
@@ -140,6 +145,9 @@ func (s *service) CreateProjectRequirement(ctx context.Context, userID, projectI
 		return nil, err
 	}
 	if err := s.recordPlanSkillRuns(ctx, userID, bundle); err != nil {
+		return nil, err
+	}
+	if err := s.recordExpertPlanningRuns(ctx, userID, bundle, req); err != nil {
 		return nil, err
 	}
 	return bundle, nil
@@ -200,6 +208,9 @@ func (s *service) GenerateRequirementPlan(ctx context.Context, userID, requireme
 		return nil, err
 	}
 	if err := s.recordPlanSkillRuns(ctx, userID, bundle); err != nil {
+		return nil, err
+	}
+	if err := s.recordExpertPlanningRuns(ctx, userID, bundle, req); err != nil {
 		return nil, err
 	}
 	return bundle, nil
@@ -507,6 +518,63 @@ func (s *service) recordPlanSkillRuns(ctx context.Context, userID uint, bundle *
 		if err := s.pipelineRepo.CreateSkillRun(ctx, run); err != nil {
 			return fmt.Errorf("create skill run: %w", err)
 		}
+	}
+	return nil
+}
+
+func (s *service) recordExpertPlanningRuns(ctx context.Context, userID uint, bundle *domain.SpecForgePlanBundle, req *CreateIdeaRequest) error {
+	if s.expertRunner == nil || bundle == nil || bundle.Plan == nil || req == nil || len(req.ExpertIDs) == 0 {
+		return nil
+	}
+	var requirementID *uint
+	if bundle.Requirement != nil && bundle.Requirement.ID != 0 {
+		requirementID = &bundle.Requirement.ID
+	} else if bundle.Plan.RequirementID != nil {
+		requirementID = bundle.Plan.RequirementID
+	}
+	planID := bundle.Plan.ID
+	var projectID *uint
+	if bundle.Requirement != nil && bundle.Requirement.ProjectID != 0 {
+		id := bundle.Requirement.ProjectID
+		projectID = &id
+	} else if bundle.Idea != nil {
+		projectID = bundle.Idea.ProjectID
+	}
+	idea := strings.TrimSpace(req.Input)
+	if idea == "" && bundle.Idea != nil {
+		idea = bundle.Idea.RawInput
+	}
+	repositoryID := ""
+	if bundle.Idea != nil {
+		repositoryID = bundle.Idea.RepositoryID
+	}
+	expertBundle, err := s.expertRunner.RunPlanningExperts(ctx, userID, &domain.SpecForgeExpertPlanningRequest{
+		ExpertIDs:     req.ExpertIDs,
+		RequirementID: requirementID,
+		PlanID:        &planID,
+		ProjectID:     projectID,
+		RepositoryID:  repositoryID,
+		Idea:          idea,
+		Mode:          "planning",
+		Context: map[string]any{
+			"plan_id":       bundle.Plan.ID,
+			"plan_version":  bundle.Plan.Version,
+			"repository_id": repositoryID,
+		},
+	})
+	if err != nil {
+		return fmt.Errorf("record expert planning runs: %w", err)
+	}
+	refs := append([]string{}, bundle.Plan.EvidenceRefs...)
+	for _, run := range expertBundle.Runs {
+		if run != nil && run.ID != 0 {
+			refs = append(refs, agentcontract.FormatExpertRunRef(run.ID))
+		}
+	}
+	refs = append(refs, expertBundle.SkillVersionRefs...)
+	bundle.Plan.EvidenceRefs = normalizePlanList(refs)
+	if err := s.repo.UpdatePlan(ctx, bundle.Plan); err != nil {
+		return fmt.Errorf("update expert evidence refs: %w", err)
 	}
 	return nil
 }
