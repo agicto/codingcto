@@ -1774,6 +1774,10 @@ func TestExecuteTaskPreparesBranchBeforeRunningExecutor(t *testing.T) {
 	require.Equal(t, uint(4), preparer.request.PRNodeID)
 	require.Contains(t, executor.prompt.PromptText, "Grounded prompt contract")
 	require.Contains(t, executor.prompt.PromptText, "PR node: PR-001")
+	require.Contains(t, executor.prompt.PromptText, "repo_wiki.planning_context_state: blocked")
+	require.Contains(t, executor.prompt.PromptText, "repo_wiki.planning_context_sections")
+	require.Contains(t, executor.prompt.PromptText, "Repository overview [blocked")
+	require.Contains(t, executor.prompt.PromptText, "Repository profile is missing")
 	require.Equal(t, domain.AgentTaskStatusCompleted, updated.Tasks[0].Status)
 }
 

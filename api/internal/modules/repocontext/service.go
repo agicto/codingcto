@@ -581,6 +581,18 @@ func inferRepoProfile(paths []string, scripts map[string]string, instructionConv
 	if hasAnyPath(lowerPaths, "billing", "stripe", "payment") {
 		riskAreas = append(riskAreas, "billing")
 	}
+	if hasAnyPath(lowerPaths, "migration", "migrations", "schema") {
+		riskAreas = append(riskAreas, "database migrations")
+	}
+	if hasAnyPath(lowerPaths, "github", "webhook", "pullrequest", "pull_request") {
+		riskAreas = append(riskAreas, "GitHub integration and webhook delivery")
+	}
+	if hasAnyPath(lowerPaths, "execution", "runtime", "agent-task", "agent_task", "codex") {
+		riskAreas = append(riskAreas, "local agent execution and runtime safety")
+	}
+	if hasAnyPath(lowerPaths, ".github/workflows/") {
+		riskAreas = append(riskAreas, "CI workflow and release gates")
+	}
 
 	testCommands = append(testCommands, packageTestCommands(scripts, packageManagerFromPaths(lowerPaths))...)
 

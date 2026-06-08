@@ -58,6 +58,23 @@ describe('deriveRuntimeHealth', () => {
     ).toBe('stale');
   });
 
+  it('downgrades online runtimes when their heartbeat is old', () => {
+    expect(
+      deriveRuntimeHealth(
+        {
+          runtimeId: 'runtime_old_online',
+          executor: 'codex_cli',
+          status: 'online',
+          availableClis: [],
+          skillRoots: [],
+          localSkillCount: 0,
+          lastSeenAt: new Date(now - 10 * 60_000).toISOString(),
+        },
+        now
+      )
+    ).toBe('offline');
+  });
+
   it('summarizes a runtime fleet', () => {
     expect(
       summarizeRuntimeHealth(

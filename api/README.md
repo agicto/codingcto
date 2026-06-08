@@ -138,6 +138,28 @@ Useful flags:
 
 Environment equivalents are available with `CODINGCTO_API_BASE_URL`, `CODINGCTO_RUNTIME_TOKEN`, `CODINGCTO_RUNTIME_ID`, `CODINGCTO_RUNTIME_REPO_DIR`, `CODINGCTO_RUNTIME_REPOSITORY_ID`, `CODINGCTO_RUNTIME_EXECUTOR`, `CODEX_CLI_PATH`, `KIMI_CLI_PATH`, `CODINGCTO_CODEX_SANDBOX`, `CODINGCTO_CODEX_APPROVAL_POLICY`, and `CODINGCTO_CODEX_TIMEOUT`. Legacy `SPECFORGE_*` runtime environment variables are still accepted for local compatibility.
 
+### Configure Expert Planning
+
+The Expert console calls `POST /v1/experts/implementation-plan/stream` for the interactive UI, with `POST /v1/experts/implementation-plan` kept as the non-streaming fallback. The API sends the user's idea, selected repository, and planning skills to DeepSeek through a forced tool call named `draft_implementation_plan`, then returns both structured JSON and Markdown for the web app to display or copy into a coding agent. The stream still carries lightweight progress events for the client and smoke tests, but the UI focuses on the final Markdown plan instead of exposing the internal scheduling trace.
+
+Set the provider key in `api/.env` only:
+
+```bash
+DEEPSEEK_API_KEY=replace-me
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-pro
+```
+
+`DEEPSEEK_BASE_URL` and `DEEPSEEK_MODEL` are optional. Do not put the DeepSeek key in `web/.env`; the browser never calls the provider directly.
+
+Run a real local smoke test against the configured provider:
+
+```bash
+node scripts/expert-plan-smoke.mjs
+```
+
+The smoke test logs in to the local API, calls `/v1/experts/implementation-plan/stream`, measures the first stream event, first tool-call argument, and final result timings, then verifies that `draft_implementation_plan` finished with `tool_calls` and that all bundled expert skills were applied. It consumes DeepSeek API tokens.
+
 ## Repository Layout
 
 ```text

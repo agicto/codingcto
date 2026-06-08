@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -2191,12 +2192,145 @@ func writeRunEvidenceRefs(b *strings.Builder, bundle *domain.SpecForgePlanBundle
 		writeExecutionEvidenceList(b, "repo_profile.coding_conventions", profile.CodingConventions)
 		writeExecutionEvidenceList(b, "repo_profile.risk_areas", profile.RiskAreas)
 		writeExecutionEvidenceList(b, "repo_profile.warnings", profile.Warnings)
+		writeRunRepoWikiPlanningContextRefs(b, profile)
+	} else {
+		writeRunMissingRepoWikiPlanningContextRefs(b)
 	}
 	if bundle != nil && bundle.ProjectContext != nil {
 		writeRunProjectEvidenceRefs(b, bundle.ProjectContext)
 	}
 	writeRunSkillEvidenceRefs(b, skills)
 	b.WriteString("\n")
+}
+
+func writeRunMissingRepoWikiPlanningContextRefs(b *strings.Builder) {
+	b.WriteString("- repo_wiki.planning_context_state: blocked\n")
+	b.WriteString("- repo_wiki.planning_context_score: 0%\n")
+	b.WriteString("- repo_wiki.next_action: Complete Repository overview before asking experts to generate or approve the plan.\n")
+	b.WriteString("- repo_wiki.planning_context_sections:\n")
+	b.WriteString("  - Repository overview [blocked, evidence=0]: Repository profile is missing.\n")
+	b.WriteString("  - Structure and entrypoints [blocked, evidence=0]: Repository profile is missing.\n")
+	b.WriteString("  - Testing and quality [blocked, evidence=0]: Repository profile is missing.\n")
+}
+
+func writeRunRepoWikiPlanningContextRefs(b *strings.Builder, profile *domain.SpecForgeRepoProfile) {
+	if profile == nil {
+		return
+	}
+	sections := runRepoWikiPlanningSections(profile)
+	readyCount := 0
+	blockedCount := 0
+	for _, section := range sections {
+		if section.State == "ready" {
+			readyCount++
+		}
+		if section.State == "blocked" {
+			blockedCount++
+		}
+	}
+	state := "waiting"
+	if blockedCount > 0 {
+		state = "blocked"
+	} else if readyCount == len(sections) {
+		state = "ready"
+	}
+	score := 0
+	if len(sections) > 0 {
+		score = int(math.Round(float64(readyCount) / float64(len(sections)) * 100))
+	}
+
+	b.WriteString("- repo_wiki.planning_context_state: " + state + "\n")
+	b.WriteString("- repo_wiki.planning_context_score: " + fmt.Sprintf("%d%%", score) + "\n")
+	b.WriteString("- repo_wiki.next_action: " + compactExecutionLine(runRepoWikiPlanningNextAction(sections)) + "\n")
+	b.WriteString("- repo_wiki.planning_context_sections:\n")
+	for _, section := range sections {
+		b.WriteString("  - " + section.Label + " [" + section.State + ", evidence=" + fmt.Sprint(section.EvidenceCount) + "]: " + compactExecutionLine(section.Detail) + "\n")
+	}
+}
+
+type runRepoWikiPlanningSection struct {
+	Label         string
+	State         string
+	Detail        string
+	EvidenceCount int
+}
+
+func runRepoWikiPlanningSections(profile *domain.SpecForgeRepoProfile) []runRepoWikiPlanningSection {
+	summary := strings.TrimSpace(profile.Summary)
+	structureCount := len(normalizeExecutionList(profile.Stack)) + len(normalizeExecutionList(profile.AppStructure))
+	qualityCount := len(normalizeExecutionList(profile.TestCommands))
+	if strings.TrimSpace(profile.CIProvider) != "" {
+		qualityCount++
+	}
+	riskCount := len(normalizeExecutionList(profile.RiskAreas))
+	conventionCount := len(normalizeExecutionList(profile.CodingConventions))
+
+	return []runRepoWikiPlanningSection{
+		{
+			Label:         "Repository overview",
+			State:         runPlanningSectionState(strings.TrimSpace(profile.RepositoryID) != "" && summary != "", true),
+			Detail:        "Product experts can understand the existing product boundary and available capabilities.",
+			EvidenceCount: runCountNonEmpty(profile.RepositoryID, summary),
+		},
+		{
+			Label:         "Structure and entrypoints",
+			State:         runPlanningSectionState(structureCount > 0, true),
+			Detail:        "Architecture experts can constrain impact area, modules, and implementation entrypoints.",
+			EvidenceCount: structureCount,
+		},
+		{
+			Label:         "Testing and quality",
+			State:         runPlanningSectionState(qualityCount > 0, true),
+			Detail:        "QA experts can attach commands and CI expectations to PR nodes.",
+			EvidenceCount: qualityCount,
+		},
+		{
+			Label:         "Risk areas",
+			State:         runPlanningSectionState(riskCount > 0, false),
+			Detail:        "Architecture and security risks should enter plan approval and prompt constraints.",
+			EvidenceCount: riskCount,
+		},
+		{
+			Label:         "Engineering conventions",
+			State:         runPlanningSectionState(conventionCount > 0, false),
+			Detail:        "Coding Agent can follow existing naming, folder, testing, and code style conventions.",
+			EvidenceCount: conventionCount,
+		},
+	}
+}
+
+func runPlanningSectionState(hasEvidence bool, required bool) string {
+	if hasEvidence {
+		return "ready"
+	}
+	if required {
+		return "blocked"
+	}
+	return "waiting"
+}
+
+func runRepoWikiPlanningNextAction(sections []runRepoWikiPlanningSection) string {
+	for _, section := range sections {
+		if section.State == "blocked" {
+			return "Complete " + section.Label + " before asking experts to generate or approve the plan."
+		}
+	}
+	for _, section := range sections {
+		if section.State == "waiting" {
+			return "Planning can continue; add " + section.Label + " to improve prompt constraints."
+		}
+	}
+	return "Repo Wiki is ready as planning context for product, architecture, QA, and Coding Agent work."
+}
+
+func runCountNonEmpty(values ...string) int {
+	count := 0
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			count++
+		}
+	}
+	return count
 }
 
 func writeExecutionEvidenceList(b *strings.Builder, name string, values []string) {

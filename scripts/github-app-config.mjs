@@ -79,6 +79,14 @@ function createManifest(args) {
     owner === 'user'
       ? 'https://github.com/settings/apps/new'
       : `https://github.com/organizations/${encodeURIComponent(owner)}/settings/apps/new`;
+  const redirectParams = new URLSearchParams();
+  for (const key of ['repository-url', 'repository-id', 'return-to', 'repo']) {
+    if (args[key] && args[key] !== 'true') {
+      redirectParams.set(key.replaceAll('-', '_'), args[key]);
+    }
+  }
+  const redirectQuery = redirectParams.toString();
+  const redirectURL = `http://localhost:2020/console/settings/github-app-manifest${redirectQuery ? `?${redirectQuery}` : ''}`;
   const manifest = {
     name,
     url: 'http://localhost:2020',
@@ -86,7 +94,7 @@ function createManifest(args) {
       url: 'http://localhost:2010/v1/github/webhook',
       active: false,
     },
-    redirect_url: 'http://localhost:2020/console/settings/github-app-manifest',
+    redirect_url: redirectURL,
     callback_urls: ['http://localhost:2020/console/settings'],
     setup_url: 'http://localhost:2020/console/settings',
     description: 'Local CodingCTO GitHub integration for repository analysis and pull request workflows.',

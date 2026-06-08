@@ -137,6 +137,38 @@ func TestUpsertRepositoryCanMoveKnownInstallationRepositoryToWorkspace(t *testin
 	require.Equal(t, int64(0), tokenProvider.installationID)
 }
 
+func TestUpsertRepositoryAssociatesSyncedInstallationByWorkspaceOwnerAndRepo(t *testing.T) {
+	repo := &memoryRepo{
+		repositories: []*domain.Repository{
+			{
+				RepositoryID:         "github_agicto__codingcto",
+				WorkspaceID:          "workspace_s_d",
+				GitHubInstallationID: 3,
+				GitHubOwner:          "agicto",
+				GitHubRepo:           "codingcto",
+				DefaultBranch:        "main",
+				IsPrivate:            true,
+			},
+		},
+	}
+	tokenProvider := &fakeInstallationTokenProvider{err: fmt.Errorf("token request should not be needed for synced repository association")}
+	svc := NewService(repo, nil, &fakeRepositoryClientFactory{client: &fakeRepositoryClient{}}, tokenProvider, nil)
+
+	repository, err := svc.UpsertRepository(context.Background(), 9, &UpsertRepositoryRequest{
+		RepositoryID:  "github_agicto__codingcto_local",
+		WorkspaceID:   "workspace_s_d",
+		GitHubOwner:   "agicto",
+		GitHubRepo:    "codingcto",
+		DefaultBranch: "main",
+		IsPrivate:     true,
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "github_agicto__codingcto_local", repository.RepositoryID)
+	require.Equal(t, uint(3), repository.GitHubInstallationID)
+	require.Equal(t, int64(0), tokenProvider.installationID)
+}
+
 func TestCheckRepositoryReadinessReportsMissingIssueWriteAndTokenFailure(t *testing.T) {
 	repo := &memoryRepo{
 		installation: &domain.GitHubInstallation{
@@ -1887,6 +1919,7 @@ type memoryRepo struct {
 	nextID        uint
 	installation  *domain.GitHubInstallation
 	repository    *domain.Repository
+	repositories  []*domain.Repository
 	settings      *domain.GitHubSettings
 	webhookEvents []*domain.GitHubWebhookEvent
 }
@@ -1918,16 +1951,42 @@ func (r *memoryRepo) FindInstallationByGitHubID(ctx context.Context, installatio
 }
 
 func (r *memoryRepo) UpsertRepository(ctx context.Context, repository *domain.Repository) error {
-	if r.repository == nil {
+	existingIndex := -1
+	for i, candidate := range r.repositories {
+		if candidate != nil && candidate.RepositoryID == repository.RepositoryID {
+			existingIndex = i
+			break
+		}
+	}
+	if existingIndex >= 0 {
+		repository.ID = r.repositories[existingIndex].ID
+	} else if r.repository != nil && r.repository.RepositoryID == repository.RepositoryID {
+		repository.ID = r.repository.ID
+	} else {
 		r.nextID++
 		repository.ID = r.nextID
 	}
 	copied := *repository
 	r.repository = &copied
+	if existingIndex >= 0 {
+		r.repositories[existingIndex] = &copied
+		return nil
+	}
+	r.repositories = append(r.repositories, &copied)
 	return nil
 }
 
 func (r *memoryRepo) FindRepositoryByRepositoryID(ctx context.Context, repositoryID string) (*domain.Repository, error) {
+	if r.repository != nil && r.repository.RepositoryID == repositoryID {
+		copied := *r.repository
+		return &copied, nil
+	}
+	for _, repository := range r.repositories {
+		if repository != nil && repository.RepositoryID == repositoryID {
+			copied := *repository
+			return &copied, nil
+		}
+	}
 	if r.repository == nil || r.repository.RepositoryID != repositoryID {
 		return nil, domain.ErrNotFound
 	}
@@ -1936,11 +1995,28 @@ func (r *memoryRepo) FindRepositoryByRepositoryID(ctx context.Context, repositor
 }
 
 func (r *memoryRepo) ListRepositoriesByWorkspaceID(ctx context.Context, workspaceID string) ([]*domain.Repository, error) {
-	if r.repository == nil || (workspaceID != "" && r.repository.WorkspaceID != workspaceID) {
-		return []*domain.Repository{}, nil
+	repositories := make([]*domain.Repository, 0, len(r.repositories)+1)
+	for _, repository := range r.repositories {
+		if repository == nil || (workspaceID != "" && repository.WorkspaceID != workspaceID) {
+			continue
+		}
+		copied := *repository
+		repositories = append(repositories, &copied)
 	}
-	copied := *r.repository
-	return []*domain.Repository{&copied}, nil
+	if r.repository != nil && (workspaceID == "" || r.repository.WorkspaceID == workspaceID) {
+		seen := false
+		for _, repository := range repositories {
+			if repository.RepositoryID == r.repository.RepositoryID {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			copied := *r.repository
+			repositories = append(repositories, &copied)
+		}
+	}
+	return repositories, nil
 }
 
 func (r *memoryRepo) UpsertSettings(ctx context.Context, settings *domain.GitHubSettings) error {

@@ -193,7 +193,7 @@ func Load() (*Config, error) {
 			Port:         env.GetInt("SERVER_PORT", 2010),
 			Mode:         env.Get("SERVER_MODE", env.Get("GIN_MODE", "debug")),
 			ReadTimeout:  env.GetInt("SERVER_READ_TIMEOUT", 60),
-			WriteTimeout: env.GetInt("SERVER_WRITE_TIMEOUT", 60),
+			WriteTimeout: env.GetInt("SERVER_WRITE_TIMEOUT", 180),
 		},
 		Database: DatabaseConfig{
 			Enabled:              env.GetBool("DB_ENABLED", true),

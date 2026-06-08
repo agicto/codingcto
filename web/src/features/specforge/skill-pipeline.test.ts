@@ -4,15 +4,16 @@ import {
   parseSkillRunOutput,
   skillEvidenceRefs,
   skillNamesFromRuns,
+  skillPromptContractSummary,
   skillRunStageLabel,
 } from './skill-pipeline';
 import type { SpecForgeSkillRunDTO } from './services/specforge-service';
 
-function skillRun(output_json?: string): SpecForgeSkillRunDTO {
+function skillRun(output_json?: string, stage = 'product_plan', status = 'completed'): SpecForgeSkillRunDTO {
   return {
     id: 1,
-    stage: 'product_plan',
-    status: 'completed',
+    stage,
+    status,
     input_summary: '',
     output_summary: '',
     output_json,
@@ -61,5 +62,39 @@ describe('skill pipeline helpers', () => {
   it('formats known and fallback skill run stages', () => {
     expect(skillRunStageLabel('technical_plan')).toBe('Technical plan');
     expect(skillRunStageLabel('custom_stage')).toBe('custom stage');
+  });
+
+  it('marks the skill prompt contract missing without runs or evidence refs', () => {
+    const summary = skillPromptContractSummary([]);
+
+    expect(summary.state).toBe('missing');
+    expect(summary.nextAction).toContain('Attach repository or project skills');
+  });
+
+  it('marks the contract partial when skill evidence exists but expert stages are missing', () => {
+    const summary = skillPromptContractSummary([
+      skillRun(JSON.stringify({ skill_names: ['Planning SOP'] }), 'product_plan'),
+    ]);
+
+    expect(summary.state).toBe('partial');
+    expect(summary.skillNames).toEqual(['Planning SOP']);
+    expect(summary.missingStages).toEqual(['technical_plan', 'pr_dag']);
+    expect(summary.nextAction).toContain('Technical plan');
+  });
+
+  it('marks the contract ready when required expert stages and skill refs are present', () => {
+    const summary = skillPromptContractSummary(
+      [
+        skillRun(JSON.stringify({ skill_names: ['Planning SOP'] }), 'product_plan'),
+        skillRun(JSON.stringify({ skill_names: ['Architecture SOP'] }), 'technical_plan'),
+        skillRun(JSON.stringify({ skill_names: ['PR DAG SOP'] }), 'pr_dag'),
+      ],
+      ['skill:planning-sop']
+    );
+
+    expect(summary.state).toBe('ready');
+    expect(summary.skillNames).toEqual(['Planning SOP', 'Architecture SOP', 'PR DAG SOP']);
+    expect(summary.evidenceRefs).toEqual(['skill:planning-sop']);
+    expect(summary.nextAction).toContain('skills_applied');
   });
 });

@@ -131,7 +131,13 @@ export function PlanReview({
             onChange={onExecutionNodeSelectionChange}
           />
           {showPromptPreview && previewNode ? (
-            <PromptContractPreview plan={plan} node={previewNode} />
+            <PromptContractPreview
+              plan={plan}
+              node={previewNode}
+              skillRuns={skillRuns}
+              executor={selectedExecutor}
+              runtimeReady={executionReadiness.canDispatch}
+            />
           ) : null}
           <ListBlock title="Execution range review" items={executionRangeNotes} />
           <ListBlock title="Security risks" items={implementationPlan.securityRisks} icon="risk" />
@@ -175,8 +181,24 @@ export function PlanReview({
   );
 }
 
-function PromptContractPreview({ plan, node }: { plan: PlanBundle; node: PRNode }) {
-  const promptPreview = buildPromptPreview(plan, node);
+function PromptContractPreview({
+  plan,
+  node,
+  skillRuns,
+  executor,
+  runtimeReady,
+}: {
+  plan: PlanBundle;
+  node: PRNode;
+  skillRuns: SpecForgeSkillRunDTO[];
+  executor: string;
+  runtimeReady: boolean;
+}) {
+  const promptPreview = buildPromptPreview(plan, node, {
+    skillRuns,
+    executor,
+    runtimeReady,
+  });
 
   return (
     <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
