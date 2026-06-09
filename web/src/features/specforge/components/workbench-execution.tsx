@@ -43,6 +43,54 @@ import type {
 import type { ExecutionRun, PRNode } from '@/features/specforge/types';
 import { statusClassName, statusLabel } from '@/features/specforge/components/workbench-utils';
 
+function processStatusLabel(status?: string) {
+  switch (status) {
+    case 'pending':
+      return 'Pending';
+    case 'preparing':
+      return 'Preparing';
+    case 'running':
+      return 'Running';
+    case 'completed':
+      return 'Completed';
+    case 'failed':
+      return 'Failed';
+    case 'timed_out':
+      return 'Timed out';
+    case 'cancelled':
+      return 'Cancelled';
+    case 'lost':
+      return 'Lost';
+    default:
+      return status || 'Unknown';
+  }
+}
+
+function processStatusClassName(status?: string) {
+  switch (status) {
+    case 'completed':
+      return 'border-success/30 bg-success-subtle text-success';
+    case 'running':
+    case 'preparing':
+      return 'border-info/30 bg-info-subtle text-info';
+    case 'failed':
+    case 'timed_out':
+    case 'cancelled':
+    case 'lost':
+      return 'border-error/30 bg-error-subtle text-error';
+    default:
+      return 'border-border bg-bg-surface text-text-subtle';
+  }
+}
+
+function formatTimestamp(value: string) {
+  const time = new Date(value);
+  if (Number.isNaN(time.getTime())) {
+    return value;
+  }
+  return time.toLocaleString();
+}
+
 export function RunSummary({
   progressText,
   approved,
@@ -166,7 +214,11 @@ export function ExecutionStatus({
   const [ciReviewActions, setCIReviewActions] = useState<Record<string, CIReviewAction>>({});
   const [ciReviewActionNodeId, setCIReviewActionNodeId] = useState<string>();
   const selectedTaskId = selectedTask?.taskId;
-  const taskEventsQuery = useSpecForgeTaskEvents(selectedTaskId);
+  const activeTaskEventPolling =
+    selectedTask?.status === 'running' || selectedTask?.processStatus === 'running' ? 2000 : false;
+  const taskEventsQuery = useSpecForgeTaskEvents(selectedTaskId, undefined, {
+    refetchInterval: activeTaskEventPolling,
+  });
   const taskEvents = taskEventsQuery.data?.events ?? [];
   const isTaskActionPending =
     retryTask.isPending ||
@@ -305,6 +357,12 @@ export function ExecutionStatus({
                 <div className="mt-1 text-xs text-text-muted">{task.branchName}</div>
                 <div className="mt-2 flex flex-wrap gap-2">
                   {task.executor && <Badge variant="outline">{task.executor}</Badge>}
+                  {task.processStatus && (
+                    <Badge variant="outline" className={processStatusClassName(task.processStatus)}>
+                      {processStatusLabel(task.processStatus)}
+                    </Badge>
+                  )}
+                  {task.currentPhase && <Badge variant="outline">phase: {task.currentPhase}</Badge>}
                   {task.attemptNumber && (
                     <Badge variant="outline">attempt {task.attemptNumber}</Badge>
                   )}
@@ -354,6 +412,8 @@ export function ExecutionStatus({
               </div>
             </div>
             {(task.fixAttemptId ||
+              task.processRef ||
+              task.lastProgressAt ||
               task.failureReason ||
               task.errorLog ||
               task.outputLog ||
@@ -459,6 +519,8 @@ function PRDeliveryOverview({ tasks }: { tasks: PRNode[] }) {
 function TaskDiagnostics({ task }: { task: PRNode }) {
   return (
     <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-xs leading-5 text-text-muted">
+      {task.processRef && <div>Process: {task.processRef}</div>}
+      {task.lastProgressAt && <div>Last progress: {formatTimestamp(task.lastProgressAt)}</div>}
       {task.fixAttemptId && <div>Fix attempt: #{task.fixAttemptId}</div>}
       {task.failureReason && <div>Failure: {task.failureReason}</div>}
       {task.outputLog && <div className="mt-1 truncate">Output: {task.outputLog}</div>}
@@ -565,7 +627,15 @@ function TaskEventPanel({
             {task.title} {task.taskId ? `#${task.taskId}` : ''}
           </div>
         </div>
-        <Badge variant="outline">{events.length} events</Badge>
+        <div className="flex flex-wrap items-center gap-2">
+          {task.processStatus && (
+            <Badge variant="outline" className={processStatusClassName(task.processStatus)}>
+              {processStatusLabel(task.processStatus)}
+            </Badge>
+          )}
+          {task.currentPhase && <Badge variant="outline">{task.currentPhase}</Badge>}
+          <Badge variant="outline">{events.length} events</Badge>
+        </div>
       </div>
       <div className="mt-3 max-h-72 space-y-2 overflow-auto rounded-lg border border-border-subtle bg-bg-subtle p-3">
         {isLoading && <div className="text-sm text-text-muted">Loading task events.</div>}

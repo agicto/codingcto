@@ -70,6 +70,11 @@ import {
 } from '@/features/specforge/components/workbench-utils';
 import type { PlanBundle, PRNode } from '@/features/specforge/types';
 
+const executorOptions = [
+  { value: 'codex_cli', label: 'Codex CLI' },
+  { value: 'claude_code_cli', label: 'Claude Code CLI' },
+] as const;
+
 export function ProjectPlanReviewPage() {
   const params = useParams<{ projectId: string; planId: string }>();
   const projectId = Number(params.projectId);
@@ -133,6 +138,9 @@ function ProjectPlanReview({
     () => initialPlan.prNodes[0]?.id ?? ''
   );
   const [promptMode, setPromptMode] = useState<PromptMode>('implementation');
+  const [selectedExecutor, setSelectedExecutor] = useState<'codex_cli' | 'claude_code_cli'>(
+    'codex_cli'
+  );
   const [compiledPrompt, setCompiledPrompt] = useState<SpecForgeCompiledPromptDTO>();
   const [promptMessage, setPromptMessage] = useState('');
   const [message, setMessage] = useState('');
@@ -146,11 +154,11 @@ function ProjectPlanReview({
     () =>
       executionReadinessForExecutor({
         runtimes,
-        executor: 'codex_cli',
+        executor: selectedExecutor,
         now: runtimeNow,
         allowFallback: false,
       }),
-    [runtimeNow, runtimes]
+    [runtimeNow, runtimes, selectedExecutor]
   );
   const approvePlan = useApproveSpecForgePlan();
   const compilePrompt = useCompileSpecForgePrompt();
@@ -230,6 +238,7 @@ function ProjectPlanReview({
       const started = await startRun.mutateAsync({
         planId: approvedPlan.planId ?? plan.planId,
         payload: {
+          executor: selectedExecutor,
           pr_node_ids: selectedPRNodeIDs,
         },
       });
@@ -297,6 +306,8 @@ function ProjectPlanReview({
           plan={plan}
           node={selectedPromptNode}
           promptMode={promptMode}
+          selectedExecutor={selectedExecutor}
+          runtimeReady={executionReadiness.canDispatch}
           compiledPrompt={compiledPrompt}
           message={promptMessage}
           skillRuns={skillRuns}
@@ -322,6 +333,8 @@ function ProjectPlanReview({
           plan={plan}
           decisionOverrides={decisionOverrides}
           selectedExecutionNodeIds={selectedExecutionNodeIds}
+          selectedExecutor={selectedExecutor}
+          executorOptions={executorOptions}
           approved={approved}
           isStarting={isStarting}
           executionReadiness={executionReadiness}
@@ -329,6 +342,7 @@ function ProjectPlanReview({
             setDecisionOverrides(current => ({ ...current, [key]: value }))
           }
           onExecutionNodeSelectionChange={setSelectedExecutionNodeIds}
+          onExecutorChange={setSelectedExecutor}
           onApprove={approveAndStart}
           showPromptPreview={false}
           showSkillPipeline={false}
@@ -403,6 +417,8 @@ function PromptPreviewWorkbench({
   plan,
   node,
   promptMode,
+  selectedExecutor,
+  runtimeReady,
   compiledPrompt,
   message,
   skillRuns,
@@ -415,6 +431,8 @@ function PromptPreviewWorkbench({
   plan: PlanBundle;
   node?: PRNode;
   promptMode: PromptMode;
+  selectedExecutor: string;
+  runtimeReady: boolean;
   compiledPrompt?: SpecForgeCompiledPromptDTO;
   message: string;
   skillRuns: SpecForgeSkillRunDTO[];
@@ -425,7 +443,14 @@ function PromptPreviewWorkbench({
   onCompilePrompt: () => void;
 }) {
   const [copyMessage, setCopyMessage] = useState('');
-  const previewText = node ? (compiledPrompt?.prompt_text ?? buildPromptPreview(plan, node)) : '';
+  const previewText = node
+    ? (compiledPrompt?.prompt_text ??
+      buildPromptPreview(plan, node, {
+        skillRuns,
+        executor: selectedExecutor,
+        runtimeReady,
+      }))
+    : '';
   const promptSource = compiledPrompt ? 'Compiled by API' : 'Grounded local preview';
   const skillNames = skillNamesFromRuns(skillRuns);
   const promptSkillRefs = skillEvidenceRefs(compiledPrompt?.evidence_refs);

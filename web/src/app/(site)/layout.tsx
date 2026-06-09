@@ -1,5 +1,7 @@
 import { PropsWithChildren } from 'react';
 import Link from 'next/link';
+import { getTranslations } from 'next-intl/server';
+import { LanguageSwitcher } from '@/components/common';
 import { SiteHeaderNav } from '@/components/features/site/site-header-nav';
 import { ThemeToggle } from '@/components/theme-toggle';
 import { Logo } from '@/components/ui/icons';
@@ -8,7 +10,9 @@ import { Logo } from '@/components/ui/icons';
  * Site layout for public pages
  * Unified design language with Auth and Console
  */
-export default function SiteLayout({ children }: PropsWithChildren) {
+export default async function SiteLayout({ children }: PropsWithChildren) {
+  const t = await getTranslations('site');
+
   return (
     <div className="flex min-h-screen flex-col bg-bg-canvas">
       {/* Navigation bar - unified with Console header style */}
@@ -26,13 +30,13 @@ export default function SiteLayout({ children }: PropsWithChildren) {
                 href="/" 
                 className="px-3 py-2 text-sm font-medium text-text-subtle rounded-lg transition-colors hover:text-primary hover:bg-muted/50"
               >
-                Home
+                {t('nav.home')}
               </Link>
               <Link 
                 href="/console" 
                 className="px-3 py-2 text-sm font-medium text-text-subtle rounded-lg transition-colors hover:text-primary hover:bg-muted/50"
               >
-                Console
+                {t('nav.console')}
               </Link>
             </nav>
           </div>
@@ -40,6 +44,7 @@ export default function SiteLayout({ children }: PropsWithChildren) {
           {/* Right side actions */}
           <div className="flex items-center gap-2">
             <ThemeToggle />
+            <LanguageSwitcher />
             <SiteHeaderNav />
           </div>
         </div>
@@ -58,7 +63,7 @@ export default function SiteLayout({ children }: PropsWithChildren) {
             <div className="flex items-center gap-2">
               <Logo className="h-5 w-auto" />
               <span className="text-sm text-text-muted">
-                · PRD-to-PR Automation
+                · {t('footer.tagline')}
               </span>
             </div>
 
@@ -73,7 +78,7 @@ export default function SiteLayout({ children }: PropsWithChildren) {
                 GitHub
               </a>
               <span>
-                © {new Date().getFullYear()} CodingCTO. All rights reserved.
+                © {new Date().getFullYear()} CodingCTO. {t('footer.rights')}
               </span>
             </div>
           </div>

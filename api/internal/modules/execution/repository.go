@@ -638,6 +638,185 @@ func (r *repository) UpdateAgentTask(ctx context.Context, task *domain.SpecForge
 	return nil
 }
 
+func (r *repository) CreateDirectAgentTask(ctx context.Context, task *domain.CodingCTODirectAgentTask) error {
+	if task == nil || strings.TrimSpace(task.RepositoryID) == "" || strings.TrimSpace(task.Prompt) == "" {
+		return domain.ErrInvalidInput
+	}
+	po := newDirectAgentTaskPO(task)
+	if err := r.db.WithContext(ctx).Create(po).Error; err != nil {
+		return err
+	}
+	task.ID = po.ID
+	task.CreatedAt = po.CreatedAt
+	task.UpdatedAt = po.UpdatedAt
+	return nil
+}
+
+func (r *repository) FindDirectAgentTaskByID(ctx context.Context, taskID uint) (*domain.CodingCTODirectAgentTask, error) {
+	if taskID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	var po DirectAgentTaskPO
+	if err := r.db.WithContext(ctx).First(&po, taskID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return po.toDomain(), nil
+}
+
+func (r *repository) ListDirectAgentTasks(ctx context.Context, createdBy uint, repositoryID, executor, runtimeID string, limit int) ([]*domain.CodingCTODirectAgentTask, error) {
+	if createdBy == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	if limit <= 0 || limit > 50 {
+		limit = 20
+	}
+	var pos []*DirectAgentTaskPO
+	query := r.db.WithContext(ctx).Where("created_by = ?", createdBy)
+	if strings.TrimSpace(repositoryID) != "" {
+		query = query.Where("repository_id = ?", strings.TrimSpace(repositoryID))
+	}
+	if strings.TrimSpace(executor) != "" {
+		query = query.Where("executor = ?", strings.TrimSpace(executor))
+	}
+	if strings.TrimSpace(runtimeID) != "" {
+		query = query.Where("runtime_id = ?", strings.TrimSpace(runtimeID))
+	}
+	if err := query.Order("id DESC").Limit(limit).Find(&pos).Error; err != nil {
+		return nil, err
+	}
+	tasks := make([]*domain.CodingCTODirectAgentTask, len(pos))
+	for i, po := range pos {
+		tasks[i] = po.toDomain()
+	}
+	return tasks, nil
+}
+
+func (r *repository) HasClaimableDirectAgentTask(ctx context.Context, runtimeID, executor string) (bool, error) {
+	runtimeID = strings.TrimSpace(runtimeID)
+	executor = strings.TrimSpace(executor)
+	if runtimeID == "" {
+		return false, domain.ErrInvalidInput
+	}
+	query := r.db.WithContext(ctx).Model(&DirectAgentTaskPO{}).
+		Where("status = ?", domain.AgentTaskStatusDispatched).
+		Where("(runtime_id = '' OR runtime_id IS NULL OR runtime_id = ?)", runtimeID)
+	if executor != "" {
+		query = query.Where("executor = ?", executor)
+	}
+	var count int64
+	if err := query.Count(&count).Error; err != nil {
+		return false, err
+	}
+	return count > 0, nil
+}
+
+func (r *repository) ClaimDirectAgentTask(ctx context.Context, runtimeID, executor, sessionID, workdir string) (*domain.CodingCTODirectAgentTask, error) {
+	runtimeID = strings.TrimSpace(runtimeID)
+	executor = strings.TrimSpace(executor)
+	if runtimeID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+
+	var claimed *domain.CodingCTODirectAgentTask
+	err := r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var po DirectAgentTaskPO
+		query := tx.Clauses(clause.Locking{Strength: "UPDATE"}).
+			Where("status = ?", domain.AgentTaskStatusDispatched).
+			Where("(runtime_id = '' OR runtime_id IS NULL OR runtime_id = ?)", runtimeID)
+		if executor != "" {
+			query = query.Where("executor = ?", executor)
+		}
+		if err := query.Order("dispatched_at ASC, id ASC").First(&po).Error; err != nil {
+			if errors.Is(err, gorm.ErrRecordNotFound) {
+				return domain.ErrNotFound
+			}
+			return err
+		}
+
+		now := time.Now()
+		po.Status = domain.AgentTaskStatusRunning
+		po.RuntimeID = runtimeID
+		if strings.TrimSpace(sessionID) != "" {
+			po.SessionID = strings.TrimSpace(sessionID)
+		}
+		if strings.TrimSpace(workdir) != "" {
+			po.Workdir = strings.TrimSpace(workdir)
+		}
+		if po.StartedAt == nil {
+			po.StartedAt = &now
+		}
+		if po.LastProgressAt == nil {
+			po.LastProgressAt = &now
+		}
+		if err := tx.Save(&po).Error; err != nil {
+			return err
+		}
+		claimed = po.toDomain()
+		return nil
+	})
+	if err != nil {
+		return nil, err
+	}
+	return claimed, nil
+}
+
+func (r *repository) UpdateDirectAgentTask(ctx context.Context, task *domain.CodingCTODirectAgentTask) error {
+	if task == nil || task.ID == 0 {
+		return domain.ErrInvalidInput
+	}
+	po := newDirectAgentTaskPO(task)
+	if err := r.db.WithContext(ctx).Save(po).Error; err != nil {
+		return err
+	}
+	task.UpdatedAt = po.UpdatedAt
+	return nil
+}
+
+func (r *repository) CreateDirectTaskEvent(ctx context.Context, event *domain.CodingCTODirectTaskEvent) error {
+	if event == nil || event.TaskID == 0 || strings.TrimSpace(event.Type) == "" {
+		return domain.ErrInvalidInput
+	}
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var maxSeq int
+		if err := tx.Model(&DirectTaskEventPO{}).
+			Where("task_id = ?", event.TaskID).
+			Select("COALESCE(MAX(seq), 0)").
+			Scan(&maxSeq).Error; err != nil {
+			return err
+		}
+		event.Seq = maxSeq + 1
+		po := newDirectTaskEventPO(event)
+		if err := tx.Create(po).Error; err != nil {
+			return err
+		}
+		event.ID = po.ID
+		event.CreatedAt = po.CreatedAt
+		return nil
+	})
+}
+
+func (r *repository) ListDirectTaskEvents(ctx context.Context, taskID uint, afterSeq int) ([]*domain.CodingCTODirectTaskEvent, error) {
+	if taskID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	query := r.db.WithContext(ctx).Where("task_id = ?", taskID)
+	if afterSeq > 0 {
+		query = query.Where("seq > ?", afterSeq)
+	}
+	var pos []*DirectTaskEventPO
+	if err := query.Order("seq ASC").Find(&pos).Error; err != nil {
+		return nil, err
+	}
+	events := make([]*domain.CodingCTODirectTaskEvent, len(pos))
+	for i, po := range pos {
+		events[i] = po.toDomain()
+	}
+	return events, nil
+}
+
 func compactStrings(values []string) []string {
 	out := make([]string, 0, len(values))
 	seen := make(map[string]struct{}, len(values))

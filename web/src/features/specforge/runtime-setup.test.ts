@@ -13,8 +13,8 @@ describe('runtime setup', () => {
     });
 
     expect(command).toContain('cd api');
-    expect(command).toContain('export SPECFORGE_RUNTIME_TOKEN="paste-runtime-token-here"');
-    expect(command).toContain('go run ./cmd/specforge-runtime');
+    expect(command).toContain('export CODINGCTO_RUNTIME_TOKEN="paste-runtime-token-here"');
+    expect(command).toContain('go run ./cmd/ccto daemon');
     expect(command).toContain('--api-base-url http://localhost:2010/v1');
     expect(command).toContain('--runtime-id local-codex-plan-42');
     expect(command).toContain('--repo-dir /Users/example/codingcto');
@@ -38,9 +38,9 @@ describe('runtime setup', () => {
   it('summarizes runtime setup before and after readiness', () => {
     expect(
       runtimeSetupChecklist({ repositoryId: 'repo_123', readyRuntimeCount: 0 })
-    ).toContain('Keep Codex CLI installed and authenticated in the runtime shell.');
+    ).toContain('确认运行器所在终端已安装并登录 Codex CLI。');
     expect(
       runtimeSetupChecklist({ repositoryId: 'repo_123', readyRuntimeCount: 2 })
-    ).toContain('2 writable Codex runtimes are online.');
+    ).toContain('2 个可写的 Codex 运行器在线。');
   });
 });

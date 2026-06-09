@@ -6,6 +6,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"math"
 	"strconv"
 	"strings"
 	"time"
@@ -44,6 +45,12 @@ type Service interface {
 	CreateTaskEvent(ctx context.Context, taskID uint, req *CreateTaskEventRequest) (*domain.SpecForgeTaskEvent, error)
 	ListTaskEvents(ctx context.Context, taskID uint, afterSeq int) ([]*domain.SpecForgeTaskEvent, error)
 	CompleteTask(ctx context.Context, taskID uint) (*domain.SpecForgeExecutionBundle, error)
+	CreateDirectAgentTask(ctx context.Context, userID uint, req *CreateDirectAgentTaskRequest) (*domain.CodingCTODirectAgentTask, error)
+	ListDirectAgentTasks(ctx context.Context, userID uint, req *ListDirectAgentTasksRequest) (*DirectAgentTaskListResponse, error)
+	GetDirectAgentTask(ctx context.Context, userID, taskID uint) (*domain.CodingCTODirectAgentTask, error)
+	CreateDirectTaskEvent(ctx context.Context, taskID uint, req *CreateTaskEventRequest) (*domain.CodingCTODirectTaskEvent, error)
+	ListDirectTaskEvents(ctx context.Context, userID, taskID uint, afterSeq int) ([]*domain.CodingCTODirectTaskEvent, error)
+	SubmitDirectTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.CodingCTODirectAgentTask, error)
 }
 
 type PRNodeDeliverer interface {
@@ -496,7 +503,10 @@ func (s *service) DispatchRun(ctx context.Context, runID uint, req *DispatchExec
 			return nil, err
 		}
 		task.Status = domain.AgentTaskStatusDispatched
+		task.ProcessStatus = domain.AgentProcessStatusPending
+		task.CurrentPhase = "dispatched"
 		task.DispatchedAt = &now
+		task.LastProgressAt = &now
 		if task.AttemptNumber == 0 {
 			task.AttemptNumber = 1
 		}
@@ -655,6 +665,12 @@ func (s *service) HeartbeatRuntime(ctx context.Context, req *RuntimeHeartbeatReq
 	if err != nil {
 		return nil, fmt.Errorf("check claimable task: %w", err)
 	}
+	if !pending {
+		pending, err = s.repo.HasClaimableDirectAgentTask(ctx, runtime.RuntimeID, runtime.Executor)
+		if err != nil {
+			return nil, fmt.Errorf("check claimable direct task: %w", err)
+		}
+	}
 	return &RuntimeHeartbeatResponse{Runtime: runtime, ClaimPending: pending}, nil
 }
 
@@ -777,6 +793,13 @@ func (s *service) ClaimTask(ctx context.Context, runtimeID string, req *ClaimAge
 	if req == nil {
 		req = &ClaimAgentTaskRequest{}
 	}
+	directTask, err := s.repo.ClaimDirectAgentTask(ctx, runtimeID, req.Executor, req.SessionID, req.Workdir)
+	if err != nil && !errors.Is(err, domain.ErrNotFound) {
+		return nil, fmt.Errorf("claim direct agent task: %w", err)
+	}
+	if directTask != nil {
+		return s.buildDirectClaimResponse(ctx, directTask), nil
+	}
 	task, err := s.repo.ClaimDispatchedAgentTask(ctx, runtimeID, req.Executor, req.SessionID, req.Workdir)
 	if err != nil {
 		if errors.Is(err, domain.ErrNotFound) {
@@ -801,6 +824,205 @@ func (s *service) ClaimTask(ctx context.Context, runtimeID string, req *ClaimAge
 		return nil, err
 	}
 	return claim, nil
+}
+
+func (s *service) CreateDirectAgentTask(ctx context.Context, userID uint, req *CreateDirectAgentTaskRequest) (*domain.CodingCTODirectAgentTask, error) {
+	if userID == 0 || req == nil || strings.TrimSpace(req.RepositoryID) == "" || strings.TrimSpace(req.Prompt) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	executor := strings.TrimSpace(req.Executor)
+	if executor == "" {
+		executor = ExecutorNameCodexCLI
+	}
+	now := time.Now()
+	title := strings.TrimSpace(req.Title)
+	if title == "" {
+		title = directTaskTitle(req.Prompt)
+	}
+	task := &domain.CodingCTODirectAgentTask{
+		CreatedBy:    userID,
+		RepositoryID: strings.TrimSpace(req.RepositoryID),
+		Title:        title,
+		Prompt:       strings.TrimSpace(req.Prompt),
+		Executor:     executor,
+		Status:       domain.AgentTaskStatusDispatched,
+		RuntimeID:    strings.TrimSpace(req.RuntimeID),
+		DispatchedAt: &now,
+		CreatedAt:    now,
+		UpdatedAt:    now,
+	}
+	if err := s.repo.CreateDirectAgentTask(ctx, task); err != nil {
+		return nil, fmt.Errorf("create direct agent task: %w", err)
+	}
+	_, _ = s.CreateDirectTaskEvent(ctx, task.ID, &CreateTaskEventRequest{
+		Type:    "direct_task_dispatched",
+		Tool:    executor,
+		Content: "CodingCTO dispatched a direct agent task.",
+	})
+	return task, nil
+}
+
+func (s *service) ListDirectAgentTasks(ctx context.Context, userID uint, req *ListDirectAgentTasksRequest) (*DirectAgentTaskListResponse, error) {
+	if userID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	limit := 20
+	if req != nil && req.Limit > 0 {
+		limit = req.Limit
+	}
+	repositoryID := ""
+	executor := ""
+	runtimeID := ""
+	if req != nil {
+		repositoryID = strings.TrimSpace(req.RepositoryID)
+		executor = strings.TrimSpace(req.Executor)
+		runtimeID = strings.TrimSpace(req.RuntimeID)
+	}
+	tasks, err := s.repo.ListDirectAgentTasks(ctx, userID, repositoryID, executor, runtimeID, limit)
+	if err != nil {
+		return nil, fmt.Errorf("list direct agent tasks: %w", err)
+	}
+	return &DirectAgentTaskListResponse{Tasks: tasks}, nil
+}
+
+func (s *service) GetDirectAgentTask(ctx context.Context, userID, taskID uint) (*domain.CodingCTODirectAgentTask, error) {
+	if userID == 0 || taskID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	task, err := s.repo.FindDirectAgentTaskByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	if task.CreatedBy != userID {
+		return nil, domain.ErrNotFound
+	}
+	return task, nil
+}
+
+func (s *service) CreateDirectTaskEvent(ctx context.Context, taskID uint, req *CreateTaskEventRequest) (*domain.CodingCTODirectTaskEvent, error) {
+	if taskID == 0 || req == nil || strings.TrimSpace(req.Type) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	event := &domain.CodingCTODirectTaskEvent{
+		TaskID:  taskID,
+		Type:    strings.TrimSpace(req.Type),
+		Tool:    strings.TrimSpace(req.Tool),
+		Content: trimRuntimeResultField(req.Content),
+		Input:   trimRuntimeResultField(req.Input),
+		Output:  trimRuntimeResultField(req.Output),
+	}
+	if err := s.repo.CreateDirectTaskEvent(ctx, event); err != nil {
+		return nil, fmt.Errorf("create direct task event: %w", err)
+	}
+	return event, nil
+}
+
+func (s *service) ListDirectTaskEvents(ctx context.Context, userID, taskID uint, afterSeq int) ([]*domain.CodingCTODirectTaskEvent, error) {
+	if _, err := s.GetDirectAgentTask(ctx, userID, taskID); err != nil {
+		return nil, err
+	}
+	events, err := s.repo.ListDirectTaskEvents(ctx, taskID, afterSeq)
+	if err != nil {
+		return nil, fmt.Errorf("list direct task events: %w", err)
+	}
+	return events, nil
+}
+
+func (s *service) SubmitDirectTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.CodingCTODirectAgentTask, error) {
+	if taskID == 0 || req == nil || strings.TrimSpace(req.Status) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	task, err := s.repo.FindDirectAgentTaskByID(ctx, taskID)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now()
+	task.RuntimeID = firstNonEmpty(req.RuntimeID, task.RuntimeID)
+	task.SessionID = firstNonEmpty(req.SessionID, task.SessionID)
+	task.Workdir = firstNonEmpty(req.Workdir, task.Workdir)
+	task.ProcessRef = strings.TrimSpace(req.ProcessRef)
+	task.OutputLog = trimRuntimeResultField(req.Output)
+	task.ErrorLog = trimRuntimeResultField(req.Error)
+	task.ExitCode = &req.ExitCode
+	task.FailureReason = strings.TrimSpace(req.FailureReason)
+	task.FinishedAt = &now
+	task.LastProgressAt = &now
+	switch strings.TrimSpace(req.Status) {
+	case "completed":
+		task.Status = domain.AgentTaskStatusCompleted
+	case "timeout":
+		task.Status = domain.AgentTaskStatusFailed
+		if task.FailureReason == "" {
+			task.FailureReason = "execution_timeout"
+		}
+	default:
+		task.Status = domain.AgentTaskStatusFailed
+		if task.FailureReason == "" {
+			task.FailureReason = "executor_failed"
+		}
+	}
+	if err := s.repo.UpdateDirectAgentTask(ctx, task); err != nil {
+		return nil, fmt.Errorf("submit direct task result: %w", err)
+	}
+	return task, nil
+}
+
+func (s *service) buildDirectClaimResponse(_ context.Context, task *domain.CodingCTODirectAgentTask) *ClaimAgentTaskResponse {
+	if task == nil {
+		return &ClaimAgentTaskResponse{}
+	}
+	return &ClaimAgentTaskResponse{
+		DirectTask: &ClaimedDirectAgentTask{
+			ID:           task.ID,
+			RepositoryID: task.RepositoryID,
+			Title:        task.Title,
+			Executor:     task.Executor,
+			Status:       task.Status,
+			RuntimeID:    task.RuntimeID,
+			SessionID:    task.SessionID,
+			Workdir:      task.Workdir,
+			ProcessRef:   task.ProcessRef,
+		},
+		Prompt: &ClaimedTaskPrompt{
+			ID:         task.ID,
+			Version:    "direct-v1",
+			Type:       domain.PromptTypeImplementation,
+			PromptText: directTaskPrompt(task),
+			PromptHash: directTaskPromptHash(task),
+		},
+		ExecutionContext: &ClaimedTaskExecutionContext{
+			RepositoryID: task.RepositoryID,
+			BranchName:   "",
+		},
+	}
+}
+
+func directTaskTitle(prompt string) string {
+	title := strings.Join(strings.Fields(strings.TrimSpace(prompt)), " ")
+	if len(title) > 80 {
+		title = title[:80]
+	}
+	if title == "" {
+		return "Direct CodingCTO task"
+	}
+	return title
+}
+
+func directTaskPrompt(task *domain.CodingCTODirectAgentTask) string {
+	return strings.TrimSpace(fmt.Sprintf(`You are running a direct CodingCTO agent task.
+
+Repository id: %s
+Task title: %s
+
+User request:
+%s
+
+Work only inside the current repository. Make the smallest coherent code change that satisfies the request. If the request is informational, inspect the repository and report concise findings without making unrelated edits.`, task.RepositoryID, task.Title, task.Prompt))
+}
+
+func directTaskPromptHash(task *domain.CodingCTODirectAgentTask) string {
+	sum := sha256.Sum256([]byte(directTaskPrompt(task)))
+	return hex.EncodeToString(sum[:])
 }
 
 func (s *service) RetryTask(ctx context.Context, taskID uint, req *RetryAgentTaskRequest) (*domain.SpecForgeExecutionBundle, error) {
@@ -1114,6 +1336,8 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 	}
 	now := time.Now()
 	task.Status = domain.AgentTaskStatusRunning
+	task.ProcessStatus = domain.AgentProcessStatusRunning
+	task.CurrentPhase = "claim_accepted"
 	if runtimeID := strings.TrimSpace(req.RuntimeID); runtimeID != "" {
 		task.RuntimeID = runtimeID
 	}
@@ -1129,6 +1353,7 @@ func (s *service) ExecuteTask(ctx context.Context, taskID uint, req *ExecuteAgen
 	if task.StartedAt == nil {
 		task.StartedAt = &now
 	}
+	task.LastProgressAt = &now
 	if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
 		return nil, fmt.Errorf("mark agent task running: %w", err)
 	}
@@ -1204,6 +1429,11 @@ func (s *service) SubmitTaskResult(ctx context.Context, taskID uint, req *Submit
 	if workdir := strings.TrimSpace(req.Workdir); workdir != "" {
 		task.Workdir = workdir
 	}
+	if processRef := strings.TrimSpace(req.ProcessRef); processRef != "" {
+		task.ProcessRef = processRef
+	}
+	now := time.Now()
+	task.LastProgressAt = &now
 	result := &ExecutionResult{
 		Status:   strings.TrimSpace(req.Status),
 		Output:   strings.TrimSpace(req.Output),
@@ -1234,6 +1464,11 @@ func (s *service) CreateTaskEvent(ctx context.Context, taskID uint, req *CreateT
 	}
 	if err := s.repo.CreateTaskEvent(ctx, event); err != nil {
 		return nil, fmt.Errorf("create task event: %w", err)
+	}
+	if updated := applyTaskEventProgress(task, event); updated {
+		if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
+			return nil, fmt.Errorf("sync task progress from event: %w", err)
+		}
 	}
 	return event, nil
 }
@@ -1437,9 +1672,12 @@ func (s *service) finalizeTaskResult(ctx context.Context, task *domain.SpecForge
 	task.ErrorLog = redact.Text(result.Error)
 	task.ExitCode = &result.ExitCode
 	task.FinishedAt = &finishedAt
+	task.LastProgressAt = &finishedAt
 	if runErr != nil || result.Status != "completed" || result.ExitCode != 0 {
 		task.Status = domain.AgentTaskStatusFailed
 		task.FailureReason = executionFailureReason(result, runErr)
+		task.ProcessStatus = processStatusForResult(result, runErr)
+		task.CurrentPhase = "finished_with_error"
 		if strings.TrimSpace(failureReasonOverride) != "" {
 			task.FailureReason = strings.TrimSpace(failureReasonOverride)
 		}
@@ -1447,9 +1685,13 @@ func (s *service) finalizeTaskResult(ctx context.Context, task *domain.SpecForge
 		if err := s.deliverTaskPR(ctx, task); err != nil {
 			task.Status = domain.AgentTaskStatusFailed
 			task.FailureReason = "pr_delivery_failed"
+			task.ProcessStatus = domain.AgentProcessStatusFailed
+			task.CurrentPhase = "pr_delivery_failed"
 			task.ErrorLog = appendLogLine(task.ErrorLog, err.Error())
 		} else {
 			task.Status = domain.AgentTaskStatusCompleted
+			task.ProcessStatus = domain.AgentProcessStatusCompleted
+			task.CurrentPhase = "completed"
 		}
 	}
 	if err := s.repo.UpdateAgentTask(ctx, task); err != nil {
@@ -1605,18 +1847,98 @@ func appendLogLine(existing, line string) string {
 	return existing + "\n" + line
 }
 
+func normalizeProcessStatus(value string) string {
+	value = strings.TrimSpace(value)
+	switch value {
+	case domain.AgentProcessStatusPending,
+		domain.AgentProcessStatusPreparing,
+		domain.AgentProcessStatusRunning,
+		domain.AgentProcessStatusCompleted,
+		domain.AgentProcessStatusFailed,
+		domain.AgentProcessStatusTimedOut,
+		domain.AgentProcessStatusCancelled,
+		domain.AgentProcessStatusLost:
+		return value
+	default:
+		return domain.AgentProcessStatusPending
+	}
+}
+
+func applyTaskEventProgress(task *domain.SpecForgeAgentTask, event *domain.SpecForgeTaskEvent) bool {
+	if task == nil || event == nil {
+		return false
+	}
+	updated := false
+	now := event.CreatedAt
+	if now.IsZero() {
+		now = time.Now()
+	}
+	task.LastProgressAt = &now
+	updated = true
+
+	switch strings.TrimSpace(event.Type) {
+	case "runtime_claimed":
+		if task.Status == domain.AgentTaskStatusDispatched {
+			task.Status = domain.AgentTaskStatusRunning
+		}
+		task.ProcessStatus = domain.AgentProcessStatusPreparing
+		task.CurrentPhase = "runtime_claimed"
+	case "executor_started":
+		task.ProcessStatus = domain.AgentProcessStatusRunning
+		task.CurrentPhase = "executor_started"
+		if strings.TrimSpace(event.Content) != "" {
+			task.ProcessRef = strings.TrimSpace(event.Content)
+		}
+	case "executor_preparing_repo":
+		task.ProcessStatus = domain.AgentProcessStatusPreparing
+		task.CurrentPhase = "preparing_repo"
+	case "executor_phase_changed":
+		task.ProcessStatus = domain.AgentProcessStatusRunning
+		if strings.TrimSpace(event.Content) != "" {
+			task.CurrentPhase = strings.TrimSpace(event.Content)
+		}
+	case "executor_stdout":
+		task.ProcessStatus = domain.AgentProcessStatusRunning
+		task.CurrentPhase = "streaming_output"
+		if strings.TrimSpace(event.Output) != "" {
+			task.OutputLog = appendLogLine(task.OutputLog, event.Output)
+		}
+	case "executor_stderr":
+		task.ProcessStatus = domain.AgentProcessStatusRunning
+		task.CurrentPhase = "streaming_output"
+		if strings.TrimSpace(event.Output) != "" {
+			task.ErrorLog = appendLogLine(task.ErrorLog, event.Output)
+		}
+	case "executor_heartbeat":
+		if task.ProcessStatus == domain.AgentProcessStatusPending {
+			task.ProcessStatus = domain.AgentProcessStatusRunning
+		}
+		if strings.TrimSpace(event.Content) != "" {
+			task.CurrentPhase = strings.TrimSpace(event.Content)
+		}
+	case "executor_result":
+		task.CurrentPhase = "executor_finished"
+	}
+	return updated
+}
+
 func buildInitialTasks(nodes []*domain.SpecForgePRNode, executor string) []*domain.SpecForgeAgentTask {
 	tasks := make([]*domain.SpecForgeAgentTask, 0, len(nodes))
 	for _, node := range nodes {
 		status := domain.AgentTaskStatusQueued
+		processStatus := domain.AgentProcessStatusPending
+		currentPhase := "awaiting_dispatch"
 		if len(node.DependsOn) > 0 {
 			status = domain.AgentTaskStatusWaiting
+			currentPhase = "awaiting_dependencies"
 		}
 		tasks = append(tasks, &domain.SpecForgeAgentTask{
 			PRNodeID:      node.ID,
 			Executor:      executor,
 			Status:        status,
 			PromptType:    domain.PromptTypeImplementation,
+			ProcessStatus: processStatus,
+			CurrentPhase:  currentPhase,
 			AttemptNumber: 1,
 		})
 	}
@@ -1724,12 +2046,145 @@ func writeRunEvidenceRefs(b *strings.Builder, bundle *domain.SpecForgePlanBundle
 		writeExecutionEvidenceList(b, "repo_profile.coding_conventions", profile.CodingConventions)
 		writeExecutionEvidenceList(b, "repo_profile.risk_areas", profile.RiskAreas)
 		writeExecutionEvidenceList(b, "repo_profile.warnings", profile.Warnings)
+		writeRunRepoWikiPlanningContextRefs(b, profile)
+	} else {
+		writeRunMissingRepoWikiPlanningContextRefs(b)
 	}
 	if bundle != nil && bundle.ProjectContext != nil {
 		writeRunProjectEvidenceRefs(b, bundle.ProjectContext)
 	}
 	writeRunSkillEvidenceRefs(b, skills)
 	b.WriteString("\n")
+}
+
+func writeRunMissingRepoWikiPlanningContextRefs(b *strings.Builder) {
+	b.WriteString("- repo_wiki.planning_context_state: blocked\n")
+	b.WriteString("- repo_wiki.planning_context_score: 0%\n")
+	b.WriteString("- repo_wiki.next_action: Complete Repository overview before asking experts to generate or approve the plan.\n")
+	b.WriteString("- repo_wiki.planning_context_sections:\n")
+	b.WriteString("  - Repository overview [blocked, evidence=0]: Repository profile is missing.\n")
+	b.WriteString("  - Structure and entrypoints [blocked, evidence=0]: Repository profile is missing.\n")
+	b.WriteString("  - Testing and quality [blocked, evidence=0]: Repository profile is missing.\n")
+}
+
+func writeRunRepoWikiPlanningContextRefs(b *strings.Builder, profile *domain.SpecForgeRepoProfile) {
+	if profile == nil {
+		return
+	}
+	sections := runRepoWikiPlanningSections(profile)
+	readyCount := 0
+	blockedCount := 0
+	for _, section := range sections {
+		if section.State == "ready" {
+			readyCount++
+		}
+		if section.State == "blocked" {
+			blockedCount++
+		}
+	}
+	state := "waiting"
+	if blockedCount > 0 {
+		state = "blocked"
+	} else if readyCount == len(sections) {
+		state = "ready"
+	}
+	score := 0
+	if len(sections) > 0 {
+		score = int(math.Round(float64(readyCount) / float64(len(sections)) * 100))
+	}
+
+	b.WriteString("- repo_wiki.planning_context_state: " + state + "\n")
+	b.WriteString("- repo_wiki.planning_context_score: " + fmt.Sprintf("%d%%", score) + "\n")
+	b.WriteString("- repo_wiki.next_action: " + compactExecutionLine(runRepoWikiPlanningNextAction(sections)) + "\n")
+	b.WriteString("- repo_wiki.planning_context_sections:\n")
+	for _, section := range sections {
+		b.WriteString("  - " + section.Label + " [" + section.State + ", evidence=" + fmt.Sprint(section.EvidenceCount) + "]: " + compactExecutionLine(section.Detail) + "\n")
+	}
+}
+
+type runRepoWikiPlanningSection struct {
+	Label         string
+	State         string
+	Detail        string
+	EvidenceCount int
+}
+
+func runRepoWikiPlanningSections(profile *domain.SpecForgeRepoProfile) []runRepoWikiPlanningSection {
+	summary := strings.TrimSpace(profile.Summary)
+	structureCount := len(normalizeExecutionList(profile.Stack)) + len(normalizeExecutionList(profile.AppStructure))
+	qualityCount := len(normalizeExecutionList(profile.TestCommands))
+	if strings.TrimSpace(profile.CIProvider) != "" {
+		qualityCount++
+	}
+	riskCount := len(normalizeExecutionList(profile.RiskAreas))
+	conventionCount := len(normalizeExecutionList(profile.CodingConventions))
+
+	return []runRepoWikiPlanningSection{
+		{
+			Label:         "Repository overview",
+			State:         runPlanningSectionState(strings.TrimSpace(profile.RepositoryID) != "" && summary != "", true),
+			Detail:        "Product experts can understand the existing product boundary and available capabilities.",
+			EvidenceCount: runCountNonEmpty(profile.RepositoryID, summary),
+		},
+		{
+			Label:         "Structure and entrypoints",
+			State:         runPlanningSectionState(structureCount > 0, true),
+			Detail:        "Architecture experts can constrain impact area, modules, and implementation entrypoints.",
+			EvidenceCount: structureCount,
+		},
+		{
+			Label:         "Testing and quality",
+			State:         runPlanningSectionState(qualityCount > 0, true),
+			Detail:        "QA experts can attach commands and CI expectations to PR nodes.",
+			EvidenceCount: qualityCount,
+		},
+		{
+			Label:         "Risk areas",
+			State:         runPlanningSectionState(riskCount > 0, false),
+			Detail:        "Architecture and security risks should enter plan approval and prompt constraints.",
+			EvidenceCount: riskCount,
+		},
+		{
+			Label:         "Engineering conventions",
+			State:         runPlanningSectionState(conventionCount > 0, false),
+			Detail:        "Coding Agent can follow existing naming, folder, testing, and code style conventions.",
+			EvidenceCount: conventionCount,
+		},
+	}
+}
+
+func runPlanningSectionState(hasEvidence bool, required bool) string {
+	if hasEvidence {
+		return "ready"
+	}
+	if required {
+		return "blocked"
+	}
+	return "waiting"
+}
+
+func runRepoWikiPlanningNextAction(sections []runRepoWikiPlanningSection) string {
+	for _, section := range sections {
+		if section.State == "blocked" {
+			return "Complete " + section.Label + " before asking experts to generate or approve the plan."
+		}
+	}
+	for _, section := range sections {
+		if section.State == "waiting" {
+			return "Planning can continue; add " + section.Label + " to improve prompt constraints."
+		}
+	}
+	return "Repo Wiki is ready as planning context for product, architecture, QA, and Coding Agent work."
+}
+
+func runCountNonEmpty(values ...string) int {
+	count := 0
+	for _, value := range values {
+		if strings.TrimSpace(value) != "" {
+			count++
+		}
+	}
+	return count
 }
 
 func writeExecutionEvidenceList(b *strings.Builder, name string, values []string) {
@@ -2172,16 +2627,12 @@ func writeExecutionRepoProfile(b *strings.Builder, bundle *domain.SpecForgePlanB
 
 func writeExecutionSkills(b *strings.Builder, skills []*domain.SpecForgeSkill) {
 	b.WriteString("Repository skills:\n")
-	if len(skills) == 0 {
+	activeSkills := activeExecutionSkills(skills)
+	if len(activeSkills) == 0 {
 		b.WriteString("- None\n\n")
 		return
 	}
-	wrote := false
-	for _, skill := range skills {
-		if skill == nil || strings.TrimSpace(skill.Name) == "" || strings.TrimSpace(skill.Content) == "" {
-			continue
-		}
-		wrote = true
+	for _, skill := range activeSkills {
 		b.WriteString("## " + strings.TrimSpace(skill.Name) + "\n")
 		if strings.TrimSpace(skill.Description) != "" {
 			b.WriteString(strings.TrimSpace(skill.Description) + "\n")
@@ -2191,9 +2642,17 @@ func writeExecutionSkills(b *strings.Builder, skills []*domain.SpecForgeSkill) {
 		}
 		b.WriteString(strings.TrimSpace(skill.Content) + "\n\n")
 	}
-	if !wrote {
-		b.WriteString("- None\n\n")
+}
+
+func activeExecutionSkills(skills []*domain.SpecForgeSkill) []*domain.SpecForgeSkill {
+	out := make([]*domain.SpecForgeSkill, 0, len(skills))
+	for _, skill := range skills {
+		if skill == nil || strings.TrimSpace(skill.Name) == "" || strings.TrimSpace(skill.Content) == "" {
+			continue
+		}
+		out = append(out, skill)
 	}
+	return out
 }
 
 func synthesizedExecutionProjectProfile(context *domain.SpecForgeProjectContext, primaryRepoID string) *domain.SpecForgeRepoProfile {
@@ -2749,6 +3208,9 @@ func markTaskFailed(task *domain.SpecForgeAgentTask, reason, detail string, exit
 	task.ErrorLog = appendLogLine(task.ErrorLog, detail)
 	task.ExitCode = &exitCode
 	task.FinishedAt = &now
+	task.LastProgressAt = &now
+	task.ProcessStatus = domain.AgentProcessStatusFailed
+	task.CurrentPhase = "failed"
 }
 
 func executionFailureReason(result *ExecutionResult, runErr error) string {
@@ -2759,6 +3221,16 @@ func executionFailureReason(result *ExecutionResult, runErr error) string {
 		return "executor_error"
 	}
 	return "executor_failed"
+}
+
+func processStatusForResult(result *ExecutionResult, runErr error) string {
+	if result != nil && strings.TrimSpace(result.Status) == "timeout" {
+		return domain.AgentProcessStatusTimedOut
+	}
+	if runErr != nil || (result != nil && result.ExitCode != 0) {
+		return domain.AgentProcessStatusFailed
+	}
+	return domain.AgentProcessStatusCompleted
 }
 
 func toClaimedAgentTask(task *domain.SpecForgeAgentTask) *ClaimedAgentTask {
@@ -2772,12 +3244,15 @@ func toClaimedAgentTask(task *domain.SpecForgeAgentTask) *ClaimedAgentTask {
 		Executor:      task.Executor,
 		Status:        task.Status,
 		PromptType:    taskPromptType(task),
+		ProcessStatus: normalizeProcessStatus(task.ProcessStatus),
+		CurrentPhase:  strings.TrimSpace(task.CurrentPhase),
 		RuntimeID:     task.RuntimeID,
 		AttemptNumber: task.AttemptNumber,
 		ParentTaskID:  task.ParentTaskID,
 		FixAttemptID:  task.FixAttemptID,
 		SessionID:     task.SessionID,
 		Workdir:       task.Workdir,
+		ProcessRef:    task.ProcessRef,
 	}
 }
 

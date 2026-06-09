@@ -27,9 +27,21 @@ type RuntimeWorkerConfig struct {
 }
 
 type RuntimeWorker struct {
-	cfg      RuntimeWorkerConfig
-	client   RuntimeAPIClient
-	executor CodeExecutor
+	cfg       RuntimeWorkerConfig
+	client    RuntimeAPIClient
+	connector CodingAgentConnector
+}
+
+type runtimeProgressReporter struct {
+	client RuntimeAPIClient
+	taskID uint
+	tool   string
+}
+
+type directRuntimeProgressReporter struct {
+	client RuntimeAPIClient
+	taskID uint
+	tool   string
 }
 
 type RuntimeWorkerResult struct {
@@ -39,6 +51,10 @@ type RuntimeWorkerResult struct {
 }
 
 func NewRuntimeWorker(cfg RuntimeWorkerConfig, client RuntimeAPIClient, executor CodeExecutor) *RuntimeWorker {
+	return NewRuntimeWorkerWithConnector(cfg, client, NewCLIConnector(executor))
+}
+
+func NewRuntimeWorkerWithConnector(cfg RuntimeWorkerConfig, client RuntimeAPIClient, connector CodingAgentConnector) *RuntimeWorker {
 	if strings.TrimSpace(cfg.Executor) == "" {
 		cfg.Executor = ExecutorNameCodexCLI
 	}
@@ -50,11 +66,11 @@ func NewRuntimeWorker(cfg RuntimeWorkerConfig, client RuntimeAPIClient, executor
 	if cfg.PollInterval <= 0 {
 		cfg.PollInterval = 10 * time.Second
 	}
-	return &RuntimeWorker{cfg: cfg, client: client, executor: executor}
+	return &RuntimeWorker{cfg: cfg, client: client, connector: connector}
 }
 
 func (w *RuntimeWorker) RunOnce(ctx context.Context) (*RuntimeWorkerResult, error) {
-	if w.client == nil || w.executor == nil || strings.TrimSpace(w.cfg.RuntimeID) == "" {
+	if w.client == nil || w.connector == nil || strings.TrimSpace(w.cfg.RuntimeID) == "" {
 		return nil, domain.ErrInvalidInput
 	}
 	heartbeat, err := w.client.Heartbeat(ctx, &RuntimeHeartbeatRequest{
@@ -82,8 +98,12 @@ func (w *RuntimeWorker) RunOnce(ctx context.Context) (*RuntimeWorkerResult, erro
 	if err != nil {
 		return nil, err
 	}
-	if claim == nil || claim.Task == nil {
+	if claim == nil || (claim.Task == nil && claim.DirectTask == nil) {
 		return &RuntimeWorkerResult{}, nil
+	}
+	if claim.DirectTask != nil {
+		result, err := w.executeDirectClaim(ctx, claim)
+		return &RuntimeWorkerResult{Claimed: true, TaskID: claim.DirectTask.ID, ExecutionResult: result}, err
 	}
 
 	result, err := w.executeClaim(ctx, claim)
@@ -131,21 +151,18 @@ func (w *RuntimeWorker) executeClaim(ctx context.Context, claim *ClaimAgentTaskR
 
 	_, _ = w.client.CreateTaskEvent(ctx, taskID, &CreateTaskEventRequest{
 		Type:    "runtime_claimed",
-		Tool:    w.executor.Name(),
+		Tool:    w.connector.Name(),
 		Content: "Runtime claimed task and is starting executor.",
 	})
-	result, runErr := w.executor.Run(ctx, ExecutionContext{
-		RunID:      fmt.Sprintf("%d", claim.Task.RunID),
-		TaskID:     taskID,
-		Workdir:    workdir,
-		BranchName: claim.ExecutionContext.BranchName,
-		Env:        w.cfg.Env,
-	}, CompiledExecutionPrompt{
-		ID:         claim.Prompt.ID,
-		PRNodeID:   claim.Task.PRNodeID,
-		Type:       claim.Prompt.Type,
-		Version:    claim.Prompt.Version,
-		PromptText: claim.Prompt.PromptText,
+	envelope, err := PRNodeTaskEnvelope(w.cfg.RuntimeID, w.cfg.Executor, w.cfg.SessionID, workdir, claim)
+	if err != nil {
+		return nil, err
+	}
+	envelope.Env = w.cfg.Env
+	result, runErr := w.connector.Run(ctx, envelope, &runtimeProgressReporter{
+		client: w.client,
+		taskID: taskID,
+		tool:   w.connector.Name(),
 	})
 	if result == nil {
 		errorLine := "executor returned no result"
@@ -156,7 +173,7 @@ func (w *RuntimeWorker) executeClaim(ctx context.Context, claim *ClaimAgentTaskR
 	}
 	_, _ = w.client.CreateTaskEvent(ctx, taskID, &CreateTaskEventRequest{
 		Type:   "executor_result",
-		Tool:   w.executor.Name(),
+		Tool:   w.connector.Name(),
 		Output: result.Output,
 	})
 	submitErr := w.submitResult(ctx, claim, workdir, result, runErr)
@@ -166,9 +183,60 @@ func (w *RuntimeWorker) executeClaim(ctx context.Context, claim *ClaimAgentTaskR
 	return result, nil
 }
 
+func (w *RuntimeWorker) executeDirectClaim(ctx context.Context, claim *ClaimAgentTaskResponse) (*ExecutionResult, error) {
+	if claim == nil || claim.DirectTask == nil || claim.Prompt == nil || claim.ExecutionContext == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	taskID := claim.DirectTask.ID
+	workdir := strings.TrimSpace(w.cfg.RepoDir)
+	if workdir == "" {
+		workdir = strings.TrimSpace(claim.DirectTask.Workdir)
+	}
+	if workdir == "" {
+		return w.submitRejectedDirectClaim(ctx, claim, "runtime_workdir_missing", "runtime repo directory is required")
+	}
+	targetRepositoryID := strings.TrimSpace(claim.ExecutionContext.RepositoryID)
+	if configuredRepositoryID := strings.TrimSpace(w.cfg.RepositoryID); configuredRepositoryID != "" && targetRepositoryID != "" && configuredRepositoryID != targetRepositoryID {
+		return w.submitRejectedDirectClaim(ctx, claim, "runtime_repository_mismatch", fmt.Sprintf("runtime repository %s cannot execute direct task for %s", configuredRepositoryID, targetRepositoryID))
+	}
+
+	_, _ = w.client.CreateDirectTaskEvent(ctx, taskID, &CreateTaskEventRequest{
+		Type:    "runtime_claimed",
+		Tool:    w.connector.Name(),
+		Content: "Runtime claimed direct task and is starting executor.",
+	})
+	envelope, err := DirectTaskEnvelope(w.cfg.RuntimeID, w.cfg.Executor, w.cfg.SessionID, workdir, claim)
+	if err != nil {
+		return nil, err
+	}
+	envelope.Env = w.cfg.Env
+	result, runErr := w.connector.Run(ctx, envelope, &directRuntimeProgressReporter{
+		client: w.client,
+		taskID: taskID,
+		tool:   w.connector.Name(),
+	})
+	if result == nil {
+		errorLine := "executor returned no result"
+		if runErr != nil && strings.TrimSpace(runErr.Error()) != "" {
+			errorLine = runErr.Error()
+		}
+		result = &ExecutionResult{Status: "failed", Error: errorLine, ExitCode: -1}
+	}
+	submitErr := w.submitDirectResult(ctx, claim, workdir, result, runErr)
+	if submitErr != nil {
+		return result, submitErr
+	}
+	return result, nil
+}
+
 func (w *RuntimeWorker) submitRejectedClaim(ctx context.Context, claim *ClaimAgentTaskResponse, reason, detail string) (*ExecutionResult, error) {
 	result := &ExecutionResult{Status: "failed", Error: detail, ExitCode: -1}
 	return result, w.submitResult(ctx, claim, strings.TrimSpace(w.cfg.RepoDir), result, fmt.Errorf("%s", detail), reason)
+}
+
+func (w *RuntimeWorker) submitRejectedDirectClaim(ctx context.Context, claim *ClaimAgentTaskResponse, reason, detail string) (*ExecutionResult, error) {
+	result := &ExecutionResult{Status: "failed", Error: detail, ExitCode: -1}
+	return result, w.submitDirectResult(ctx, claim, strings.TrimSpace(w.cfg.RepoDir), result, fmt.Errorf("%s", detail), reason)
 }
 
 func (w *RuntimeWorker) submitResult(ctx context.Context, claim *ClaimAgentTaskResponse, workdir string, result *ExecutionResult, runErr error, reasons ...string) error {
@@ -183,11 +251,75 @@ func (w *RuntimeWorker) submitResult(ctx context.Context, claim *ClaimAgentTaskR
 		RuntimeID:     w.cfg.RuntimeID,
 		SessionID:     firstNonEmpty(w.cfg.SessionID, claim.Task.SessionID),
 		Workdir:       workdir,
+		ProcessRef:    result.ProcessRef,
 		Status:        normalizeRuntimeResultStatus(result.Status, result.ExitCode),
-		Output:        result.Output,
-		Error:         result.Error,
+		Output:        trimRuntimeResultField(result.Output),
+		Error:         trimRuntimeResultField(result.Error),
 		ExitCode:      result.ExitCode,
 		FailureReason: failureReason,
+	})
+	return err
+}
+
+func (w *RuntimeWorker) submitDirectResult(ctx context.Context, claim *ClaimAgentTaskResponse, workdir string, result *ExecutionResult, runErr error, reasons ...string) error {
+	if claim == nil || claim.DirectTask == nil || result == nil {
+		return domain.ErrInvalidInput
+	}
+	failureReason := runtimeFailureReason(result, runErr)
+	if len(reasons) > 0 && strings.TrimSpace(reasons[0]) != "" {
+		failureReason = strings.TrimSpace(reasons[0])
+	}
+	_, err := w.client.SubmitDirectTaskResult(ctx, claim.DirectTask.ID, &SubmitTaskResultRequest{
+		RuntimeID:     w.cfg.RuntimeID,
+		SessionID:     firstNonEmpty(w.cfg.SessionID, claim.DirectTask.SessionID),
+		Workdir:       workdir,
+		ProcessRef:    result.ProcessRef,
+		Status:        normalizeRuntimeResultStatus(result.Status, result.ExitCode),
+		Output:        trimRuntimeResultField(result.Output),
+		Error:         trimRuntimeResultField(result.Error),
+		ExitCode:      result.ExitCode,
+		FailureReason: failureReason,
+	})
+	return err
+}
+
+func trimRuntimeResultField(value string) string {
+	const maxResultFieldBytes = 200000
+	if len(value) <= maxResultFieldBytes {
+		return value
+	}
+	const marker = "\n\n[... output truncated by CodingCTO runtime ...]\n\n"
+	keep := maxResultFieldBytes - len(marker)
+	if keep <= 0 {
+		return value[:maxResultFieldBytes]
+	}
+	head := keep / 2
+	tail := keep - head
+	return value[:head] + marker + value[len(value)-tail:]
+}
+
+func (r *runtimeProgressReporter) OnEvent(ctx context.Context, event ExecutionProgressEvent) error {
+	if r == nil || r.client == nil || r.taskID == 0 || strings.TrimSpace(event.Type) == "" {
+		return nil
+	}
+	_, err := r.client.CreateTaskEvent(ctx, r.taskID, &CreateTaskEventRequest{
+		Type:    strings.TrimSpace(event.Type),
+		Tool:    firstNonEmpty(strings.TrimSpace(event.Tool), r.tool),
+		Content: strings.TrimSpace(event.Content),
+		Output:  strings.TrimSpace(event.Output),
+	})
+	return err
+}
+
+func (r *directRuntimeProgressReporter) OnEvent(ctx context.Context, event ExecutionProgressEvent) error {
+	if r == nil || r.client == nil || r.taskID == 0 {
+		return nil
+	}
+	_, err := r.client.CreateDirectTaskEvent(ctx, r.taskID, &CreateTaskEventRequest{
+		Type:    firstNonEmpty(event.Type, "executor_progress"),
+		Tool:    firstNonEmpty(event.Tool, r.tool),
+		Content: event.Content,
+		Output:  event.Output,
 	})
 	return err
 }

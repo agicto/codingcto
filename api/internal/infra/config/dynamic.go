@@ -67,7 +67,7 @@ func (r *Repository) loadFromEnv() {
 	r.Set("server.host", env.Get("SERVER_HOST", ""))
 	r.Set("server.mode", env.Get("SERVER_MODE", env.Get("GIN_MODE", "debug")))
 	r.Set("server.read_timeout", env.GetInt("SERVER_READ_TIMEOUT", 60))
-	r.Set("server.write_timeout", env.GetInt("SERVER_WRITE_TIMEOUT", 60))
+	r.Set("server.write_timeout", env.GetInt("SERVER_WRITE_TIMEOUT", 180))
 
 	// Database
 	r.Set("database.enabled", env.GetBool("DB_ENABLED", true))

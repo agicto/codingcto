@@ -110,29 +110,31 @@ func (s *service) SyncInstallation(ctx context.Context, userID uint, req *SyncIn
 		if repoName == "" {
 			repoName = strings.TrimSpace(repository.Name)
 		}
+		defaultBranch := defaultText(strings.TrimSpace(repository.DefaultBranch), "main")
 		options = append(options, GitHubRepositoryOption{
 			ID:            repository.ID,
 			Name:          repository.Name,
 			FullName:      repository.FullName,
 			Owner:         owner,
 			Repo:          repoName,
-			DefaultBranch: defaultText(strings.TrimSpace(repository.DefaultBranch), "main"),
+			DefaultBranch: defaultBranch,
 			IsPrivate:     repository.Private,
 			HTMLURL:       repository.HTMLURL,
 		})
-		if owner != "" && repoName != "" {
-			if err := s.repo.UpsertRepository(ctx, &domain.Repository{
-				RepositoryID:         githubRepositoryID(owner, repoName),
-				WorkspaceID:          strings.TrimSpace(req.WorkspaceID),
-				GitHubInstallationID: installation.ID,
-				GitHubOwner:          owner,
-				GitHubRepo:           repoName,
-				DefaultBranch:        defaultText(strings.TrimSpace(repository.DefaultBranch), "main"),
-				IsPrivate:            repository.Private,
-				CreatedBy:            userID,
-			}); err != nil {
-				return nil, fmt.Errorf("sync github repository: %w", err)
-			}
+		if owner == "" || repoName == "" {
+			continue
+		}
+		if err := s.repo.UpsertRepository(ctx, &domain.Repository{
+			RepositoryID:         fmt.Sprintf("github_%s__%s", owner, repoName),
+			WorkspaceID:          installation.WorkspaceID,
+			GitHubInstallationID: installation.ID,
+			GitHubOwner:          owner,
+			GitHubRepo:           repoName,
+			DefaultBranch:        defaultBranch,
+			IsPrivate:            repository.Private,
+			CreatedBy:            userID,
+		}); err != nil {
+			return nil, fmt.Errorf("sync github repository: %w", err)
 		}
 	}
 	return &SyncInstallationResponse{Installation: installation, Repositories: options}, nil
@@ -168,7 +170,11 @@ func (s *service) UpsertRepository(ctx context.Context, userID uint, req *Upsert
 		IsPrivate:            req.IsPrivate,
 		CreatedBy:            userID,
 	}
-	needsAccessValidation := repository.GitHubInstallationID > 0
+	installationAssociatedFromSync, err := s.associateRepositoryInstallationFromWorkspace(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
+	needsAccessValidation := repository.GitHubInstallationID > 0 && !installationAssociatedFromSync
 	if needsAccessValidation {
 		existing, err := s.repo.FindRepositoryByRepositoryID(ctx, repository.RepositoryID)
 		if err == nil && sameGitHubRepositoryAccess(existing, repository) {
@@ -186,6 +192,27 @@ func (s *service) UpsertRepository(ctx context.Context, userID uint, req *Upsert
 		return nil, fmt.Errorf("upsert repository: %w", err)
 	}
 	return repository, nil
+}
+
+func (s *service) associateRepositoryInstallationFromWorkspace(ctx context.Context, repository *domain.Repository) (bool, error) {
+	if repository == nil || repository.GitHubInstallationID > 0 || strings.TrimSpace(repository.WorkspaceID) == "" {
+		return false, nil
+	}
+	repositories, err := s.repo.ListRepositoriesByWorkspaceID(ctx, repository.WorkspaceID)
+	if err != nil {
+		return false, err
+	}
+	for _, candidate := range repositories {
+		if candidate == nil || candidate.GitHubInstallationID == 0 {
+			continue
+		}
+		if strings.EqualFold(strings.TrimSpace(candidate.GitHubOwner), strings.TrimSpace(repository.GitHubOwner)) &&
+			strings.EqualFold(strings.TrimSpace(candidate.GitHubRepo), strings.TrimSpace(repository.GitHubRepo)) {
+			repository.GitHubInstallationID = candidate.GitHubInstallationID
+			return true, nil
+		}
+	}
+	return false, nil
 }
 
 func sameGitHubRepositoryAccess(existing, next *domain.Repository) bool {
@@ -209,7 +236,11 @@ func (s *service) GetRepository(ctx context.Context, repositoryID string) (*doma
 }
 
 func (s *service) ListRepositories(ctx context.Context, workspaceID string) ([]*domain.Repository, error) {
-	return s.repo.ListRepositoriesByWorkspaceID(ctx, strings.TrimSpace(workspaceID))
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.repo.ListRepositoriesByWorkspaceID(ctx, workspaceID)
 }
 
 func (s *service) CheckRepositoryReadiness(ctx context.Context, repositoryID string) (*GitHubRepositoryReadinessResponse, error) {
@@ -258,7 +289,7 @@ func (s *service) CheckRepositoryReadiness(ctx context.Context, repositoryID str
 		if err != nil {
 			checks = append(checks, readinessError("installation_token", "GitHub App 令牌交换失败", userFacingGitHubError(err), true))
 		} else if token == nil || strings.TrimSpace(token.Token) == "" {
-			checks = append(checks, readinessError("installation_token", "GitHub App 令牌为空", "请检查 GITHUB_APP_ID 和 GitHub App 私钥配置是否对应当前安装。", true))
+			checks = append(checks, readinessError("installation_token", "GitHub App 令牌为空", "请检查 GITHUB_APP_ID 和 GITHUB_APP_PRIVATE_KEY 是否对应当前安装。", true))
 		} else {
 			checks = append(checks, readinessOK("installation_token", "GitHub App 令牌可用", "", true))
 		}

@@ -2,6 +2,7 @@ package execution
 
 import (
 	"encoding/json"
+	"strings"
 	"time"
 
 	"github.com/zgiai/luas/api/internal/domain"
@@ -23,28 +24,32 @@ func (ExecutionRunPO) TableName() string {
 }
 
 type AgentTaskPO struct {
-	ID            uint   `gorm:"primaryKey"`
-	RunID         uint   `gorm:"not null;index"`
-	PRNodeID      uint   `gorm:"not null;index"`
-	Executor      string `gorm:"size:100;not null;index"`
-	Status        string `gorm:"size:50;not null;index"`
-	PromptType    string `gorm:"size:50;not null;default:implementation;index"`
-	RuntimeID     string `gorm:"size:100;index"`
-	AttemptNumber int    `gorm:"not null;default:1"`
-	ParentTaskID  *uint  `gorm:"index"`
-	FixAttemptID  *uint  `gorm:"index"`
-	SessionID     string `gorm:"size:255;index"`
-	Workdir       string `gorm:"type:text"`
-	FailureReason string `gorm:"size:100;index"`
-	LogsURL       string `gorm:"type:text"`
-	OutputLog     string `gorm:"type:text"`
-	ErrorLog      string `gorm:"type:text"`
-	ExitCode      *int
-	DispatchedAt  *time.Time
-	StartedAt     *time.Time
-	FinishedAt    *time.Time
-	CreatedAt     time.Time
-	UpdatedAt     time.Time
+	ID             uint   `gorm:"primaryKey"`
+	RunID          uint   `gorm:"not null;index"`
+	PRNodeID       uint   `gorm:"not null;index"`
+	Executor       string `gorm:"size:100;not null;index"`
+	Status         string `gorm:"size:50;not null;index"`
+	PromptType     string `gorm:"size:50;not null;default:implementation;index"`
+	ProcessStatus  string `gorm:"size:50;not null;default:pending;index"`
+	CurrentPhase   string `gorm:"size:100;index"`
+	RuntimeID      string `gorm:"size:100;index"`
+	AttemptNumber  int    `gorm:"not null;default:1"`
+	ParentTaskID   *uint  `gorm:"index"`
+	FixAttemptID   *uint  `gorm:"index"`
+	SessionID      string `gorm:"size:255;index"`
+	Workdir        string `gorm:"type:text"`
+	FailureReason  string `gorm:"size:100;index"`
+	LogsURL        string `gorm:"type:text"`
+	OutputLog      string `gorm:"type:text"`
+	ErrorLog       string `gorm:"type:text"`
+	ExitCode       *int
+	ProcessRef     string `gorm:"size:255;index"`
+	DispatchedAt   *time.Time
+	StartedAt      *time.Time
+	FinishedAt     *time.Time
+	LastProgressAt *time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
 }
 
 func (AgentTaskPO) TableName() string {
@@ -88,6 +93,50 @@ func (TaskEventPO) TableName() string {
 	return "specforge_task_events"
 }
 
+type DirectAgentTaskPO struct {
+	ID             uint   `gorm:"primaryKey"`
+	CreatedBy      uint   `gorm:"not null;index"`
+	RepositoryID   string `gorm:"size:255;not null;index"`
+	Title          string `gorm:"size:255;not null"`
+	Prompt         string `gorm:"type:text;not null"`
+	Executor       string `gorm:"size:100;not null;index"`
+	Status         string `gorm:"size:50;not null;index"`
+	RuntimeID      string `gorm:"size:100;index"`
+	SessionID      string `gorm:"size:255;index"`
+	Workdir        string `gorm:"type:text"`
+	ProcessRef     string `gorm:"size:255;index"`
+	OutputLog      string `gorm:"type:text"`
+	ErrorLog       string `gorm:"type:text"`
+	ExitCode       *int
+	FailureReason  string `gorm:"size:100;index"`
+	DispatchedAt   *time.Time
+	StartedAt      *time.Time
+	FinishedAt     *time.Time
+	LastProgressAt *time.Time
+	CreatedAt      time.Time
+	UpdatedAt      time.Time
+}
+
+func (DirectAgentTaskPO) TableName() string {
+	return "codingcto_direct_agent_tasks"
+}
+
+type DirectTaskEventPO struct {
+	ID        uint   `gorm:"primaryKey"`
+	TaskID    uint   `gorm:"not null;uniqueIndex:idx_codingcto_direct_task_events_task_seq"`
+	Seq       int    `gorm:"not null;uniqueIndex:idx_codingcto_direct_task_events_task_seq"`
+	Type      string `gorm:"size:50;not null;index"`
+	Tool      string `gorm:"size:100"`
+	Content   string `gorm:"type:text"`
+	Input     string `gorm:"type:text"`
+	Output    string `gorm:"type:text"`
+	CreatedAt time.Time
+}
+
+func (DirectTaskEventPO) TableName() string {
+	return "codingcto_direct_task_events"
+}
+
 func newExecutionRunPO(run *domain.SpecForgeExecutionRun) *ExecutionRunPO {
 	return &ExecutionRunPO{
 		ID:          run.ID,
@@ -116,55 +165,63 @@ func (po *ExecutionRunPO) toDomain() *domain.SpecForgeExecutionRun {
 
 func newAgentTaskPO(task *domain.SpecForgeAgentTask) *AgentTaskPO {
 	return &AgentTaskPO{
-		ID:            task.ID,
-		RunID:         task.RunID,
-		PRNodeID:      task.PRNodeID,
-		Executor:      task.Executor,
-		Status:        task.Status,
-		PromptType:    taskPromptType(task),
-		RuntimeID:     task.RuntimeID,
-		AttemptNumber: task.AttemptNumber,
-		ParentTaskID:  task.ParentTaskID,
-		FixAttemptID:  task.FixAttemptID,
-		SessionID:     task.SessionID,
-		Workdir:       task.Workdir,
-		FailureReason: task.FailureReason,
-		LogsURL:       task.LogsURL,
-		OutputLog:     task.OutputLog,
-		ErrorLog:      task.ErrorLog,
-		ExitCode:      task.ExitCode,
-		DispatchedAt:  task.DispatchedAt,
-		StartedAt:     task.StartedAt,
-		FinishedAt:    task.FinishedAt,
-		CreatedAt:     task.CreatedAt,
-		UpdatedAt:     task.UpdatedAt,
+		ID:             task.ID,
+		RunID:          task.RunID,
+		PRNodeID:       task.PRNodeID,
+		Executor:       task.Executor,
+		Status:         task.Status,
+		PromptType:     taskPromptType(task),
+		ProcessStatus:  normalizeProcessStatus(task.ProcessStatus),
+		CurrentPhase:   strings.TrimSpace(task.CurrentPhase),
+		RuntimeID:      task.RuntimeID,
+		AttemptNumber:  task.AttemptNumber,
+		ParentTaskID:   task.ParentTaskID,
+		FixAttemptID:   task.FixAttemptID,
+		SessionID:      task.SessionID,
+		Workdir:        task.Workdir,
+		FailureReason:  task.FailureReason,
+		LogsURL:        task.LogsURL,
+		OutputLog:      task.OutputLog,
+		ErrorLog:       task.ErrorLog,
+		ExitCode:       task.ExitCode,
+		ProcessRef:     task.ProcessRef,
+		DispatchedAt:   task.DispatchedAt,
+		StartedAt:      task.StartedAt,
+		FinishedAt:     task.FinishedAt,
+		LastProgressAt: task.LastProgressAt,
+		CreatedAt:      task.CreatedAt,
+		UpdatedAt:      task.UpdatedAt,
 	}
 }
 
 func (po *AgentTaskPO) toDomain() *domain.SpecForgeAgentTask {
 	return &domain.SpecForgeAgentTask{
-		ID:            po.ID,
-		RunID:         po.RunID,
-		PRNodeID:      po.PRNodeID,
-		Executor:      po.Executor,
-		Status:        po.Status,
-		PromptType:    taskPromptType(&domain.SpecForgeAgentTask{PromptType: po.PromptType}),
-		RuntimeID:     po.RuntimeID,
-		AttemptNumber: po.AttemptNumber,
-		ParentTaskID:  po.ParentTaskID,
-		FixAttemptID:  po.FixAttemptID,
-		SessionID:     po.SessionID,
-		Workdir:       po.Workdir,
-		FailureReason: po.FailureReason,
-		LogsURL:       po.LogsURL,
-		OutputLog:     po.OutputLog,
-		ErrorLog:      po.ErrorLog,
-		ExitCode:      po.ExitCode,
-		DispatchedAt:  po.DispatchedAt,
-		StartedAt:     po.StartedAt,
-		FinishedAt:    po.FinishedAt,
-		CreatedAt:     po.CreatedAt,
-		UpdatedAt:     po.UpdatedAt,
+		ID:             po.ID,
+		RunID:          po.RunID,
+		PRNodeID:       po.PRNodeID,
+		Executor:       po.Executor,
+		Status:         po.Status,
+		PromptType:     taskPromptType(&domain.SpecForgeAgentTask{PromptType: po.PromptType}),
+		ProcessStatus:  normalizeProcessStatus(po.ProcessStatus),
+		CurrentPhase:   strings.TrimSpace(po.CurrentPhase),
+		RuntimeID:      po.RuntimeID,
+		AttemptNumber:  po.AttemptNumber,
+		ParentTaskID:   po.ParentTaskID,
+		FixAttemptID:   po.FixAttemptID,
+		SessionID:      po.SessionID,
+		Workdir:        po.Workdir,
+		FailureReason:  po.FailureReason,
+		LogsURL:        po.LogsURL,
+		OutputLog:      po.OutputLog,
+		ErrorLog:       po.ErrorLog,
+		ExitCode:       po.ExitCode,
+		ProcessRef:     po.ProcessRef,
+		DispatchedAt:   po.DispatchedAt,
+		StartedAt:      po.StartedAt,
+		FinishedAt:     po.FinishedAt,
+		LastProgressAt: po.LastProgressAt,
+		CreatedAt:      po.CreatedAt,
+		UpdatedAt:      po.UpdatedAt,
 	}
 }
 
@@ -254,6 +311,86 @@ func newTaskEventPO(event *domain.SpecForgeTaskEvent) *TaskEventPO {
 
 func (po *TaskEventPO) toDomain() *domain.SpecForgeTaskEvent {
 	return &domain.SpecForgeTaskEvent{
+		ID:        po.ID,
+		TaskID:    po.TaskID,
+		Seq:       po.Seq,
+		Type:      po.Type,
+		Tool:      po.Tool,
+		Content:   po.Content,
+		Input:     po.Input,
+		Output:    po.Output,
+		CreatedAt: po.CreatedAt,
+	}
+}
+
+func newDirectAgentTaskPO(task *domain.CodingCTODirectAgentTask) *DirectAgentTaskPO {
+	return &DirectAgentTaskPO{
+		ID:             task.ID,
+		CreatedBy:      task.CreatedBy,
+		RepositoryID:   task.RepositoryID,
+		Title:          task.Title,
+		Prompt:         task.Prompt,
+		Executor:       task.Executor,
+		Status:         task.Status,
+		RuntimeID:      task.RuntimeID,
+		SessionID:      task.SessionID,
+		Workdir:        task.Workdir,
+		ProcessRef:     task.ProcessRef,
+		OutputLog:      task.OutputLog,
+		ErrorLog:       task.ErrorLog,
+		ExitCode:       task.ExitCode,
+		FailureReason:  task.FailureReason,
+		DispatchedAt:   task.DispatchedAt,
+		StartedAt:      task.StartedAt,
+		FinishedAt:     task.FinishedAt,
+		LastProgressAt: task.LastProgressAt,
+		CreatedAt:      task.CreatedAt,
+		UpdatedAt:      task.UpdatedAt,
+	}
+}
+
+func (po *DirectAgentTaskPO) toDomain() *domain.CodingCTODirectAgentTask {
+	return &domain.CodingCTODirectAgentTask{
+		ID:             po.ID,
+		CreatedBy:      po.CreatedBy,
+		RepositoryID:   po.RepositoryID,
+		Title:          po.Title,
+		Prompt:         po.Prompt,
+		Executor:       po.Executor,
+		Status:         po.Status,
+		RuntimeID:      po.RuntimeID,
+		SessionID:      po.SessionID,
+		Workdir:        po.Workdir,
+		ProcessRef:     po.ProcessRef,
+		OutputLog:      po.OutputLog,
+		ErrorLog:       po.ErrorLog,
+		ExitCode:       po.ExitCode,
+		FailureReason:  po.FailureReason,
+		DispatchedAt:   po.DispatchedAt,
+		StartedAt:      po.StartedAt,
+		FinishedAt:     po.FinishedAt,
+		LastProgressAt: po.LastProgressAt,
+		CreatedAt:      po.CreatedAt,
+		UpdatedAt:      po.UpdatedAt,
+	}
+}
+
+func newDirectTaskEventPO(event *domain.CodingCTODirectTaskEvent) *DirectTaskEventPO {
+	return &DirectTaskEventPO{
+		ID:        event.ID,
+		TaskID:    event.TaskID,
+		Seq:       event.Seq,
+		Type:      event.Type,
+		Tool:      event.Tool,
+		Content:   event.Content,
+		Input:     event.Input,
+		Output:    event.Output,
+		CreatedAt: event.CreatedAt,
+	}
+}
+
+func (po *DirectTaskEventPO) toDomain() *domain.CodingCTODirectTaskEvent {
+	return &domain.CodingCTODirectTaskEvent{
 		ID:        po.ID,
 		TaskID:    po.TaskID,
 		Seq:       po.Seq,

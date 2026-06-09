@@ -132,6 +132,21 @@ export interface StaleTaskSweepPayload {
   running_timeout_seconds?: number;
 }
 
+export interface CreateDirectAgentTaskPayload {
+  repository_id: string;
+  title?: string;
+  prompt: string;
+  executor?: string;
+  runtime_id?: string;
+}
+
+export interface ListDirectAgentTasksParams {
+  repository_id?: string;
+  executor?: string;
+  runtime_id?: string;
+  limit?: number;
+}
+
 export interface RetryTaskPayload {
   force_fresh_session?: boolean;
 }
@@ -158,6 +173,7 @@ export interface SubmitTaskResultPayload {
   runtime_id?: string;
   session_id?: string;
   workdir?: string;
+  process_ref?: string;
   status: 'completed' | 'failed' | 'timeout';
   output?: string;
   error?: string;
@@ -620,11 +636,14 @@ export interface SpecForgeClaimedTaskDTO {
   pr_node_id: number;
   executor: string;
   status: string;
+  process_status?: string;
+  current_phase?: string;
   runtime_id: string;
   attempt_number: number;
   parent_task_id?: number;
   session_id?: string;
   workdir?: string;
+  process_ref?: string;
 }
 
 export interface SpecForgeClaimedPRNodeDTO {
@@ -667,6 +686,42 @@ export interface SpecForgeTaskEventDTO {
   created_at: string;
 }
 
+export interface CodingCTODirectAgentTaskDTO {
+  id: number;
+  created_by: number;
+  repository_id: string;
+  title: string;
+  prompt: string;
+  executor: string;
+  status: string;
+  runtime_id?: string;
+  session_id?: string;
+  workdir?: string;
+  process_ref?: string;
+  output_log?: string;
+  error_log?: string;
+  exit_code?: number;
+  failure_reason?: string;
+  dispatched_at?: string;
+  started_at?: string;
+  finished_at?: string;
+  last_progress_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CodingCTODirectTaskEventDTO {
+  id: number;
+  task_id: number;
+  seq: number;
+  type: string;
+  tool?: string;
+  content?: string;
+  input?: string;
+  output?: string;
+  created_at: string;
+}
+
 export interface SpecForgeRuntimeSweepResultDTO {
   offline_runtimes: SpecForgeRuntimeDTO[];
   failed_tasks: SpecForgeExecutionBundleDTO['tasks'];
@@ -695,6 +750,8 @@ export interface SpecForgeExecutionBundleDTO {
     pr_node_id: number;
     executor: string;
     status: string;
+    process_status?: string;
+    current_phase?: string;
     runtime_id?: string;
     attempt_number: number;
     parent_task_id?: number;
@@ -706,9 +763,11 @@ export interface SpecForgeExecutionBundleDTO {
     output_log?: string;
     error_log?: string;
     exit_code?: number;
+    process_ref?: string;
     dispatched_at?: string;
     started_at?: string;
     finished_at?: string;
+    last_progress_at?: string;
     created_at: string;
     updated_at: string;
   }>;
@@ -983,6 +1042,33 @@ export const specForgeService = {
       },
       ClaimTaskPayload | undefined
     >(`/runtimes/${runtimeId}/claim`, payload),
+
+  createDirectAgentTask: (payload: CreateDirectAgentTaskPayload) =>
+    request.post<CodingCTODirectAgentTaskDTO, CreateDirectAgentTaskPayload>(
+      '/agent-tasks',
+      payload
+    ),
+
+  listDirectAgentTasks: (params?: ListDirectAgentTasksParams, config?: RequestConfig) => {
+    const query = new URLSearchParams();
+    if (params?.repository_id) query.set('repository_id', params.repository_id);
+    if (params?.executor) query.set('executor', params.executor);
+    if (params?.runtime_id) query.set('runtime_id', params.runtime_id);
+    if (params?.limit) query.set('limit', String(params.limit));
+    const suffix = query.toString() ? `?${query.toString()}` : '';
+    return request.get<{ tasks: CodingCTODirectAgentTaskDTO[] }>(
+      `/agent-tasks${suffix}`,
+      config
+    );
+  },
+
+  listDirectTaskEvents: (taskId: number, afterSeq?: number, config?: RequestConfig) => {
+    const query = afterSeq && afterSeq > 0 ? `?after_seq=${afterSeq}` : '';
+    return request.get<{ events: CodingCTODirectTaskEventDTO[] }>(
+      `/agent-tasks/${taskId}/events${query}`,
+      config
+    );
+  },
 
   pinTaskSession: (taskId: number, payload: PinTaskSessionPayload) =>
     request.post<SpecForgeExecutionBundleDTO, PinTaskSessionPayload>(

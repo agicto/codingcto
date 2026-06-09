@@ -11,7 +11,7 @@ The Go module path is still `github.com/zgiai/luas/api` for compatibility with t
 - GORM persistence and migration registry
 - DDD-flavored domain and module boundaries
 - Starter modules for users, API keys, and audit logs
-- GitHub-native SpecForge planning and execution modules
+- GitHub-native CodingCTO planning and execution modules
 - Repository profile, skill, plan, prompt, execution, and verification services
 - Unified API responses, pagination, validation, logging, JWT, and middleware
 - Kest flow tests and Go unit/integration tests
@@ -103,10 +103,10 @@ The CLI binary path remains `cmd/luas` until a dedicated compatibility migration
 
 ### Run a Local Codex Runtime
 
-The SpecForge execution module can be driven by a local runtime process. The runtime talks to the API over `/v1`, claims dispatched `codex_cli` tasks, runs Codex CLI in a local repository directory, records task events, and submits the final result.
+The CodingCTO execution module can be driven by a local runtime process. The runtime talks to the API over `/v1`, claims dispatched `codex_cli` tasks, runs Codex CLI in a local repository directory, records task events, and submits the final result.
 
 ```bash
-go run ./cmd/specforge-runtime \
+go run ./cmd/ccto daemon \
   --api-base-url http://localhost:2010/v1 \
   --token "$CODINGCTO_RUNTIME_TOKEN" \
   --runtime-id local-codex-1 \
@@ -122,13 +122,36 @@ Useful flags:
 - `--sandbox workspace-write`: pass the Codex sandbox mode.
 - `--approval-policy never`: keep execution non-interactive for automation.
 
-Environment equivalents are available with `SPECFORGE_API_BASE_URL`, `SPECFORGE_RUNTIME_TOKEN` (or `CODINGCTO_RUNTIME_TOKEN`), `SPECFORGE_RUNTIME_ID`, `SPECFORGE_RUNTIME_REPO_DIR`, `SPECFORGE_RUNTIME_REPOSITORY_ID`, `CODEX_CLI_PATH`, `SPECFORGE_CODEX_SANDBOX`, `SPECFORGE_CODEX_APPROVAL_POLICY`, and `SPECFORGE_CODEX_TIMEOUT`.
+Environment equivalents are available with `CODINGCTO_API_BASE_URL`, `CODINGCTO_RUNTIME_TOKEN`, `CODINGCTO_RUNTIME_ID`, `CODINGCTO_RUNTIME_REPO_DIR`, `CODINGCTO_RUNTIME_REPOSITORY_ID`, `CODEX_CLI_PATH`, `CODINGCTO_CODEX_SANDBOX`, `CODINGCTO_CODEX_APPROVAL_POLICY`, and `CODINGCTO_CODEX_TIMEOUT`.
+
+### Configure Expert Planning
+
+The Expert console calls `POST /v1/experts/implementation-plan/stream` for the interactive UI, with `POST /v1/experts/implementation-plan` kept as the non-streaming fallback. The API sends the user's idea, selected repository, and planning skills to DeepSeek through a forced tool call named `draft_implementation_plan`, then returns both structured JSON and Markdown for the web app to display or copy into a coding agent. The stream still carries lightweight progress events for the client and smoke tests, but the UI focuses on the final Markdown plan instead of exposing the internal scheduling trace.
+
+Set the provider key in `api/.env` only:
+
+```bash
+DEEPSEEK_API_KEY=replace-me
+DEEPSEEK_BASE_URL=https://api.deepseek.com
+DEEPSEEK_MODEL=deepseek-v4-pro
+```
+
+`DEEPSEEK_BASE_URL` and `DEEPSEEK_MODEL` are optional. Do not put the DeepSeek key in `web/.env`; the browser never calls the provider directly.
+
+Run a real local smoke test against the configured provider:
+
+```bash
+node scripts/expert-plan-smoke.mjs
+```
+
+The smoke test logs in to the local API, calls `/v1/experts/implementation-plan/stream`, measures the first stream event, first tool-call argument, and final result timings, then verifies that `draft_implementation_plan` finished with `tool_calls` and that all bundled expert skills were applied. It consumes DeepSeek API tokens.
 
 ## Repository Layout
 
 ```text
 api/
 ├── cmd/
+│   ├── ccto/             # CodingCTO local runtime CLI
 │   ├── luas/              # compatibility CLI entrypoint
 │   └── server/            # HTTP server entrypoint
 ├── database/
@@ -157,9 +180,9 @@ api/
 - Use explicit interfaces only at real seams such as repositories, external services, clocks, or runners.
 - Keep all new comments and documentation in English.
 
-## SpecForge Modules
+## CodingCTO Workflow Modules
 
-SpecForge is the CodingCTO workflow that turns product intent into delivery artifacts:
+CodingCTO turns product intent into delivery artifacts:
 
 1. Repository context indexing
 2. Product plan generation
@@ -188,7 +211,7 @@ Run checks from `api/` unless noted otherwise.
 
 ## Migrations
 
-Migrations are registered in `database/migrations`. Keep migrations small, ordered, reversible, and covered by migration tests when adding schema that is part of the SpecForge workflow.
+Migrations are registered in `database/migrations`. Keep migrations small, ordered, reversible, and covered by migration tests when adding schema that is part of the CodingCTO workflow.
 
 Useful commands:
 
@@ -215,9 +238,6 @@ For focused work, run the affected module package first, then run the full suite
 - Never commit secrets.
 - Do not read or inject `.env` values into AI prompts.
 - Keep GitHub App permissions minimal: `metadata:read`, `contents:write`, `pull_requests:write`, and `issues:write` are required for the repository-to-issue-to-PR flow; `actions:read` and `statuses:read` are optional but recommended for CI visibility.
-- Prefer `GITHUB_APP_PRIVATE_KEY_PATH` for local development instead of pasting a PEM into `.env`. The repo helper can configure local files after the GitHub App manifest flow:
-  - `node scripts/github-app-config.mjs manifest --owner <user-or-org>`
-  - `node scripts/github-app-config.mjs convert --code <manifest-code>`
 - Redact tokens and sensitive logs.
 - Treat runner workspaces as isolated execution environments.
 

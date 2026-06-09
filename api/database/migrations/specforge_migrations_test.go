@@ -118,6 +118,8 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 		},
 		"specforge_agent_tasks": {
 			"prompt_type",
+			"process_status",
+			"current_phase",
 			"runtime_id",
 			"parent_task_id",
 			"fix_attempt_id",
@@ -127,9 +129,11 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 			"output_log",
 			"error_log",
 			"exit_code",
+			"process_ref",
 			"dispatched_at",
 			"started_at",
 			"finished_at",
+			"last_progress_at",
 		},
 		"specforge_project_skills": {
 			"workspace_id",

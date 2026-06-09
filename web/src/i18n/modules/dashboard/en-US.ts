@@ -47,9 +47,9 @@ const messages: DashboardMessages = {
       newRequirement: 'New requirement',
     },
     groups: {
-      deliver: 'Deliver',
-      review: 'Review',
+      work: 'Work',
       platform: 'Platform',
+      settings: 'Settings',
     },
     badges: {
       live: 'Live',
@@ -58,36 +58,40 @@ const messages: DashboardMessages = {
     },
     items: {
       delivery: {
-        title: 'Delivery Board',
-        description: 'Requirement intake, plans, PR DAGs, and runs.',
+        title: 'Board',
+        description: 'Track requirements, plans, runs, and PRs.',
       },
       projects: {
         title: 'Projects',
-        description: 'Project boundaries and repository bindings.',
+        description: 'Manage products and repository context.',
       },
       agents: {
-        title: 'Agents',
-        description: 'Inspect locally running agents and assign available skills.',
+        title: 'Coding Agent',
+        description: 'Check local CLI and dispatch status.',
+      },
+      experts: {
+        title: 'Experts',
+        description: 'Turn ideas and skills into implementation plans.',
       },
       review: {
-        title: 'Review Queue',
-        description: 'Plan approvals, failed CI, and human review actions will appear here.',
+        title: 'Check',
+        description: 'Handle tests, CI, and human decisions.',
       },
       github: {
-        title: 'GitHub setup',
-        description: 'Install the GitHub App, sync repositories, and bind them to projects.',
+        title: 'GitHub',
+        description: 'Install the App, sync repositories, and bind projects.',
       },
       repositories: {
-        title: 'Code repositories',
-        description: 'Manage Git repository URLs linked to the current workspace.',
+        title: 'Repositories',
+        description: 'Manage workspace repositories.',
       },
       skills: {
         title: 'Skills',
-        description: 'Manage reusable agent instructions for this workspace.',
+        description: 'Manage reusable rules.',
       },
       settings: {
         title: 'Settings',
-        description: 'Profile, preferences, and workspace configuration.',
+        description: 'Account, GitHub, and workspace settings.',
       },
     },
     footer: 'Settings',
@@ -142,6 +146,52 @@ const messages: DashboardMessages = {
       active: 'active',
       inactive: 'inactive',
     },
+    flow: {
+      title: 'How skills enter the Coding Agent prompt',
+      description: 'A skill is not a passive note. It is a constraint read by experts and executors. Pick targets first; planning and prompt compilation inject matching skills by evidence.',
+      scope: {
+        title: 'Define constraint',
+        description: 'Capture when it applies, rules, forbidden actions, and output expectations.',
+      },
+      expert: {
+        title: 'Assign expert',
+        description: 'Choose planning, Codex, review, or all to control prompt injection scope.',
+      },
+      prompt: {
+        title: 'Compile prompt',
+        description: 'Select related skills by repository, PR node, executor, and evidence refs.',
+      },
+      result: {
+        title: 'Return evidence',
+        description: 'The Coding Agent final report includes skills_applied, tests, and risk.',
+      },
+    },
+    engine: {
+      title: 'Skill engine boundary',
+      description: 'The product does not need complex function calling first. The stable path is to compile skills into prompts, then let the board dispatch Codex CLI.',
+      badge: 'MVP: prompt compiler first',
+      rule: 'Rule: Skill Registry manages reusable constraints; Prompt Compiler decides which constraints enter the task; Runtime Dispatcher hands the final task to local Codex CLI.',
+      status: {
+        required: 'required',
+        later: 'later',
+      },
+      registry: {
+        title: 'Skill Registry',
+        description: 'Stores team knowledge, repository rules, test strategy, PR templates, and expert constraints with agent targeting.',
+      },
+      compiler: {
+        title: 'Prompt Compiler',
+        description: 'Selects relevant skills from requirement, PRD, technical plan, PR DAG, repo profile, quality gates, and target executor.',
+      },
+      dispatcher: {
+        title: 'Runtime Dispatcher',
+        description: 'Sends the compiled task to an online runtime, which starts Codex CLI inside the local repository.',
+      },
+      functionCalling: {
+        title: 'Function calling',
+        description: 'Useful later for dynamic repository reads, more-context requests, CI repair, and multi-agent tools. It is not required before creating skills.',
+      },
+    },
     dialog: {
       title: 'New skill',
       description: 'Choose how to add a skill to the workspace.',
@@ -181,6 +231,7 @@ const messages: DashboardMessages = {
       description: 'Only selected agents receive this skill in their prompts.',
       required: 'Select at least one agent.',
       all: 'All agents',
+      allDescription: 'Available to product, architecture, UI/UX, QA, and execution prompts.',
       summary: '{first} +{count}',
       planning: {
         title: 'Planning agent',
@@ -222,17 +273,18 @@ const messages: DashboardMessages = {
   },
   agents: {
     title: 'Agents',
-    description: 'Detect running local runtimes and the CLIs they can launch when work is assigned.',
-    onlineCount: '{count} runtimes online',
-    cliCount: '{count} CLIs available',
+    description: 'Manage local runtimes, CLI capabilities, repository binding, and skill assignment. Scheduling happens on the board.',
+    onlineCount: '{count} agents detected',
+    cliCount: '{count} runtimes online',
     runtimeHelp: 'The CodingCTO runtime is online; these CLIs are not long-running processes. The runtime launches a wired CLI only when it receives a task.',
     actions: {
+      openBoard: 'Open board',
       manageSkills: 'Manage skills',
       openSkills: 'Open skills',
     },
     list: {
-      title: 'Local runtimes',
-      description: 'Detected from online runtime heartbeats; CLIs are local capabilities reported by each runtime.',
+      title: 'Execution capabilities',
+      description: 'Detected from online runtime heartbeats. This page only shows CLI capabilities that can be bound and scheduled.',
     },
     states: {
       loading: 'Loading...',
@@ -246,6 +298,7 @@ const messages: DashboardMessages = {
     setup: {
       title: 'Start a local runtime',
       description: 'After registration, run a CodingCTO runtime on your machine. It detects local CLIs such as Codex, Claude Code, and Cursor, sends heartbeats to the platform, and claims work after an issue is dispatched.',
+      connectionTitle: 'Local connection',
       commandTitle: 'Local start command',
       commandDescription: 'Run this on the machine with your checkout. It defaults to the current project path; change --repo-dir when targeting another repository.',
       copy: 'Copy command',
@@ -267,6 +320,73 @@ const messages: DashboardMessages = {
         },
       },
     },
+    operations: {
+      boundaryTitle: 'Agent responsibility boundary',
+      boundaryDescription: 'This page manages execution capability, health, and Skill binding. Requirements, prompts, queues, and PR delivery are scheduled on boards.',
+      dispatchable: 'Board schedulable',
+      needsBinding: 'Binding required',
+      unboundRepository: 'No repository bound',
+      repository: 'Repository binding',
+      runtime: 'Runtime',
+      dispatchCapability: 'Dispatch capability',
+      codexExecutable: 'Codex executable',
+      detectOnly: 'Detection only',
+      noCommandTitle: 'Why commands are not entered here',
+      readiness: {
+        repository: {
+          title: 'Repository binding',
+          ready: 'This executor works against {repository}.',
+          blocked: 'Bind a target repository first so the runtime knows which checkout to execute in.',
+        },
+        dispatch: {
+          title: 'Codex dispatch',
+          ready: 'This runtime reported codex and can be launched by platform tasks.',
+          blocked: 'The CLI was detected, but the board cannot dispatch it yet.',
+        },
+        skills: {
+          title: 'Skill injection',
+          ready: '{count} Skills will be compiled into prompt constraints and checklists.',
+          waiting: 'No Skills are bound yet. You can run without them, but prompts will miss team constraints.',
+        },
+      },
+      routes: {
+        binding: {
+          title: 'Binding and skills',
+          description: 'Repository, runtime, and Skills are execution prerequisites. Configure them here; dispatch work on boards.',
+          repository: 'Bind repository',
+          skills: 'Adjust Skills',
+        },
+        delivery: {
+          title: 'Delivery board',
+          description: 'The main flow from idea, PRD, and PR DAG to Codex execution and PR delivery.',
+          badge: 'Main flow',
+        },
+        intake: {
+          title: 'New requirement',
+          description: 'Start with product, architecture, UI/UX, and QA planning before deciding whether to dispatch.',
+          badge: 'Start here',
+        },
+        review: {
+          title: 'Review queue',
+          description: 'CI failures, review patches, escalation summaries, and manual decisions are handled here.',
+          badge: 'Recovery',
+        },
+      },
+      boundaries: {
+        agents: {
+          label: 'Agents page',
+          value: 'Answers which executors exist, whether they are online, whether they can be scheduled, and which Skills are bound.',
+        },
+        delivery: {
+          label: 'Delivery board',
+          value: 'Answers what to build, who approves it, which PR node is running, and whether tests and PR checks passed.',
+        },
+        review: {
+          label: 'Review board',
+          value: 'Answers what failed, who must decide, whether fix/review_patch is needed, and how many retries remain.',
+        },
+      },
+    },
     status: {
       online: 'online',
       dispatchReady: 'runtime can launch',
@@ -282,7 +402,7 @@ const messages: DashboardMessages = {
       version: 'Version',
     },
     tabs: {
-      activity: 'Activity',
+      activity: 'Boundary',
       tasks: 'Tasks',
       skills: 'Skills',
       environment: 'Environment',
@@ -294,6 +414,36 @@ const messages: DashboardMessages = {
     tasks: {
       title: 'No completed tasks yet',
       description: 'This agent has not completed any task yet.',
+      runTitle: 'Dispatch Codex directly',
+      runDescription: 'Enter a small task. CodingCTO will dispatch it to this local runtime and Codex CLI will execute it in the local repository.',
+      targetRepository: 'Target repository',
+      noRepository: 'No repository selected',
+      promptPlaceholder: 'For example: add one README line marking this as a CodingCTO direct task smoke test.',
+      promptHint: 'Start with a small, reversible task. The runtime executes inside the local repository passed through --repo-dir.',
+      blocked: {
+        noRepository: 'Select a target repository first.',
+        notDispatchable: 'This agent is detected by the runtime, but is not wired for platform dispatch yet.',
+        noPrompt: 'Enter a task description to dispatch it to Codex.',
+      },
+      dispatch: 'Run with Codex',
+      dispatching: 'Dispatching',
+      recentTitle: 'Recent tasks',
+      recentDescription: 'Direct task status refreshes automatically.',
+      emptyDescription: 'No direct tasks yet. Enter a task above and dispatch it.',
+      noTaskTitle: 'No task selected',
+      noTaskDescription: 'Select a recent task to inspect events and results.',
+      promptLabel: 'Prompt',
+      eventsTitle: 'Event log',
+      noEvents: 'No events yet. Runtime events appear after claim.',
+      resultTitle: 'Execution result',
+      status: {
+        dispatched: 'dispatched',
+        running: 'running',
+        completed: 'completed',
+        failed: 'failed',
+        cancelled: 'cancelled',
+        unknown: 'unknown',
+      },
     },
     skills: {
       title: 'Assign skills',
@@ -316,10 +466,10 @@ const messages: DashboardMessages = {
     },
   },
   console: {
-    eyebrow: 'Enterprise delivery workspace',
+    eyebrow: 'CodingCTO',
     title: 'What needs attention today',
-    description: 'Start from projects, GitHub binding, and the CodingCTO delivery board. This home page now keeps only real business entry points.',
-    openDelivery: 'Open delivery board',
+    description: 'Start from a project, bind a repository, then dispatch Codex from the board.',
+    openDelivery: 'Open board',
     openProjects: 'View projects',
     cards: {
       projects: {
@@ -328,9 +478,9 @@ const messages: DashboardMessages = {
         action: 'Manage projects',
       },
       delivery: {
-        title: 'CodingCTO delivery',
-        description: 'Turn requirements into plans, PR DAGs, execution tasks, and reviewable GitHub pull requests.',
-        action: 'Open delivery board',
+        title: 'Board',
+        description: 'Move requirements through plan, task, run, check, and PR.',
+        action: 'Open board',
       },
       github: {
         title: 'GitHub setup',
@@ -338,8 +488,8 @@ const messages: DashboardMessages = {
         action: 'Configure GitHub',
       },
       review: {
-        title: 'Review Queue',
-        description: 'Plan approvals, failed CI, human review, and blockers will be collected here.',
+        title: 'Check',
+        description: 'Tests, CI, reviews, and blockers return to the board.',
         action: 'Coming soon',
       },
     },
@@ -348,50 +498,44 @@ const messages: DashboardMessages = {
       workspace: 'Create or select a workspace.',
       project: 'Create a project and bind one primary repository.',
       context: 'Complete repo profiles, architecture snapshots, and skills.',
-      delivery: 'Write requirements, approve plans, and execute from the project delivery board.',
+      delivery: 'Write requirements, approve plans, and execute from the project board.',
     },
   },
   deliveryEntry: {
-    eyebrow: 'CodingCTO delivery',
+    eyebrow: 'CodingCTO board',
     title: 'Start from a project, not a blank prompt',
-    description: 'Enterprise execution needs a workspace, project, GitHub repositories, repo context, and scope guardrails. The global delivery page is now an entry point; real execution should happen inside a project delivery board.',
+    description: 'Choose a project and repository, then move requirements, tasks, runs, and PRs on the board.',
     primaryAction: 'Open projects',
     githubAction: 'Configure GitHub',
     cards: {
       project: {
-        title: 'Project delivery board',
-        description: 'Recommended entry. The project board loads bound repo profiles, architecture snapshots, skills, and guardrails automatically.',
+        title: 'Project board',
+        description: 'Recommended entry. The board loads repo profiles, architecture snapshots, skills, and guardrails.',
       },
       github: {
         title: 'GitHub binding',
         description: 'Install the GitHub App, sync repositories, then bind repos as primary, dependency, docs, or infra.',
       },
       review: {
-        title: 'Review Queue',
-        description: 'Plan approvals, failed CI, human review, and blockers will be collected here next.',
+        title: 'Check',
+        description: 'Plan approvals, failed CI, and blockers return to the board.',
       },
     },
   },
   specForge: {
     demoIdea: 'Add a team invite flow. Workspace admins can invite members by email, and invited users accept through a secure link.',
     header: {
-      title: 'PR delivery flow',
-      description: 'Turn one requirement into an approved plan, Codex run, and reviewable pull requests',
-      activeRuns: '{count} active runs',
-      analyzeRepo: 'Repo context',
-      manualPlan: 'Plan review',
-      pipeline: 'PR pipeline',
-    },
-    workflow: {
-      requirement: 'Write the requirement',
-      repository: 'Read repository context',
-      plan: 'Approve the plan',
-      delivery: 'Run Codex and deliver PRs',
+      title: 'Project command center',
+      description: 'Idea to plan, prompts, Codex run, and PR delivery',
+      activeRuns: '{count} active PR nodes',
+      analyzeRepo: 'Analyze repo',
+      manualPlan: 'Manual plan',
+      pipeline: 'Pipeline',
     },
     tabs: {
-      allWork: 'Requirement',
-      plans: 'Plan',
-      runs: 'Execution',
+      allWork: 'All work',
+      plans: 'Plans',
+      runs: 'Runs',
     },
     progress: {
       awaiting: 'Awaiting plan approval; {reason}',
@@ -416,15 +560,15 @@ const messages: DashboardMessages = {
     },
     stages: {
       intake: {
-        title: 'Requirement',
+        title: 'Idea intake',
         empty: 'Waiting for idea',
-        itemTitle: 'Write requirement',
+        itemTitle: 'Capture product intent',
         itemDescription: 'Describe the feature outcome, constraints, and acceptance boundaries.',
       },
       context: {
-        title: 'Repository',
+        title: 'Repo intelligence',
         empty: 'No repo selected',
-        itemTitle: 'Read repository context',
+        itemTitle: 'Analyze repos and skills',
       },
       planning: {
         title: 'Planning',
@@ -439,7 +583,7 @@ const messages: DashboardMessages = {
       execution: {
         title: 'Execution',
         empty: 'No run started',
-        itemTitle: 'Run Codex',
+        itemTitle: 'Run Codex and deliver PRs',
       },
       delivery: {
         title: 'PR delivery',
@@ -506,6 +650,8 @@ const messages: DashboardMessages = {
       openProject: 'Open project',
       configureGitHub: 'Configure GitHub',
       openAgents: 'View agents',
+      signInBackend: 'Sign in with backend',
+      cancel: 'Cancel',
     },
     metrics: {
       workspaces: {
@@ -538,6 +684,7 @@ const messages: DashboardMessages = {
       selectPlaceholder: 'Select workspace',
       empty: 'No workspace yet. Create one to unlock project and CodingCTO flows.',
       noDescription: 'No workspace description yet.',
+      selected: 'Workspace: {name}',
       id: 'ID: {id}',
     },
     projects: {
@@ -562,7 +709,7 @@ const messages: DashboardMessages = {
     },
     newProject: {
       title: 'New project',
-      description: 'Define the product or system boundary first, then open the project delivery board to bind GitHub repositories.',
+      description: 'Define the product or system boundary first, then open the project board to bind GitHub repositories.',
       titlePlaceholder: 'Project title',
       descriptionPlaceholder: 'What product or system does this project represent?',
       statusPlanned: 'Planned',
@@ -583,8 +730,12 @@ const messages: DashboardMessages = {
           description: 'Connect the primary repository and read-only context repositories.',
         },
         delivery: {
-          title: 'Enter CodingCTO delivery',
-          description: 'Generate plans, execution tasks, and reviewable PRs with repository context.',
+          title: 'Open CodingCTO delivery',
+          description: 'Generate plans, run tasks, and produce reviewable PRs from repository context.',
+        },
+        repository: {
+          title: 'GitHub repository',
+          description: 'Bind the writable primary repository, then generate plans and PRs.',
         },
       },
     },
@@ -597,6 +748,10 @@ const messages: DashboardMessages = {
       projectRequired: 'Project name and slug are required.',
       slugInvalid: 'Slug must be at least 2 characters and use lowercase letters, numbers, or hyphens.',
       projectCreateFailed: 'Project could not be created. Check the API connection and slug uniqueness.',
+      repositoryRequired: 'Select a connected GitHub repository first.',
+      repositoryBound: 'Primary repository {repoId} is bound to this project.',
+      repositoryBindFailed:
+        'Repository could not be bound. Confirm it belongs to this workspace and try again.',
     },
   },
   projectDelivery: {
@@ -643,6 +798,107 @@ const messages: DashboardMessages = {
         bindFailed: 'Repository could not be bound. Confirm it was connected in Settings and belongs to this workspace.',
       },
     },
+    e2e: {
+      title: 'End-to-end trial run',
+      description:
+        'Run the real delivery path for this repository: create an Issue, generate a plan, call local Codex, and open a PR.',
+      defaultIssueTitle: 'CodingCTO end-to-end trial: record one automated delivery',
+      defaultIssueBody:
+        'Please add a .codingcto/e2e-smoke.md file that records this trial run completed GitHub Issue creation, plan generation, local Codex CLI execution, code commit, and PR creation. Keep the change very small and only submit this note file.',
+      issueTitleLabel: 'Trial Issue title',
+      issueBodyLabel: 'Trial Issue body',
+      impact: {
+        title: 'Formal trial impact',
+        description:
+          'This is not a read-only verification. Starting it creates a GitHub Issue, generates and approves a plan, and dispatches Codex tasks; on success it commits code, pushes a branch, and attempts to open a PR.',
+        confirmTitle: 'I confirm I want to run the real end-to-end trial',
+        confirmDescription:
+          'I understand this action can modify the target repository and may create an Issue, branch, and PR.',
+        required: 'Confirm the formal trial impact before starting the end-to-end trial.',
+      },
+      readiness: {
+        title: 'Preflight checks',
+        description:
+          'Check GitHub App installation, repository permissions, and access tokens before creating Issues, pushing branches, and opening PRs.',
+        error: 'Could not load preflight checks. Confirm the API is running, sign in again, and retry.',
+        checkingRepository: 'Checking the current primary repository...',
+        noChecks: 'Some preflight checks have not passed yet. Resolve them before retrying.',
+        status: {
+          ready: 'Ready',
+          blocked: 'Needs attention',
+          checking: 'Checking',
+        },
+      },
+      button: {
+        running: 'Trial running...',
+        blocked: 'Resolve checks first',
+        start: 'Start end-to-end trial',
+      },
+      timeline: {
+        title: 'Execution timeline',
+        empty:
+          'After starting, progress appears here: repository checks, Issue, plan, dispatch, Codex execution, and PR.',
+      },
+      steps: {
+        repository: {
+          title: 'Check repository binding',
+        },
+        issue: {
+          title: 'Create GitHub Issue',
+        },
+        plan: {
+          title: 'Generate execution plan',
+          detail: 'Generated {count} PR nodes',
+        },
+        approve: {
+          title: 'Confirm plan',
+          detail: 'Plan #{id} confirmed',
+        },
+        run: {
+          title: 'Start execution',
+        },
+        dispatch: {
+          title: 'Dispatch to local runner',
+        },
+        codexWaiting: {
+          title: 'Waiting for Codex',
+          detail: 'Task dispatched. Waiting for the local runner to claim it and call Codex CLI.',
+        },
+        codexDone: {
+          title: 'Codex completed',
+          detail: 'The local runner changed code, committed, and pushed the branch.',
+        },
+        pr: {
+          title: 'Create GitHub Pull Request',
+          detail: 'PR #{number}',
+          missing: 'The task completed, but no PR link was returned.',
+        },
+        error: {
+          title: 'Flow interrupted',
+        },
+      },
+      errors: {
+        noRepository: 'This project has no primary repository yet. Finish repository setup first.',
+        noExecutableNode: 'The plan did not produce an executable PR node.',
+        noDispatchedTask: 'No executable task was dispatched. Confirm the local runner is online.',
+        codexFailed: 'Codex CLI execution failed.',
+        flowFailed: 'The trial was interrupted. Check the previous step and retry.',
+        timeout:
+          'The local runner has not completed the task yet. Confirm the runner is still running and check the agent heartbeat page.',
+      },
+      stepStatus: {
+        running: 'Running',
+        success: 'Done',
+        error: 'Failed',
+        pending: 'Waiting',
+      },
+      checkStatus: {
+        ok: 'Passed',
+        warning: 'Warning',
+        error: 'Missing',
+      },
+      linkLabel: 'View details',
+    },
     readiness: {
       projectScoped: 'Project scoped',
       primaryReady: 'Primary ready',
@@ -654,6 +910,12 @@ const messages: DashboardMessages = {
         readOnly: 'Read-only',
         skills: 'Skills',
         warnings: 'Warnings',
+      },
+      contract: {
+        title: 'Context contract',
+        execution: 'Execution repo',
+        skills: 'Skills',
+        missingEvidence: 'Missing evidence',
       },
       roles: {
         primary: 'Primary',

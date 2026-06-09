@@ -136,14 +136,41 @@ func TestRuntimeWorkerSubmitsFailedExecutorResult(t *testing.T) {
 	require.Equal(t, 2, client.submitReq.ExitCode)
 }
 
+func TestRuntimeWorkerClaimsExecutesAndSubmitsDirectTask(t *testing.T) {
+	client := &fakeRuntimeClient{
+		heartbeat: &RuntimeHeartbeatResponse{ClaimPending: true},
+		claim: &ClaimAgentTaskResponse{
+			DirectTask:       &ClaimedDirectAgentTask{ID: 99, RepositoryID: "repo_123", Executor: ExecutorNameCodexCLI, RuntimeID: "runtime_123"},
+			Prompt:           &ClaimedTaskPrompt{ID: 99, Type: "implementation", Version: "direct-v1", PromptText: "Update README"},
+			ExecutionContext: &ClaimedTaskExecutionContext{RepositoryID: "repo_123"},
+		},
+	}
+	executor := &fakeRuntimeExecutor{result: &ExecutionResult{Status: "completed", Output: "done", ExitCode: 0}}
+	worker := NewRuntimeWorker(RuntimeWorkerConfig{RuntimeID: "runtime_123", RepositoryID: "repo_123", RepoDir: "/workspace/repo"}, client, executor)
+
+	result, err := worker.RunOnce(context.Background())
+
+	require.NoError(t, err)
+	require.True(t, result.Claimed)
+	require.Equal(t, uint(99), result.TaskID)
+	require.True(t, executor.ran)
+	require.Equal(t, "direct-99", executor.context.RunID)
+	require.Equal(t, "Update README", executor.prompt.PromptText)
+	require.Equal(t, "completed", client.directSubmitReq.Status)
+	require.Equal(t, "done", client.directSubmitReq.Output)
+	require.Contains(t, eventTypes(client.directEvents), "runtime_claimed")
+}
+
 type fakeRuntimeClient struct {
-	heartbeat      *RuntimeHeartbeatResponse
-	heartbeatReq   *RuntimeHeartbeatRequest
-	claim          *ClaimAgentTaskResponse
-	claimRuntimeID string
-	claimReq       *ClaimAgentTaskRequest
-	events         []*CreateTaskEventRequest
-	submitReq      *SubmitTaskResultRequest
+	heartbeat       *RuntimeHeartbeatResponse
+	heartbeatReq    *RuntimeHeartbeatRequest
+	claim           *ClaimAgentTaskResponse
+	claimRuntimeID  string
+	claimReq        *ClaimAgentTaskRequest
+	events          []*CreateTaskEventRequest
+	submitReq       *SubmitTaskResultRequest
+	directEvents    []*CreateTaskEventRequest
+	directSubmitReq *SubmitTaskResultRequest
 }
 
 func (c *fakeRuntimeClient) Heartbeat(ctx context.Context, req *RuntimeHeartbeatRequest) (*RuntimeHeartbeatResponse, error) {
@@ -170,6 +197,16 @@ func (c *fakeRuntimeClient) SubmitTaskResult(ctx context.Context, taskID uint, r
 	return &domain.SpecForgeExecutionBundle{}, nil
 }
 
+func (c *fakeRuntimeClient) CreateDirectTaskEvent(ctx context.Context, taskID uint, req *CreateTaskEventRequest) (*domain.CodingCTODirectTaskEvent, error) {
+	c.directEvents = append(c.directEvents, req)
+	return &domain.CodingCTODirectTaskEvent{TaskID: taskID, Type: req.Type}, nil
+}
+
+func (c *fakeRuntimeClient) SubmitDirectTaskResult(ctx context.Context, taskID uint, req *SubmitTaskResultRequest) (*domain.CodingCTODirectAgentTask, error) {
+	c.directSubmitReq = req
+	return &domain.CodingCTODirectAgentTask{ID: taskID, Status: req.Status}, nil
+}
+
 func (c *fakeRuntimeClient) Deregister(ctx context.Context, req *RuntimeDeregisterRequest) (*domain.SpecForgeRuntimeSweepResult, error) {
 	return &domain.SpecForgeRuntimeSweepResult{}, nil
 }
@@ -185,6 +222,8 @@ type fakeRuntimeExecutor struct {
 func (e *fakeRuntimeExecutor) Name() string {
 	return ExecutorNameCodexCLI
 }
+
+func (e *fakeRuntimeExecutor) SetProgressReporter(reporter ProgressReporter) {}
 
 func (e *fakeRuntimeExecutor) Prepare(ctx context.Context, execContext ExecutionContext) error {
 	return nil

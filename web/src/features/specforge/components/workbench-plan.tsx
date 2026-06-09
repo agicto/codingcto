@@ -27,6 +27,8 @@ export function PlanReview({
   plan,
   decisionOverrides,
   selectedExecutionNodeIds,
+  selectedExecutor,
+  executorOptions,
   approved,
   isStarting,
   executionReadiness,
@@ -34,11 +36,14 @@ export function PlanReview({
   showSkillPipeline = true,
   onDecisionOverrideChange,
   onExecutionNodeSelectionChange,
+  onExecutorChange,
   onApprove,
 }: {
   plan: PlanBundle;
   decisionOverrides: Record<string, string>;
   selectedExecutionNodeIds: string[];
+  selectedExecutor: 'codex_cli' | 'claude_code_cli';
+  executorOptions: readonly { value: 'codex_cli' | 'claude_code_cli'; label: string }[];
   approved: boolean;
   isStarting: boolean;
   executionReadiness: ExecutionReadiness;
@@ -46,6 +51,7 @@ export function PlanReview({
   showSkillPipeline?: boolean;
   onDecisionOverrideChange: (key: string, value: string) => void;
   onExecutionNodeSelectionChange: (nodeIds: string[]) => void;
+  onExecutorChange: (value: 'codex_cli' | 'claude_code_cli') => void;
   onApprove: () => void;
 }) {
   const { productSpec, implementationPlan } = plan;
@@ -97,6 +103,27 @@ export function PlanReview({
         <CardContent className="space-y-5">
           <ListBlock title="Affected areas" items={implementationPlan.affectedAreas} />
           <ListBlock title="PR DAG review" items={plan.prDagReview} />
+          <div className="space-y-2">
+            <Label htmlFor="execution-executor">Executor</Label>
+            <select
+              id="execution-executor"
+              value={selectedExecutor}
+              disabled={approved || isStarting}
+              onChange={event =>
+                onExecutorChange(event.target.value as 'codex_cli' | 'claude_code_cli')
+              }
+              className="flex h-10 w-full rounded-md border border-border-subtle bg-bg-surface px-3 text-sm text-text-main outline-none ring-0 transition-colors focus:border-primary"
+            >
+              {executorOptions.map(option => (
+                <option key={option.value} value={option.value}>
+                  {option.label}
+                </option>
+              ))}
+            </select>
+            <p className="text-xs leading-5 text-text-muted">
+              Choose which local or remote CLI runtime will execute this run.
+            </p>
+          </div>
           <ExecutionRangeSelector
             nodes={plan.prNodes}
             selectedNodeIds={selectedExecutionNodeIds}
@@ -104,7 +131,13 @@ export function PlanReview({
             onChange={onExecutionNodeSelectionChange}
           />
           {showPromptPreview && previewNode ? (
-            <PromptContractPreview plan={plan} node={previewNode} />
+            <PromptContractPreview
+              plan={plan}
+              node={previewNode}
+              skillRuns={skillRuns}
+              executor={selectedExecutor}
+              runtimeReady={executionReadiness.canDispatch}
+            />
           ) : null}
           <ListBlock title="Execution range review" items={executionRangeNotes} />
           <ListBlock title="Security risks" items={implementationPlan.securityRisks} icon="risk" />
@@ -148,8 +181,24 @@ export function PlanReview({
   );
 }
 
-function PromptContractPreview({ plan, node }: { plan: PlanBundle; node: PRNode }) {
-  const promptPreview = buildPromptPreview(plan, node);
+function PromptContractPreview({
+  plan,
+  node,
+  skillRuns,
+  executor,
+  runtimeReady,
+}: {
+  plan: PlanBundle;
+  node: PRNode;
+  skillRuns: SpecForgeSkillRunDTO[];
+  executor: string;
+  runtimeReady: boolean;
+}) {
+  const promptPreview = buildPromptPreview(plan, node, {
+    skillRuns,
+    executor,
+    runtimeReady,
+  });
 
   return (
     <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">

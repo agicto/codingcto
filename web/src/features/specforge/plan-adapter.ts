@@ -198,12 +198,16 @@ export function executionRunFromDTO(
       runtimeId: task.runtime_id,
       sessionId: task.session_id,
       workdir: task.workdir,
+      processStatus: task.process_status,
+      currentPhase: task.current_phase,
       attemptNumber: task.attempt_number,
       fixAttemptId: task.fix_attempt_id,
       failureReason: task.failure_reason,
       logsUrl: task.logs_url,
       outputLog: task.output_log,
       errorLog: task.error_log,
+      processRef: task.process_ref,
+      lastProgressAt: task.last_progress_at,
       status: statusForExecutionTask(task.status, node?.status),
     };
   });
