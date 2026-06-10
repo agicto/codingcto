@@ -169,10 +169,11 @@ const messages: DashboardMessages = {
       failed: 'Failed',
     },
     references: {
-      title: 'Source Reference',
-      empty: 'Select a source reference in the page to inspect the code snippet.',
+      title: 'Code Reference',
+      empty: 'Select a code reference in the page to inspect the snippet.',
       loading: 'Loading snippet...',
       unavailable: 'Snippet unavailable.',
+      lineRange: 'Lines {start}-{end}',
     },
     search: {
       placeholder: 'Search wiki and code chunks',
@@ -184,7 +185,7 @@ const messages: DashboardMessages = {
     reader: {
       loading: 'Loading page...',
       empty: 'Select a wiki page.',
-      sourceRefs: 'Source References',
+      sourceRefs: 'Code References',
       diagram: 'Architecture Diagram',
     },
     layout: {

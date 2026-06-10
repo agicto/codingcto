@@ -32,10 +32,14 @@ export function WikiPageViewer({ page, isLoading = false, onSelectRef }: WikiPag
   }
 
   return (
-    <article className="mx-auto max-w-4xl px-5 py-6">
+    <article className="mx-auto w-full max-w-5xl px-6 py-8">
       {page.mermaid ? <MermaidGraph mermaid={page.mermaid} /> : null}
-      <MarkdownView markdown={page.markdown} />
-      <div className="mt-8 border-t border-border-subtle pt-4">
+      <MarkdownView
+        markdown={page.markdown}
+        sourceRefs={page.source_refs}
+        onSelectRef={onSelectRef}
+      />
+      <div className="mt-10 border-t border-border-subtle pt-5">
         <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
           <Link2 className="size-4 text-primary" />
           {t('sourceRefs')}
@@ -47,9 +51,12 @@ export function WikiPageViewer({ page, isLoading = false, onSelectRef }: WikiPag
               type="button"
               variant="outline"
               size="sm"
+              className="max-w-full"
               onClick={() => onSelectRef(ref)}
             >
-              {ref.path}:{ref.start_line}-{ref.end_line}
+              <span className="truncate">
+                {ref.path}:{ref.start_line}-{ref.end_line}
+              </span>
             </Button>
           ))}
         </div>
@@ -58,21 +65,32 @@ export function WikiPageViewer({ page, isLoading = false, onSelectRef }: WikiPag
   );
 }
 
-function MarkdownView({ markdown }: { markdown: string }) {
+function MarkdownView({
+  markdown,
+  sourceRefs,
+  onSelectRef,
+}: {
+  markdown: string;
+  sourceRefs: DeepWikiSourceRefDTO[];
+  onSelectRef: (ref: DeepWikiSourceRefDTO) => void;
+}) {
   const lines = markdown.split(/\r?\n/);
   const nodes: React.ReactNode[] = [];
   let listItems: string[] = [];
   let codeLines: string[] = [];
   let inCode = false;
+  const refByLabel = new Map(
+    sourceRefs.map(ref => [`[${ref.path}:${ref.start_line}-${ref.end_line}]`, ref])
+  );
 
   function flushList(key: string) {
     if (listItems.length === 0) {
       return;
     }
     nodes.push(
-      <ul key={key} className="my-3 list-disc space-y-1 pl-5 text-sm leading-6 text-text-subtle">
+      <ul key={key} className="my-4 list-disc space-y-2 pl-5 text-sm leading-7 text-text-subtle">
         {listItems.map((item, index) => (
-          <li key={`${key}-${index}`}>{item}</li>
+          <li key={`${key}-${index}`}>{renderInlineRefs(item, refByLabel, onSelectRef)}</li>
         ))}
       </ul>
     );
@@ -84,7 +102,7 @@ function MarkdownView({ markdown }: { markdown: string }) {
       return;
     }
     nodes.push(
-      <pre key={key} className="my-4 overflow-auto rounded-md border border-border-subtle bg-bg-canvas p-3 text-xs leading-5">
+      <pre key={key} className="my-5 overflow-auto rounded-md border border-border-subtle bg-bg-canvas p-4 text-xs leading-5">
         {codeLines.join('\n')}
       </pre>
     );
@@ -110,7 +128,7 @@ function MarkdownView({ markdown }: { markdown: string }) {
     flushList(`list-${index}`);
     if (line.startsWith('# ')) {
       nodes.push(
-        <h1 key={index} className="mb-4 text-3xl font-semibold tracking-normal text-text-main">
+        <h1 key={index} className="mb-5 text-3xl font-semibold tracking-normal text-text-main">
           {line.slice(2)}
         </h1>
       );
@@ -118,7 +136,7 @@ function MarkdownView({ markdown }: { markdown: string }) {
     }
     if (line.startsWith('## ')) {
       nodes.push(
-        <h2 key={index} className="mb-2 mt-6 text-lg font-semibold tracking-normal text-text-main">
+        <h2 key={index} className="mb-3 mt-8 text-xl font-semibold tracking-normal text-text-main">
           {line.slice(3)}
         </h2>
       );
@@ -128,8 +146,8 @@ function MarkdownView({ markdown }: { markdown: string }) {
       return;
     }
     nodes.push(
-      <p key={index} className="my-3 text-sm leading-7 text-text-subtle">
-        {line}
+      <p key={index} className="my-4 text-sm leading-7 text-text-subtle">
+        {renderInlineRefs(line, refByLabel, onSelectRef)}
       </p>
     );
   });
@@ -137,6 +155,45 @@ function MarkdownView({ markdown }: { markdown: string }) {
   flushCode('code-end');
 
   return <div className="text-text-main">{nodes}</div>;
+}
+
+function renderInlineRefs(
+  text: string,
+  refByLabel: Map<string, DeepWikiSourceRefDTO>,
+  onSelectRef: (ref: DeepWikiSourceRefDTO) => void
+) {
+  const parts: React.ReactNode[] = [];
+  const pattern = /\[[^\]]+:\d+-\d+\]/g;
+  let lastIndex = 0;
+  let match: RegExpExecArray | null;
+
+  while ((match = pattern.exec(text)) !== null) {
+    const label = match[0];
+    const ref = refByLabel.get(label);
+    if (!ref) {
+      continue;
+    }
+    if (match.index > lastIndex) {
+      parts.push(text.slice(lastIndex, match.index));
+    }
+    parts.push(
+      <button
+        key={`${label}-${match.index}`}
+        type="button"
+        className="mx-1 inline-flex max-w-full items-center rounded-md border border-primary/25 bg-primary-subtle px-1.5 py-0.5 align-baseline text-xs font-medium text-primary hover:border-primary/40 hover:bg-primary/10"
+        onClick={() => onSelectRef(ref)}
+      >
+        <span className="max-w-[18rem] truncate">{label.slice(1, -1)}</span>
+      </button>
+    );
+    lastIndex = match.index + label.length;
+  }
+
+  if (lastIndex < text.length) {
+    parts.push(text.slice(lastIndex));
+  }
+
+  return parts.length > 0 ? parts : text;
 }
 
 function MermaidGraph({ mermaid }: { mermaid: string }) {
@@ -157,7 +214,7 @@ function MermaidGraph({ mermaid }: { mermaid: string }) {
   }
 
   return (
-    <div className="mb-6 rounded-md border border-border-subtle bg-bg-surface p-4">
+    <div className="mb-8 rounded-md border border-border-subtle bg-bg-surface p-4">
       <div className="mb-3 flex items-center gap-2 text-sm font-semibold">
         <GitBranch className="size-4 text-primary" />
         {t('diagram')}

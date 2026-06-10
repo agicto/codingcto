@@ -41,20 +41,20 @@ export function WikiLayout({
   const t = useT('dashboard.deepwiki.layout');
 
   return (
-    <div className="grid min-h-0 flex-1 grid-cols-[220px_minmax(0,1fr)]">
-      <aside className="min-h-0 overflow-auto border-r border-border-subtle bg-bg-surface p-3">
+    <div className="grid min-h-0 flex-1 grid-cols-1 xl:grid-cols-[240px_minmax(0,1fr)]">
+      <aside className="min-h-0 overflow-auto border-b border-border-subtle bg-bg-surface p-3 xl:border-b-0 xl:border-r">
         <div className="mb-3 flex items-center gap-2 px-1 text-sm font-semibold">
           <BookOpen className="size-4 text-primary" />
           {t('pages')}
         </div>
-        <nav className="space-y-1">
+        <nav className="flex gap-1 overflow-x-auto pb-1 xl:block xl:space-y-1 xl:overflow-visible xl:pb-0">
           {pages.map(page => (
             <button
               key={page.slug}
               type="button"
               onClick={() => onSelectPage(page.slug)}
               className={cn(
-                'flex h-9 w-full items-center rounded-md px-2 text-left text-sm text-text-subtle hover:bg-bg-subtle hover:text-text-main',
+                'flex h-9 min-w-36 items-center rounded-md px-2 text-left text-sm text-text-subtle hover:bg-bg-subtle hover:text-text-main xl:w-full',
                 selectedSlug === page.slug && 'bg-primary-subtle font-medium text-primary'
               )}
             >

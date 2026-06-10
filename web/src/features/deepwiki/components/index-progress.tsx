@@ -38,7 +38,7 @@ export function IndexProgress({ status = 'queued', failure, error }: IndexProgre
 
   return (
     <div className="space-y-2">
-      <div className="grid grid-cols-2 gap-1.5 text-xs md:grid-cols-4 xl:grid-cols-7">
+      <div className="flex gap-1.5 overflow-x-auto pb-1 text-xs">
         {steps.map((step, index) => {
           const done = !failed && activeIndex >= index;
           const active = !failed && activeIndex === index && step !== 'ready';
@@ -47,6 +47,7 @@ export function IndexProgress({ status = 'queued', failure, error }: IndexProgre
               key={step}
               className={cn(
                 'flex h-8 items-center gap-1.5 rounded-md border border-border-subtle px-2 text-text-muted',
+                'min-w-28',
                 done && 'border-primary/30 bg-primary-subtle text-primary',
                 active && 'bg-bg-subtle text-text-main'
               )}

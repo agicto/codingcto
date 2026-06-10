@@ -167,10 +167,11 @@ const messages = {
       failed: '失败',
     },
     references: {
-      title: 'Source Reference',
-      empty: '选择页面里的 source reference 查看代码片段。',
+      title: '代码引用',
+      empty: '选择页面里的代码引用查看片段。',
       loading: '正在加载片段...',
       unavailable: '片段不可用。',
+      lineRange: '{start}-{end} 行',
     },
     search: {
       placeholder: '搜索 Wiki 和代码块',
@@ -182,7 +183,7 @@ const messages = {
     reader: {
       loading: '正在加载页面...',
       empty: '选择一个 Wiki 页面。',
-      sourceRefs: 'Source References',
+      sourceRefs: '代码引用',
       diagram: '架构图',
     },
     layout: {

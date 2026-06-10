@@ -102,7 +102,7 @@ export function DeepWikiConsole() {
   }
 
   return (
-    <div className="grid h-full min-h-0 bg-bg-canvas text-text-main lg:grid-cols-[320px_minmax(0,1fr)_360px]">
+    <div className="grid h-full min-h-0 bg-bg-canvas text-text-main lg:grid-cols-[320px_minmax(0,1fr)]">
       <aside className="min-h-0 overflow-auto border-r border-border-subtle bg-bg-surface p-4">
         <div className="mb-4 flex items-center gap-2">
           <BookMarked className="size-5 text-primary" />
@@ -182,7 +182,16 @@ export function DeepWikiConsole() {
         )}
       </main>
 
-      <SourceReferencePanel indexId={latestIndex?.id} selectedRef={selectedRef} />
+      <SourceReferencePanel
+        indexId={latestIndex?.id}
+        selectedRef={selectedRef}
+        open={Boolean(selectedRef)}
+        onOpenChange={open => {
+          if (!open) {
+            setSelectedRef(undefined);
+          }
+        }}
+      />
     </div>
   );
 }
