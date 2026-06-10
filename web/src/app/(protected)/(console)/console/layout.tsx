@@ -16,6 +16,7 @@ import {
   ListChecks,
   ChevronDown,
   Plus,
+  BookOpen,
 } from 'lucide-react';
 
 import { cn } from '@/utils';
@@ -58,6 +59,7 @@ interface WorkspaceNavItem {
     | 'home'
     | 'projects'
     | 'codingcto'
+    | 'deepwiki'
     | 'experts'
     | 'agents'
     | 'skills'
@@ -105,6 +107,13 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
       icon: ListChecks,
       description: sidebarT('items.delivery.description'),
       activeOn: 'codingcto',
+    },
+    {
+      title: sidebarT('items.deepwiki.title'),
+      href: ROUTES.CONSOLE.DEEPWIKI,
+      icon: BookOpen,
+      description: sidebarT('items.deepwiki.description'),
+      activeOn: 'deepwiki',
     },
     {
       title: sidebarT('items.experts.title'),
@@ -515,6 +524,9 @@ function isSidebarItemActive(
   }
   if (item.activeOn === 'codingcto') {
     return pathname.includes('/codingcto');
+  }
+  if (item.activeOn === 'deepwiki') {
+    return pathname === ROUTES.CONSOLE.DEEPWIKI || pathname.startsWith(`${ROUTES.CONSOLE.DEEPWIKI}/`);
   }
   if (item.activeOn === 'experts') {
     return pathname === ROUTES.CONSOLE.EXPERTS || pathname.startsWith(`${ROUTES.CONSOLE.EXPERTS}/`);
