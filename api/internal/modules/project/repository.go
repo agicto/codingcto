@@ -36,6 +36,9 @@ func (r *repository) UpdateProject(ctx context.Context, project *domain.SpecForg
 
 func (r *repository) DeleteProject(ctx context.Context, projectID uint) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("project_id = ?", projectID).Delete(&ProjectExpertPolicyPO{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("project_id = ?", projectID).Delete(&ProjectContextSnapshotPO{}).Error; err != nil {
 			return err
 		}
@@ -180,4 +183,62 @@ func (r *repository) FindLatestProjectContextSnapshot(ctx context.Context, proje
 		return nil, err
 	}
 	return po.toDomain(), nil
+}
+
+func (r *repository) CreateProjectExpertPolicy(ctx context.Context, policy *domain.SpecForgeProjectExpertPolicy) error {
+	po := newProjectExpertPolicyPO(policy)
+	if err := r.db.WithContext(ctx).Create(po).Error; err != nil {
+		return err
+	}
+	*policy = *po.toDomain()
+	return nil
+}
+
+func (r *repository) UpdateProjectExpertPolicy(ctx context.Context, policy *domain.SpecForgeProjectExpertPolicy) error {
+	po := newProjectExpertPolicyPO(policy)
+	if err := r.db.WithContext(ctx).Save(po).Error; err != nil {
+		return err
+	}
+	*policy = *po.toDomain()
+	return nil
+}
+
+func (r *repository) FindProjectExpertPolicyByID(ctx context.Context, id uint) (*domain.SpecForgeProjectExpertPolicy, error) {
+	var po ProjectExpertPolicyPO
+	if err := r.db.WithContext(ctx).First(&po, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return po.toDomain(), nil
+}
+
+func (r *repository) FindActiveProjectExpertPolicyByProjectID(ctx context.Context, projectID uint) (*domain.SpecForgeProjectExpertPolicy, error) {
+	var po ProjectExpertPolicyPO
+	if err := r.db.WithContext(ctx).
+		Where("project_id = ? AND active = ?", projectID, true).
+		Order("version DESC, id DESC").
+		First(&po).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return po.toDomain(), nil
+}
+
+func (r *repository) ListProjectExpertPoliciesByProjectID(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectExpertPolicy, error) {
+	var rows []*ProjectExpertPolicyPO
+	if err := r.db.WithContext(ctx).
+		Where("project_id = ?", projectID).
+		Order("version DESC, id DESC").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]*domain.SpecForgeProjectExpertPolicy, len(rows))
+	for index, row := range rows {
+		out[index] = row.toDomain()
+	}
+	return out, nil
 }

@@ -193,3 +193,64 @@ func (h *Handler) RefreshProjectContext(c *gin.Context) {
 	}
 	response.Success(c, &ProjectContextSnapshotResponse{Snapshot: snapshot})
 }
+
+func (h *Handler) GetProjectExpertPolicy(c *gin.Context) {
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+	policy, err := h.service.GetProjectExpertPolicy(c.Request.Context(), projectID)
+	if err != nil {
+		response.HandleError(c, "Failed to get project expert policy", err)
+		return
+	}
+	response.Success(c, &ProjectExpertPolicyResponse{Policy: policy})
+}
+
+func (h *Handler) CreateProjectExpertPolicy(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+
+	var req UpsertProjectExpertPolicyRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+	policy, err := h.service.CreateProjectExpertPolicy(c.Request.Context(), userID, projectID, &req)
+	if err != nil {
+		response.HandleError(c, "Failed to create project expert policy", err)
+		return
+	}
+	response.Created(c, &ProjectExpertPolicyResponse{Policy: policy})
+}
+
+func (h *Handler) UpdateProjectExpertPolicy(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+	policyID, ok := handler.ParseID(c, "policy_id")
+	if !ok {
+		return
+	}
+
+	var req UpsertProjectExpertPolicyRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+	policy, err := h.service.UpdateProjectExpertPolicy(c.Request.Context(), userID, projectID, policyID, &req)
+	if err != nil {
+		response.HandleError(c, "Failed to update project expert policy", err)
+		return
+	}
+	response.Success(c, &ProjectExpertPolicyResponse{Policy: policy})
+}

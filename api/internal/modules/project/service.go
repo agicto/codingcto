@@ -22,6 +22,9 @@ type Service interface {
 	GetProjectContext(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContext, error)
 	GetProjectReadiness(ctx context.Context, projectID uint) (*domain.SpecForgeProjectReadiness, error)
 	RefreshProjectContext(ctx context.Context, userID, projectID uint) (*domain.SpecForgeProjectContextSnapshot, error)
+	GetProjectExpertPolicy(ctx context.Context, projectID uint) (*domain.SpecForgeProjectExpertPolicy, error)
+	CreateProjectExpertPolicy(ctx context.Context, userID, projectID uint, req *UpsertProjectExpertPolicyRequest) (*domain.SpecForgeProjectExpertPolicy, error)
+	UpdateProjectExpertPolicy(ctx context.Context, userID, projectID, policyID uint, req *UpsertProjectExpertPolicyRequest) (*domain.SpecForgeProjectExpertPolicy, error)
 }
 
 type service struct {
@@ -308,7 +311,7 @@ func (s *service) GetProjectReadiness(ctx context.Context, projectID uint) (*dom
 		skillCount += len(projectSkills)
 	}
 
-	checks := make([]domain.SpecForgeProjectReadinessCheck, 0, 5)
+	checks := make([]domain.SpecForgeProjectReadinessCheck, 0, 6)
 	warnings := collectProjectContextWarnings(contextBundle)
 	guardrails := append([]string(nil), baseReadiness.Guardrails...)
 
@@ -403,7 +406,25 @@ func (s *service) GetProjectReadiness(ctx context.Context, projectID uint) (*dom
 		Required: false,
 	})
 
-	status, nextStep, nextAction, summary := projectReadinessDecision(hasPrimary, githubReady, contextReady, runtimeReady, skillReady)
+	expertPolicyReady := false
+	expertPolicyDetail := "No active expert policy is configured yet."
+	if policy, err := s.repo.FindActiveProjectExpertPolicyByProjectID(ctx, projectID); err != nil {
+		if !errors.Is(err, domain.ErrNotFound) {
+			return nil, fmt.Errorf("load active expert policy: %w", err)
+		}
+	} else if policy != nil {
+		expertPolicyReady = true
+		expertPolicyDetail = fmt.Sprintf("Active expert policy v%d is ready for planning and review.", policy.Version)
+	}
+	checks = append(checks, domain.SpecForgeProjectReadinessCheck{
+		Key:      "expert_policy",
+		Label:    "Expert policy",
+		Status:   readinessCheckStatus(expertPolicyReady, false),
+		Detail:   expertPolicyDetail,
+		Required: true,
+	})
+
+	status, nextStep, nextAction, summary := projectReadinessDecision(hasPrimary, githubReady, contextReady, runtimeReady, skillReady, expertPolicyReady)
 	return &domain.SpecForgeProjectReadiness{
 		ProjectID:               contextBundle.Project.ID,
 		ReadinessStatus:         status,
@@ -440,6 +461,82 @@ func (s *service) RefreshProjectContext(ctx context.Context, userID, projectID u
 		return nil, fmt.Errorf("create project context snapshot: %w", err)
 	}
 	return snapshot, nil
+}
+
+func (s *service) GetProjectExpertPolicy(ctx context.Context, projectID uint) (*domain.SpecForgeProjectExpertPolicy, error) {
+	if _, err := s.repo.FindProjectByID(ctx, projectID); err != nil {
+		return nil, err
+	}
+	policy, err := s.repo.FindActiveProjectExpertPolicyByProjectID(ctx, projectID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load active project expert policy: %w", err)
+	}
+	return policy, nil
+}
+
+func (s *service) CreateProjectExpertPolicy(ctx context.Context, userID, projectID uint, req *UpsertProjectExpertPolicyRequest) (*domain.SpecForgeProjectExpertPolicy, error) {
+	project, err := s.repo.FindProjectByID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if existing, err := s.repo.FindActiveProjectExpertPolicyByProjectID(ctx, projectID); err == nil && existing != nil {
+		return nil, domain.ErrConflict
+	} else if err != nil && !errors.Is(err, domain.ErrNotFound) {
+		return nil, fmt.Errorf("load active project expert policy: %w", err)
+	}
+	policy, err := buildProjectExpertPolicy(project, userID, 1, req)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.CreateProjectExpertPolicy(ctx, policy); err != nil {
+		return nil, fmt.Errorf("create project expert policy: %w", err)
+	}
+	return policy, nil
+}
+
+func (s *service) UpdateProjectExpertPolicy(ctx context.Context, userID, projectID, policyID uint, req *UpsertProjectExpertPolicyRequest) (*domain.SpecForgeProjectExpertPolicy, error) {
+	project, err := s.repo.FindProjectByID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	current, err := s.repo.FindProjectExpertPolicyByID(ctx, policyID)
+	if err != nil {
+		return nil, err
+	}
+	if current.ProjectID != projectID {
+		return nil, domain.ErrPermissionDenied
+	}
+	policies, err := s.repo.ListProjectExpertPoliciesByProjectID(ctx, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("list project expert policies: %w", err)
+	}
+	maxVersion := 0
+	for _, policy := range policies {
+		if policy == nil {
+			continue
+		}
+		if policy.Active {
+			policy.Active = false
+			if err := s.repo.UpdateProjectExpertPolicy(ctx, policy); err != nil {
+				return nil, fmt.Errorf("deactivate active expert policy: %w", err)
+			}
+		}
+		if policy.Version > maxVersion {
+			maxVersion = policy.Version
+		}
+	}
+	next, err := buildProjectExpertPolicy(project, userID, maxVersion+1, req)
+	if err != nil {
+		return nil, err
+	}
+	next.Active = true
+	if err := s.repo.CreateProjectExpertPolicy(ctx, next); err != nil {
+		return nil, fmt.Errorf("create next project expert policy version: %w", err)
+	}
+	return next, nil
 }
 
 func (s *service) projectContextBundle(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContext, error) {
@@ -596,7 +693,7 @@ func projectGitHubReadinessDetail(result *githubintegration.GitHubRepositoryRead
 	return fmt.Sprintf("%s (+%d more GitHub blockers)", blocking[0], len(blocking)-1)
 }
 
-func projectReadinessDecision(hasPrimary, githubReady, contextReady, runtimeReady, skillReady bool) (status, nextStep, nextAction, summary string) {
+func projectReadinessDecision(hasPrimary, githubReady, contextReady, runtimeReady, skillReady, expertPolicyReady bool) (status, nextStep, nextAction, summary string) {
 	switch {
 	case !hasPrimary:
 		return domain.ProjectReadinessStatusBlocked,
@@ -623,6 +720,11 @@ func projectReadinessDecision(hasPrimary, githubReady, contextReady, runtimeRead
 			domain.ProjectReadinessStepAddSkills,
 			"Add project or repository skills so planners and executors do not have to rediscover local conventions.",
 			"Project can plan, but prompt guidance is still thin."
+	case !expertPolicyReady:
+		return domain.ProjectReadinessStatusAttention,
+			domain.ProjectReadinessStepConfigureExpertPolicy,
+			"Persist an expert policy before generating requirements, reviews, and merge decisions.",
+			"Project setup is missing the active expert scope and merge policy contract."
 	default:
 		return domain.ProjectReadinessStatusReady,
 			domain.ProjectReadinessStepCreateRequirement,

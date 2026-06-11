@@ -44,6 +44,7 @@ func NewStarterManifest(handler *Handler) contracts.StarterManifest {
 		contracts.WithStarterMigrationNames(
 			"2026_05_25_000018_create_specforge_project_tables",
 			"2026_06_11_000031_create_specforge_project_context_snapshots_table",
+			"2026_06_11_000032_create_specforge_project_expert_policies_table",
 		),
 	)
 }

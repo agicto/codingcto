@@ -17,5 +17,8 @@ func (h *Handler) RegisterRoutes(r *router.Router) {
 		auth.GET("/projects/:id/readiness", h.GetProjectReadiness).Name("specforge.projects.readiness").WhereNumber("id")
 		auth.GET("/projects/:id/context", h.GetProjectContext).Name("specforge.projects.context").WhereNumber("id")
 		auth.POST("/projects/:id/context/reindex", h.RefreshProjectContext).Name("specforge.projects.context.reindex").WhereNumber("id")
+		auth.GET("/projects/:id/expert-policy", h.GetProjectExpertPolicy).Name("specforge.projects.expert_policy.show").WhereNumber("id")
+		auth.POST("/projects/:id/expert-policy", h.CreateProjectExpertPolicy).Name("specforge.projects.expert_policy.store").WhereNumber("id")
+		auth.PATCH("/projects/:id/expert-policy/:policy_id", h.UpdateProjectExpertPolicy).Name("specforge.projects.expert_policy.update").WhereNumber("id").WhereNumber("policy_id")
 	})
 }

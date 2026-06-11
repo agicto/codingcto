@@ -3383,6 +3383,37 @@ func (r *memoryExecutionProjectRepo) FindLatestProjectContextSnapshot(ctx contex
 	return nil, domain.ErrNotFound
 }
 
+func (r *memoryExecutionProjectRepo) CreateProjectExpertPolicy(ctx context.Context, policy *domain.SpecForgeProjectExpertPolicy) error {
+	if policy == nil {
+		return domain.ErrInvalidInput
+	}
+	copied := *policy
+	if copied.ID == 0 {
+		copied.ID = 1
+	}
+	*policy = copied
+	return nil
+}
+
+func (r *memoryExecutionProjectRepo) UpdateProjectExpertPolicy(ctx context.Context, policy *domain.SpecForgeProjectExpertPolicy) error {
+	if policy == nil {
+		return domain.ErrInvalidInput
+	}
+	return nil
+}
+
+func (r *memoryExecutionProjectRepo) FindProjectExpertPolicyByID(ctx context.Context, id uint) (*domain.SpecForgeProjectExpertPolicy, error) {
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryExecutionProjectRepo) FindActiveProjectExpertPolicyByProjectID(ctx context.Context, projectID uint) (*domain.SpecForgeProjectExpertPolicy, error) {
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryExecutionProjectRepo) ListProjectExpertPoliciesByProjectID(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectExpertPolicy, error) {
+	return []*domain.SpecForgeProjectExpertPolicy{}, nil
+}
+
 type fakeExecutor struct {
 	execContext ExecutionContext
 	prompt      CompiledExecutionPrompt
