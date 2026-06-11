@@ -170,10 +170,66 @@ export interface ProjectContextContractDTO {
   repositories?: ProjectRepositoryContextContractFragmentDTO[];
 }
 
+export interface ProjectContextDeepWikiSummaryDTO {
+  source_id: number;
+  index_id: number;
+  source_type?: string;
+  source_status?: string;
+  index_status?: string;
+  repo_url?: string;
+  matched_by?: string;
+  last_indexed_at?: string;
+  file_count: number;
+  chunk_count: number;
+  page_count: number;
+  frameworks?: string[];
+  entrypoints?: string[];
+  routes?: string[];
+  services?: string[];
+  models?: string[];
+  top_pages?: string[];
+  warnings?: string[];
+}
+
+export interface ProjectContextSnapshotRepositoryDTO {
+  repository_id: string;
+  role: string;
+  writable: boolean;
+  profile_summary?: string;
+  profile_source?: string;
+  architecture_summary?: string;
+  architecture_snapshot_commit?: string;
+  architecture_stale: boolean;
+  skill_names?: string[];
+  warnings?: string[];
+  warning_count: number;
+  missing_evidence?: string[];
+  deepwiki?: ProjectContextDeepWikiSummaryDTO;
+}
+
+export interface ProjectContextSnapshotDTO {
+  id: number;
+  workspace_id: string;
+  project_id: number;
+  snapshot_status: 'blocked' | 'attention' | 'ready' | string;
+  summary: string;
+  primary_repository_id?: string;
+  warning_count: number;
+  missing_evidence?: string[];
+  evidence_refs?: string[];
+  repositories?: ProjectContextSnapshotRepositoryDTO[];
+  readiness?: ProjectContextReadinessDTO;
+  context_contract?: ProjectContextContractDTO;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ProjectContextDTO {
   project: ProjectDTO;
   repositories: ProjectRepositoryDTO[];
   repository_contexts: ProjectRepositoryContextDTO[];
+  latest_snapshot?: ProjectContextSnapshotDTO;
   primary_repository_id?: string;
   execution_repository_id?: string;
   read_only_repository_ids?: string[];
@@ -243,6 +299,13 @@ export const projectService = {
 
   getProjectContext: (projectId: number, config?: RequestConfig) =>
     request.get<{ context: ProjectContextDTO }>(`/projects/${projectId}/context`, config),
+
+  reindexProjectContext: (projectId: number, config?: RequestConfig) =>
+    request.post<{ snapshot: ProjectContextSnapshotDTO }>(
+      `/projects/${projectId}/context/reindex`,
+      undefined,
+      config
+    ),
 
   getProjectReadiness: (projectId: number, config?: RequestConfig) =>
     request.get<{ readiness: ProjectReadinessDTO }>(`/projects/${projectId}/readiness`, config),
