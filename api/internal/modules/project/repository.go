@@ -34,6 +34,22 @@ func (r *repository) UpdateProject(ctx context.Context, project *domain.SpecForg
 	return nil
 }
 
+func (r *repository) DeleteProject(ctx context.Context, projectID uint) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("project_id = ?", projectID).Delete(&ProjectRepositoryPO{}).Error; err != nil {
+			return err
+		}
+		result := tx.Delete(&ProjectPO{}, projectID)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return domain.ErrNotFound
+		}
+		return nil
+	})
+}
+
 func (r *repository) FindProjectByID(ctx context.Context, id uint) (*domain.SpecForgeProject, error) {
 	var po ProjectPO
 	if err := r.db.WithContext(ctx).First(&po, id).Error; err != nil {

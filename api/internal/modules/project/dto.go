@@ -16,6 +16,7 @@ type CreateProjectRequest struct {
 
 type UpdateProjectRequest struct {
 	Name        *string `json:"name" binding:"omitempty,min=2,max=120"`
+	Slug        *string `json:"slug" binding:"omitempty,min=2,max=100"`
 	Description *string `json:"description" binding:"omitempty,max=5000"`
 	Status      *string `json:"status" binding:"omitempty,oneof=active archived"`
 }

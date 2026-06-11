@@ -1193,6 +1193,15 @@ func (r *memoryProjectRepo) UpdateProject(ctx context.Context, project *domain.S
 	return nil
 }
 
+func (r *memoryProjectRepo) DeleteProject(ctx context.Context, projectID uint) error {
+	if r.project == nil || r.project.ID != projectID {
+		return domain.ErrNotFound
+	}
+	r.project = nil
+	r.repositories = nil
+	return nil
+}
+
 func (r *memoryProjectRepo) FindProjectByID(ctx context.Context, id uint) (*domain.SpecForgeProject, error) {
 	if r.project == nil || r.project.ID != id {
 		return nil, domain.ErrNotFound
