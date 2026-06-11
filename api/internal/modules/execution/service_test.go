@@ -3367,6 +3367,22 @@ func (r *memoryExecutionProjectRepo) FindActivePrimaryProjectRepository(ctx cont
 	return nil, domain.ErrNotFound
 }
 
+func (r *memoryExecutionProjectRepo) CreateProjectContextSnapshot(ctx context.Context, snapshot *domain.SpecForgeProjectContextSnapshot) error {
+	if snapshot == nil {
+		return domain.ErrInvalidInput
+	}
+	copied := *snapshot
+	if copied.ID == 0 {
+		copied.ID = 1
+	}
+	*snapshot = copied
+	return nil
+}
+
+func (r *memoryExecutionProjectRepo) FindLatestProjectContextSnapshot(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContextSnapshot, error) {
+	return nil, domain.ErrNotFound
+}
+
 type fakeExecutor struct {
 	execContext ExecutionContext
 	prompt      CompiledExecutionPrompt

@@ -1284,6 +1284,22 @@ func (r *memoryProjectRepo) FindActivePrimaryProjectRepository(ctx context.Conte
 	return nil, domain.ErrNotFound
 }
 
+func (r *memoryProjectRepo) CreateProjectContextSnapshot(ctx context.Context, snapshot *domain.SpecForgeProjectContextSnapshot) error {
+	if snapshot == nil {
+		return domain.ErrInvalidInput
+	}
+	copied := *snapshot
+	if copied.ID == 0 {
+		copied.ID = 1
+	}
+	*snapshot = copied
+	return nil
+}
+
+func (r *memoryProjectRepo) FindLatestProjectContextSnapshot(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContextSnapshot, error) {
+	return nil, domain.ErrNotFound
+}
+
 func cloneBundle(bundle *domain.SpecForgePlanBundle) *domain.SpecForgePlanBundle {
 	out := *bundle
 	idea := *bundle.Idea

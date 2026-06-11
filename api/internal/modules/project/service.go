@@ -21,6 +21,7 @@ type Service interface {
 	ListRepositories(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectRepository, error)
 	GetProjectContext(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContext, error)
 	GetProjectReadiness(ctx context.Context, projectID uint) (*domain.SpecForgeProjectReadiness, error)
+	RefreshProjectContext(ctx context.Context, userID, projectID uint) (*domain.SpecForgeProjectContextSnapshot, error)
 }
 
 type service struct {
@@ -33,6 +34,7 @@ type service struct {
 	projectSkillRepo projectSkillStore
 	githubReadiness  githubReadinessChecker
 	runtimeReadiness runtimeReadinessStore
+	deepwikiStore    projectDeepWikiStore
 }
 
 type repoArchitectureStore interface {
@@ -51,6 +53,12 @@ type runtimeReadinessStore interface {
 	ListRuntimes(ctx context.Context, executor, status string, limit int) ([]*domain.SpecForgeRuntime, error)
 }
 
+type projectDeepWikiStore interface {
+	ListSources(ctx context.Context, filter domain.DeepWikiSourceFilter, page, pageSize int) ([]*domain.DeepWikiSource, int64, error)
+	FindLatestIndexBySourceID(ctx context.Context, sourceID uint) (*domain.DeepWikiIndex, error)
+	ListPagesByIndexID(ctx context.Context, indexID uint) ([]*domain.DeepWikiPage, error)
+}
+
 func NewService(
 	repo domain.SpecForgeProjectRepositoryStore,
 	workspaceRepo domain.WorkspaceRepository,
@@ -60,6 +68,7 @@ func NewService(
 	projectSkillRepo projectSkillStore,
 	githubReadiness githubReadinessChecker,
 	runtimeReadiness runtimeReadinessStore,
+	deepwikiStore projectDeepWikiStore,
 ) *service {
 	var architectureRepo repoArchitectureStore
 	if repo, ok := profileRepo.(repoArchitectureStore); ok {
@@ -75,6 +84,7 @@ func NewService(
 		projectSkillRepo: projectSkillRepo,
 		githubReadiness:  githubReadiness,
 		runtimeReadiness: runtimeReadiness,
+		deepwikiStore:    deepwikiStore,
 	}
 }
 
@@ -261,24 +271,18 @@ func (s *service) ListRepositories(ctx context.Context, projectID uint) ([]*doma
 }
 
 func (s *service) GetProjectContext(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContext, error) {
-	project, err := s.repo.FindProjectByID(ctx, projectID)
+	context, err := s.projectContextBundle(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
-	repositories, err := s.repo.ListProjectRepositories(ctx, projectID)
-	if err != nil {
-		return nil, err
+	if context == nil {
+		return nil, domain.ErrNotFound
 	}
-	repositoryContexts, err := s.repositoryContexts(ctx, repositories)
-	if err != nil {
-		return nil, err
+	latestSnapshot, err := s.repo.FindLatestProjectContextSnapshot(ctx, projectID)
+	if err != nil && !errors.Is(err, domain.ErrNotFound) {
+		return nil, fmt.Errorf("load latest project context snapshot: %w", err)
 	}
-	context := &domain.SpecForgeProjectContext{
-		Project:            project,
-		Repositories:       repositories,
-		RepositoryContexts: repositoryContexts,
-	}
-	domain.ApplySpecForgeProjectContextGuardrails(context)
+	context.LatestSnapshot = latestSnapshot
 	return context, nil
 }
 
@@ -417,6 +421,47 @@ func (s *service) GetProjectReadiness(ctx context.Context, projectID uint) (*dom
 		Warnings:                warnings,
 		Guardrails:              guardrails,
 	}, nil
+}
+
+func (s *service) RefreshProjectContext(ctx context.Context, userID, projectID uint) (*domain.SpecForgeProjectContextSnapshot, error) {
+	contextBundle, err := s.projectContextBundle(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if contextBundle == nil || contextBundle.Project == nil {
+		return nil, domain.ErrNotFound
+	}
+
+	snapshot, err := s.buildProjectContextSnapshot(ctx, userID, contextBundle)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.repo.CreateProjectContextSnapshot(ctx, snapshot); err != nil {
+		return nil, fmt.Errorf("create project context snapshot: %w", err)
+	}
+	return snapshot, nil
+}
+
+func (s *service) projectContextBundle(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContext, error) {
+	project, err := s.repo.FindProjectByID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	repositories, err := s.repo.ListProjectRepositories(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	repositoryContexts, err := s.repositoryContexts(ctx, repositories)
+	if err != nil {
+		return nil, err
+	}
+	context := &domain.SpecForgeProjectContext{
+		Project:            project,
+		Repositories:       repositories,
+		RepositoryContexts: repositoryContexts,
+	}
+	domain.ApplySpecForgeProjectContextGuardrails(context)
+	return context, nil
 }
 
 func (s *service) repositoryContexts(ctx context.Context, repositories []*domain.SpecForgeProjectRepository) ([]*domain.SpecForgeProjectRepositoryContext, error) {

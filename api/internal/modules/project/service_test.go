@@ -20,7 +20,7 @@ func TestServiceProjectRepositoryFlow(t *testing.T) {
 			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
 		},
 	}
-	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil)
+	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil, nil)
 
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
@@ -114,7 +114,7 @@ func TestServiceProjectContextIncludesRepoProfilesAndSkills(t *testing.T) {
 			},
 		},
 	}
-	svc := NewService(store, workspaces, github, profiles, skills, nil, nil, nil)
+	svc := NewService(store, workspaces, github, profiles, skills, nil, nil, nil, nil)
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
 		Name:        "SpecForge",
@@ -189,7 +189,7 @@ func TestServiceProjectContextReadinessRequiresPrimaryRepository(t *testing.T) {
 			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
 		},
 	}
-	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil)
+	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil, nil)
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
 		Name:        "SpecForge",
@@ -224,7 +224,7 @@ func TestServiceRejectsSecondPrimaryRepository(t *testing.T) {
 			"repo_2": {RepositoryID: "repo_2", WorkspaceID: "workspace_1"},
 		},
 	}
-	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil)
+	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil, nil)
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
 		Name:        "SpecForge",
@@ -253,7 +253,7 @@ func TestServiceRejectsCrossWorkspaceRepository(t *testing.T) {
 			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_2"},
 		},
 	}
-	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil)
+	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil, nil)
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
 		Name:        "SpecForge",
@@ -271,7 +271,7 @@ func TestServiceRejectsCrossWorkspaceRepository(t *testing.T) {
 func TestServiceCreateProjectResolvesCanonicalWorkspaceID(t *testing.T) {
 	store := newMemoryProjectStore()
 	workspaces := newMemoryWorkspaceStore("local_test")
-	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil, nil, nil, nil)
+	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil, nil, nil, nil, nil)
 
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "local-test",
@@ -290,7 +290,7 @@ func TestServiceCreateProjectResolvesCanonicalWorkspaceID(t *testing.T) {
 func TestServiceRejectsProjectForMissingWorkspace(t *testing.T) {
 	store := newMemoryProjectStore()
 	workspaces := newMemoryWorkspaceStore("workspace_1")
-	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil, nil, nil, nil)
+	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil, nil, nil, nil, nil)
 
 	_, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "missing-workspace",
@@ -306,7 +306,7 @@ func TestServiceRejectsProjectForMissingWorkspace(t *testing.T) {
 func TestServiceUpdatesProjectFieldsAndSlug(t *testing.T) {
 	store := newMemoryProjectStore()
 	workspaces := newMemoryWorkspaceStore("workspace_1")
-	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil, nil, nil, nil)
+	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil, nil, nil, nil, nil)
 
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
@@ -351,7 +351,7 @@ func TestServiceDeletesProjectAndRepositoryBindings(t *testing.T) {
 			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
 		},
 	}
-	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil)
+	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil, nil)
 
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
@@ -430,7 +430,7 @@ func TestServiceProjectReadinessBecomesReadyWhenSetupSignalsPass(t *testing.T) {
 			},
 		},
 	}
-	svc := NewService(store, workspaces, github, profiles, &memorySkillStore{}, projectSkills, githubReadiness, runtimes)
+	svc := NewService(store, workspaces, github, profiles, &memorySkillStore{}, projectSkills, githubReadiness, runtimes, nil)
 
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
@@ -488,6 +488,7 @@ func TestServiceProjectReadinessBlocksOnGitHubBeforeOtherWarnings(t *testing.T) 
 			},
 		},
 		&fakeRuntimeReadinessStore{},
+		nil,
 	)
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
@@ -509,11 +510,160 @@ func TestServiceProjectReadinessBlocksOnGitHubBeforeOtherWarnings(t *testing.T) 
 	require.Equal(t, domain.ProjectReadinessStatusBlocked, readinessCheckStatusByKey(t, readiness, "github_delivery"))
 }
 
+func TestServiceRefreshProjectContextPersistsUnifiedSnapshot(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {
+				RepositoryID: "repo_1",
+				WorkspaceID:  "workspace_1",
+				GitHubOwner:  "agicto",
+				GitHubRepo:   "codingcto",
+			},
+		},
+	}
+	profiles := &memoryRepoProfileStore{
+		profiles: map[string]*domain.SpecForgeRepoProfile{
+			"repo_1": {
+				ID:            10,
+				RepositoryID:  "repo_1",
+				DefaultBranch: "main",
+				Summary:       "Primary application repository.",
+				Source:        "repo_context_service",
+			},
+		},
+		snapshots: map[string]*domain.SpecForgeRepoArchitectureSnapshot{
+			"repo_1": {
+				ID:           22,
+				RepositoryID: "repo_1",
+				CommitSHA:    "abc123",
+				Summary:      "DDD module layout with Next.js console.",
+				CreatedAt:    nowUTC(),
+			},
+		},
+	}
+	skills := &memorySkillStore{
+		skills: map[string][]*domain.SpecForgeSkill{
+			"repo_1": {
+				{
+					ID:           7,
+					RepositoryID: "repo_1",
+					Name:         "module-boundaries",
+					Content:      "Keep API and web contracts explicit.",
+					Active:       true,
+				},
+			},
+		},
+	}
+	lastIndexedAt := nowUTC()
+	deepwikiStore := &fakeDeepWikiStore{
+		sources: []*domain.DeepWikiSource{
+			{
+				ID:            50,
+				CreatedBy:     42,
+				SourceType:    domain.DeepWikiSourceTypeGitHubURL,
+				RepoURL:       "https://github.com/agicto/codingcto",
+				Status:        domain.DeepWikiStatusReady,
+				LastIndexedAt: &lastIndexedAt,
+			},
+		},
+		indexes: map[uint]*domain.DeepWikiIndex{
+			50: {
+				ID:          60,
+				SourceID:    50,
+				CommitSHA:   "abc123",
+				FileCount:   120,
+				ChunkCount:  420,
+				Frameworks:  []string{"gin", "next.js"},
+				Entrypoints: []string{"cmd/server/main.go"},
+				Services:    []string{"project", "planning"},
+				Models:      []string{"specforge_projects"},
+				Status:      domain.DeepWikiStatusReady,
+			},
+		},
+		pages: map[uint][]*domain.DeepWikiPage{
+			60: {
+				{ID: 70, IndexID: 60, Slug: "overview", Title: "Repository overview"},
+				{ID: 71, IndexID: 60, Slug: "architecture", Title: "Architecture"},
+			},
+		},
+	}
+	svc := NewService(store, workspaces, github, profiles, skills, nil, nil, nil, deepwikiStore)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "CodingCTO",
+		Slug:        "codingcto",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+
+	snapshot, err := svc.RefreshProjectContext(context.Background(), 42, project.ID)
+	require.NoError(t, err)
+	require.NotZero(t, snapshot.ID)
+	require.Equal(t, domain.ProjectReadinessStatusReady, snapshot.SnapshotStatus)
+	require.Equal(t, "repo_1", snapshot.PrimaryRepositoryID)
+	require.Contains(t, snapshot.EvidenceRefs, "repo_profile:repo_1")
+	require.Contains(t, snapshot.EvidenceRefs, "architecture_snapshot:repo_1:abc123")
+	require.Contains(t, snapshot.EvidenceRefs, "deepwiki_source:50")
+	require.Contains(t, snapshot.EvidenceRefs, "deepwiki_index:60")
+	require.Len(t, snapshot.Repositories, 1)
+	require.NotNil(t, snapshot.Repositories[0].DeepWiki)
+	require.Equal(t, 2, snapshot.Repositories[0].DeepWiki.PageCount)
+	require.Equal(t, []string{"Repository overview", "Architecture"}, snapshot.Repositories[0].DeepWiki.TopPages)
+
+	contextBundle, err := svc.GetProjectContext(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.NotNil(t, contextBundle.LatestSnapshot)
+	require.Equal(t, snapshot.ID, contextBundle.LatestSnapshot.ID)
+}
+
+func TestServiceRefreshProjectContextMarksMissingDeepWikiEvidence(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {
+				RepositoryID: "repo_1",
+				WorkspaceID:  "workspace_1",
+				GitHubOwner:  "agicto",
+				GitHubRepo:   "codingcto",
+			},
+		},
+	}
+	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil, &fakeDeepWikiStore{})
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "CodingCTO",
+		Slug:        "codingcto",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+
+	snapshot, err := svc.RefreshProjectContext(context.Background(), 42, project.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.ProjectReadinessStatusAttention, snapshot.SnapshotStatus)
+	require.Contains(t, snapshot.MissingEvidence, "deepwiki_index:repo_1")
+	require.Contains(t, snapshot.Summary, "no DeepWiki index matched")
+}
+
 type memoryProjectStore struct {
-	nextProjectID uint
-	nextBindingID uint
-	projects      map[uint]*domain.SpecForgeProject
-	bindings      map[uint]map[string]*domain.SpecForgeProjectRepository
+	nextProjectID  uint
+	nextBindingID  uint
+	nextSnapshotID uint
+	projects       map[uint]*domain.SpecForgeProject
+	bindings       map[uint]map[string]*domain.SpecForgeProjectRepository
+	snapshots      map[uint][]*domain.SpecForgeProjectContextSnapshot
 }
 
 type fakeGitHubReadinessChecker struct {
@@ -564,12 +714,80 @@ func (f *fakeProjectSkillStore) ListActiveProjectSkillsByProjectID(_ context.Con
 	return out, nil
 }
 
+type fakeDeepWikiStore struct {
+	sources []*domain.DeepWikiSource
+	indexes map[uint]*domain.DeepWikiIndex
+	pages   map[uint][]*domain.DeepWikiPage
+	err     error
+}
+
+func (f *fakeDeepWikiStore) ListSources(_ context.Context, filter domain.DeepWikiSourceFilter, page, pageSize int) ([]*domain.DeepWikiSource, int64, error) {
+	if f.err != nil {
+		return nil, 0, f.err
+	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = len(f.sources)
+	}
+	filtered := make([]*domain.DeepWikiSource, 0, len(f.sources))
+	for _, source := range f.sources {
+		if source == nil {
+			continue
+		}
+		if filter.CreatedBy > 0 && source.CreatedBy != filter.CreatedBy {
+			continue
+		}
+		copied := *source
+		filtered = append(filtered, &copied)
+	}
+	start := (page - 1) * pageSize
+	if start >= len(filtered) {
+		return []*domain.DeepWikiSource{}, int64(len(filtered)), nil
+	}
+	end := start + pageSize
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	return filtered[start:end], int64(len(filtered)), nil
+}
+
+func (f *fakeDeepWikiStore) FindLatestIndexBySourceID(_ context.Context, sourceID uint) (*domain.DeepWikiIndex, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	index, ok := f.indexes[sourceID]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	copied := *index
+	return &copied, nil
+}
+
+func (f *fakeDeepWikiStore) ListPagesByIndexID(_ context.Context, indexID uint) ([]*domain.DeepWikiPage, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	out := make([]*domain.DeepWikiPage, 0, len(f.pages[indexID]))
+	for _, page := range f.pages[indexID] {
+		if page == nil {
+			continue
+		}
+		copied := *page
+		out = append(out, &copied)
+	}
+	return out, nil
+}
+
 func newMemoryProjectStore() *memoryProjectStore {
 	return &memoryProjectStore{
-		nextProjectID: 1,
-		nextBindingID: 1,
-		projects:      map[uint]*domain.SpecForgeProject{},
-		bindings:      map[uint]map[string]*domain.SpecForgeProjectRepository{},
+		nextProjectID:  1,
+		nextBindingID:  1,
+		nextSnapshotID: 1,
+		projects:       map[uint]*domain.SpecForgeProject{},
+		bindings:       map[uint]map[string]*domain.SpecForgeProjectRepository{},
+		snapshots:      map[uint][]*domain.SpecForgeProjectContextSnapshot{},
 	}
 }
 
@@ -594,6 +812,7 @@ func (s *memoryProjectStore) DeleteProject(_ context.Context, projectID uint) er
 	}
 	delete(s.projects, projectID)
 	delete(s.bindings, projectID)
+	delete(s.snapshots, projectID)
 	return nil
 }
 
@@ -680,6 +899,26 @@ func (s *memoryProjectStore) FindActivePrimaryProjectRepository(_ context.Contex
 		}
 	}
 	return nil, domain.ErrNotFound
+}
+
+func (s *memoryProjectStore) CreateProjectContextSnapshot(_ context.Context, snapshot *domain.SpecForgeProjectContextSnapshot) error {
+	if snapshot == nil {
+		return domain.ErrInvalidInput
+	}
+	copied := cloneProjectContextSnapshot(snapshot)
+	copied.ID = s.nextSnapshotID
+	s.nextSnapshotID++
+	s.snapshots[copied.ProjectID] = append(s.snapshots[copied.ProjectID], copied)
+	*snapshot = *cloneProjectContextSnapshot(copied)
+	return nil
+}
+
+func (s *memoryProjectStore) FindLatestProjectContextSnapshot(_ context.Context, projectID uint) (*domain.SpecForgeProjectContextSnapshot, error) {
+	candidates := s.snapshots[projectID]
+	if len(candidates) == 0 {
+		return nil, domain.ErrNotFound
+	}
+	return cloneProjectContextSnapshot(candidates[len(candidates)-1]), nil
 }
 
 type memoryWorkspaceStore struct {
@@ -832,6 +1071,68 @@ func cloneProject(project *domain.SpecForgeProject) *domain.SpecForgeProject {
 
 func cloneBinding(binding *domain.SpecForgeProjectRepository) *domain.SpecForgeProjectRepository {
 	copied := *binding
+	return &copied
+}
+
+func cloneProjectContextSnapshot(snapshot *domain.SpecForgeProjectContextSnapshot) *domain.SpecForgeProjectContextSnapshot {
+	if snapshot == nil {
+		return nil
+	}
+	copied := *snapshot
+	copied.MissingEvidence = append([]string(nil), snapshot.MissingEvidence...)
+	copied.EvidenceRefs = append([]string(nil), snapshot.EvidenceRefs...)
+	if snapshot.Readiness != nil {
+		readiness := *snapshot.Readiness
+		readiness.Guardrails = append([]string(nil), snapshot.Readiness.Guardrails...)
+		copied.Readiness = &readiness
+	}
+	if snapshot.ContextContract != nil {
+		contract := *snapshot.ContextContract
+		contract.ReadOnlyRepositoryIDs = append([]string(nil), snapshot.ContextContract.ReadOnlyRepositoryIDs...)
+		contract.SkillNames = append([]string(nil), snapshot.ContextContract.SkillNames...)
+		contract.MissingEvidence = append([]string(nil), snapshot.ContextContract.MissingEvidence...)
+		contract.Warnings = append([]string(nil), snapshot.ContextContract.Warnings...)
+		contract.PromptGuardrails = append([]string(nil), snapshot.ContextContract.PromptGuardrails...)
+		contract.Repositories = make([]*domain.SpecForgeRepositoryContextContractFragment, 0, len(snapshot.ContextContract.Repositories))
+		for _, repository := range snapshot.ContextContract.Repositories {
+			if repository == nil {
+				continue
+			}
+			repoCopy := *repository
+			repoCopy.Stack = append([]string(nil), repository.Stack...)
+			repoCopy.TestCommands = append([]string(nil), repository.TestCommands...)
+			repoCopy.RiskAreas = append([]string(nil), repository.RiskAreas...)
+			repoCopy.CodingConventions = append([]string(nil), repository.CodingConventions...)
+			repoCopy.ArchitectureModules = append([]string(nil), repository.ArchitectureModules...)
+			repoCopy.ArchitectureEntrypoints = append([]string(nil), repository.ArchitectureEntrypoints...)
+			repoCopy.ArchitectureCIWorkflows = append([]string(nil), repository.ArchitectureCIWorkflows...)
+			repoCopy.SkillNames = append([]string(nil), repository.SkillNames...)
+			contract.Repositories = append(contract.Repositories, &repoCopy)
+		}
+		copied.ContextContract = &contract
+	}
+	copied.Repositories = make([]*domain.SpecForgeProjectContextSnapshotRepository, 0, len(snapshot.Repositories))
+	for _, repository := range snapshot.Repositories {
+		if repository == nil {
+			continue
+		}
+		repoCopy := *repository
+		repoCopy.SkillNames = append([]string(nil), repository.SkillNames...)
+		repoCopy.Warnings = append([]string(nil), repository.Warnings...)
+		repoCopy.MissingEvidence = append([]string(nil), repository.MissingEvidence...)
+		if repository.DeepWiki != nil {
+			deepWikiCopy := *repository.DeepWiki
+			deepWikiCopy.Frameworks = append([]string(nil), repository.DeepWiki.Frameworks...)
+			deepWikiCopy.Entrypoints = append([]string(nil), repository.DeepWiki.Entrypoints...)
+			deepWikiCopy.Routes = append([]string(nil), repository.DeepWiki.Routes...)
+			deepWikiCopy.Services = append([]string(nil), repository.DeepWiki.Services...)
+			deepWikiCopy.Models = append([]string(nil), repository.DeepWiki.Models...)
+			deepWikiCopy.TopPages = append([]string(nil), repository.DeepWiki.TopPages...)
+			deepWikiCopy.Warnings = append([]string(nil), repository.DeepWiki.Warnings...)
+			repoCopy.DeepWiki = &deepWikiCopy
+		}
+		copied.Repositories = append(copied.Repositories, &repoCopy)
+	}
 	return &copied
 }
 

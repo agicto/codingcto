@@ -16,5 +16,6 @@ func (h *Handler) RegisterRoutes(r *router.Router) {
 		auth.DELETE("/projects/:id/repositories/:repository_id", h.UnbindRepository).Name("specforge.project_repositories.destroy").WhereNumber("id")
 		auth.GET("/projects/:id/readiness", h.GetProjectReadiness).Name("specforge.projects.readiness").WhereNumber("id")
 		auth.GET("/projects/:id/context", h.GetProjectContext).Name("specforge.projects.context").WhereNumber("id")
+		auth.POST("/projects/:id/context/reindex", h.RefreshProjectContext).Name("specforge.projects.context.reindex").WhereNumber("id")
 	})
 }
