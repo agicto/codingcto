@@ -16,6 +16,7 @@ import (
 	"github.com/zgiai/luas/api/internal/infra/migration"
 	"github.com/zgiai/luas/api/internal/modules/apikey"
 	"github.com/zgiai/luas/api/internal/modules/audit"
+	"github.com/zgiai/luas/api/internal/modules/deepwiki"
 	"github.com/zgiai/luas/api/internal/modules/execution"
 	"github.com/zgiai/luas/api/internal/modules/githubintegration"
 	"github.com/zgiai/luas/api/internal/modules/planning"
@@ -50,6 +51,10 @@ func InitApplication() (*app.Application, error) {
 	apikeyRepository := apikey.NewRepository(db)
 	apikeyService := apikey.NewService(apikeyRepository)
 	apikeyHandler := apikey.NewHandler(apikeyService)
+	deepwikiRepository := deepwiki.NewRepository(db)
+	repoReader := deepwiki.NewDefaultRepoReader()
+	deepwikiService := deepwiki.NewService(deepwikiRepository, repoReader)
+	deepwikiHandler := deepwiki.NewHandler(deepwikiService)
 	planningRepository := planning.NewRepository(db)
 	repocontextRepository := repocontext.NewRepository(db)
 	projectRepository := project.NewRepository(db)
@@ -86,7 +91,7 @@ func InitApplication() (*app.Application, error) {
 	userMailer := user.NewUserMailer(service)
 	userService := user.NewService(userRepository, userRepository, jwtService, eventBus, userMailer)
 	userHandler := user.NewHandler(userService, userService, userService, jwtService, userMailer)
-	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, projectHandler, verificationHandler, workspaceHandler, userHandler)
+	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, deepwikiHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, projectHandler, verificationHandler, workspaceHandler, userHandler)
 	if err != nil {
 		return nil, err
 	}
@@ -118,6 +123,10 @@ func InitApplicationWithConfig(cfg *config.Config) (*app.Application, error) {
 	apikeyRepository := apikey.NewRepository(db)
 	apikeyService := apikey.NewService(apikeyRepository)
 	apikeyHandler := apikey.NewHandler(apikeyService)
+	deepwikiRepository := deepwiki.NewRepository(db)
+	repoReader := deepwiki.NewDefaultRepoReader()
+	deepwikiService := deepwiki.NewService(deepwikiRepository, repoReader)
+	deepwikiHandler := deepwiki.NewHandler(deepwikiService)
 	planningRepository := planning.NewRepository(db)
 	repocontextRepository := repocontext.NewRepository(db)
 	projectRepository := project.NewRepository(db)
@@ -154,7 +163,7 @@ func InitApplicationWithConfig(cfg *config.Config) (*app.Application, error) {
 	userMailer := user.NewUserMailer(service)
 	userService := user.NewService(userRepository, userRepository, jwtService, eventBus, userMailer)
 	userHandler := user.NewHandler(userService, userService, userService, jwtService, userMailer)
-	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, projectHandler, verificationHandler, workspaceHandler, userHandler)
+	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, deepwikiHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, projectHandler, verificationHandler, workspaceHandler, userHandler)
 	if err != nil {
 		return nil, err
 	}
