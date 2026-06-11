@@ -231,6 +231,21 @@ func (r *repository) UpsertRuntime(ctx context.Context, runtime *domain.SpecForg
 	return nil
 }
 
+func (r *repository) FindRuntimeByRuntimeID(ctx context.Context, runtimeID string) (*domain.SpecForgeRuntime, error) {
+	runtimeID = strings.TrimSpace(runtimeID)
+	if runtimeID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	var po RuntimePO
+	if err := r.db.WithContext(ctx).Where("runtime_id = ?", runtimeID).First(&po).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return po.toDomain(), nil
+}
+
 func (r *repository) ListRuntimes(ctx context.Context, executor, status string, limit int) ([]*domain.SpecForgeRuntime, error) {
 	executor = strings.TrimSpace(executor)
 	status = strings.TrimSpace(status)
@@ -253,6 +268,73 @@ func (r *repository) ListRuntimes(ctx context.Context, executor, status string, 
 		runtimes[i] = po.toDomain()
 	}
 	return runtimes, nil
+}
+
+func (r *repository) CreateProjectRuntimeBinding(ctx context.Context, binding *domain.SpecForgeProjectRuntimeBinding) error {
+	if binding == nil || binding.ProjectID == 0 || strings.TrimSpace(binding.RepositoryID) == "" || strings.TrimSpace(binding.RuntimeID) == "" || strings.TrimSpace(binding.Executor) == "" || strings.TrimSpace(binding.RepoDir) == "" {
+		return domain.ErrInvalidInput
+	}
+	po := newProjectRuntimeBindingPO(binding)
+	if err := r.db.WithContext(ctx).Create(po).Error; err != nil {
+		return err
+	}
+	binding.ID = po.ID
+	binding.CreatedAt = po.CreatedAt
+	binding.UpdatedAt = po.UpdatedAt
+	return nil
+}
+
+func (r *repository) UpdateProjectRuntimeBinding(ctx context.Context, binding *domain.SpecForgeProjectRuntimeBinding) error {
+	if binding == nil || binding.ID == 0 || binding.ProjectID == 0 || strings.TrimSpace(binding.RepositoryID) == "" || strings.TrimSpace(binding.RuntimeID) == "" || strings.TrimSpace(binding.Executor) == "" || strings.TrimSpace(binding.RepoDir) == "" {
+		return domain.ErrInvalidInput
+	}
+	var existing ProjectRuntimeBindingPO
+	if err := r.db.WithContext(ctx).First(&existing, binding.ID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return domain.ErrNotFound
+		}
+		return err
+	}
+	po := newProjectRuntimeBindingPO(binding)
+	po.CreatedAt = existing.CreatedAt
+	if err := r.db.WithContext(ctx).Save(po).Error; err != nil {
+		return err
+	}
+	binding.CreatedAt = po.CreatedAt
+	binding.UpdatedAt = po.UpdatedAt
+	return nil
+}
+
+func (r *repository) FindProjectRuntimeBindingByID(ctx context.Context, bindingID uint) (*domain.SpecForgeProjectRuntimeBinding, error) {
+	if bindingID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	var po ProjectRuntimeBindingPO
+	if err := r.db.WithContext(ctx).First(&po, bindingID).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return po.toDomain(), nil
+}
+
+func (r *repository) ListProjectRuntimeBindingsByProjectID(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectRuntimeBinding, error) {
+	if projectID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	var pos []*ProjectRuntimeBindingPO
+	if err := r.db.WithContext(ctx).
+		Where("project_id = ?", projectID).
+		Order("updated_at DESC, id DESC").
+		Find(&pos).Error; err != nil {
+		return nil, err
+	}
+	bindings := make([]*domain.SpecForgeProjectRuntimeBinding, len(pos))
+	for i, po := range pos {
+		bindings[i] = po.toDomain()
+	}
+	return bindings, nil
 }
 
 func (r *repository) MarkStaleRuntimesOffline(ctx context.Context, staleBefore time.Time) ([]*domain.SpecForgeRuntime, error) {

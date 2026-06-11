@@ -443,6 +443,12 @@ func TestServiceProjectReadinessBecomesReadyWhenSetupSignalsPass(t *testing.T) {
 		Role:         domain.ProjectRepositoryRolePrimary,
 	})
 	require.NoError(t, err)
+	_, err = svc.CreateProjectRuntimeBinding(context.Background(), 42, project.ID, &UpsertProjectRuntimeBindingRequest{
+		RepositoryID: "repo_1",
+		RuntimeID:    "runtime_1",
+		RepoDir:      "/Users/mingde/item/codingcto",
+	})
+	require.NoError(t, err)
 	_, err = svc.CreateProjectExpertPolicy(context.Background(), 42, project.ID, &UpsertProjectExpertPolicyRequest{
 		GoalBoundary: "Only touch the project delivery flow.",
 		ReviewPolicy: ProjectExpertReviewPolicyRequest{
@@ -739,6 +745,153 @@ func TestServiceCreateAndUpdateProjectExpertPolicyVersions(t *testing.T) {
 	require.True(t, history[1].Active)
 }
 
+func TestServiceCreateAndUpdateProjectRuntimeBinding(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
+		},
+	}
+	runtimes := &fakeRuntimeReadinessStore{
+		runtimes: []*domain.SpecForgeRuntime{
+			{
+				RuntimeID:  "runtime_1",
+				Executor:   "codex_cli",
+				Status:     domain.RuntimeStatusOnline,
+				LastSeenAt: nowUTC(),
+				Sandbox:    &domain.SpecForgeRuntimeSandbox{Writable: true},
+			},
+			{
+				RuntimeID:  "runtime_2",
+				Executor:   "codex_cli",
+				Status:     domain.RuntimeStatusOnline,
+				LastSeenAt: nowUTC(),
+				Sandbox:    &domain.SpecForgeRuntimeSandbox{Writable: true},
+			},
+		},
+	}
+	svc := NewService(store, workspaces, github, nil, nil, nil, nil, runtimes, nil)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "CodingCTO",
+		Slug:        "codingcto",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+
+	created, err := svc.CreateProjectRuntimeBinding(context.Background(), 42, project.ID, &UpsertProjectRuntimeBindingRequest{
+		RepositoryID: "repo_1",
+		RuntimeID:    "runtime_1",
+		RepoDir:      "/Users/mingde/item/codingcto",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	require.True(t, created.Eligible)
+	require.Equal(t, "runtime_1", created.Binding.RuntimeID)
+
+	updated, err := svc.UpdateProjectRuntimeBinding(context.Background(), 42, project.ID, created.Binding.ID, &UpsertProjectRuntimeBindingRequest{
+		RepositoryID: "repo_1",
+		RuntimeID:    "runtime_2",
+		RepoDir:      "/Users/mingde/item/codingcto/api",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	require.True(t, updated.Eligible)
+	require.Equal(t, "runtime_2", updated.Binding.RuntimeID)
+	require.Equal(t, "/Users/mingde/item/codingcto/api", updated.Binding.RepoDir)
+
+	bindings, err := svc.ListProjectRuntimeBindings(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.Len(t, bindings, 1)
+	require.Equal(t, "runtime_2", bindings[0].Binding.RuntimeID)
+}
+
+func TestServiceProjectReadinessRequiresRuntimeBindingBeforeExpertPolicy(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
+		},
+	}
+	profiles := &memoryRepoProfileStore{
+		profiles: map[string]*domain.SpecForgeRepoProfile{
+			"repo_1": {
+				RepositoryID:  "repo_1",
+				DefaultBranch: "main",
+				Summary:       "Primary repo ready.",
+			},
+		},
+		snapshots: map[string]*domain.SpecForgeRepoArchitectureSnapshot{
+			"repo_1": {
+				RepositoryID: "repo_1",
+				CommitSHA:    "abc123",
+				CreatedAt:    nowUTC(),
+			},
+		},
+	}
+	projectSkills := &fakeProjectSkillStore{
+		skills: map[uint][]*domain.SpecForgeProjectSkill{
+			1: {
+				{ID: 10, ProjectID: 1, RepositoryID: "repo_1", SkillID: 50, Active: true},
+			},
+		},
+	}
+	githubReadiness := &fakeGitHubReadinessChecker{
+		response: &githubintegration.GitHubRepositoryReadinessResponse{
+			RepositoryID: "repo_1",
+			Ready:        true,
+		},
+	}
+	runtimes := &fakeRuntimeReadinessStore{
+		runtimes: []*domain.SpecForgeRuntime{
+			{
+				RuntimeID:  "runtime_1",
+				Executor:   "codex_cli",
+				Status:     domain.RuntimeStatusOnline,
+				LastSeenAt: nowUTC(),
+				Sandbox:    &domain.SpecForgeRuntimeSandbox{Writable: true},
+			},
+		},
+	}
+	svc := NewService(store, workspaces, github, profiles, &memorySkillStore{}, projectSkills, githubReadiness, runtimes, nil)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "CodingCTO",
+		Slug:        "codingcto",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+
+	readiness, err := svc.GetProjectReadiness(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.ProjectReadinessStepConnectRuntime, readiness.NextStep)
+	require.Equal(t, domain.ProjectReadinessStatusBlocked, readinessCheckStatusByKey(t, readiness, "runtime_dispatch"))
+
+	_, err = svc.CreateProjectRuntimeBinding(context.Background(), 42, project.ID, &UpsertProjectRuntimeBindingRequest{
+		RepositoryID: "repo_1",
+		RuntimeID:    "runtime_1",
+		RepoDir:      "/Users/mingde/item/codingcto",
+	})
+	require.NoError(t, err)
+
+	readiness, err = svc.GetProjectReadiness(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.ProjectReadinessStepConfigureExpertPolicy, readiness.NextStep)
+	require.Equal(t, domain.ProjectReadinessStatusReady, readinessCheckStatusByKey(t, readiness, "runtime_dispatch"))
+}
+
 func TestServiceProjectReadinessRequiresExpertPolicyBeforeRequirement(t *testing.T) {
 	store := newMemoryProjectStore()
 	workspaces := newMemoryWorkspaceStore("workspace_1")
@@ -794,6 +947,12 @@ func TestServiceProjectReadinessRequiresExpertPolicyBeforeRequirement(t *testing
 		Role:         domain.ProjectRepositoryRolePrimary,
 	})
 	require.NoError(t, err)
+	_, err = svc.CreateProjectRuntimeBinding(context.Background(), 42, project.ID, &UpsertProjectRuntimeBindingRequest{
+		RepositoryID: "repo_1",
+		RuntimeID:    "runtime_1",
+		RepoDir:      "/Users/mingde/item/codingcto",
+	})
+	require.NoError(t, err)
 
 	readiness, err := svc.GetProjectReadiness(context.Background(), project.ID)
 	require.NoError(t, err)
@@ -844,8 +1003,10 @@ func (f *fakeGitHubReadinessChecker) CheckRepositoryReadiness(_ context.Context,
 }
 
 type fakeRuntimeReadinessStore struct {
-	runtimes []*domain.SpecForgeRuntime
-	err      error
+	nextBindingID uint
+	runtimes      []*domain.SpecForgeRuntime
+	bindings      map[uint][]*domain.SpecForgeProjectRuntimeBinding
+	err           error
 }
 
 func (f *fakeRuntimeReadinessStore) ListRuntimes(_ context.Context, _, _ string, _ int) ([]*domain.SpecForgeRuntime, error) {
@@ -859,6 +1020,72 @@ func (f *fakeRuntimeReadinessStore) ListRuntimes(_ context.Context, _, _ string,
 		}
 		copied := *runtime
 		out = append(out, &copied)
+	}
+	return out, nil
+}
+
+func (f *fakeRuntimeReadinessStore) FindRuntimeByRuntimeID(_ context.Context, runtimeID string) (*domain.SpecForgeRuntime, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	runtimeID = strings.TrimSpace(runtimeID)
+	for _, runtime := range f.runtimes {
+		if runtime == nil || strings.TrimSpace(runtime.RuntimeID) != runtimeID {
+			continue
+		}
+		copied := *runtime
+		return &copied, nil
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (f *fakeRuntimeReadinessStore) CreateProjectRuntimeBinding(_ context.Context, binding *domain.SpecForgeProjectRuntimeBinding) error {
+	if f.bindings == nil {
+		f.bindings = map[uint][]*domain.SpecForgeProjectRuntimeBinding{}
+	}
+	f.nextBindingID++
+	copied := cloneProjectRuntimeBinding(binding)
+	copied.ID = f.nextBindingID
+	copied.CreatedAt = nowUTC()
+	copied.UpdatedAt = copied.CreatedAt
+	f.bindings[binding.ProjectID] = append(f.bindings[binding.ProjectID], copied)
+	*binding = *cloneProjectRuntimeBinding(copied)
+	return nil
+}
+
+func (f *fakeRuntimeReadinessStore) UpdateProjectRuntimeBinding(_ context.Context, binding *domain.SpecForgeProjectRuntimeBinding) error {
+	items := f.bindings[binding.ProjectID]
+	for index, item := range items {
+		if item == nil || item.ID != binding.ID {
+			continue
+		}
+		copied := cloneProjectRuntimeBinding(binding)
+		copied.CreatedAt = item.CreatedAt
+		copied.UpdatedAt = nowUTC()
+		f.bindings[binding.ProjectID][index] = copied
+		*binding = *cloneProjectRuntimeBinding(copied)
+		return nil
+	}
+	return domain.ErrNotFound
+}
+
+func (f *fakeRuntimeReadinessStore) FindProjectRuntimeBindingByID(_ context.Context, bindingID uint) (*domain.SpecForgeProjectRuntimeBinding, error) {
+	for _, items := range f.bindings {
+		for _, binding := range items {
+			if binding == nil || binding.ID != bindingID {
+				continue
+			}
+			return cloneProjectRuntimeBinding(binding), nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (f *fakeRuntimeReadinessStore) ListProjectRuntimeBindingsByProjectID(_ context.Context, projectID uint) ([]*domain.SpecForgeProjectRuntimeBinding, error) {
+	items := f.bindings[projectID]
+	out := make([]*domain.SpecForgeProjectRuntimeBinding, 0, len(items))
+	for _, binding := range items {
+		out = append(out, cloneProjectRuntimeBinding(binding))
 	}
 	return out, nil
 }
@@ -1370,6 +1597,14 @@ func cloneProjectExpertPolicy(policy *domain.SpecForgeProjectExpertPolicy) *doma
 	copied.AllowedPaths = append([]string(nil), policy.AllowedPaths...)
 	copied.ForbiddenPaths = append([]string(nil), policy.ForbiddenPaths...)
 	copied.RequiredTestCommands = append([]string(nil), policy.RequiredTestCommands...)
+	return &copied
+}
+
+func cloneProjectRuntimeBinding(binding *domain.SpecForgeProjectRuntimeBinding) *domain.SpecForgeProjectRuntimeBinding {
+	if binding == nil {
+		return nil
+	}
+	copied := *binding
 	return &copied
 }
 

@@ -48,6 +48,13 @@ type ProjectExpertMergePolicyRequest struct {
 	AllowAutoMerge        bool   `json:"allow_auto_merge"`
 }
 
+type UpsertProjectRuntimeBindingRequest struct {
+	RepositoryID string `json:"repository_id" binding:"required,max=255"`
+	RuntimeID    string `json:"runtime_id" binding:"required,max=100"`
+	Executor     string `json:"executor" binding:"omitempty,max=100"`
+	RepoDir      string `json:"repo_dir" binding:"required,max=1000"`
+}
+
 type ProjectResponse struct {
 	Project *domain.SpecForgeProject `json:"project"`
 }
@@ -78,6 +85,14 @@ type ProjectContextSnapshotResponse struct {
 
 type ProjectExpertPolicyResponse struct {
 	Policy *domain.SpecForgeProjectExpertPolicy `json:"policy"`
+}
+
+type ProjectRuntimeBindingResponse struct {
+	Binding *domain.SpecForgeProjectRuntimeBindingStatus `json:"binding"`
+}
+
+type ProjectRuntimeBindingListResponse struct {
+	Bindings []*domain.SpecForgeProjectRuntimeBindingStatus `json:"bindings"`
 }
 
 func newProjectPO(project *domain.SpecForgeProject) *ProjectPO {
