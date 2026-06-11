@@ -60,6 +60,25 @@ describe('project readiness helpers', () => {
     expect(decision.tone).toBe('info');
   });
 
+  it('routes runtime setup to the context runtime binding anchor', () => {
+    const decision = projectReadinessDecision(12, {
+      project_id: 12,
+      readiness_status: 'attention',
+      next_step: 'connect_runtime',
+      next_action: 'Bind an online runtime.',
+      summary: 'Online runtimes exist, but this project still needs an explicit runtime binding.',
+      has_primary_repository: true,
+      active_repository_count: 1,
+      read_only_repository_count: 0,
+      skill_count: 1,
+      warning_count: 0,
+      runtime_count: 2,
+    });
+
+    expect(decision.actionHref).toBe('/console/projects/12/context#runtime-binding');
+    expect(decision.actionLabel).toBe('Bind runtime');
+  });
+
   it('maps readiness statuses to badge colors', () => {
     expect(projectReadinessBadgeClass('ready')).toContain('text-success');
     expect(projectReadinessBadgeClass('blocked')).toContain('text-warning');

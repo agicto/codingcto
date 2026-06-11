@@ -22,6 +22,7 @@ import {
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
 import { ApiError } from '@/http/request';
+import { ProjectRuntimeBindingPanel } from '@/features/project/components/project-runtime-binding-panel';
 import { useProjectContext } from '@/features/project/hooks/use-projects';
 import {
   useBindProjectRepository,
@@ -105,6 +106,7 @@ export function ProjectContextPanel({ context }: { context: ProjectContextDTO })
         )}
       />
       <ProjectContextSnapshotPanel context={context} />
+      <ProjectRuntimeBindingPanel context={context} />
       <ProjectExpertPolicyPanel projectId={context.project.id} />
       <ProjectSkillContractPanel context={context} />
       <ProjectContextReadiness context={context} />

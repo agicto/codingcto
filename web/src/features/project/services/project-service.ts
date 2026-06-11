@@ -255,6 +255,67 @@ export interface ProjectExpertPolicyDTO {
   updated_at: string;
 }
 
+export interface ProjectRuntimeBindingDTO {
+  id: number;
+  workspace_id: string;
+  project_id: number;
+  repository_id: string;
+  runtime_id: string;
+  executor: string;
+  repo_dir: string;
+  active: boolean;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectRuntimeBindingRuntimeCLIDTO {
+  name: string;
+  command: string;
+  path?: string;
+  version?: string;
+  available: boolean;
+}
+
+export interface ProjectRuntimeBindingRuntimeSandboxDTO {
+  provider?: string;
+  mode?: string;
+  network_access: boolean;
+  writable: boolean;
+  approval_policy?: string;
+  reason?: string;
+}
+
+export interface ProjectRuntimeBindingRuntimeSkillRootDTO {
+  provider: string;
+  path: string;
+  writable: boolean;
+}
+
+export interface ProjectRuntimeBindingRuntimeDTO {
+  id: number;
+  runtime_id: string;
+  executor: string;
+  status: string;
+  hostname?: string;
+  version?: string;
+  available_clis?: ProjectRuntimeBindingRuntimeCLIDTO[];
+  sandbox?: ProjectRuntimeBindingRuntimeSandboxDTO;
+  skill_roots?: ProjectRuntimeBindingRuntimeSkillRootDTO[];
+  local_skill_count?: number;
+  capabilities_hash?: string;
+  last_seen_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectRuntimeBindingStatusDTO {
+  binding: ProjectRuntimeBindingDTO;
+  runtime?: ProjectRuntimeBindingRuntimeDTO;
+  eligible: boolean;
+  warnings?: string[];
+}
+
 export interface ProjectContextDTO {
   project: ProjectDTO;
   repositories: ProjectRepositoryDTO[];
@@ -301,6 +362,13 @@ export interface UpsertProjectExpertPolicyPayload {
   required_test_commands?: string[];
   review_policy: ProjectExpertReviewPolicyDTO;
   merge_policy: ProjectExpertMergePolicyDTO;
+}
+
+export interface UpsertProjectRuntimeBindingPayload {
+  repository_id: string;
+  runtime_id: string;
+  executor?: string;
+  repo_dir: string;
 }
 
 export const projectService = {
@@ -355,6 +423,12 @@ export const projectService = {
       config
     ),
 
+  listProjectRuntimeBindings: (projectId: number, config?: RequestConfig) =>
+    request.get<{ bindings: ProjectRuntimeBindingStatusDTO[] }>(
+      `/projects/${projectId}/runtime-bindings`,
+      config
+    ),
+
   createProjectExpertPolicy: (
     projectId: number,
     payload: UpsertProjectExpertPolicyPayload,
@@ -374,6 +448,29 @@ export const projectService = {
   ) =>
     request.patch<{ policy: ProjectExpertPolicyDTO }, UpsertProjectExpertPolicyPayload>(
       `/projects/${projectId}/expert-policy/${policyId}`,
+      payload,
+      config
+    ),
+
+  createProjectRuntimeBinding: (
+    projectId: number,
+    payload: UpsertProjectRuntimeBindingPayload,
+    config?: RequestConfig
+  ) =>
+    request.post<{ binding: ProjectRuntimeBindingStatusDTO }, UpsertProjectRuntimeBindingPayload>(
+      `/projects/${projectId}/runtime-bindings`,
+      payload,
+      config
+    ),
+
+  updateProjectRuntimeBinding: (
+    projectId: number,
+    bindingId: number,
+    payload: UpsertProjectRuntimeBindingPayload,
+    config?: RequestConfig
+  ) =>
+    request.patch<{ binding: ProjectRuntimeBindingStatusDTO }, UpsertProjectRuntimeBindingPayload>(
+      `/projects/${projectId}/runtime-bindings/${bindingId}`,
       payload,
       config
     ),

@@ -7,6 +7,7 @@ import {
   type CreateProjectPayload,
   type CreateWorkspacePayload,
   type UpsertProjectExpertPolicyPayload,
+  type UpsertProjectRuntimeBindingPayload,
   type UpdateProjectPayload,
   projectService,
 } from '@/features/project/services/project-service';
@@ -22,6 +23,8 @@ export const projectKeys = {
   readiness: (projectId: number) => [...projectKeys.all, 'readiness', projectId] as const,
   context: (projectId: number) => [...projectKeys.all, 'context', projectId] as const,
   expertPolicy: (projectId: number) => [...projectKeys.all, 'expert-policy', projectId] as const,
+  runtimeBindings: (projectId: number) =>
+    [...projectKeys.all, 'runtime-bindings', projectId] as const,
 };
 
 export function useWorkspaces() {
@@ -146,6 +149,15 @@ export function useProjectExpertPolicy(projectId: number) {
   });
 }
 
+export function useProjectRuntimeBindings(projectId: number) {
+  return useQuery({
+    queryKey: projectKeys.runtimeBindings(projectId),
+    queryFn: () => projectService.listProjectRuntimeBindings(projectId, silentQueryConfig),
+    enabled: Boolean(projectId),
+    meta: silentQueryMeta,
+  });
+}
+
 export function useCreateProjectExpertPolicy(projectId: number) {
   const queryClient = useQueryClient();
 
@@ -179,6 +191,40 @@ export function useUpdateProjectExpertPolicy(projectId: number) {
   });
 }
 
+export function useCreateProjectRuntimeBinding(projectId: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: UpsertProjectRuntimeBindingPayload) =>
+      projectService.createProjectRuntimeBinding(projectId, payload, silentQueryConfig),
+    meta: silentQueryMeta,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.runtimeBindings(projectId) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
+    },
+  });
+}
+
+export function useUpdateProjectRuntimeBinding(projectId: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      bindingId,
+      payload,
+    }: {
+      bindingId: number;
+      payload: UpsertProjectRuntimeBindingPayload;
+    }) =>
+      projectService.updateProjectRuntimeBinding(projectId, bindingId, payload, silentQueryConfig),
+    meta: silentQueryMeta,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.runtimeBindings(projectId) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
+    },
+  });
+}
+
 export function useBindProjectRepository(projectId: number) {
   const queryClient = useQueryClient();
 
@@ -189,6 +235,7 @@ export function useBindProjectRepository(projectId: number) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.runtimeBindings(projectId) });
     },
   });
 }
@@ -203,6 +250,7 @@ export function useUnbindProjectRepository(projectId: number) {
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.runtimeBindings(projectId) });
     },
   });
 }
