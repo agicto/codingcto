@@ -6,6 +6,7 @@ import {
   type BindRepositoryPayload,
   type CreateProjectPayload,
   type CreateWorkspacePayload,
+  type UpsertProjectExpertPolicyPayload,
   type UpdateProjectPayload,
   projectService,
 } from '@/features/project/services/project-service';
@@ -20,6 +21,7 @@ export const projectKeys = {
   detail: (projectId: number) => [...projectKeys.all, 'detail', projectId] as const,
   readiness: (projectId: number) => [...projectKeys.all, 'readiness', projectId] as const,
   context: (projectId: number) => [...projectKeys.all, 'context', projectId] as const,
+  expertPolicy: (projectId: number) => [...projectKeys.all, 'expert-policy', projectId] as const,
 };
 
 export function useWorkspaces() {
@@ -132,6 +134,48 @@ export function useProjectReadiness(projectId: number) {
     queryFn: () => projectService.getProjectReadiness(projectId, silentQueryConfig),
     enabled: Boolean(projectId),
     meta: silentQueryMeta,
+  });
+}
+
+export function useProjectExpertPolicy(projectId: number) {
+  return useQuery({
+    queryKey: projectKeys.expertPolicy(projectId),
+    queryFn: () => projectService.getProjectExpertPolicy(projectId, silentQueryConfig),
+    enabled: Boolean(projectId),
+    meta: silentQueryMeta,
+  });
+}
+
+export function useCreateProjectExpertPolicy(projectId: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: UpsertProjectExpertPolicyPayload) =>
+      projectService.createProjectExpertPolicy(projectId, payload, silentQueryConfig),
+    meta: silentQueryMeta,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.expertPolicy(projectId) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
+    },
+  });
+}
+
+export function useUpdateProjectExpertPolicy(projectId: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      policyId,
+      payload,
+    }: {
+      policyId: number;
+      payload: UpsertProjectExpertPolicyPayload;
+    }) => projectService.updateProjectExpertPolicy(projectId, policyId, payload, silentQueryConfig),
+    meta: silentQueryMeta,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.expertPolicy(projectId) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
+    },
   });
 }
 

@@ -58,6 +58,14 @@ export function projectReadinessDecision(
         actionHref: projectContextHref(projectId),
         tone: 'info',
       };
+    case 'configure_expert_policy':
+      return {
+        title: 'Persist expert policy',
+        description: readiness.summary,
+        actionLabel: 'Open context',
+        actionHref: `${projectContextHref(projectId)}#expert-policy`,
+        tone: 'info',
+      };
     case 'create_requirement':
       return {
         title: 'Create a requirement',

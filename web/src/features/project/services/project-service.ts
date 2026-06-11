@@ -225,6 +225,36 @@ export interface ProjectContextSnapshotDTO {
   updated_at: string;
 }
 
+export interface ProjectExpertReviewPolicyDTO {
+  required_approvals: number;
+  allow_author_approval: boolean;
+  block_on_changes_requested: boolean;
+  require_ci_green: boolean;
+}
+
+export interface ProjectExpertMergePolicyDTO {
+  strategy: 'squash' | 'rebase' | 'merge' | string;
+  require_manual_approval: boolean;
+  allow_auto_merge: boolean;
+}
+
+export interface ProjectExpertPolicyDTO {
+  id: number;
+  workspace_id: string;
+  project_id: number;
+  version: number;
+  active: boolean;
+  goal_boundary: string;
+  allowed_paths?: string[];
+  forbidden_paths?: string[];
+  required_test_commands?: string[];
+  review_policy: ProjectExpertReviewPolicyDTO;
+  merge_policy: ProjectExpertMergePolicyDTO;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
 export interface ProjectContextDTO {
   project: ProjectDTO;
   repositories: ProjectRepositoryDTO[];
@@ -262,6 +292,15 @@ export interface CreateWorkspacePayload {
 export interface BindRepositoryPayload {
   repository_id: string;
   role: 'primary' | 'dependency' | 'docs' | 'infra';
+}
+
+export interface UpsertProjectExpertPolicyPayload {
+  goal_boundary: string;
+  allowed_paths?: string[];
+  forbidden_paths?: string[];
+  required_test_commands?: string[];
+  review_policy: ProjectExpertReviewPolicyDTO;
+  merge_policy: ProjectExpertMergePolicyDTO;
 }
 
 export const projectService = {
@@ -309,6 +348,35 @@ export const projectService = {
 
   getProjectReadiness: (projectId: number, config?: RequestConfig) =>
     request.get<{ readiness: ProjectReadinessDTO }>(`/projects/${projectId}/readiness`, config),
+
+  getProjectExpertPolicy: (projectId: number, config?: RequestConfig) =>
+    request.get<{ policy: ProjectExpertPolicyDTO | null }>(
+      `/projects/${projectId}/expert-policy`,
+      config
+    ),
+
+  createProjectExpertPolicy: (
+    projectId: number,
+    payload: UpsertProjectExpertPolicyPayload,
+    config?: RequestConfig
+  ) =>
+    request.post<{ policy: ProjectExpertPolicyDTO }, UpsertProjectExpertPolicyPayload>(
+      `/projects/${projectId}/expert-policy`,
+      payload,
+      config
+    ),
+
+  updateProjectExpertPolicy: (
+    projectId: number,
+    policyId: number,
+    payload: UpsertProjectExpertPolicyPayload,
+    config?: RequestConfig
+  ) =>
+    request.patch<{ policy: ProjectExpertPolicyDTO }, UpsertProjectExpertPolicyPayload>(
+      `/projects/${projectId}/expert-policy/${policyId}`,
+      payload,
+      config
+    ),
 
   bindRepository: (projectId: number, payload: BindRepositoryPayload, config?: RequestConfig) =>
     request.post<{ repository: ProjectRepositoryDTO }, BindRepositoryPayload>(
