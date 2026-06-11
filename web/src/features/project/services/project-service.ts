@@ -111,6 +111,32 @@ export interface ProjectContextReadinessDTO {
   next_action: string;
 }
 
+export interface ProjectReadinessCheckDTO {
+  key: string;
+  label: string;
+  status: 'blocked' | 'attention' | 'ready' | string;
+  detail?: string;
+  required: boolean;
+}
+
+export interface ProjectReadinessDTO {
+  project_id: number;
+  readiness_status: 'blocked' | 'attention' | 'ready' | string;
+  next_step: string;
+  next_action: string;
+  summary: string;
+  primary_repository_id?: string;
+  has_primary_repository: boolean;
+  active_repository_count: number;
+  read_only_repository_count: number;
+  skill_count: number;
+  warning_count: number;
+  runtime_count: number;
+  checks?: ProjectReadinessCheckDTO[];
+  warnings?: string[];
+  guardrails?: string[];
+}
+
 export interface ProjectRepositoryContextContractFragmentDTO {
   repository_id: string;
   role: string;
@@ -217,6 +243,9 @@ export const projectService = {
 
   getProjectContext: (projectId: number, config?: RequestConfig) =>
     request.get<{ context: ProjectContextDTO }>(`/projects/${projectId}/context`, config),
+
+  getProjectReadiness: (projectId: number, config?: RequestConfig) =>
+    request.get<{ readiness: ProjectReadinessDTO }>(`/projects/${projectId}/readiness`, config),
 
   bindRepository: (projectId: number, payload: BindRepositoryPayload, config?: RequestConfig) =>
     request.post<{ repository: ProjectRepositoryDTO }, BindRepositoryPayload>(

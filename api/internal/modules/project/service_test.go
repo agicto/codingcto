@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/zgiai/luas/api/internal/domain"
+	"github.com/zgiai/luas/api/internal/modules/githubintegration"
 )
 
 func TestServiceProjectRepositoryFlow(t *testing.T) {
@@ -19,7 +20,7 @@ func TestServiceProjectRepositoryFlow(t *testing.T) {
 			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
 		},
 	}
-	svc := NewService(store, workspaces, github, nil, nil)
+	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil)
 
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
@@ -113,7 +114,7 @@ func TestServiceProjectContextIncludesRepoProfilesAndSkills(t *testing.T) {
 			},
 		},
 	}
-	svc := NewService(store, workspaces, github, profiles, skills)
+	svc := NewService(store, workspaces, github, profiles, skills, nil, nil, nil)
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
 		Name:        "SpecForge",
@@ -188,7 +189,7 @@ func TestServiceProjectContextReadinessRequiresPrimaryRepository(t *testing.T) {
 			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
 		},
 	}
-	svc := NewService(store, workspaces, github, nil, nil)
+	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil)
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
 		Name:        "SpecForge",
@@ -223,7 +224,7 @@ func TestServiceRejectsSecondPrimaryRepository(t *testing.T) {
 			"repo_2": {RepositoryID: "repo_2", WorkspaceID: "workspace_1"},
 		},
 	}
-	svc := NewService(store, workspaces, github, nil, nil)
+	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil)
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
 		Name:        "SpecForge",
@@ -252,7 +253,7 @@ func TestServiceRejectsCrossWorkspaceRepository(t *testing.T) {
 			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_2"},
 		},
 	}
-	svc := NewService(store, workspaces, github, nil, nil)
+	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil)
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
 		Name:        "SpecForge",
@@ -270,7 +271,7 @@ func TestServiceRejectsCrossWorkspaceRepository(t *testing.T) {
 func TestServiceCreateProjectResolvesCanonicalWorkspaceID(t *testing.T) {
 	store := newMemoryProjectStore()
 	workspaces := newMemoryWorkspaceStore("local_test")
-	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil)
+	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil, nil, nil, nil)
 
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "local-test",
@@ -289,7 +290,7 @@ func TestServiceCreateProjectResolvesCanonicalWorkspaceID(t *testing.T) {
 func TestServiceRejectsProjectForMissingWorkspace(t *testing.T) {
 	store := newMemoryProjectStore()
 	workspaces := newMemoryWorkspaceStore("workspace_1")
-	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil)
+	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil, nil, nil, nil)
 
 	_, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "missing-workspace",
@@ -305,7 +306,7 @@ func TestServiceRejectsProjectForMissingWorkspace(t *testing.T) {
 func TestServiceUpdatesProjectFieldsAndSlug(t *testing.T) {
 	store := newMemoryProjectStore()
 	workspaces := newMemoryWorkspaceStore("workspace_1")
-	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil)
+	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil, nil, nil, nil)
 
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
@@ -350,7 +351,7 @@ func TestServiceDeletesProjectAndRepositoryBindings(t *testing.T) {
 			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
 		},
 	}
-	svc := NewService(store, workspaces, github, nil, nil)
+	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil)
 
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
@@ -373,11 +374,194 @@ func TestServiceDeletesProjectAndRepositoryBindings(t *testing.T) {
 	require.ErrorIs(t, svc.DeleteProject(context.Background(), project.ID), domain.ErrNotFound)
 }
 
+func TestServiceProjectReadinessBecomesReadyWhenSetupSignalsPass(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
+		},
+	}
+	profiles := &memoryRepoProfileStore{
+		profiles: map[string]*domain.SpecForgeRepoProfile{
+			"repo_1": {
+				RepositoryID:  "repo_1",
+				DefaultBranch: "main",
+				Summary:       "Primary repo ready.",
+			},
+		},
+		snapshots: map[string]*domain.SpecForgeRepoArchitectureSnapshot{
+			"repo_1": {
+				RepositoryID: "repo_1",
+				CommitSHA:    "abc123",
+				CreatedAt:    nowUTC(),
+			},
+		},
+	}
+	projectSkills := &fakeProjectSkillStore{
+		skills: map[uint][]*domain.SpecForgeProjectSkill{
+			1: {
+				{
+					ID:           10,
+					ProjectID:    1,
+					RepositoryID: "repo_1",
+					SkillID:      50,
+					Active:       true,
+				},
+			},
+		},
+	}
+	githubReadiness := &fakeGitHubReadinessChecker{
+		response: &githubintegration.GitHubRepositoryReadinessResponse{
+			RepositoryID: "repo_1",
+			Ready:        true,
+			Checks: []githubintegration.GitHubReadinessCheck{
+				{Key: "installation", Status: "ok", Message: "Installation ready", Required: true},
+			},
+		},
+	}
+	runtimes := &fakeRuntimeReadinessStore{
+		runtimes: []*domain.SpecForgeRuntime{
+			{
+				RuntimeID:  "runtime_1",
+				Executor:   "codex_cli",
+				Status:     domain.RuntimeStatusOnline,
+				LastSeenAt: nowUTC(),
+			},
+		},
+	}
+	svc := NewService(store, workspaces, github, profiles, &memorySkillStore{}, projectSkills, githubReadiness, runtimes)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "SpecForge",
+		Slug:        "specforge",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+
+	readiness, err := svc.GetProjectReadiness(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.ProjectReadinessStatusReady, readiness.ReadinessStatus)
+	require.Equal(t, domain.ProjectReadinessStepCreateRequirement, readiness.NextStep)
+	require.Equal(t, 1, readiness.SkillCount)
+	require.Equal(t, 1, readiness.RuntimeCount)
+	require.True(t, readiness.HasPrimaryRepository)
+	require.Len(t, readiness.Checks, 5)
+	require.Equal(t, domain.ProjectReadinessStatusReady, readinessCheckStatusByKey(t, readiness, "github_delivery"))
+	require.Equal(t, domain.ProjectReadinessStatusReady, readinessCheckStatusByKey(t, readiness, "runtime_dispatch"))
+	require.Equal(t, domain.ProjectReadinessStatusReady, readinessCheckStatusByKey(t, readiness, "skill_contract"))
+}
+
+func TestServiceProjectReadinessBlocksOnGitHubBeforeOtherWarnings(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
+		},
+	}
+	svc := NewService(
+		store,
+		workspaces,
+		github,
+		nil,
+		nil,
+		nil,
+		&fakeGitHubReadinessChecker{
+			response: &githubintegration.GitHubRepositoryReadinessResponse{
+				RepositoryID: "repo_1",
+				Ready:        false,
+				Checks: []githubintegration.GitHubReadinessCheck{
+					{
+						Key:      "installation",
+						Status:   "error",
+						Message:  "Missing installation",
+						Detail:   "Install and sync the GitHub App first.",
+						Required: true,
+					},
+				},
+			},
+		},
+		&fakeRuntimeReadinessStore{},
+	)
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "SpecForge",
+		Slug:        "specforge",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+
+	readiness, err := svc.GetProjectReadiness(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.ProjectReadinessStatusBlocked, readiness.ReadinessStatus)
+	require.Equal(t, domain.ProjectReadinessStepConfigureGitHub, readiness.NextStep)
+	require.Contains(t, readiness.NextAction, "GitHub setup")
+	require.Equal(t, domain.ProjectReadinessStatusBlocked, readinessCheckStatusByKey(t, readiness, "github_delivery"))
+}
+
 type memoryProjectStore struct {
 	nextProjectID uint
 	nextBindingID uint
 	projects      map[uint]*domain.SpecForgeProject
 	bindings      map[uint]map[string]*domain.SpecForgeProjectRepository
+}
+
+type fakeGitHubReadinessChecker struct {
+	response *githubintegration.GitHubRepositoryReadinessResponse
+	err      error
+}
+
+func (f *fakeGitHubReadinessChecker) CheckRepositoryReadiness(_ context.Context, _ string) (*githubintegration.GitHubRepositoryReadinessResponse, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.response, nil
+}
+
+type fakeRuntimeReadinessStore struct {
+	runtimes []*domain.SpecForgeRuntime
+	err      error
+}
+
+func (f *fakeRuntimeReadinessStore) ListRuntimes(_ context.Context, _, _ string, _ int) ([]*domain.SpecForgeRuntime, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	out := make([]*domain.SpecForgeRuntime, 0, len(f.runtimes))
+	for _, runtime := range f.runtimes {
+		if runtime == nil {
+			continue
+		}
+		copied := *runtime
+		out = append(out, &copied)
+	}
+	return out, nil
+}
+
+type fakeProjectSkillStore struct {
+	skills map[uint][]*domain.SpecForgeProjectSkill
+}
+
+func (f *fakeProjectSkillStore) ListActiveProjectSkillsByProjectID(_ context.Context, projectID uint) ([]*domain.SpecForgeProjectSkill, error) {
+	out := make([]*domain.SpecForgeProjectSkill, 0, len(f.skills[projectID]))
+	for _, skill := range f.skills[projectID] {
+		if skill == nil || !skill.Active {
+			continue
+		}
+		copied := *skill
+		out = append(out, &copied)
+	}
+	return out, nil
 }
 
 func newMemoryProjectStore() *memoryProjectStore {
@@ -670,6 +854,20 @@ func projectRepoContractByRepositoryID(contract *domain.SpecForgeProjectContextC
 		}
 	}
 	return nil
+}
+
+func readinessCheckStatusByKey(t *testing.T, readiness *domain.SpecForgeProjectReadiness, key string) string {
+	t.Helper()
+	if readiness == nil {
+		require.Fail(t, "missing readiness")
+	}
+	for _, check := range readiness.Checks {
+		if check.Key == key {
+			return check.Status
+		}
+	}
+	require.Failf(t, "missing readiness check", "key %s not found", key)
+	return ""
 }
 
 type memoryRepoProfileStore struct {

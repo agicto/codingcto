@@ -576,6 +576,7 @@ function ProjectRepositoryCard({
       await reindexArchitecture.mutateAsync({
         default_branch: profile?.default_branch,
       });
+      queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
       setMessage('Architecture analysis refreshed.');
     } catch (error) {

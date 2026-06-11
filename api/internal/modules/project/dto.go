@@ -46,6 +46,10 @@ type ProjectContextResponse struct {
 	Context *domain.SpecForgeProjectContext `json:"context"`
 }
 
+type ProjectReadinessResponse struct {
+	Readiness *domain.SpecForgeProjectReadiness `json:"readiness"`
+}
+
 func newProjectPO(project *domain.SpecForgeProject) *ProjectPO {
 	return &ProjectPO{
 		ID:          project.ID,
