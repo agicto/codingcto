@@ -360,6 +360,7 @@ func specForgeProjectContextReadinessNextAction(hasPrimary bool, warningCount in
 type SpecForgeProjectRepositoryStore interface {
 	CreateProject(ctx context.Context, project *SpecForgeProject) error
 	UpdateProject(ctx context.Context, project *SpecForgeProject) error
+	DeleteProject(ctx context.Context, projectID uint) error
 	FindProjectByID(ctx context.Context, id uint) (*SpecForgeProject, error)
 	FindProjectByWorkspaceAndSlug(ctx context.Context, workspaceID, slug string) (*SpecForgeProject, error)
 	ListProjectsByWorkspace(ctx context.Context, workspaceID string) ([]*SpecForgeProject, error)

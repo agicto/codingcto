@@ -85,6 +85,19 @@ func (h *Handler) UpdateProject(c *gin.Context) {
 	response.Success(c, &ProjectResponse{Project: project})
 }
 
+func (h *Handler) DeleteProject(c *gin.Context) {
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.DeleteProject(c.Request.Context(), projectID); err != nil {
+		response.HandleError(c, "Failed to delete project", err)
+		return
+	}
+	response.NoContent(c)
+}
+
 func (h *Handler) BindRepository(c *gin.Context) {
 	userID, ok := handler.GetUserID(c)
 	if !ok {

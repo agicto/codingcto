@@ -6,6 +6,7 @@ import {
   type BindRepositoryPayload,
   type CreateProjectPayload,
   type CreateWorkspacePayload,
+  type UpdateProjectPayload,
   projectService,
 } from "@/features/project/services/project-service";
 
@@ -16,6 +17,7 @@ export const projectKeys = {
   all: ["projects"] as const,
   workspaces: () => [...projectKeys.all, "workspaces"] as const,
   list: (workspaceId: string) => [...projectKeys.all, "list", workspaceId] as const,
+  detail: (projectId: number) => [...projectKeys.all, "detail", projectId] as const,
   context: (projectId: number) => [...projectKeys.all, "context", projectId] as const,
 };
 
@@ -58,6 +60,49 @@ export function useCreateProject(workspaceId: string) {
     meta: silentQueryMeta,
     onSuccess: () => {
       queryClient.invalidateQueries({ queryKey: projectKeys.list(workspaceId) });
+    },
+  });
+}
+
+export function useProject(projectId: number) {
+  return useQuery({
+    queryKey: projectKeys.detail(projectId),
+    queryFn: () => projectService.getProject(projectId, silentQueryConfig),
+    enabled: Boolean(projectId),
+    meta: silentQueryMeta,
+  });
+}
+
+export function useUpdateProject(workspaceId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      payload,
+    }: {
+      projectId: number;
+      payload: UpdateProjectPayload;
+    }) => projectService.updateProject(projectId, payload, silentQueryConfig),
+    meta: silentQueryMeta,
+    onSuccess: response => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.list(workspaceId) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.detail(response.project.id) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.context(response.project.id) });
+    },
+  });
+}
+
+export function useDeleteProject(workspaceId: string) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (projectId: number) => projectService.deleteProject(projectId, silentQueryConfig),
+    meta: silentQueryMeta,
+    onSuccess: (_response, projectId) => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.list(workspaceId) });
+      queryClient.removeQueries({ queryKey: projectKeys.detail(projectId) });
+      queryClient.removeQueries({ queryKey: projectKeys.context(projectId) });
     },
   });
 }

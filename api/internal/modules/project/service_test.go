@@ -302,6 +302,77 @@ func TestServiceRejectsProjectForMissingWorkspace(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrNotFound)
 }
 
+func TestServiceUpdatesProjectFieldsAndSlug(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "SpecForge",
+		Slug:        "specforge",
+		Description: "Initial description",
+	})
+	require.NoError(t, err)
+	_, err = svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "Existing",
+		Slug:        "existing",
+	})
+	require.NoError(t, err)
+
+	name := "CodingCTO Project"
+	slug := "CodingCTO-Project"
+	description := "Updated description"
+	status := domain.ProjectStatusArchived
+	updated, err := svc.UpdateProject(context.Background(), project.ID, &UpdateProjectRequest{
+		Name:        &name,
+		Slug:        &slug,
+		Description: &description,
+		Status:      &status,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "CodingCTO Project", updated.Name)
+	require.Equal(t, "codingcto-project", updated.Slug)
+	require.Equal(t, "Updated description", updated.Description)
+	require.Equal(t, domain.ProjectStatusArchived, updated.Status)
+
+	duplicateSlug := "existing"
+	_, err = svc.UpdateProject(context.Background(), project.ID, &UpdateProjectRequest{Slug: &duplicateSlug})
+	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
+func TestServiceDeletesProjectAndRepositoryBindings(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
+		},
+	}
+	svc := NewService(store, workspaces, github, nil, nil)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "SpecForge",
+		Slug:        "specforge",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, svc.DeleteProject(context.Background(), project.ID))
+	_, err = svc.GetProject(context.Background(), project.ID)
+	require.ErrorIs(t, err, domain.ErrNotFound)
+	repositories, err := store.ListProjectRepositories(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.Empty(t, repositories)
+	require.ErrorIs(t, svc.DeleteProject(context.Background(), project.ID), domain.ErrNotFound)
+}
+
 type memoryProjectStore struct {
 	nextProjectID uint
 	nextBindingID uint
@@ -330,6 +401,15 @@ func (s *memoryProjectStore) UpdateProject(_ context.Context, project *domain.Sp
 		return domain.ErrNotFound
 	}
 	s.projects[project.ID] = cloneProject(project)
+	return nil
+}
+
+func (s *memoryProjectStore) DeleteProject(_ context.Context, projectID uint) error {
+	if _, ok := s.projects[projectID]; !ok {
+		return domain.ErrNotFound
+	}
+	delete(s.projects, projectID)
+	delete(s.bindings, projectID)
 	return nil
 }
 

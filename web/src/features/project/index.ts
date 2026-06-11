@@ -4,9 +4,12 @@ export {
   useBindProjectRepository,
   useCreateProject,
   useCreateWorkspace,
+  useDeleteProject,
+  useProject,
   useProjectContext,
   useProjects,
   useUnbindProjectRepository,
+  useUpdateProject,
   useWorkspaces,
 } from './hooks/use-projects';
 export { useSelectedWorkspace } from './hooks/use-selected-workspace';
@@ -20,5 +23,6 @@ export {
   type ProjectRepositoryContextDTO,
   type ProjectRepositoryDTO,
   type ProjectSkillDTO,
+  type UpdateProjectPayload,
 } from './services/project-service';
 export { primaryRepositoryContext } from './project-context';

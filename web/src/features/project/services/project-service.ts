@@ -163,6 +163,13 @@ export interface CreateProjectPayload {
   description?: string;
 }
 
+export interface UpdateProjectPayload {
+  name?: string;
+  slug?: string;
+  description?: string;
+  status?: 'active' | 'archived';
+}
+
 export interface CreateWorkspacePayload {
   workspace_id?: string;
   name: string;
@@ -194,6 +201,19 @@ export const projectService = {
 
   createProject: (payload: CreateProjectPayload, config?: RequestConfig) =>
     request.post<{ project: ProjectDTO }, CreateProjectPayload>('/projects', payload, config),
+
+  getProject: (projectId: number, config?: RequestConfig) =>
+    request.get<{ project: ProjectDTO }>(`/projects/${projectId}`, config),
+
+  updateProject: (projectId: number, payload: UpdateProjectPayload, config?: RequestConfig) =>
+    request.patch<{ project: ProjectDTO }, UpdateProjectPayload>(
+      `/projects/${projectId}`,
+      payload,
+      config
+    ),
+
+  deleteProject: (projectId: number, config?: RequestConfig) =>
+    request.delete<void>(`/projects/${projectId}`, config),
 
   getProjectContext: (projectId: number, config?: RequestConfig) =>
     request.get<{ context: ProjectContextDTO }>(`/projects/${projectId}/context`, config),

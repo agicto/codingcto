@@ -12,6 +12,7 @@ import (
 type Service interface {
 	CreateProject(ctx context.Context, userID uint, req *CreateProjectRequest) (*domain.SpecForgeProject, error)
 	UpdateProject(ctx context.Context, projectID uint, req *UpdateProjectRequest) (*domain.SpecForgeProject, error)
+	DeleteProject(ctx context.Context, projectID uint) error
 	GetProject(ctx context.Context, projectID uint) (*domain.SpecForgeProject, error)
 	ListProjects(ctx context.Context, workspaceID string) ([]*domain.SpecForgeProject, error)
 	BindRepository(ctx context.Context, userID, projectID uint, req *BindRepositoryRequest) (*domain.SpecForgeProjectRepository, error)
@@ -98,6 +99,20 @@ func (s *service) UpdateProject(ctx context.Context, projectID uint, req *Update
 		}
 		project.Name = name
 	}
+	if req.Slug != nil {
+		slug := normalizeSlug(*req.Slug)
+		if slug == "" {
+			return nil, domain.ErrInvalidInput
+		}
+		existing, err := s.repo.FindProjectByWorkspaceAndSlug(ctx, project.WorkspaceID, slug)
+		if err == nil && existing.ID != project.ID {
+			return nil, domain.ErrConflict
+		}
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return nil, err
+		}
+		project.Slug = slug
+	}
 	if req.Description != nil {
 		project.Description = strings.TrimSpace(*req.Description)
 	}
@@ -112,6 +127,13 @@ func (s *service) UpdateProject(ctx context.Context, projectID uint, req *Update
 		return nil, err
 	}
 	return project, nil
+}
+
+func (s *service) DeleteProject(ctx context.Context, projectID uint) error {
+	if _, err := s.repo.FindProjectByID(ctx, projectID); err != nil {
+		return err
+	}
+	return s.repo.DeleteProject(ctx, projectID)
 }
 
 func (s *service) GetProject(ctx context.Context, projectID uint) (*domain.SpecForgeProject, error) {
