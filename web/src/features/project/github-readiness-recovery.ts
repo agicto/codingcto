@@ -53,8 +53,8 @@ export function githubReadinessRecoveryActions(
   ) {
     actions.push({
       id: 'github-settings',
-      label: '去 GitHub 设置',
-      description: '安装或同步 GitHub App，确认 token 和仓库写权限。',
+      label: '去 GitHub 连接',
+      description: '连接或同步 GitHub App，确认 token 和仓库写权限。',
       href: githubRecoveryHref('github', targetRepository),
     });
   }
@@ -132,7 +132,7 @@ export function githubReadinessRecoveryDiagnostics(
     return {
       checkKey: check.key,
       setupStep: '恢复 GitHub readiness',
-      detail: '检查 GitHub 设置和仓库绑定，然后重新检查 readiness。',
+      detail: '检查 GitHub 连接和仓库选择，然后重新检查 readiness。',
     };
   });
 }

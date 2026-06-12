@@ -4,18 +4,19 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  ArrowRight,
-  CheckCircle2,
+  ChevronDown,
   Github,
   GitPullRequest,
   Link2,
   PanelRight,
   Plus,
+  RefreshCw,
+  ShieldCheck,
   SlidersHorizontal,
   X,
 } from 'lucide-react';
 
-import { Button, buttonVariants } from '@/components/ui/button';
+import { Button } from '@/components/ui/button';
 import {
   Card,
   CardContent,
@@ -35,6 +36,7 @@ import { useT } from '@/i18n';
 import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
 import {
   useGitHubRepositories,
+  useGitHubInstallationStatus,
   useGitHubSettings,
   useSyncGitHubInstallation,
   useUpsertGitHubSettings,
@@ -89,6 +91,16 @@ function githubRecoveryStorageKey(workspaceId: string) {
   return `${githubRecoveryStoragePrefix}${workspaceId.trim()}`;
 }
 
+function withGitHubInstallState(installURL: string, workspaceId: string) {
+  try {
+    const url = new URL(installURL);
+    url.searchParams.set('state', workspaceId);
+    return url.toString();
+  } catch {
+    return installURL;
+  }
+}
+
 function shellArg(value: string) {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
@@ -125,6 +137,7 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
   const [pendingRepositories, setPendingRepositories] = useState<PendingRepository[]>([]);
   const [savedRepoId, setSavedRepoId] = useState('');
   const [message, setMessage] = useState('');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [installEntry] = useState(
     env.NEXT_PUBLIC_GITHUB_APP_INSTALL_URL || env.NEXT_PUBLIC_GITHUB_APP_SLUG || ''
   );
@@ -160,7 +173,11 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
   const connectedRepositoriesQuery = useGitHubRepositories(
     workspaceId.trim() ? { workspace_id: workspaceId.trim() } : undefined
   );
+  const installationStatusQuery = useGitHubInstallationStatus(workspaceId.trim());
   const connectedRepositories = connectedRepositoriesQuery.data?.repositories ?? [];
+  const connectedInstallations = installationStatusQuery.data?.installations ?? [];
+  const authorizedRepositoryCount =
+    installationStatusQuery.data?.repository_count ?? connectedRepositories.length;
   const connectedRepository = connectedRepositories[0];
   const visibleRepositoryDrafts = [
     ...pendingRepositories.map(repository => ({
@@ -206,18 +223,21 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
     : ROUTES.CONSOLE.SPECFORGE;
   const installURL = useMemo(() => {
     const entry = installEntry.trim();
-    if (!entry) {
+    const workspaceState = workspaceId.trim();
+    if (!entry || !workspaceState) {
       return '';
     }
     if (entry.startsWith('https://github.com/')) {
-      return entry;
+      return withGitHubInstallState(entry, workspaceState);
     }
     const slug = entry
       .replace(/^https?:\/\/github\.com\/apps\//, '')
       .replace(/\/installations\/new.*$/, '')
       .replace(/^\/+|\/+$/g, '');
-    const state = encodeURIComponent(workspaceId.trim());
-    return `https://github.com/apps/${slug}/installations/new?state=${state}`;
+    return withGitHubInstallState(
+      `https://github.com/apps/${slug}/installations/new`,
+      workspaceState
+    );
   }, [installEntry, workspaceId]);
   const setupChecklist = githubSetupChecklist({
     workspaceId,
@@ -348,6 +368,10 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
     } catch (error) {
       setMessage(`${errorMessage(error, t('messages.connectionFailed'))} ${t('messages.settingsNotSaved')}`);
     }
+  }
+
+  async function syncExistingInstallation(installationIdValue: number) {
+    await syncGitHubInstallation(String(installationIdValue), workspaceId.trim());
   }
 
   function addRepositoryDraft() {
@@ -536,66 +560,21 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
     );
   }
 
-  const repositoryManagementCard = (
-    <section className="space-y-3">
-      <h3 className="text-base font-semibold">{t('sections.repository')}</h3>
-      <Card>
-        <CardContent className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-bg-subtle">
-              {connectedRepository ? (
-                <CheckCircle2 className="h-5 w-5 text-success" />
-              ) : (
-                <GitPullRequest className="h-5 w-5" />
-              )}
-            </div>
-            <div>
-              <div className="font-medium">
-                {connectedRepository
-                  ? `${connectedRepository.github_owner}/${connectedRepository.github_repo}`
-                  : t('repositoryCta.title')}
-              </div>
-              <p className="mt-1 text-sm leading-6 text-text-muted">
-                {connectedRepository
-                  ? `${t('status.connected', { repoId: connectedRepository.repository_id })} · ${connectedRepository.default_branch}`
-                  : t('repositoryCta.description')}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href={`${ROUTES.CONSOLE.SETTINGS}?tab=repositories`}
-              className={buttonVariants({
-                variant: 'outline',
-                className: 'inline-flex flex-row items-center gap-1.5 whitespace-nowrap',
-              })}
-            >
-              <span>{t('actions.enterRepository')}</span>
-              <ArrowRight className="h-4 w-4 shrink-0" />
-            </Link>
-            {connectedRepository ? (
-              <Link
-                href={specForgeHref}
-                className={buttonVariants({
-                  className: 'inline-flex flex-row items-center gap-1.5 whitespace-nowrap',
-                })}
-              >
-                <span>{t('actions.useInCodingCTO')}</span>
-                <ArrowRight className="h-4 w-4 shrink-0" />
-              </Link>
-            ) : null}
-          </div>
-        </CardContent>
-      </Card>
-    </section>
-  );
+  const hasInstallEntry = Boolean(installURL.trim());
+  const connectionStatus = !settings.enabled
+    ? 'disabled'
+    : !hasInstallEntry
+      ? 'notConfigured'
+      : installationStatusQuery.isFetching
+      ? 'checking'
+      : connectedInstallations.length > 0
+        ? 'connected'
+        : 'notConnected';
+  const connectionReady = connectionStatus === 'connected';
+  const visibleConnectedRepositories = connectedRepositories.slice(0, 6);
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8">
-      <p className="text-sm leading-6 text-text-muted">
-        {t('intro')}
-      </p>
-
+    <div className="mx-auto max-w-4xl space-y-6">
       {message ? (
         <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm leading-6 text-text-muted">
           {message}
@@ -611,100 +590,224 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
         />
       ) : null}
 
-      {mode === 'github' ? (
-        <>
-          <GitHubSetupChecklistPanel
-            summary={setupChecklist}
-            installURL={installURL}
-            enabled={settings.enabled}
-            isSaving={isSaving}
-            repositorySettingsHref={repositorySettingsHref}
-            targetOwner={targetOwner}
-            targetRepo={targetRepo}
-            targetRepositoryURL={targetRepositoryURL}
-            targetRepositoryId={targetRepositoryId}
-            returnTo={returnTo}
-            onBeforeInstall={rememberGitHubRecoveryContext}
-            onMissingInstall={() => {
-              setMessage(
-                workspaceId.trim()
-                  ? t('messages.installEntryRequired')
-                  : t('messages.selectWorkspaceBeforeInstall')
-              );
-            }}
-          />
-
-          <Card>
-            <CardContent className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
-              <div className="flex gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-bg-subtle">
-                  <Github className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="font-medium">{t('enable.title')}</div>
-                  <p className="mt-1 text-sm leading-6 text-text-muted">
-                    {t('enable.description')}
-                  </p>
-                </div>
+      <section className="rounded-[4px] border border-border-subtle bg-bg-surface">
+        <div className="flex flex-col gap-5 border-b border-border-subtle p-6 md:flex-row md:items-start md:justify-between">
+          <div className="flex min-w-0 gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[4px] border border-border-subtle bg-bg-subtle">
+              <Github className="h-5 w-5 text-text-main" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-lg font-semibold tracking-tight text-text-main">
+                  {t('connectionPage.title')}
+                </h3>
+                <span className={githubConnectionStatusClassName(connectionStatus)}>
+                  {t(`connectionPage.status.${connectionStatus}`)}
+                </span>
               </div>
-              <Switch
-                checked={settings.enabled}
-                disabled={isSaving}
-                onCheckedChange={checked => updateSetting('enabled', checked)}
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-text-muted">
+                {t('connectionPage.description')}
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            {hasInstallEntry && workspaceId.trim() ? (
+              <Button asChild disabled={!settings.enabled}>
+                <a
+                  href={installURL}
+                  target="_blank"
+                  rel="noreferrer"
+                  onClick={rememberGitHubRecoveryContext}
+                >
+                  {connectionReady
+                    ? t('connectionPage.actions.manageConnection')
+                    : t('connectionPage.actions.connect')}
+                </a>
+              </Button>
+            ) : (
+              <Button
+                type="button"
+                disabled={!settings.enabled || (!hasInstallEntry && !workspaceId.trim())}
+                onClick={() => {
+                  if (!hasInstallEntry) {
+                    setAdvancedOpen(true);
+                    setMessage(t('connectionPage.notConfiguredMessage'));
+                    return;
+                  }
+                  setMessage(t('messages.selectWorkspaceBeforeInstall'));
+                }}
+              >
+                {hasInstallEntry
+                  ? t('connectionPage.actions.connect')
+                  : t('connectionPage.actions.configure')}
+              </Button>
+            )}
+            <Button
+              type="button"
+              variant="outline"
+              disabled={installationStatusQuery.isFetching}
+              onClick={() => installationStatusQuery.refetch()}
+            >
+              <RefreshCw
+                className={
+                  installationStatusQuery.isFetching
+                    ? 'h-4 w-4 animate-spin'
+                    : 'h-4 w-4'
+                }
               />
-            </CardContent>
-          </Card>
+              {t('connectionPage.actions.refresh')}
+            </Button>
+          </div>
+        </div>
 
-          <section className="space-y-3">
-            <h3 className="text-base font-semibold">{t('sections.connection')}</h3>
-            <Card>
-              <CardContent className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
-                <div className="flex gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-bg-subtle">
-                    <Github className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <div className="font-medium">{t('app.title')}</div>
-                    <p className="mt-1 text-sm leading-6 text-text-muted">
-                      {t('app.descriptionPrefix')}{' '}
-                      <code className="rounded bg-bg-subtle px-1.5 py-0.5 text-xs">MUL-123</code>
-                      {t('app.descriptionSuffix')}
-                    </p>
+        <div className="grid divide-y divide-border-subtle md:grid-cols-3 md:divide-x md:divide-y-0">
+          <ConnectionMetric
+            label={t('connectionPage.metrics.owners')}
+            value={String(connectedInstallations.length)}
+          />
+          <ConnectionMetric
+            label={t('connectionPage.metrics.repositories')}
+            value={String(authorizedRepositoryCount)}
+          />
+          <ConnectionToggleMetric
+            label={t('connectionPage.metrics.enabled')}
+            checked={settings.enabled}
+            disabled={isSaving}
+            onCheckedChange={checked => updateSetting('enabled', checked)}
+          />
+        </div>
+      </section>
+
+      <section className="rounded-[4px] border border-border-subtle bg-bg-surface">
+        <div className="border-b border-border-subtle px-5 py-4">
+          <h3 className="text-sm font-semibold text-text-main">
+            {t('connectionPage.accounts.title')}
+          </h3>
+          <p className="mt-1 text-sm leading-6 text-text-muted">
+            {t('connectionPage.accounts.description')}
+          </p>
+        </div>
+        <div className="divide-y divide-border-subtle">
+          {installationStatusQuery.isLoading ? (
+            <ConnectionEmptyRow text={t('connectionPage.accounts.loading')} />
+          ) : connectedInstallations.length > 0 ? (
+            connectedInstallations.map(installation => (
+              <div
+                key={installation.id}
+                className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <Github className="h-5 w-5 shrink-0 text-text-main" />
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-text-main">
+                      {installation.account_login}
+                    </div>
+                    <div className="mt-0.5 text-xs leading-5 text-text-muted">
+                      {t('connectionPage.accounts.repoCount', {
+                        count: installation.repository_count,
+                      })}{' '}
+                      · {t('connectionPage.accounts.lastSynced')}{' '}
+                      {new Date(installation.updated_at).toLocaleDateString()}
+                    </div>
                   </div>
                 </div>
-                {installURL && workspaceId.trim() ? (
-                  <Button asChild disabled={!settings.enabled}>
-                    <a
-                      href={installURL}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={rememberGitHubRecoveryContext}
-                    >
-                      {t('actions.installApp')}
-                    </a>
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={() => {
-                      setMessage(
-                        workspaceId.trim()
-                          ? t('messages.installEntryRequired')
-                          : t('messages.selectWorkspaceBeforeInstall')
-                      );
-                    }}
-                    disabled={!settings.enabled}
-                  >
-                    {t('actions.installApp')}
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          </section>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={syncInstallation.isPending || !settings.enabled}
+                  onClick={() => syncExistingInstallation(installation.installation_id)}
+                >
+                  {syncInstallation.isPending
+                    ? t('actions.syncing')
+                    : t('connectionPage.actions.sync')}
+                </Button>
+              </div>
+            ))
+          ) : (
+            <ConnectionEmptyRow text={t('connectionPage.accounts.empty')} />
+          )}
+        </div>
+      </section>
 
-          <section className="space-y-3">
-            <h3 className="text-base font-semibold">{t('sections.features')}</h3>
-            <Card>
-              <CardContent className="divide-y divide-border-subtle p-0">
+      <section className="rounded-[4px] border border-border-subtle bg-bg-surface">
+        <div className="flex flex-col gap-3 border-b border-border-subtle px-5 py-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-text-main">
+              {t('connectionPage.repositories.title')}
+            </h3>
+            <p className="mt-1 text-sm leading-6 text-text-muted">
+              {t('connectionPage.repositories.description')}
+            </p>
+          </div>
+          <Button asChild variant="outline" size="sm">
+            <Link href={`${ROUTES.CONSOLE.SETTINGS}?tab=repositories`}>
+              {t('connectionPage.actions.manageRepositories')}
+            </Link>
+          </Button>
+        </div>
+        <div className="divide-y divide-border-subtle">
+          {connectedRepositoriesQuery.isLoading ? (
+            <ConnectionEmptyRow text={t('connectionPage.repositories.loading')} />
+          ) : visibleConnectedRepositories.length > 0 ? (
+            visibleConnectedRepositories.map(repository => (
+              <div
+                key={repository.repository_id}
+                className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between"
+              >
+                <div className="flex min-w-0 items-center gap-3">
+                  <GitPullRequest className="h-5 w-5 shrink-0 text-text-main" />
+                  <div className="min-w-0">
+                    <div className="truncate text-sm font-medium text-text-main">
+                      {repository.github_owner}/{repository.github_repo}
+                    </div>
+                    <div className="mt-0.5 text-xs leading-5 text-text-muted">
+                      {repository.default_branch} · {repository.repository_id}
+                    </div>
+                  </div>
+                </div>
+                {connectedRepository?.repository_id === repository.repository_id ? (
+                  <Button asChild size="sm">
+                    <Link href={specForgeHref}>{t('actions.useInCodingCTO')}</Link>
+                  </Button>
+                ) : null}
+              </div>
+            ))
+          ) : (
+            <ConnectionEmptyRow text={t('connectionPage.repositories.empty')} />
+          )}
+        </div>
+      </section>
+
+      <section className="rounded-[4px] border border-border-subtle bg-bg-surface">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
+          onClick={() => setAdvancedOpen(open => !open)}
+        >
+          <span>
+            <span className="block text-sm font-semibold text-text-main">
+              {t('connectionPage.advanced.title')}
+            </span>
+            <span className="mt-1 block text-sm leading-6 text-text-muted">
+              {t('connectionPage.advanced.description')}
+            </span>
+          </span>
+          <ChevronDown
+            className={
+              advancedOpen
+                ? 'h-4 w-4 rotate-180 text-text-muted transition-transform'
+                : 'h-4 w-4 text-text-muted transition-transform'
+            }
+          />
+        </button>
+        {advancedOpen ? (
+          <div className="space-y-5 border-t border-border-subtle p-5">
+            <section className="rounded-[4px] border border-border-subtle">
+              <div className="border-b border-border-subtle px-4 py-3 text-sm font-medium text-text-main">
+                {t('connectionPage.advanced.preferences')}
+              </div>
+              <div className="divide-y divide-border-subtle">
                 <FeatureToggle
                   icon={PanelRight}
                   title={t('features.prSidebar.title')}
@@ -737,15 +840,98 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
                   disabled={!settings.enabled || isSaving}
                   onCheckedChange={checked => updateSetting('issuePrAutoLink', checked)}
                 />
-              </CardContent>
-            </Card>
-          </section>
+              </div>
+            </section>
 
-          {repositoryManagementCard}
-        </>
-      ) : null}
+            <GitHubSetupChecklistPanel
+              summary={setupChecklist}
+              installURL={installURL}
+              enabled={settings.enabled}
+              isSaving={isSaving}
+              repositorySettingsHref={repositorySettingsHref}
+              targetOwner={targetOwner}
+              targetRepo={targetRepo}
+              targetRepositoryURL={targetRepositoryURL}
+              targetRepositoryId={targetRepositoryId}
+              returnTo={returnTo}
+              onBeforeInstall={rememberGitHubRecoveryContext}
+              onMissingInstall={() => {
+                setMessage(
+                  workspaceId.trim()
+                    ? t('messages.installEntryRequired')
+                    : t('messages.selectWorkspaceBeforeInstall')
+                );
+              }}
+            />
+          </div>
+        ) : null}
+      </section>
     </div>
   );
+}
+
+type GitHubConnectionStatus =
+  | 'connected'
+  | 'notConnected'
+  | 'notConfigured'
+  | 'checking'
+  | 'disabled';
+
+function ConnectionMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="px-5 py-4">
+      <div className="text-xs font-medium uppercase tracking-[0.12em] text-text-muted">
+        {label}
+      </div>
+      <div className="mt-2 text-2xl font-semibold tracking-tight text-text-main">{value}</div>
+    </div>
+  );
+}
+
+function ConnectionToggleMetric({
+  label,
+  checked,
+  disabled,
+  onCheckedChange,
+}: {
+  label: string;
+  checked: boolean;
+  disabled?: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 px-5 py-4">
+      <div>
+        <div className="text-xs font-medium uppercase tracking-[0.12em] text-text-muted">
+          {label}
+        </div>
+        <div className="mt-2 flex items-center gap-2 text-sm font-medium text-text-main">
+          <ShieldCheck className="h-4 w-4 text-success" />
+          GitHub
+        </div>
+      </div>
+      <Switch checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
+    </div>
+  );
+}
+
+function ConnectionEmptyRow({ text }: { text: string }) {
+  return <div className="px-5 py-5 text-sm leading-6 text-text-muted">{text}</div>;
+}
+
+function githubConnectionStatusClassName(status: GitHubConnectionStatus) {
+  switch (status) {
+    case 'connected':
+      return 'rounded-full border border-success/30 bg-success-subtle px-2 py-0.5 text-xs font-medium text-success';
+    case 'checking':
+      return 'rounded-full border border-primary/30 bg-primary-subtle px-2 py-0.5 text-xs font-medium text-primary';
+    case 'disabled':
+      return 'rounded-full border border-border-subtle bg-bg-subtle px-2 py-0.5 text-xs font-medium text-text-muted';
+    case 'notConfigured':
+      return 'rounded-full border border-warning/30 bg-warning-subtle px-2 py-0.5 text-xs font-medium text-warning';
+    default:
+      return 'rounded-full border border-warning/30 bg-warning-subtle px-2 py-0.5 text-xs font-medium text-warning';
+  }
 }
 
 function GitHubRecoveryTargetPanel({

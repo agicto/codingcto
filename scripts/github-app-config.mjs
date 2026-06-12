@@ -12,7 +12,7 @@ const keyPath = resolve(root, 'api/.local/github-app.private-key.pem');
 
 function usage() {
   console.log(`Usage:
-  node scripts/github-app-config.mjs manifest --owner <user-or-org> [--name "CodingCTO Local"]
+  node scripts/github-app-config.mjs manifest --owner <user-or-org> [--name "CodingCTO Local"] [--web-url <url>] [--api-url <url>]
   node scripts/github-app-config.mjs convert --code <manifest-code>
   node scripts/github-app-config.mjs existing --app-id <id> --private-key-path <path> --slug <app-slug> [--webhook-secret <secret>]
 
@@ -75,6 +75,8 @@ function requireValue(args, key) {
 function createManifest(args) {
   const owner = requireValue(args, 'owner');
   const name = args.name || 'CodingCTO Local';
+  const webURL = String(args['web-url'] || 'http://localhost:2020').replace(/\/+$/, '');
+  const apiURL = String(args['api-url'] || 'http://localhost:2010').replace(/\/+$/, '');
   const action =
     owner === 'user'
       ? 'https://github.com/settings/apps/new'
@@ -86,17 +88,17 @@ function createManifest(args) {
     }
   }
   const redirectQuery = redirectParams.toString();
-  const redirectURL = `http://localhost:2020/console/settings/github-app-manifest${redirectQuery ? `?${redirectQuery}` : ''}`;
+  const redirectURL = `${webURL}/console/settings/github-app-manifest${redirectQuery ? `?${redirectQuery}` : ''}`;
   const manifest = {
     name,
-    url: 'http://localhost:2020',
+    url: webURL,
     hook_attributes: {
-      url: 'http://localhost:2010/v1/github/webhook',
+      url: `${apiURL}/v1/github/webhook`,
       active: false,
     },
     redirect_url: redirectURL,
-    callback_urls: ['http://localhost:2020/console/settings'],
-    setup_url: 'http://localhost:2020/console/settings',
+    callback_urls: [`${webURL}/console/settings`],
+    setup_url: `${webURL}/console/settings`,
     description: 'Local CodingCTO GitHub integration for repository analysis and pull request workflows.',
     public: false,
     default_permissions: {

@@ -240,6 +240,26 @@ export function useBindProjectRepository(projectId: number) {
   });
 }
 
+export function useBindAnyProjectRepository() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      projectId,
+      payload,
+    }: {
+      projectId: number;
+      payload: BindRepositoryPayload;
+    }) => projectService.bindRepository(projectId, payload, silentQueryConfig),
+    meta: silentQueryMeta,
+    onSuccess: (_response, { projectId }) => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.runtimeBindings(projectId) });
+    },
+  });
+}
+
 export function useUnbindProjectRepository(projectId: number) {
   const queryClient = useQueryClient();
 

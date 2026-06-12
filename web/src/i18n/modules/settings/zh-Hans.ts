@@ -35,6 +35,50 @@ const messages = {
     liveOnly: '仅显示真实功能',
     panel: {
       intro: '安装 GitHub App，同步可访问仓库，再把一个或多个仓库绑定到项目，后续 CodingCTO 提示词会依赖这些仓库上下文。',
+      connectionPage: {
+        title: 'GitHub',
+        description: '连接一次 GitHub，选择允许 CodingCTO 访问的账号和仓库。项目只从这些已授权仓库中选择主仓库。',
+        status: {
+          connected: '已连接',
+          notConnected: '未连接',
+          notConfigured: '需要配置',
+          checking: '检查中',
+          disabled: '已停用',
+        },
+        actions: {
+          connect: '连接 GitHub',
+          configure: '配置 GitHub App',
+          manageConnection: '管理连接',
+          refresh: '刷新',
+          sync: '同步',
+          manageRepositories: '管理仓库',
+        },
+        notConfiguredMessage: '本地还没有配置 GitHub App。请在高级设置里创建或接入一个 GitHub App，然后重启 Web/API。',
+        metrics: {
+          owners: '已连接账号',
+          repositories: '已授权仓库',
+          enabled: '状态',
+        },
+        accounts: {
+          title: 'GitHub 账号',
+          description: '这些账号或组织已经授权给当前工作区。',
+          loading: '正在检查 GitHub 连接...',
+          empty: '还没有连接 GitHub。连接后，你可以从授权账号里选择仓库。',
+          repoCount: '{count} 个仓库',
+          lastSynced: '上次同步',
+        },
+        repositories: {
+          title: '可用仓库',
+          description: '这些仓库可以被项目选择为主仓库或上下文仓库。',
+          loading: '正在加载仓库...',
+          empty: '还没有同步到仓库。先连接 GitHub 并选择可访问仓库。',
+        },
+        advanced: {
+          title: '高级设置',
+          description: '仅在排查权限、同步或本地 GitHub App 配置时使用。',
+          preferences: '交付偏好',
+        },
+      },
       enable: {
         title: '启用 GitHub 功能',
         description: '关闭后会隐藏 GitHub 入口，并停止创建新的 GitHub 副作用；已有记录会保留。',

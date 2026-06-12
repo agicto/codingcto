@@ -308,10 +308,10 @@ export function projectOverviewDecision(context?: ProjectContextDTO): ProjectOve
   if (!readiness.hasPrimaryRepository) {
     return {
       step: 'bind_repository',
-      title: 'Bind a primary repository',
+      title: 'Select a primary repository',
       description:
         'CodingCTO needs one writable primary repository before it can generate or execute a plan.',
-      actionLabel: 'Bind repository',
+      actionLabel: 'Select repository',
       actionHref: '#repository-binding',
       tone: 'warning',
     };

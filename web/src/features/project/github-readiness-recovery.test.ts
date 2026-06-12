@@ -7,7 +7,7 @@ import {
 } from '@/features/project/github-readiness-recovery';
 
 describe('githubReadinessRecoveryActions', () => {
-  it('routes installation and token failures to GitHub settings', () => {
+  it('routes installation and token failures to the GitHub connection', () => {
     const actions = githubReadinessRecoveryActions([
       { key: 'installation' },
       { key: 'installation_token' },
@@ -16,7 +16,7 @@ describe('githubReadinessRecoveryActions', () => {
     expect(actions).toEqual([
       expect.objectContaining({
         id: 'github-settings',
-        label: '去 GitHub 设置',
+        label: '去 GitHub 连接',
         href: '/console/settings?tab=github',
       }),
     ]);
@@ -41,7 +41,7 @@ describe('githubReadinessRecoveryActions', () => {
     );
   });
 
-  it('routes permission failures to GitHub settings', () => {
+  it('routes permission failures to the GitHub connection', () => {
     const actions = githubReadinessRecoveryActions([{ key: 'permission_pull_requests' }]);
 
     expect(actions.map(action => action.id)).toEqual(['github-settings']);
@@ -76,7 +76,7 @@ describe('githubReadinessRecoveryActions', () => {
     expect(githubReadinessRecoveryActions([{ key: 'custom_warning' }])).toEqual([]);
   });
 
-  it('maps readiness checks to GitHub setup checklist steps', () => {
+  it('maps readiness checks to GitHub recovery steps', () => {
     const diagnostics = githubReadinessRecoveryDiagnostics([
       { key: 'settings' },
       { key: 'installation' },

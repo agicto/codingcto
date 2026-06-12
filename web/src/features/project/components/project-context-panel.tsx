@@ -11,6 +11,15 @@ import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -801,27 +810,35 @@ export function ProjectRepositoryBindPanel({
   projectId,
   workspaceId,
   boundRepositoryIds = [],
+  variant = 'card',
 }: {
   id?: string;
   projectId: number;
   workspaceId: string;
   boundRepositoryIds?: string[];
+  variant?: 'card' | 'button';
 }) {
   const t = useT('dashboard.projectDelivery.bindPanel');
+  const commonT = useT('common');
   const bindRepository = useBindProjectRepository(projectId);
   const repositoriesQuery = useGitHubRepositories({ workspace_id: workspaceId });
   const repositories = repositoriesQuery.data?.repositories ?? [];
   const availableRepositories = repositories.filter(
     repository => !boundRepositoryIds.includes(repository.repository_id)
   );
+  const hasAuthorizedRepositories = repositories.length > 0;
   const allConnectedRepositoriesBound =
     repositories.length > 0 && availableRepositories.length === 0;
+  const boundRepositoryIdSet = new Set(boundRepositoryIds);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [repositoryId, setRepositoryId] = useState('');
   const [role, setRole] = useState('primary');
   const [message, setMessage] = useState('');
+  const selectedRepository = availableRepositories.find(
+    repository => repository.repository_id === repositoryId
+  );
 
-  async function bindRepositoryToProject(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function bindRepositoryToProject() {
     const nextRepositoryId = repositoryId.trim();
     if (!nextRepositoryId) {
       setMessage(t('messages.repositoryRequired'));
@@ -835,6 +852,7 @@ export function ProjectRepositoryBindPanel({
       });
       setRepositoryId('');
       setRole('primary');
+      setDialogOpen(false);
       setMessage(
         t('messages.bound', {
           role: t(`roles.${response.repository.role}`),
@@ -846,67 +864,57 @@ export function ProjectRepositoryBindPanel({
     }
   }
 
-  return (
-    <Card id={id} className="scroll-mt-20">
-      <CardHeader>
-        <CardTitle className="text-base">{t('title')}</CardTitle>
-        <CardDescription>{t('description')}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form
-          className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]"
-          onSubmit={bindRepositoryToProject}
-        >
+  const bindDialog = (
+    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <DialogContent size="lg" className="gap-0 p-0">
+        <DialogHeader className="border-b border-border-subtle px-6 py-5">
+          <DialogTitle>{t('submit')}</DialogTitle>
+          <DialogDescription>{t('description')}</DialogDescription>
+        </DialogHeader>
+        <DialogBody className="space-y-4 py-5">
           <div className="space-y-2">
             <Label htmlFor="project-repository-id">{t('repositoryId')}</Label>
-            {repositories.length > 0 ? (
-              <Select
-                value={repositoryId}
-                onValueChange={setRepositoryId}
-                disabled={allConnectedRepositoriesBound}
-              >
-                <SelectTrigger id="project-repository-id">
-                  <SelectValue
-                    placeholder={
-                      allConnectedRepositoriesBound
-                        ? t('allRepositoriesBound')
-                        : t('selectRepository')
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableRepositories.map(repository => (
-                    <SelectItem key={repository.repository_id} value={repository.repository_id}>
-                      {repository.github_owner}/{repository.github_repo} (
-                      {repository.default_branch})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <Input
-                id="project-repository-id"
-                value={repositoryId}
-                onChange={event => setRepositoryId(event.target.value)}
-                placeholder="github_multica_ai__multica"
-              />
-            )}
-            {repositoriesQuery.isFetching && (
-              <p className="text-xs leading-5 text-text-muted">{t('loadingRepositories')}</p>
-            )}
-            {!repositoriesQuery.isFetching && repositories.length === 0 && (
-              <p className="text-xs leading-5 text-text-muted">
-                {t('emptyRepositories')}{' '}
-                <Link href="/console/settings?tab=github" className="text-primary hover:underline">
-                  {t('connectRepository')}
-                </Link>
-              </p>
-            )}
-            {!repositoriesQuery.isFetching &&
-              repositories.length > 0 &&
-              availableRepositories.length === 0 && (
-                <p className="text-xs leading-5 text-text-muted">{t('allRepositoriesBound')}</p>
-              )}
+            <div
+              id="project-repository-id"
+              className="max-h-72 space-y-2 overflow-y-auto rounded-[4px] border border-border-subtle bg-bg-subtle p-2"
+            >
+              {repositories.map(repository => {
+                const isBound = boundRepositoryIdSet.has(repository.repository_id);
+                const isSelected = repository.repository_id === repositoryId;
+                return (
+                  <button
+                    key={repository.repository_id}
+                    type="button"
+                    disabled={isBound}
+                    onClick={() => setRepositoryId(repository.repository_id)}
+                    className={`flex w-full items-center justify-between gap-3 rounded-[4px] border px-3 py-2 text-left transition ${
+                      isSelected
+                        ? 'border-primary bg-bg-surface'
+                        : 'border-border-subtle bg-bg-surface hover:border-border-strong'
+                    } ${isBound ? 'cursor-not-allowed opacity-60' : ''}`}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-text-main">
+                        {repository.github_owner}/{repository.github_repo}
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-text-muted">
+                        {repository.repository_id} · {repository.default_branch}
+                      </span>
+                    </span>
+                    {isBound ? (
+                      <Badge variant="outline" className="shrink-0">
+                        {t('allRepositoriesBound')}
+                      </Badge>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+            {selectedRepository ? (
+              <div className="rounded-[4px] border border-border-subtle bg-bg-subtle px-3 py-2 text-xs leading-5 text-text-muted">
+                {selectedRepository.repository_id} · {selectedRepository.default_branch}
+              </div>
+            ) : null}
           </div>
           <div className="space-y-2">
             <Label htmlFor="project-repository-role">{t('role')}</Label>
@@ -923,17 +931,94 @@ export function ProjectRepositoryBindPanel({
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-end">
-            <Button
-              type="submit"
-              disabled={
-                bindRepository.isPending || allConnectedRepositoriesBound || !repositoryId.trim()
-              }
-            >
-              {bindRepository.isPending ? t('binding') : t('submit')}
-            </Button>
+        </DialogBody>
+        <DialogFooter className="border-t border-border-subtle px-6 py-4">
+          <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+            {commonT('cancel')}
+          </Button>
+          <Button
+            type="button"
+            disabled={
+              bindRepository.isPending ||
+              !hasAuthorizedRepositories ||
+              allConnectedRepositoriesBound ||
+              !repositoryId.trim()
+            }
+            onClick={bindRepositoryToProject}
+          >
+            {bindRepository.isPending ? t('binding') : t('submit')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  if (variant === 'button') {
+    return (
+      <div id={id} className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          disabled={repositoriesQuery.isFetching || !hasAuthorizedRepositories}
+          onClick={() => setDialogOpen(true)}
+        >
+          {t('submit')}
+        </Button>
+        {!repositoriesQuery.isFetching && !hasAuthorizedRepositories ? (
+          <Button asChild type="button" variant="outline" size="sm">
+            <Link href="/console/settings?tab=github">{t('connectRepository')}</Link>
+          </Button>
+        ) : null}
+        {bindDialog}
+      </div>
+    );
+  }
+
+  return (
+    <Card id={id} className="scroll-mt-20">
+      <CardHeader>
+        <CardTitle className="text-base">{t('title')}</CardTitle>
+        <CardDescription>{t('description')}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-col gap-3 rounded-[4px] border border-border-subtle bg-bg-subtle p-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="text-sm font-medium text-text-main">
+              {hasAuthorizedRepositories
+                ? t('selectRepository')
+                : t('emptyRepositories')}
+            </div>
+            <p className="mt-1 text-xs leading-5 text-text-muted">
+              {repositoriesQuery.isFetching
+                ? t('loadingRepositories')
+                : allConnectedRepositoriesBound
+                  ? t('allRepositoriesBound')
+                  : t('description')}
+            </p>
           </div>
-        </form>
+          <div className="flex flex-wrap gap-2">
+            {!repositoriesQuery.isFetching && !hasAuthorizedRepositories ? (
+              <>
+                <Button asChild type="button" variant="outline" size="sm">
+                  <Link href="/console/settings?tab=github">{t('connectRepository')}</Link>
+                </Button>
+                <Button asChild type="button" variant="ghost" size="sm">
+                  <Link href="/console/settings?tab=repositories">{t('syncRepositories')}</Link>
+                </Button>
+              </>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                disabled={repositoriesQuery.isFetching || !hasAuthorizedRepositories}
+                onClick={() => setDialogOpen(true)}
+              >
+                {t('submit')}
+              </Button>
+            )}
+          </div>
+        </div>
+        {bindDialog}
         {message && (
           <div className="mt-3 rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 text-sm leading-5 text-text-muted">
             {message}

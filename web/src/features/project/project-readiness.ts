@@ -16,17 +16,17 @@ export function projectReadinessDecision(
   switch (readiness?.next_step) {
     case 'bind_repository':
       return {
-        title: 'Bind a primary repository',
+        title: 'Select a primary repository',
         description: readiness.summary,
-        actionLabel: 'Bind repository',
+        actionLabel: 'Select repository',
         actionHref: '#repository-binding',
         tone: 'warning',
       };
     case 'configure_github':
       return {
-        title: 'Finish GitHub setup',
+        title: 'Connect GitHub',
         description: readiness.summary,
-        actionLabel: 'Review GitHub setup',
+        actionLabel: 'Open GitHub connection',
         actionHref: '#github-setup',
         tone: 'warning',
       };

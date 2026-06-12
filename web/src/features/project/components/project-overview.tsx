@@ -3,715 +3,324 @@
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import { useState } from 'react';
-import { useQueryClient } from '@tanstack/react-query';
-import { ArrowRight, FileText, Github, RefreshCw } from 'lucide-react';
+import { GitBranch, Github } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Input } from '@/components/ui/input';
-import { env } from '@/config/env';
-import { ApiError } from '@/http/request';
-import { ProjectRepositoryBindPanel } from '@/features/project/components/project-context-panel';
 import {
-  projectReadinessBadgeClass,
-  projectReadinessDecision,
-} from '@/features/project/project-readiness';
-import {
-  githubReadinessRecoveryActions,
-  githubReadinessRecoveryDiagnostics,
-  githubReadinessRecoveryTargetFromRepositoryId,
-} from '@/features/project/github-readiness-recovery';
-import {
-  githubRepositoryIdentitySummary,
-  type GitHubRepositoryIdentitySummary,
-} from '@/features/project/github-repository-identity';
-import {
-  projectKeys,
+  useBindProjectRepository,
   useProjectContext,
-  useProjectReadiness,
 } from '@/features/project/hooks/use-projects';
-import { projectContextHref, projectOverviewHref } from '@/features/project/project-utils';
-import {
-  useGitHubInstallationStatus,
-  useGitHubSettings,
-  useGitHubRepositoryReadiness,
-  useSyncGitHubInstallationByID,
-  useReindexRepoArchitecture,
-} from '@/features/specforge/hooks/use-specforge';
 import type {
   ProjectContextDTO,
-  ProjectReadinessDTO,
   ProjectRepositoryContextDTO,
 } from '@/features/project/services/project-service';
+import { useGitHubRepositories } from '@/features/specforge/hooks/use-specforge';
+import type { GitHubRepositoryDTO } from '@/features/specforge/services/specforge-service';
+import { useT } from '@/i18n';
 
 export function ProjectOverviewPage() {
+  const t = useT('dashboard.projectOverview');
   const params = useParams<{ projectId: string }>();
   const projectId = Number(params.projectId);
   const validProjectId = Number.isFinite(projectId) ? projectId : 0;
   const contextQuery = useProjectContext(validProjectId);
-  const readinessQuery = useProjectReadiness(validProjectId);
   const context = contextQuery.data?.context;
 
   if (!validProjectId) {
     return (
       <ProjectOverviewState
-        title="Invalid project"
-        description="Open a valid project from the project list."
-        actionHref="/console/projects"
-        actionLabel="Back to projects"
+        title={t('states.invalidTitle')}
+        description={t('states.invalidDescription')}
       />
     );
   }
 
   if (!context && contextQuery.isFetching) {
-    return <ProjectOverviewState title="Loading project" description="Reading project." />;
+    return (
+      <ProjectOverviewState
+        title={t('states.loadingTitle')}
+        description={t('states.loadingDescription')}
+      />
+    );
   }
 
   if (contextQuery.isError || !context) {
     return (
       <ProjectOverviewState
-        title="Project unavailable"
-        description="The project could not be loaded. Confirm backend auth and try again."
-        actionHref="/console/projects"
-        actionLabel="Back to projects"
+        title={t('states.unavailableTitle')}
+        description={t('states.unavailableDescription')}
       />
     );
   }
 
-  return (
-    <ProjectRepositoryBindingPage context={context} readiness={readinessQuery.data?.readiness} />
-  );
+  return <ProjectRepositoryBindingPage context={context} />;
 }
 
-function ProjectRepositoryBindingPage({
-  context,
-  readiness,
-}: {
-  context: ProjectContextDTO;
-  readiness?: ProjectReadinessDTO;
-}) {
+function ProjectRepositoryBindingPage({ context }: { context: ProjectContextDTO }) {
+  const t = useT('dashboard.projectOverview');
+  const bindRepository = useBindProjectRepository(context.project.id);
+  const repositoriesQuery = useGitHubRepositories({ workspace_id: context.project.workspace_id });
+  const authorizedRepositories = repositoriesQuery.data?.repositories ?? [];
   const repositories = context.repository_contexts ?? [];
+  const boundRepositoriesById = new Map(
+    repositories.map(item => [item.repository.repository_id, item])
+  );
   const primaryRepository = repositories.find(item => item.repository.role === 'primary');
-  const boundRepositoryIds = repositories.map(item => item.repository.repository_id);
-  const readinessDecision = projectReadinessDecision(context.project.id, readiness);
+  const allAuthorizedRepositoriesBound =
+    authorizedRepositories.length > 0 &&
+    authorizedRepositories.every(repository => boundRepositoriesById.has(repository.repository_id));
+  const authorizeMoreHref = `/console/settings?tab=github&return_to=${encodeURIComponent(
+    `/console/projects/${context.project.id}`
+  )}`;
+  const [message, setMessage] = useState('');
+
+  async function bind(repositoryId: string, role: 'primary' | 'dependency') {
+    setMessage('');
+    try {
+      await bindRepository.mutateAsync({ repository_id: repositoryId, role });
+      setMessage(repositoryCopy(t, 'boundMessage'));
+    } catch {
+      setMessage(repositoryCopy(t, 'bindFailed'));
+    }
+  }
 
   return (
-    <main className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-6 md:px-8">
+    <main className="mx-auto flex w-full max-w-3xl flex-col gap-5 px-4 py-7 md:px-8 md:py-10">
       <header className="border-b border-border-subtle pb-5">
         <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline">Project</Badge>
+          <Badge variant="outline" className="rounded-[4px] px-2 py-0.5 text-[11px]">
+            {t('badges.project')}
+          </Badge>
           <Badge
             variant="outline"
             className={
-              readiness
-                ? projectReadinessBadgeClass(readiness.readiness_status)
-                : primaryRepository
-                  ? 'border-success/30 text-success'
-                  : 'border-warning/30 text-warning'
+              primaryRepository
+                ? 'rounded-[4px] border-success/30 px-2 py-0.5 text-[11px] text-success'
+                : 'rounded-[4px] border-warning/30 px-2 py-0.5 text-[11px] text-warning'
             }
           >
-            {readiness
-              ? readiness.readiness_status === 'ready'
-                ? 'Execution ready'
-                : readiness.readiness_status === 'blocked'
-                  ? 'Setup blocked'
-                  : 'Needs attention'
-              : primaryRepository
-                ? 'GitHub bound'
-                : 'GitHub required'}
+            {primaryRepository ? t('status.connected') : t('status.notReady')}
           </Badge>
         </div>
-        <h1 className="mt-3 text-2xl font-semibold tracking-tight text-text-main">
+        <h1 className="mt-4 text-2xl font-semibold tracking-tight text-text-main">
           {context.project.name}
         </h1>
-        {context.project.description ? (
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-text-muted">
-            {context.project.description}
-          </p>
-        ) : null}
+        <p className="mt-2 max-w-2xl text-sm leading-6 text-text-muted">
+          {context.project.description || t('brief.empty')}
+        </p>
       </header>
 
-      {readiness ? (
-        <section className="rounded-md border border-border-subtle bg-bg-surface p-4">
-          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-            <div>
-              <div className="flex flex-wrap items-center gap-2">
-                <Badge
-                  variant="outline"
-                  className={projectReadinessBadgeClass(readiness.readiness_status)}
-                >
-                  {readiness.readiness_status === 'ready'
-                    ? 'Ready'
-                    : readiness.readiness_status === 'blocked'
-                      ? 'Blocked'
-                      : 'Attention'}
-                </Badge>
-                <span className="text-sm font-medium text-text-main">
-                  {readinessDecision.title}
-                </span>
-              </div>
-              <p className="mt-2 text-sm leading-6 text-text-muted">{readiness.summary}</p>
-              <p className="mt-1 text-sm leading-6 text-text-muted">{readiness.next_action}</p>
-            </div>
-            <Button
-              asChild
-              variant={readiness.readiness_status === 'ready' ? 'default' : 'outline'}
-            >
-              <Link href={readinessDecision.actionHref}>
-                {readinessDecision.actionLabel}
-                <ArrowRight className="ml-1.5 h-4 w-4" />
-              </Link>
-            </Button>
-          </div>
-          <div className="mt-4 grid gap-2 sm:grid-cols-2">
-            {(readiness.checks ?? []).map(check => (
-              <div key={check.key} className="rounded-md border border-border-subtle px-3 py-3">
-                <div className="flex items-center justify-between gap-3">
-                  <div className="text-sm font-medium text-text-main">{check.label}</div>
-                  <Badge variant="outline" className={projectReadinessBadgeClass(check.status)}>
-                    {check.status === 'ready'
-                      ? 'Ready'
-                      : check.status === 'blocked'
-                        ? 'Blocked'
-                        : 'Attention'}
-                  </Badge>
-                </div>
-                {check.detail ? (
-                  <div className="mt-1 text-xs leading-5 text-text-muted">{check.detail}</div>
-                ) : null}
-              </div>
-            ))}
-          </div>
-        </section>
-      ) : null}
-
-      <ProjectGitHubSetupPanel
-        projectId={context.project.id}
-        workspaceId={context.project.workspace_id}
-      />
-
-      <section className="rounded-md border border-border-subtle bg-bg-surface p-4">
+      <section
+        id="repository-binding"
+        className="scroll-mt-20 rounded-[4px] border border-border-subtle bg-bg-surface p-5"
+      >
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-          <div>
-            <h2 className="flex items-center gap-2 text-base font-medium text-text-main">
-              <Github className="h-4 w-4 text-primary" />
-              GitHub repositories
-            </h2>
-            <p className="mt-1 text-sm leading-6 text-text-muted">
-              Bind one primary repository first. Additional repositories can be dependency, docs, or
-              infra context.
+          <div className="min-w-0">
+            <div className="flex items-center gap-2">
+              <Github className="h-4 w-4 text-text-muted" />
+              <h2 className="text-base font-medium text-text-main">{t('repositories.title')}</h2>
+            </div>
+            <p className="mt-1 max-w-2xl text-sm leading-6 text-text-muted">
+              {t('repositories.description')}
             </p>
           </div>
-          {primaryRepository ? (
-            <Button asChild variant="outline">
-              <Link href={projectContextHref(context.project.id)}>
-                Review context
-                <ArrowRight className="ml-1.5 h-4 w-4" />
-              </Link>
-            </Button>
-          ) : null}
+          <Button asChild variant="outline" size="sm" className="shrink-0">
+            <Link href={authorizeMoreHref}>{repositoryCopy(t, 'authorizeMore')}</Link>
+          </Button>
         </div>
 
-        {repositories.length > 0 ? (
-          <div className="mt-4 divide-y divide-border-subtle rounded-md border border-border-subtle">
-            {repositories.map(item => (
-              <ProjectRepositoryMaterialRow
-                key={item.repository.repository_id}
-                projectId={context.project.id}
-                item={item}
-              />
-            ))}
+        <div className="mt-5">
+          {repositoriesQuery.isFetching ? (
+            <div className="rounded-[4px] border border-border-subtle bg-bg-subtle/40 p-4 text-sm text-text-muted">
+              {repositoryCopy(t, 'loading')}
+            </div>
+          ) : authorizedRepositories.length > 0 ? (
+            <div className="divide-y divide-border-subtle rounded-[4px] border border-border-subtle">
+              {authorizedRepositories.map(repository => (
+                <AuthorizedRepositoryRow
+                  key={repository.repository_id}
+                  repository={repository}
+                  boundRepository={boundRepositoriesById.get(repository.repository_id)}
+                  isPending={bindRepository.isPending}
+                  onBind={bind}
+                />
+              ))}
+            </div>
+          ) : (
+            <div className="rounded-[4px] border border-dashed border-border-subtle bg-bg-subtle/40 p-4">
+              <div className="text-sm font-medium text-text-main">
+                {repositoryCopy(t, 'noAuthorizedTitle')}
+              </div>
+              <p className="mt-1 text-sm leading-6 text-text-muted">
+                {repositoryCopy(t, 'noAuthorizedDescription')}
+              </p>
+              <Button asChild size="sm" className="mt-3">
+                <Link href={authorizeMoreHref}>{repositoryCopy(t, 'authorizeMore')}</Link>
+              </Button>
+            </div>
+          )}
+        </div>
+
+        {allAuthorizedRepositoriesBound ? (
+          <div className="mt-4 rounded-[4px] border border-border-subtle bg-bg-subtle/60 px-3 py-2 text-sm leading-6 text-text-muted">
+            {repositoryCopy(t, 'allAuthorizedBoundHint')}
+          </div>
+        ) : null}
+
+        {message ? (
+          <div className="mt-4 rounded-[4px] border border-border-subtle bg-bg-subtle px-3 py-2 text-sm leading-6 text-text-muted">
+            {message}
           </div>
         ) : null}
       </section>
-
-      <ProjectRepositoryBindPanel
-        id="repository-binding"
-        projectId={context.project.id}
-        workspaceId={context.project.workspace_id}
-        boundRepositoryIds={boundRepositoryIds}
-      />
-
-      {repositories.length > 0 ? (
-        <section className="rounded-md border border-border-subtle bg-bg-surface p-4">
-          <h2 className="flex items-center gap-2 text-base font-medium text-text-main">
-            <FileText className="h-4 w-4 text-primary" />
-            Generated materials
-          </h2>
-          <p className="mt-1 text-sm leading-6 text-text-muted">
-            Generated from repository tree and key files. No clone or sandbox is required in this
-            first version.
-          </p>
-          <div className="mt-4 grid gap-2 text-sm text-text-muted sm:grid-cols-3">
-            <MaterialMetric label="Bound repos" value={String(repositories.length)} />
-            <MaterialMetric
-              label="Analyzed repos"
-              value={String(
-                repositories.filter(item => item.architecture_snapshot && !item.architecture_stale)
-                  .length
-              )}
-            />
-            <MaterialMetric
-              label="Profiles"
-              value={String(repositories.filter(item => item.profile).length)}
-            />
-          </div>
-        </section>
-      ) : null}
     </main>
   );
 }
 
-function ProjectGitHubSetupPanel({
-  projectId,
-  workspaceId,
+function AuthorizedRepositoryRow({
+  repository,
+  boundRepository,
+  isPending,
+  onBind,
 }: {
-  projectId: number;
-  workspaceId: string;
+  repository: GitHubRepositoryDTO;
+  boundRepository?: ProjectRepositoryContextDTO;
+  isPending: boolean;
+  onBind: (repositoryId: string, role: 'primary' | 'dependency') => void;
 }) {
-  const queryClient = useQueryClient();
-  const [installationId, setInstallationId] = useState('');
-  const [message, setMessage] = useState('');
-  const installationStatusQuery = useGitHubInstallationStatus(workspaceId);
-  const githubSettingsQuery = useGitHubSettings(workspaceId);
-  const syncInstallation = useSyncGitHubInstallationByID();
-  const githubEnabled = githubSettingsQuery.data?.enabled ?? true;
-  const status = installationStatusQuery.data;
-  const installURL = buildGitHubInstallURL(workspaceId);
-
-  async function handleSync(nextInstallationId?: number) {
-    const parsedInstallationId = nextInstallationId ?? Number.parseInt(installationId.trim(), 10);
-    if (!Number.isFinite(parsedInstallationId) || parsedInstallationId <= 0) {
-      setMessage('Enter a valid GitHub App installation ID before syncing.');
-      return;
-    }
-    setMessage('');
-    try {
-      await syncInstallation.mutateAsync({
-        installationId: parsedInstallationId,
-        workspaceId,
-      });
-      await queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
-      await queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
-      setInstallationId('');
-      setMessage('GitHub installation synced. Bind the primary repository below if needed.');
-    } catch (error) {
-      setMessage(
-        error instanceof ApiError
-          ? `Sync failed: ${error.message}`
-          : 'Sync failed. Check GitHub App configuration and try again.'
-      );
-    }
-  }
-
-  return (
-    <section
-      id="github-setup"
-      className="rounded-md border border-border-subtle bg-bg-surface p-4 scroll-mt-24"
-    >
-      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
-        <div>
-          <h2 className="flex items-center gap-2 text-base font-medium text-text-main">
-            <Github className="h-4 w-4 text-primary" />
-            GitHub setup
-          </h2>
-          <p className="mt-1 text-sm leading-6 text-text-muted">
-            Install the GitHub App, sync its installation, then bind one synced repository as the
-            project primary repository.
-          </p>
-        </div>
-        <div className="flex flex-wrap gap-2">
-          <Button
-            type="button"
-            variant="outline"
-            disabled={installationStatusQuery.isFetching}
-            onClick={() => installationStatusQuery.refetch()}
-          >
-            Refresh status
-          </Button>
-          {installURL ? (
-            <Button asChild>
-              <Link href={installURL} target="_blank" rel="noreferrer">
-                Install GitHub App
-              </Link>
-            </Button>
-          ) : (
-            <Button asChild variant="outline">
-              <Link href="/console/settings?tab=github">Open GitHub settings</Link>
-            </Button>
-          )}
-        </div>
-      </div>
-
-      {!githubEnabled ? (
-        <Alert className="mt-4 border-warning/30 bg-warning-subtle">
-          <AlertTitle>GitHub is disabled</AlertTitle>
-          <AlertDescription className="mt-2">
-            Enable GitHub in workspace settings before installing or syncing repositories.
-          </AlertDescription>
-        </Alert>
-      ) : null}
-
-      <div className="mt-4 grid gap-3 md:grid-cols-3">
-        <MaterialMetric
-          label="Synced installations"
-          value={String(status?.installations.length ?? 0)}
-        />
-        <MaterialMetric label="Synced repositories" value={String(status?.repository_count ?? 0)} />
-        <MaterialMetric label="Workspace" value={workspaceId || 'Unknown'} />
-      </div>
-
-      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
-        <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
-          <div className="text-sm font-medium text-text-main">Synced installations</div>
-          {installationStatusQuery.isLoading ? (
-            <div className="mt-2 text-sm text-text-muted">Checking GitHub installations.</div>
-          ) : status?.installations.length ? (
-            <div className="mt-3 space-y-2">
-              {status.installations.map(installation => (
-                <div
-                  key={installation.id}
-                  className="flex flex-col gap-2 rounded-md border border-border-subtle bg-bg-surface px-3 py-2 md:flex-row md:items-center md:justify-between"
-                >
-                  <div className="min-w-0">
-                    <div className="text-sm font-medium text-text-main">
-                      {installation.account_login}
-                    </div>
-                    <div className="mt-1 text-xs leading-5 text-text-muted">
-                      Installation ID {installation.installation_id} ·{' '}
-                      {installation.repository_count} synced repos · updated{' '}
-                      {new Date(installation.updated_at).toLocaleString()}
-                    </div>
-                  </div>
-                  <Button
-                    type="button"
-                    variant="outline"
-                    size="sm"
-                    disabled={syncInstallation.isPending || !githubEnabled}
-                    onClick={() => handleSync(installation.installation_id)}
-                  >
-                    Sync
-                  </Button>
-                </div>
-              ))}
-            </div>
-          ) : (
-            <div className="mt-2 text-sm text-text-muted">
-              No GitHub App installation has been synced for this workspace yet.
-            </div>
-          )}
-        </div>
-
-        <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
-          <div className="text-sm font-medium text-text-main">Sync by installation ID</div>
-          <p className="mt-1 text-xs leading-5 text-text-muted">
-            After installing the GitHub App, paste the installation ID here to sync accessible
-            repositories into CodingCTO.
-          </p>
-          <div className="mt-3 space-y-2">
-            <Input
-              inputMode="numeric"
-              placeholder="12345678"
-              value={installationId}
-              disabled={syncInstallation.isPending || !githubEnabled}
-              onChange={event => setInstallationId(event.target.value)}
-            />
-            <Button
-              type="button"
-              className="w-full"
-              disabled={syncInstallation.isPending || !githubEnabled}
-              onClick={() => handleSync()}
-            >
-              {syncInstallation.isPending ? 'Syncing installation' : 'Sync installation'}
-            </Button>
-            <div className="text-xs leading-5 text-text-muted">
-              Installation ID is the numeric GitHub App installation identifier for this workspace.
-            </div>
-          </div>
-          {message ? <div className="mt-2 text-xs leading-5 text-text-muted">{message}</div> : null}
-        </div>
-      </div>
-    </section>
-  );
-}
-
-function ProjectRepositoryMaterialRow({
-  projectId,
-  item,
-}: {
-  projectId: number;
-  item: ProjectRepositoryContextDTO;
-}) {
-  const queryClient = useQueryClient();
-  const reindexArchitecture = useReindexRepoArchitecture(item.repository.repository_id);
-  const readinessQuery = useGitHubRepositoryReadiness(item.repository.repository_id);
-  const [message, setMessage] = useState('');
-  const analyzed = Boolean(item.architecture_snapshot && !item.architecture_stale);
-  const readiness = readinessQuery.data;
-  const readinessBlockingChecks =
-    readiness?.checks.filter(check => check.required && check.status !== 'ok') ?? [];
-  const readinessChecking = readinessQuery.isFetching && !readiness;
-  const scanBlocked = Boolean(readiness && !readiness.ready);
-  const inferredRecoveryTarget = githubReadinessRecoveryTargetFromRepositoryId(
-    item.repository.repository_id
-  );
-  const recoveryTarget =
-    readiness?.github_owner && readiness.github_repo
-      ? {
-          owner: readiness.github_owner,
-          repo: readiness.github_repo,
-          repositoryId: item.repository.repository_id,
-          returnTo: projectOverviewHref(projectId),
-        }
-      : inferredRecoveryTarget
-        ? { ...inferredRecoveryTarget, returnTo: projectOverviewHref(projectId) }
-        : undefined;
-  const recoveryActions = githubReadinessRecoveryActions(readinessBlockingChecks, recoveryTarget);
-  const recoveryDiagnostics = githubReadinessRecoveryDiagnostics(readinessBlockingChecks);
-  const identitySummary = githubRepositoryIdentitySummary({
-    repositoryId: item.repository.repository_id,
-    githubOwner: readiness?.github_owner,
-    githubRepo: readiness?.github_repo,
-  });
-
-  async function handleScan() {
-    if (scanBlocked || readinessChecking) {
-      setMessage(readinessProblemSummary(readinessBlockingChecks));
-      return;
-    }
-    setMessage('');
-    try {
-      await reindexArchitecture.mutateAsync({
-        default_branch: item.profile?.default_branch,
-      });
-      await queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
-      await queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
-      setMessage('Materials generated from repository tree.');
-    } catch (error) {
-      setMessage(
-        error instanceof ApiError
-          ? `Scan failed: ${error.message}`
-          : 'Scan failed. Check GitHub setup and try again.'
-      );
-    }
-  }
-  const scanDisabled = reindexArchitecture.isPending || readinessChecking || scanBlocked;
-  const scanLabel = reindexArchitecture.isPending
-    ? 'Generating'
-    : readinessChecking
-      ? 'Checking GitHub'
-      : scanBlocked
-        ? 'GitHub setup required'
-        : analyzed
-          ? 'Regenerate materials'
-          : 'Generate materials';
+  const t = useT('dashboard.projectOverview');
+  const isBound = Boolean(boundRepository);
+  const isPrimary = boundRepository?.repository.role === 'primary';
 
   return (
     <div className="flex flex-col gap-3 px-3 py-3 md:flex-row md:items-center md:justify-between">
-      <div className="min-w-0">
-        <div className="flex flex-wrap items-center gap-2">
+      <div className="flex min-w-0 items-center gap-2">
+        <GitBranch className="h-4 w-4 shrink-0 text-text-muted" />
+        <div className="min-w-0">
           <div className="truncate text-sm font-medium text-text-main">
-            {item.repository.repository_id}
+            {repository.github_owner}/{repository.github_repo}
           </div>
-          <Badge variant="outline">{item.repository.role}</Badge>
-          <Badge
-            variant="outline"
-            className={
-              analyzed ? 'border-success/30 text-success' : 'border-warning/30 text-warning'
-            }
-          >
-            {analyzed ? 'Materials ready' : 'Needs scan'}
-          </Badge>
-        </div>
-        <div className="mt-1 text-xs leading-5 text-text-muted">
-          {item.profile?.summary ?? 'No generated materials yet. Scan the repository first.'}
-        </div>
-        {item.profile || item.architecture_snapshot ? (
-          <div className="mt-2 flex flex-wrap gap-1.5">
-            {(item.profile?.stack ?? item.architecture_snapshot?.stack ?? [])
-              .slice(0, 5)
-              .map(value => (
-                <Badge key={value} variant="outline" className="text-[11px] text-text-muted">
-                  {value}
-                </Badge>
-              ))}
-            {(item.architecture_snapshot?.modules ?? []).slice(0, 3).map(value => (
-              <Badge key={value} variant="outline" className="text-[11px] text-text-muted">
-                {value}
-              </Badge>
-            ))}
-            {(item.profile?.test_commands ?? item.architecture_snapshot?.test_commands ?? [])
-              .slice(0, 3)
-              .map(value => (
-                <Badge key={value} variant="outline" className="text-[11px] text-text-muted">
-                  {value}
-                </Badge>
-              ))}
+          <div className="mt-0.5 truncate text-xs text-text-muted">
+            {repository.repository_id} · {repository.default_branch}
           </div>
-        ) : null}
-        {message ? <div className="mt-1 text-xs leading-5 text-text-muted">{message}</div> : null}
-        {scanBlocked ? (
-          <RepositoryMaterialRecoveryPanel
-            summary={readinessProblemSummary(readinessBlockingChecks)}
-            actions={recoveryActions}
-            diagnostics={recoveryDiagnostics}
-            identity={identitySummary}
-            isChecking={readinessQuery.isFetching}
-            onRefresh={() => readinessQuery.refetch()}
-          />
-        ) : null}
+        </div>
       </div>
-      <Button
-        type="button"
-        variant={analyzed ? 'outline' : 'default'}
-        size="sm"
-        disabled={scanDisabled}
-        onClick={handleScan}
-      >
-        {scanLabel}
-        <RefreshCw
-          className={
-            reindexArchitecture.isPending ? 'ml-1.5 h-3.5 w-3.5 animate-spin' : 'ml-1.5 h-3.5 w-3.5'
-          }
-        />
-      </Button>
-    </div>
-  );
-}
-
-function RepositoryMaterialRecoveryPanel({
-  summary,
-  actions,
-  diagnostics,
-  identity,
-  isChecking,
-  onRefresh,
-}: {
-  summary: string;
-  actions: ReturnType<typeof githubReadinessRecoveryActions>;
-  diagnostics: ReturnType<typeof githubReadinessRecoveryDiagnostics>;
-  identity: GitHubRepositoryIdentitySummary;
-  isChecking: boolean;
-  onRefresh: () => void;
-}) {
-  return (
-    <div className="mt-2 rounded-md border border-warning/30 bg-warning-subtle px-3 py-2">
-      <div className="text-xs font-medium leading-5 text-warning">GitHub setup required</div>
-      <div className="mt-1 text-xs leading-5 text-warning">{summary}</div>
-      <RepositoryIdentityDiagnostic identity={identity} />
-      {diagnostics.length > 0 ? (
-        <div className="mt-2 grid gap-2 sm:grid-cols-2">
-          {diagnostics.map(diagnostic => (
-            <div key={diagnostic.checkKey} className="rounded-md bg-bg-surface px-2.5 py-2">
-              <div className="text-xs font-medium leading-5 text-text-main">
-                {diagnostic.checkKey} - {diagnostic.setupStep}
-              </div>
-              <div className="mt-0.5 text-xs leading-5 text-text-muted">{diagnostic.detail}</div>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      {actions.length > 0 ? (
-        <div className="mt-2 grid gap-2 sm:grid-cols-2">
-          {actions.map(action => (
-            <div key={action.id} className="rounded-md bg-bg-surface px-2.5 py-2">
-              <div className="text-xs font-medium leading-5 text-text-main">{action.label}</div>
-              <div className="mt-0.5 text-xs leading-5 text-text-muted">{action.description}</div>
-              <Button asChild variant="outline" size="sm" className="mt-2 h-7 text-xs">
-                <Link href={action.href}>{action.label}</Link>
-              </Button>
-            </div>
-          ))}
-        </div>
-      ) : null}
-      <div className="mt-2 flex justify-end">
-        <Button
-          type="button"
-          variant="outline"
-          size="sm"
-          className="h-7 text-xs"
-          disabled={isChecking}
-          onClick={onRefresh}
-        >
-          {isChecking ? 'Checking' : 'Recheck GitHub'}
-        </Button>
+      <div className="flex shrink-0 flex-wrap items-center gap-2">
+        {repository.is_private ? (
+          <Badge variant="outline">{repositoryCopy(t, 'private')}</Badge>
+        ) : (
+          <Badge variant="outline">{repositoryCopy(t, 'public')}</Badge>
+        )}
+        {isBound ? (
+          <>
+            <Badge
+              variant="outline"
+              className={isPrimary ? 'border-success/30 text-success' : undefined}
+            >
+              {isPrimary
+                ? t('roles.primary')
+                : repositoryRoleLabel(boundRepository?.repository.role ?? '', t)}
+            </Badge>
+            <Badge variant="outline">{repositoryCopy(t, 'bound')}</Badge>
+          </>
+        ) : (
+          <>
+            <Button
+              type="button"
+              size="sm"
+              disabled={isPending}
+              onClick={() => onBind(repository.repository_id, 'primary')}
+            >
+              {isPending ? repositoryCopy(t, 'binding') : repositoryCopy(t, 'primaryAction')}
+            </Button>
+            <Button
+              type="button"
+              size="sm"
+              variant="outline"
+              disabled={isPending}
+              onClick={() => onBind(repository.repository_id, 'dependency')}
+            >
+              {repositoryCopy(t, 'contextAction')}
+            </Button>
+          </>
+        )}
       </div>
     </div>
   );
 }
 
-function RepositoryIdentityDiagnostic({ identity }: { identity: GitHubRepositoryIdentitySummary }) {
-  return (
-    <div className="mt-2 rounded-md bg-bg-surface px-2.5 py-2">
-      <div className="text-xs font-medium leading-5 text-text-main">{identity.headline}</div>
-      <div className="mt-0.5 text-xs leading-5 text-text-muted">{identity.detail}</div>
-    </div>
-  );
-}
-
-function readinessProblemSummary(
-  checks: Array<{ message: string; detail?: string; required: boolean; status: string }>
+function repositoryRoleLabel(
+  role: string,
+  t: ReturnType<typeof useT<'dashboard.projectOverview'>>
 ) {
-  if (checks.length === 0) {
-    return 'GitHub repository is not ready for scanning.';
+  switch (role) {
+    case 'primary':
+      return t('roles.primary');
+    case 'dependency':
+      return t('roles.dependency');
+    case 'docs':
+      return t('roles.docs');
+    case 'infra':
+      return t('roles.infra');
+    default:
+      return role;
   }
-  return checks
-    .slice(0, 2)
-    .map(check => check.detail || check.message)
-    .join(' ');
 }
 
-function MaterialMetric({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-md border border-border-subtle bg-bg-subtle px-3 py-2">
-      <div className="text-sm font-medium text-text-main">{value}</div>
-      <div className="mt-1 text-xs text-text-muted">{label}</div>
-    </div>
-  );
+function repositoryCopy(
+  t: ReturnType<typeof useT<'dashboard.projectOverview'>>,
+  key:
+    | 'authorizeMore'
+    | 'allAuthorizedBoundHint'
+    | 'loading'
+    | 'noAuthorizedTitle'
+    | 'noAuthorizedDescription'
+    | 'private'
+    | 'public'
+    | 'bound'
+    | 'binding'
+    | 'primaryAction'
+    | 'contextAction'
+    | 'boundMessage'
+    | 'bindFailed'
+) {
+  const value = t(`repositories.${key}`);
+  if (!value.startsWith('dashboard.projectOverview.repositories.')) {
+    return value;
+  }
+  return {
+    authorizeMore: '授权更多仓库',
+    allAuthorizedBoundHint:
+      '当前已授权仓库都已绑定。要添加更多仓库，请先在 GitHub App 中授权更多仓库，再回到这里绑定。',
+    loading: '正在加载已授权仓库...',
+    noAuthorizedTitle: '没有已授权仓库',
+    noAuthorizedDescription: '请先在设置中连接 GitHub，并授权至少一个仓库。',
+    private: '私有',
+    public: '公开',
+    bound: '已绑定',
+    binding: '绑定中',
+    primaryAction: '设为主仓库',
+    contextAction: '作为上下文',
+    boundMessage: '仓库已绑定到项目。',
+    bindFailed: '仓库绑定失败。请确认它属于当前工作区。',
+  }[key];
 }
 
 function ProjectOverviewState({
   title,
   description,
-  actionHref,
-  actionLabel,
 }: {
   title: string;
   description: string;
-  actionHref?: string;
-  actionLabel?: string;
 }) {
   return (
-    <div className="mx-auto w-full max-w-4xl px-4 py-10 md:px-8">
+    <div className="mx-auto w-full max-w-3xl px-4 py-10 md:px-8">
       <Alert>
         <AlertTitle>{title}</AlertTitle>
         <AlertDescription className="mt-2">{description}</AlertDescription>
       </Alert>
-      {actionHref && actionLabel ? (
-        <Button asChild variant="outline" className="mt-4">
-          <Link href={actionHref}>{actionLabel}</Link>
-        </Button>
-      ) : null}
     </div>
   );
-}
-
-function buildGitHubInstallURL(workspaceId: string) {
-  const entry = (
-    env.NEXT_PUBLIC_GITHUB_APP_INSTALL_URL ||
-    env.NEXT_PUBLIC_GITHUB_APP_SLUG ||
-    ''
-  ).trim();
-  if (!entry || !workspaceId.trim()) {
-    return '';
-  }
-  if (entry.startsWith('https://github.com/')) {
-    return entry;
-  }
-  const slug = entry
-    .replace(/^https?:\/\/github\.com\/apps\//, '')
-    .replace(/\/installations\/new.*$/, '')
-    .replace(/^\/+|\/+$/g, '');
-  return `https://github.com/apps/${slug}/installations/new?state=${encodeURIComponent(workspaceId.trim())}`;
 }

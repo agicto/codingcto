@@ -60,7 +60,7 @@ describe('project readiness helpers', () => {
     expect(decision.tone).toBe('info');
   });
 
-  it('routes GitHub setup to the overview setup anchor', () => {
+  it('routes GitHub connection to the overview connection anchor', () => {
     const decision = projectReadinessDecision(12, {
       project_id: 12,
       readiness_status: 'blocked',
@@ -76,7 +76,7 @@ describe('project readiness helpers', () => {
     });
 
     expect(decision.actionHref).toBe('#github-setup');
-    expect(decision.actionLabel).toBe('Review GitHub setup');
+    expect(decision.actionLabel).toBe('Open GitHub connection');
   });
 
   it('routes runtime setup to the context runtime binding anchor', () => {

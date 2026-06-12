@@ -17,6 +17,8 @@ import {
   ChevronDown,
   Plus,
   BookOpen,
+  PanelLeftClose,
+  PanelLeftOpen,
 } from 'lucide-react';
 
 import { cn } from '@/utils';
@@ -71,6 +73,17 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const pathname = usePathname();
   const t = useT();
   const sidebarT = useT('dashboard.sidebar');
+  const [sidebarCollapsed, setSidebarCollapsed] = useState(false);
+  const sidebarActionLabel = (key: 'collapse' | 'expand') => {
+    const value = sidebarT(`actions.${key}`);
+    if (!value.startsWith('dashboard.sidebar.actions.')) {
+      return value;
+    }
+    return {
+      collapse: '收起侧栏',
+      expand: '展开侧栏',
+    }[key];
+  };
   const sidebarGroupLabel = (key: 'work' | 'platform' | 'settings') => {
     const value = sidebarT(`groups.${key}`);
     if (!value.startsWith('dashboard.sidebar.groups.')) {
@@ -92,6 +105,10 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const newRequirementHref = currentProjectId
     ? projectDeliveryIntakeHref(currentProjectId)
     : `${ROUTES.CONSOLE.SPECFORGE}?board=intake&new=requirement`;
+
+  function toggleSidebarCollapsed() {
+    setSidebarCollapsed(current => !current);
+  }
 
   const workNavItems: WorkspaceNavItem[] = [
     {
@@ -143,45 +160,94 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
 
   return (
     <div className="flex h-screen overflow-hidden bg-bg-canvas text-text-main">
-      <aside className="hidden w-[256px] shrink-0 flex-col border-r border-border-subtle bg-bg-surface/90 px-3 py-3 md:flex">
-        <WorkspaceSwitcher />
+      <aside
+        className={cn(
+          'hidden shrink-0 flex-col border-r border-border-subtle bg-bg-surface/90 px-2.5 py-3 transition-[width] duration-200 md:flex',
+          sidebarCollapsed ? 'w-[56px]' : 'w-[208px]'
+        )}
+      >
+        <div className="flex items-center gap-2">
+          <WorkspaceSwitcher collapsed={sidebarCollapsed} />
+          {!sidebarCollapsed ? (
+            <Button
+              type="button"
+              variant="ghost"
+              isIcon
+              className="h-8 w-8 shrink-0 rounded-[4px]"
+              onClick={toggleSidebarCollapsed}
+              aria-label={sidebarActionLabel('collapse')}
+              title={sidebarActionLabel('collapse')}
+            >
+              <PanelLeftClose className="h-4 w-4" />
+            </Button>
+          ) : null}
+        </div>
+
+        {sidebarCollapsed ? (
+          <Button
+            type="button"
+            variant="ghost"
+            isIcon
+            className="mt-2 h-9 w-full rounded-[4px]"
+            onClick={toggleSidebarCollapsed}
+            aria-label={sidebarActionLabel('expand')}
+            title={sidebarActionLabel('expand')}
+          >
+            <PanelLeftOpen className="h-4 w-4" />
+          </Button>
+        ) : null}
 
         <div className="mt-4 space-y-1">
           <Link
             href={newRequirementHref}
-            className="flex h-10 items-center justify-between rounded-full px-3 text-sm font-medium text-text-main transition-colors hover:bg-bg-subtle"
+            title={sidebarT('quick.newRequirement')}
+            className={cn(
+              'flex h-9 items-center rounded-[4px] text-[13px] font-medium text-text-main transition-colors hover:bg-bg-subtle',
+              sidebarCollapsed ? 'justify-center px-0' : 'justify-between px-2.5'
+            )}
           >
             <span className="flex items-center gap-2">
               <SquarePen className="h-4 w-4" />
-              {sidebarT('quick.newRequirement')}
+              {!sidebarCollapsed ? sidebarT('quick.newRequirement') : null}
             </span>
-            <kbd className="rounded-full bg-bg-subtle px-2 py-0.5 text-[11px] font-medium text-text-subtle">
+            {!sidebarCollapsed ? (
+            <kbd className="rounded-[4px] bg-bg-subtle px-1.5 py-0.5 text-[10px] font-medium text-text-subtle">
               C
             </kbd>
+            ) : null}
           </Link>
         </div>
 
-        <div className="mt-6 min-h-0 flex-1 overflow-y-auto pr-1">
+        <div className="mt-5 min-h-0 flex-1 overflow-y-auto pr-1">
           <SidebarSection
             title={sidebarGroupLabel('work')}
             items={workNavItems}
             pathname={pathname}
+            collapsed={sidebarCollapsed}
           />
           <SidebarSection
             title={sidebarGroupLabel('settings')}
             items={settingsNavItems}
             pathname={pathname}
+            collapsed={sidebarCollapsed}
           />
         </div>
 
-        <div className="mt-3 flex shrink-0 items-center gap-2 border-t border-border-subtle px-3 pt-3 text-xs text-text-muted">
+        <div
+          className={cn(
+            'mt-3 flex shrink-0 items-center gap-2 border-t border-border-subtle pt-3 text-xs text-text-muted',
+            sidebarCollapsed ? 'justify-center px-0' : 'px-3'
+          )}
+        >
           <Settings className="h-3.5 w-3.5" />
-          <Link
+          {!sidebarCollapsed ? (
+            <Link
             href={ROUTES.CONSOLE.SETTINGS}
             className="truncate hover:text-text-main"
-          >
+            >
             {sidebarT('footer')}
-          </Link>
+            </Link>
+          ) : null}
         </div>
       </aside>
 
@@ -253,7 +319,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   );
 }
 
-function WorkspaceSwitcher() {
+function WorkspaceSwitcher({ collapsed = false }: { collapsed?: boolean }) {
   const t = useT('dashboard.sidebar.workspace');
   const {
     workspaces,
@@ -313,14 +379,20 @@ function WorkspaceSwitcher() {
   return (
     <Popover>
       <PopoverTrigger asChild>
-        <button className="flex h-10 w-full items-center justify-between rounded-full px-3 text-left text-sm font-medium transition-colors hover:bg-bg-subtle">
+        <button
+          className={cn(
+            'flex h-9 min-w-0 items-center rounded-[4px] text-left text-[13px] font-medium transition-colors hover:bg-bg-subtle',
+            collapsed ? 'w-full justify-center px-0' : 'w-full justify-between px-2.5'
+          )}
+          title={workspaceNameLabel}
+        >
           <span className="flex min-w-0 items-center gap-2">
-            <span className="flex h-6 w-6 items-center justify-center rounded-full bg-bg-subtle text-xs font-semibold text-text-main">
+            <span className="flex h-6 w-6 shrink-0 items-center justify-center rounded-full bg-bg-subtle text-xs font-semibold text-text-main">
               {workspaceInitial}
             </span>
-            <span className="truncate">{workspaceNameLabel}</span>
+            {!collapsed ? <span className="truncate">{workspaceNameLabel}</span> : null}
           </span>
-          <ChevronDown className="h-4 w-4 text-text-muted" />
+          {!collapsed ? <ChevronDown className="h-4 w-4 text-text-muted" /> : null}
         </button>
       </PopoverTrigger>
       <PopoverContent align="start" className="w-[340px] p-3">
@@ -415,20 +487,25 @@ function SidebarSection({
   title,
   items,
   pathname,
+  collapsed = false,
 }: {
   title: string;
   items: WorkspaceNavItem[];
   pathname: string;
+  collapsed?: boolean;
 }) {
   return (
     <div className="mt-4 first:mt-0">
-      <div className="px-3 pb-1.5 text-[11px] font-medium text-text-muted">{title}</div>
+      {!collapsed ? (
+        <div className="px-2.5 pb-1.5 text-[11px] font-medium text-text-muted">{title}</div>
+      ) : null}
       <nav className="space-y-1 text-sm">
         {items.map(item => (
           <SidebarLink
             key={`${title}-${item.title}`}
             {...item}
             pathname={pathname}
+            collapsed={collapsed}
           />
         ))}
       </nav>
@@ -446,6 +523,7 @@ function SidebarLink({
   disabled,
   activeOn,
   pathname,
+  collapsed = false,
 }: {
   href: string;
   icon: LucideIcon;
@@ -456,6 +534,7 @@ function SidebarLink({
   disabled?: boolean;
   activeOn?: WorkspaceNavItem['activeOn'];
   pathname: string;
+  collapsed?: boolean;
 }) {
   const text = label ?? title ?? '';
   const active =
@@ -464,9 +543,9 @@ function SidebarLink({
     <>
       <span className="flex min-w-0 items-center gap-2">
         <Icon className="h-4 w-4 shrink-0" />
-        <span className="block min-w-0 truncate">{text}</span>
+        {!collapsed ? <span className="block min-w-0 truncate">{text}</span> : null}
       </span>
-      {badge ? (
+      {badge && !collapsed ? (
         <span
           className={cn(
             'shrink-0 rounded-full px-1.5 py-0.5 text-[10px] font-medium',
@@ -484,8 +563,10 @@ function SidebarLink({
   );
 
   const className = cn(
-    'relative flex h-10 items-center justify-between gap-2 rounded-full px-3 text-text-subtle transition-colors hover:bg-bg-subtle hover:text-text-main',
-    active && 'bg-bg-subtle pl-4 font-medium text-text-main hover:bg-bg-subtle hover:text-text-main before:absolute before:left-2 before:top-1/2 before:h-5 before:w-1 before:-translate-y-1/2 before:rounded-full before:bg-primary',
+    'relative flex h-9 items-center justify-between gap-2 rounded-[4px] px-2.5 text-[13px] text-text-subtle transition-colors hover:bg-bg-subtle hover:text-text-main',
+    collapsed && 'justify-center rounded-[4px] px-0',
+    active && !collapsed && 'bg-bg-subtle pl-3.5 font-medium text-text-main hover:bg-bg-subtle hover:text-text-main before:absolute before:left-1.5 before:top-1/2 before:h-4 before:w-1 before:-translate-y-1/2 before:rounded-full before:bg-primary',
+    active && collapsed && 'bg-bg-subtle font-medium text-text-main hover:bg-bg-subtle hover:text-text-main before:absolute before:left-1 before:top-1/2 before:h-5 before:w-1 before:-translate-y-1/2 before:rounded-full before:bg-primary',
     disabled && 'cursor-not-allowed opacity-55 hover:bg-transparent hover:text-text-subtle'
   );
 

@@ -226,7 +226,7 @@ function ProjectMvpBoard({
       tone: repoReady && codexReady ? 'ready' : 'blocked',
       details: [
         `项目：${projectName}`,
-        repoReady ? `目标仓库：${repoId}` : '还没有绑定主仓库',
+        repoReady ? `目标仓库：${repoId}` : '还没有选择主仓库',
         wikiReady ? '仓库上下文已可用，可用于计划生成。' : '仓库上下文还不完整，建议先生成或更新。',
         codexReady ? 'Codex runtime 已在线。' : 'Codex runtime 未在线；可以先生成计划，执行前再处理。',
         githubReady ? 'GitHub readiness 检查通过。' : 'GitHub readiness 还需要检查。',
@@ -627,7 +627,7 @@ function ProjectRepositoryBindPanel({
               </div>
             ) : (
               <div className="text-xs leading-5 text-warning">
-                暂未读取到 GitHub App 仓库，请先在 GitHub 设置里同步安装结果。
+                暂未读取到 GitHub App 仓库，请先完成 GitHub 连接并同步授权仓库。
               </div>
             )}
           </div>
