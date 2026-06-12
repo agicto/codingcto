@@ -161,3 +161,17 @@ func (h *Handler) GetProjectContext(c *gin.Context) {
 	}
 	response.Success(c, &ProjectContextResponse{Context: context})
 }
+
+func (h *Handler) GetProjectReadiness(c *gin.Context) {
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+
+	readiness, err := h.service.GetProjectReadiness(c.Request.Context(), projectID)
+	if err != nil {
+		response.HandleError(c, "Failed to get project readiness", err)
+		return
+	}
+	response.Success(c, &ProjectReadinessResponse{Readiness: readiness})
+}

@@ -7,6 +7,7 @@ import (
 	"strings"
 
 	"github.com/zgiai/luas/api/internal/domain"
+	"github.com/zgiai/luas/api/internal/modules/githubintegration"
 )
 
 type Service interface {
@@ -19,6 +20,7 @@ type Service interface {
 	UnbindRepository(ctx context.Context, projectID uint, repositoryID string) error
 	ListRepositories(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectRepository, error)
 	GetProjectContext(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContext, error)
+	GetProjectReadiness(ctx context.Context, projectID uint) (*domain.SpecForgeProjectReadiness, error)
 }
 
 type service struct {
@@ -28,10 +30,25 @@ type service struct {
 	profileRepo      domain.SpecForgeRepoProfileRepository
 	architectureRepo repoArchitectureStore
 	skillRepo        domain.SpecForgeSkillRepository
+	projectSkillRepo projectSkillStore
+	githubReadiness  githubReadinessChecker
+	runtimeReadiness runtimeReadinessStore
 }
 
 type repoArchitectureStore interface {
 	FindLatestArchitectureSnapshotByRepositoryID(ctx context.Context, repositoryID string) (*domain.SpecForgeRepoArchitectureSnapshot, error)
+}
+
+type projectSkillStore interface {
+	ListActiveProjectSkillsByProjectID(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectSkill, error)
+}
+
+type githubReadinessChecker interface {
+	CheckRepositoryReadiness(ctx context.Context, repositoryID string) (*githubintegration.GitHubRepositoryReadinessResponse, error)
+}
+
+type runtimeReadinessStore interface {
+	ListRuntimes(ctx context.Context, executor, status string, limit int) ([]*domain.SpecForgeRuntime, error)
 }
 
 func NewService(
@@ -40,6 +57,9 @@ func NewService(
 	githubRepo domain.GitHubIntegrationRepository,
 	profileRepo domain.SpecForgeRepoProfileRepository,
 	skillRepo domain.SpecForgeSkillRepository,
+	projectSkillRepo projectSkillStore,
+	githubReadiness githubReadinessChecker,
+	runtimeReadiness runtimeReadinessStore,
 ) *service {
 	var architectureRepo repoArchitectureStore
 	if repo, ok := profileRepo.(repoArchitectureStore); ok {
@@ -52,6 +72,9 @@ func NewService(
 		profileRepo:      profileRepo,
 		architectureRepo: architectureRepo,
 		skillRepo:        skillRepo,
+		projectSkillRepo: projectSkillRepo,
+		githubReadiness:  githubReadiness,
+		runtimeReadiness: runtimeReadiness,
 	}
 }
 
@@ -259,6 +282,143 @@ func (s *service) GetProjectContext(ctx context.Context, projectID uint) (*domai
 	return context, nil
 }
 
+func (s *service) GetProjectReadiness(ctx context.Context, projectID uint) (*domain.SpecForgeProjectReadiness, error) {
+	contextBundle, err := s.GetProjectContext(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	if contextBundle == nil || contextBundle.Project == nil {
+		return nil, domain.ErrNotFound
+	}
+
+	baseReadiness := contextBundle.Readiness
+	if baseReadiness == nil {
+		baseReadiness = &domain.SpecForgeProjectContextReadiness{}
+	}
+	skillCount := baseReadiness.SkillCount
+	if s.projectSkillRepo != nil {
+		projectSkills, err := s.projectSkillRepo.ListActiveProjectSkillsByProjectID(ctx, projectID)
+		if err != nil {
+			return nil, fmt.Errorf("load active project skills: %w", err)
+		}
+		skillCount += len(projectSkills)
+	}
+
+	checks := make([]domain.SpecForgeProjectReadinessCheck, 0, 5)
+	warnings := collectProjectContextWarnings(contextBundle)
+	guardrails := append([]string(nil), baseReadiness.Guardrails...)
+
+	hasPrimary := strings.TrimSpace(contextBundle.PrimaryRepositoryID) != ""
+	primaryDetail := fmt.Sprintf("%d active repositories bound.", baseReadiness.ActiveRepositoryCount)
+	if hasPrimary {
+		primaryDetail = "Primary execution repository: " + strings.TrimSpace(contextBundle.PrimaryRepositoryID)
+	}
+	checks = append(checks, domain.SpecForgeProjectReadinessCheck{
+		Key:      "primary_repository",
+		Label:    "Primary repository",
+		Status:   readinessCheckStatus(hasPrimary, false),
+		Detail:   primaryDetail,
+		Required: true,
+	})
+
+	githubReady := false
+	githubCheckStatus := domain.ProjectReadinessStatusAttention
+	githubDetail := "Bind a primary repository before checking GitHub delivery readiness."
+	if hasPrimary {
+		githubCheckStatus = domain.ProjectReadinessStatusBlocked
+		githubDetail = "GitHub delivery readiness has not been checked yet."
+		if s.githubReadiness != nil {
+			result, err := s.githubReadiness.CheckRepositoryReadiness(ctx, contextBundle.PrimaryRepositoryID)
+			if err != nil {
+				githubDetail = "GitHub readiness check failed: " + strings.TrimSpace(err.Error())
+				warnings = appendCompactProjectStrings(warnings, githubDetail)
+			} else {
+				githubReady = result.Ready
+				githubCheckStatus = readinessCheckStatus(result.Ready, false)
+				githubDetail = projectGitHubReadinessDetail(result)
+			}
+		}
+	}
+	checks = append(checks, domain.SpecForgeProjectReadinessCheck{
+		Key:      "github_delivery",
+		Label:    "GitHub delivery",
+		Status:   githubCheckStatus,
+		Detail:   githubDetail,
+		Required: true,
+	})
+
+	contextReady := hasPrimary && baseReadiness.WarningCount == 0
+	contextDetail := "Repository profiles and architecture snapshots are ready."
+	if !hasPrimary {
+		contextDetail = "Context review starts after a primary repository is bound."
+	} else if baseReadiness.WarningCount > 0 {
+		contextDetail = fmt.Sprintf("%d context warnings need review before execution.", baseReadiness.WarningCount)
+	}
+	checks = append(checks, domain.SpecForgeProjectReadinessCheck{
+		Key:      "context_materials",
+		Label:    "Context materials",
+		Status:   readinessCheckStatus(contextReady, !hasPrimary),
+		Detail:   contextDetail,
+		Required: false,
+	})
+
+	runtimeCount := 0
+	runtimeReady := false
+	runtimeDetail := "No online runtimes detected yet."
+	if s.runtimeReadiness != nil {
+		runtimes, err := s.runtimeReadiness.ListRuntimes(ctx, "", domain.RuntimeStatusOnline, 20)
+		if err != nil {
+			runtimeDetail = "Runtime readiness check failed: " + strings.TrimSpace(err.Error())
+			warnings = appendCompactProjectStrings(warnings, runtimeDetail)
+		} else {
+			runtimeCount = len(runtimes)
+			runtimeReady = runtimeCount > 0
+			if runtimeReady {
+				runtimeDetail = fmt.Sprintf("%d online runtime(s) can accept local execution work.", runtimeCount)
+			}
+		}
+	}
+	checks = append(checks, domain.SpecForgeProjectReadinessCheck{
+		Key:      "runtime_dispatch",
+		Label:    "Local runtime",
+		Status:   readinessCheckStatus(runtimeReady, false),
+		Detail:   runtimeDetail,
+		Required: false,
+	})
+
+	skillReady := skillCount > 0
+	skillDetail := "No active project or repository skills are configured yet."
+	if skillReady {
+		skillDetail = fmt.Sprintf("%d active project or repository skills are available for planning.", skillCount)
+	}
+	checks = append(checks, domain.SpecForgeProjectReadinessCheck{
+		Key:      "skill_contract",
+		Label:    "Skill contract",
+		Status:   readinessCheckStatus(skillReady, false),
+		Detail:   skillDetail,
+		Required: false,
+	})
+
+	status, nextStep, nextAction, summary := projectReadinessDecision(hasPrimary, githubReady, contextReady, runtimeReady, skillReady)
+	return &domain.SpecForgeProjectReadiness{
+		ProjectID:               contextBundle.Project.ID,
+		ReadinessStatus:         status,
+		NextStep:                nextStep,
+		NextAction:              nextAction,
+		Summary:                 summary,
+		PrimaryRepositoryID:     strings.TrimSpace(contextBundle.PrimaryRepositoryID),
+		HasPrimaryRepository:    hasPrimary,
+		ActiveRepositoryCount:   baseReadiness.ActiveRepositoryCount,
+		ReadOnlyRepositoryCount: baseReadiness.ReadOnlyRepositoryCount,
+		SkillCount:              skillCount,
+		WarningCount:            baseReadiness.WarningCount,
+		RuntimeCount:            runtimeCount,
+		Checks:                  checks,
+		Warnings:                warnings,
+		Guardrails:              guardrails,
+	}, nil
+}
+
 func (s *service) repositoryContexts(ctx context.Context, repositories []*domain.SpecForgeProjectRepository) ([]*domain.SpecForgeProjectRepositoryContext, error) {
 	contexts := make([]*domain.SpecForgeProjectRepositoryContext, 0, len(repositories))
 	for _, repository := range repositories {
@@ -305,6 +465,125 @@ func (s *service) repositoryContexts(ctx context.Context, repositories []*domain
 		contexts = append(contexts, context)
 	}
 	return contexts, nil
+}
+
+func collectProjectContextWarnings(context *domain.SpecForgeProjectContext) []string {
+	if context == nil {
+		return nil
+	}
+	warnings := []string{}
+	for _, repositoryContext := range context.RepositoryContexts {
+		if repositoryContext == nil || repositoryContext.Repository == nil {
+			continue
+		}
+		repositoryID := strings.TrimSpace(repositoryContext.Repository.RepositoryID)
+		for _, warning := range repositoryContext.Warnings {
+			warnings = appendCompactProjectStrings(warnings, projectReadinessWarning(repositoryID, warning))
+		}
+		for _, warning := range repositoryContext.ArchitectureWarnings {
+			warnings = appendCompactProjectStrings(warnings, projectReadinessWarning(repositoryID, warning))
+		}
+		if repositoryContext.Profile != nil {
+			for _, warning := range repositoryContext.Profile.Warnings {
+				warnings = appendCompactProjectStrings(warnings, projectReadinessWarning(repositoryID, warning))
+			}
+		}
+	}
+	return warnings
+}
+
+func projectReadinessWarning(repositoryID, warning string) string {
+	repositoryID = strings.TrimSpace(repositoryID)
+	warning = strings.Join(strings.Fields(strings.TrimSpace(warning)), " ")
+	if repositoryID == "" || warning == "" {
+		return warning
+	}
+	return repositoryID + ": " + warning
+}
+
+func appendCompactProjectStrings(values []string, next string) []string {
+	next = strings.Join(strings.Fields(strings.TrimSpace(next)), " ")
+	if next == "" {
+		return values
+	}
+	for _, value := range values {
+		if value == next {
+			return values
+		}
+	}
+	return append(values, next)
+}
+
+func readinessCheckStatus(ready bool, waiting bool) string {
+	if waiting {
+		return domain.ProjectReadinessStatusAttention
+	}
+	if ready {
+		return domain.ProjectReadinessStatusReady
+	}
+	return domain.ProjectReadinessStatusBlocked
+}
+
+func projectGitHubReadinessDetail(result *githubintegration.GitHubRepositoryReadinessResponse) string {
+	if result == nil {
+		return "GitHub delivery readiness could not be determined."
+	}
+	if result.Ready {
+		return "GitHub App installation, token exchange, and repository permissions are ready."
+	}
+	blocking := []string{}
+	for _, check := range result.Checks {
+		if !check.Required || strings.EqualFold(check.Status, "ok") {
+			continue
+		}
+		detail := strings.TrimSpace(check.Detail)
+		if detail == "" {
+			detail = strings.TrimSpace(check.Message)
+		}
+		blocking = append(blocking, detail)
+	}
+	if len(blocking) == 0 {
+		return "GitHub delivery is still blocked; review installation and repository permissions."
+	}
+	if len(blocking) == 1 {
+		return blocking[0]
+	}
+	return fmt.Sprintf("%s (+%d more GitHub blockers)", blocking[0], len(blocking)-1)
+}
+
+func projectReadinessDecision(hasPrimary, githubReady, contextReady, runtimeReady, skillReady bool) (status, nextStep, nextAction, summary string) {
+	switch {
+	case !hasPrimary:
+		return domain.ProjectReadinessStatusBlocked,
+			domain.ProjectReadinessStepBindRepository,
+			"Bind one active primary repository before CodingCTO can plan or deliver code.",
+			"No writable primary repository is bound yet."
+	case !githubReady:
+		return domain.ProjectReadinessStatusBlocked,
+			domain.ProjectReadinessStepConfigureGitHub,
+			"Complete GitHub setup for the primary repository before asking CodingCTO to deliver PRs.",
+			"Primary repository is bound, but GitHub delivery is still blocked."
+	case !contextReady:
+		return domain.ProjectReadinessStatusAttention,
+			domain.ProjectReadinessStepReviewContext,
+			"Review repository context warnings and regenerate missing materials before approving execution.",
+			"Repository binding is ready, but context evidence still needs review."
+	case !runtimeReady:
+		return domain.ProjectReadinessStatusAttention,
+			domain.ProjectReadinessStepConnectRuntime,
+			"Connect or refresh an online local runtime before dispatching execution tasks.",
+			"Planning can proceed, but no online runtime is available for delivery."
+	case !skillReady:
+		return domain.ProjectReadinessStatusAttention,
+			domain.ProjectReadinessStepAddSkills,
+			"Add project or repository skills so planners and executors do not have to rediscover local conventions.",
+			"Project can plan, but prompt guidance is still thin."
+	default:
+		return domain.ProjectReadinessStatusReady,
+			domain.ProjectReadinessStepCreateRequirement,
+			"Create a requirement and generate a project plan.",
+			"Project setup is ready enough to turn a change request into a plan."
+	}
 }
 
 func normalizeSlug(value string) string {

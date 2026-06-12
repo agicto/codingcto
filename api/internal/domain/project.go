@@ -17,6 +17,17 @@ const (
 	ProjectRepositoryRoleInfra      = "infra"
 
 	MaxSpecForgeProjectRepositories = 3
+
+	ProjectReadinessStatusBlocked   = "blocked"
+	ProjectReadinessStatusAttention = "attention"
+	ProjectReadinessStatusReady     = "ready"
+
+	ProjectReadinessStepBindRepository    = "bind_repository"
+	ProjectReadinessStepConfigureGitHub   = "configure_github"
+	ProjectReadinessStepReviewContext     = "review_context"
+	ProjectReadinessStepConnectRuntime    = "connect_runtime"
+	ProjectReadinessStepAddSkills         = "add_skills"
+	ProjectReadinessStepCreateRequirement = "create_requirement"
 )
 
 // SpecForgeProject groups repositories, requirements, plans, and execution runs.
@@ -79,6 +90,33 @@ type SpecForgeProjectContextReadiness struct {
 	Guardrails              []string `json:"guardrails,omitempty"`
 	Summary                 string   `json:"summary"`
 	NextAction              string   `json:"next_action"`
+}
+
+// SpecForgeProjectReadiness is the project-level setup gate surfaced by the overview page.
+type SpecForgeProjectReadiness struct {
+	ProjectID               uint                             `json:"project_id"`
+	ReadinessStatus         string                           `json:"readiness_status"`
+	NextStep                string                           `json:"next_step"`
+	NextAction              string                           `json:"next_action"`
+	Summary                 string                           `json:"summary"`
+	PrimaryRepositoryID     string                           `json:"primary_repository_id,omitempty"`
+	HasPrimaryRepository    bool                             `json:"has_primary_repository"`
+	ActiveRepositoryCount   int                              `json:"active_repository_count"`
+	ReadOnlyRepositoryCount int                              `json:"read_only_repository_count"`
+	SkillCount              int                              `json:"skill_count"`
+	WarningCount            int                              `json:"warning_count"`
+	RuntimeCount            int                              `json:"runtime_count"`
+	Checks                  []SpecForgeProjectReadinessCheck `json:"checks,omitempty"`
+	Warnings                []string                         `json:"warnings,omitempty"`
+	Guardrails              []string                         `json:"guardrails,omitempty"`
+}
+
+type SpecForgeProjectReadinessCheck struct {
+	Key      string `json:"key"`
+	Label    string `json:"label"`
+	Status   string `json:"status"`
+	Detail   string `json:"detail,omitempty"`
+	Required bool   `json:"required"`
 }
 
 // SpecForgeProjectContextContract is the compact, stable context packet injected into planners and executors.

@@ -2,6 +2,7 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { projectKeys } from '@/features/project/hooks/use-projects';
 import { activeFixAttemptPollMs, hasActiveFixAttempt } from '@/features/specforge/fix-attempts';
 import {
   type ApprovePlanPayload,
@@ -413,6 +414,8 @@ export function useUpsertSpecForgeProjectSkill(projectId?: number) {
     onSuccess: () => {
       if (projectId) {
         queryClient.invalidateQueries({ queryKey: specForgeKeys.projectSkills(projectId) });
+        queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
+        queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
       }
     },
   });

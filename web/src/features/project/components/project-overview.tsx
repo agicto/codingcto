@@ -12,6 +12,10 @@ import { Button } from '@/components/ui/button';
 import { ApiError } from '@/http/request';
 import { ProjectRepositoryBindPanel } from '@/features/project/components/project-context-panel';
 import {
+  projectReadinessBadgeClass,
+  projectReadinessDecision,
+} from '@/features/project/project-readiness';
+import {
   githubReadinessRecoveryActions,
   githubReadinessRecoveryDiagnostics,
   githubReadinessRecoveryTargetFromRepositoryId,
@@ -20,7 +24,11 @@ import {
   githubRepositoryIdentitySummary,
   type GitHubRepositoryIdentitySummary,
 } from '@/features/project/github-repository-identity';
-import { projectKeys, useProjectContext } from '@/features/project/hooks/use-projects';
+import {
+  projectKeys,
+  useProjectContext,
+  useProjectReadiness,
+} from '@/features/project/hooks/use-projects';
 import { projectContextHref, projectOverviewHref } from '@/features/project/project-utils';
 import {
   useGitHubRepositoryReadiness,
@@ -28,6 +36,7 @@ import {
 } from '@/features/specforge/hooks/use-specforge';
 import type {
   ProjectContextDTO,
+  ProjectReadinessDTO,
   ProjectRepositoryContextDTO,
 } from '@/features/project/services/project-service';
 
@@ -36,6 +45,7 @@ export function ProjectOverviewPage() {
   const projectId = Number(params.projectId);
   const validProjectId = Number.isFinite(projectId) ? projectId : 0;
   const contextQuery = useProjectContext(validProjectId);
+  const readinessQuery = useProjectReadiness(validProjectId);
   const context = contextQuery.data?.context;
 
   if (!validProjectId) {
@@ -64,13 +74,22 @@ export function ProjectOverviewPage() {
     );
   }
 
-  return <ProjectRepositoryBindingPage context={context} />;
+  return (
+    <ProjectRepositoryBindingPage context={context} readiness={readinessQuery.data?.readiness} />
+  );
 }
 
-function ProjectRepositoryBindingPage({ context }: { context: ProjectContextDTO }) {
+function ProjectRepositoryBindingPage({
+  context,
+  readiness,
+}: {
+  context: ProjectContextDTO;
+  readiness?: ProjectReadinessDTO;
+}) {
   const repositories = context.repository_contexts ?? [];
   const primaryRepository = repositories.find(item => item.repository.role === 'primary');
   const boundRepositoryIds = repositories.map(item => item.repository.repository_id);
+  const readinessDecision = projectReadinessDecision(context.project.id, readiness);
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-6 md:px-8">
@@ -80,10 +99,22 @@ function ProjectRepositoryBindingPage({ context }: { context: ProjectContextDTO 
           <Badge
             variant="outline"
             className={
-              primaryRepository ? 'border-success/30 text-success' : 'border-warning/30 text-warning'
+              readiness
+                ? projectReadinessBadgeClass(readiness.readiness_status)
+                : primaryRepository
+                  ? 'border-success/30 text-success'
+                  : 'border-warning/30 text-warning'
             }
           >
-            {primaryRepository ? 'GitHub bound' : 'GitHub required'}
+            {readiness
+              ? readiness.readiness_status === 'ready'
+                ? 'Execution ready'
+                : readiness.readiness_status === 'blocked'
+                  ? 'Setup blocked'
+                  : 'Needs attention'
+              : primaryRepository
+                ? 'GitHub bound'
+                : 'GitHub required'}
           </Badge>
         </div>
         <h1 className="mt-3 text-2xl font-semibold tracking-tight text-text-main">
@@ -95,6 +126,60 @@ function ProjectRepositoryBindingPage({ context }: { context: ProjectContextDTO 
           </p>
         ) : null}
       </header>
+
+      {readiness ? (
+        <section className="rounded-md border border-border-subtle bg-bg-surface p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  variant="outline"
+                  className={projectReadinessBadgeClass(readiness.readiness_status)}
+                >
+                  {readiness.readiness_status === 'ready'
+                    ? 'Ready'
+                    : readiness.readiness_status === 'blocked'
+                      ? 'Blocked'
+                      : 'Attention'}
+                </Badge>
+                <span className="text-sm font-medium text-text-main">
+                  {readinessDecision.title}
+                </span>
+              </div>
+              <p className="mt-2 text-sm leading-6 text-text-muted">{readiness.summary}</p>
+              <p className="mt-1 text-sm leading-6 text-text-muted">{readiness.next_action}</p>
+            </div>
+            <Button
+              asChild
+              variant={readiness.readiness_status === 'ready' ? 'default' : 'outline'}
+            >
+              <Link href={readinessDecision.actionHref}>
+                {readinessDecision.actionLabel}
+                <ArrowRight className="ml-1.5 h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {(readiness.checks ?? []).map(check => (
+              <div key={check.key} className="rounded-md border border-border-subtle px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-medium text-text-main">{check.label}</div>
+                  <Badge variant="outline" className={projectReadinessBadgeClass(check.status)}>
+                    {check.status === 'ready'
+                      ? 'Ready'
+                      : check.status === 'blocked'
+                        ? 'Blocked'
+                        : 'Attention'}
+                  </Badge>
+                </div>
+                {check.detail ? (
+                  <div className="mt-1 text-xs leading-5 text-text-muted">{check.detail}</div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
 
       <section className="rounded-md border border-border-subtle bg-bg-surface p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -199,10 +284,7 @@ function ProjectRepositoryMaterialRow({
       : inferredRecoveryTarget
         ? { ...inferredRecoveryTarget, returnTo: projectOverviewHref(projectId) }
         : undefined;
-  const recoveryActions = githubReadinessRecoveryActions(
-    readinessBlockingChecks,
-    recoveryTarget
-  );
+  const recoveryActions = githubReadinessRecoveryActions(readinessBlockingChecks, recoveryTarget);
   const recoveryDiagnostics = githubReadinessRecoveryDiagnostics(readinessBlockingChecks);
   const identitySummary = githubRepositoryIdentitySummary({
     repositoryId: item.repository.repository_id,
@@ -220,6 +302,7 @@ function ProjectRepositoryMaterialRow({
       await reindexArchitecture.mutateAsync({
         default_branch: item.profile?.default_branch,
       });
+      await queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
       await queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
       setMessage('Materials generated from repository tree.');
     } catch (error) {
@@ -251,7 +334,9 @@ function ProjectRepositoryMaterialRow({
           <Badge variant="outline">{item.repository.role}</Badge>
           <Badge
             variant="outline"
-            className={analyzed ? 'border-success/30 text-success' : 'border-warning/30 text-warning'}
+            className={
+              analyzed ? 'border-success/30 text-success' : 'border-warning/30 text-warning'
+            }
           >
             {analyzed ? 'Materials ready' : 'Needs scan'}
           </Badge>
@@ -261,11 +346,13 @@ function ProjectRepositoryMaterialRow({
         </div>
         {item.profile || item.architecture_snapshot ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {(item.profile?.stack ?? item.architecture_snapshot?.stack ?? []).slice(0, 5).map(value => (
-              <Badge key={value} variant="outline" className="text-[11px] text-text-muted">
-                {value}
-              </Badge>
-            ))}
+            {(item.profile?.stack ?? item.architecture_snapshot?.stack ?? [])
+              .slice(0, 5)
+              .map(value => (
+                <Badge key={value} variant="outline" className="text-[11px] text-text-muted">
+                  {value}
+                </Badge>
+              ))}
             {(item.architecture_snapshot?.modules ?? []).slice(0, 3).map(value => (
               <Badge key={value} variant="outline" className="text-[11px] text-text-muted">
                 {value}
@@ -301,7 +388,9 @@ function ProjectRepositoryMaterialRow({
       >
         {scanLabel}
         <RefreshCw
-          className={reindexArchitecture.isPending ? 'ml-1.5 h-3.5 w-3.5 animate-spin' : 'ml-1.5 h-3.5 w-3.5'}
+          className={
+            reindexArchitecture.isPending ? 'ml-1.5 h-3.5 w-3.5 animate-spin' : 'ml-1.5 h-3.5 w-3.5'
+          }
         />
       </Button>
     </div>
@@ -335,9 +424,7 @@ function RepositoryMaterialRecoveryPanel({
               <div className="text-xs font-medium leading-5 text-text-main">
                 {diagnostic.checkKey} - {diagnostic.setupStep}
               </div>
-              <div className="mt-0.5 text-xs leading-5 text-text-muted">
-                {diagnostic.detail}
-              </div>
+              <div className="mt-0.5 text-xs leading-5 text-text-muted">{diagnostic.detail}</div>
             </div>
           ))}
         </div>
@@ -356,7 +443,14 @@ function RepositoryMaterialRecoveryPanel({
         </div>
       ) : null}
       <div className="mt-2 flex justify-end">
-        <Button type="button" variant="outline" size="sm" className="h-7 text-xs" disabled={isChecking} onClick={onRefresh}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs"
+          disabled={isChecking}
+          onClick={onRefresh}
+        >
           {isChecking ? 'Checking' : 'Recheck GitHub'}
         </Button>
       </div>
@@ -364,11 +458,7 @@ function RepositoryMaterialRecoveryPanel({
   );
 }
 
-function RepositoryIdentityDiagnostic({
-  identity,
-}: {
-  identity: GitHubRepositoryIdentitySummary;
-}) {
+function RepositoryIdentityDiagnostic({ identity }: { identity: GitHubRepositoryIdentitySummary }) {
   return (
     <div className="mt-2 rounded-md bg-bg-surface px-2.5 py-2">
       <div className="text-xs font-medium leading-5 text-text-main">{identity.headline}</div>

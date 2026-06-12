@@ -1,6 +1,6 @@
-"use client";
+'use client';
 
-import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
 import {
   type BindRepositoryPayload,
@@ -8,17 +8,18 @@ import {
   type CreateWorkspacePayload,
   type UpdateProjectPayload,
   projectService,
-} from "@/features/project/services/project-service";
+} from '@/features/project/services/project-service';
 
 const silentQueryConfig = { skipErrorHandler: true };
 const silentQueryMeta = { silentError: true };
 
 export const projectKeys = {
-  all: ["projects"] as const,
-  workspaces: () => [...projectKeys.all, "workspaces"] as const,
-  list: (workspaceId: string) => [...projectKeys.all, "list", workspaceId] as const,
-  detail: (projectId: number) => [...projectKeys.all, "detail", projectId] as const,
-  context: (projectId: number) => [...projectKeys.all, "context", projectId] as const,
+  all: ['projects'] as const,
+  workspaces: () => [...projectKeys.all, 'workspaces'] as const,
+  list: (workspaceId: string) => [...projectKeys.all, 'list', workspaceId] as const,
+  detail: (projectId: number) => [...projectKeys.all, 'detail', projectId] as const,
+  readiness: (projectId: number) => [...projectKeys.all, 'readiness', projectId] as const,
+  context: (projectId: number) => [...projectKeys.all, 'context', projectId] as const,
 };
 
 export function useWorkspaces() {
@@ -77,17 +78,13 @@ export function useUpdateProject(workspaceId: string) {
   const queryClient = useQueryClient();
 
   return useMutation({
-    mutationFn: ({
-      projectId,
-      payload,
-    }: {
-      projectId: number;
-      payload: UpdateProjectPayload;
-    }) => projectService.updateProject(projectId, payload, silentQueryConfig),
+    mutationFn: ({ projectId, payload }: { projectId: number; payload: UpdateProjectPayload }) =>
+      projectService.updateProject(projectId, payload, silentQueryConfig),
     meta: silentQueryMeta,
     onSuccess: response => {
       queryClient.invalidateQueries({ queryKey: projectKeys.list(workspaceId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.detail(response.project.id) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.readiness(response.project.id) });
       queryClient.invalidateQueries({ queryKey: projectKeys.context(response.project.id) });
     },
   });
@@ -116,6 +113,15 @@ export function useProjectContext(projectId: number) {
   });
 }
 
+export function useProjectReadiness(projectId: number) {
+  return useQuery({
+    queryKey: projectKeys.readiness(projectId),
+    queryFn: () => projectService.getProjectReadiness(projectId, silentQueryConfig),
+    enabled: Boolean(projectId),
+    meta: silentQueryMeta,
+  });
+}
+
 export function useBindProjectRepository(projectId: number) {
   const queryClient = useQueryClient();
 
@@ -124,6 +130,7 @@ export function useBindProjectRepository(projectId: number) {
       projectService.bindRepository(projectId, payload, silentQueryConfig),
     meta: silentQueryMeta,
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
     },
   });
@@ -137,6 +144,7 @@ export function useUnbindProjectRepository(projectId: number) {
       projectService.unbindRepository(projectId, repositoryId, silentQueryConfig),
     meta: silentQueryMeta,
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
     },
   });
