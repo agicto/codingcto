@@ -10,8 +10,8 @@ import (
 func TestDefaultManifestsRegisterDefaultAssets(t *testing.T) {
 	registry := NewRegistry()
 
-	manifests := DefaultManifests(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
-	require.Len(t, manifests, 11)
+	manifests := DefaultManifests(nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil, nil)
+	require.Len(t, manifests, 12)
 	assert.Equal(t, "audit", manifests[0].Name())
 	assert.Equal(t, "apikey", manifests[1].Name())
 	assert.Equal(t, "deepwiki", manifests[2].Name())
@@ -21,15 +21,16 @@ func TestDefaultManifestsRegisterDefaultAssets(t *testing.T) {
 	assert.Equal(t, "execution", manifests[6].Name())
 	assert.Equal(t, "githubintegration", manifests[7].Name())
 	assert.Equal(t, "project", manifests[8].Name())
-	assert.Equal(t, "verification", manifests[9].Name())
-	assert.Equal(t, "user", manifests[10].Name())
+	assert.Equal(t, "review", manifests[9].Name())
+	assert.Equal(t, "verification", manifests[10].Name())
+	assert.Equal(t, "user", manifests[11].Name())
 
 	for _, manifest := range manifests {
 		require.NoError(t, registry.ApplyManifest(manifest))
 	}
 
 	migrations := registry.Migrations()
-	assert.Len(t, migrations, 45)
+	assert.Len(t, migrations, 46)
 	assert.Contains(t, migrations, "2026_04_26_000000_create_audit_logs_table")
 	assert.Contains(t, migrations, "2026_04_27_000002_add_business_fields_to_audit_logs")
 	assert.Contains(t, migrations, "2025_06_18_000000_create_users_table")
@@ -74,6 +75,7 @@ func TestDefaultManifestsRegisterDefaultAssets(t *testing.T) {
 	assert.Contains(t, migrations, "2026_05_31_000028_add_target_agents_to_specforge_skills")
 	assert.Contains(t, migrations, "2026_05_31_000028_add_policy_metadata_to_specforge_fix_attempts")
 	assert.Contains(t, migrations, "2026_06_02_000029_create_codingcto_direct_agent_tasks")
+	assert.Contains(t, migrations, "2026_06_11_000031_create_review_decisions_table")
 
 	seeders := registry.Seeders()
 	require.Len(t, seeders, 1)
