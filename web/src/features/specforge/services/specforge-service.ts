@@ -1,5 +1,9 @@
 import { env } from '@/config/env';
-import type { ProjectContextDTO } from '@/features/project/services/project-service';
+import type {
+  ProjectContextDTO,
+  ProjectContextSnapshotDTO,
+  ProjectExpertPolicyDTO,
+} from '@/features/project/services/project-service';
 import { createRequest, type RequestConfig } from '@/http';
 
 const request = createRequest({
@@ -407,6 +411,8 @@ export interface SpecForgePlanBundleDTO {
   };
   repo_profile?: SpecForgeRepoProfileDTO;
   project_context?: ProjectContextDTO;
+  context_snapshot?: ProjectContextSnapshotDTO;
+  expert_policy?: ProjectExpertPolicyDTO;
   product_spec: {
     id: number;
     idea_id: number;
@@ -426,6 +432,8 @@ export interface SpecForgePlanBundleDTO {
     requirement_id?: number;
     idea_id: number;
     product_spec_id: number;
+    context_snapshot_id?: number;
+    expert_policy_id?: number;
     version: number;
     technical_summary: string;
     affected_areas: string[];
@@ -792,15 +800,12 @@ export const specForgeService = {
       payload
     ),
 
-  listGitHubRepositories: (
-    params?: ListGitHubRepositoriesParams,
-    config?: RequestConfig
-  ) => {
+  listGitHubRepositories: (params?: ListGitHubRepositoriesParams, config?: RequestConfig) => {
     const search = new URLSearchParams();
     if (params?.workspace_id) {
-      search.set("workspace_id", params.workspace_id);
+      search.set('workspace_id', params.workspace_id);
     }
-    const suffix = search.toString() ? `?${search.toString()}` : "";
+    const suffix = search.toString() ? `?${search.toString()}` : '';
     return request.get<ListGitHubRepositoriesDTO>(`/github/repositories${suffix}`, config);
   },
 
@@ -808,10 +813,7 @@ export const specForgeService = {
     request.get<GitHubRepositoryDTO>(`/repositories/${repoId}`, config),
 
   getGitHubRepositoryReadiness: (repoId: string, config?: RequestConfig) =>
-    request.get<GitHubRepositoryReadinessDTO>(
-      `/github/repositories/${repoId}/readiness`,
-      config
-    ),
+    request.get<GitHubRepositoryReadinessDTO>(`/github/repositories/${repoId}/readiness`, config),
 
   getGitHubSettings: (workspaceId: string, config?: RequestConfig) =>
     request.get<GitHubSettingsDTO>(
@@ -1056,10 +1058,7 @@ export const specForgeService = {
     if (params?.runtime_id) query.set('runtime_id', params.runtime_id);
     if (params?.limit) query.set('limit', String(params.limit));
     const suffix = query.toString() ? `?${query.toString()}` : '';
-    return request.get<{ tasks: CodingCTODirectAgentTaskDTO[] }>(
-      `/agent-tasks${suffix}`,
-      config
-    );
+    return request.get<{ tasks: CodingCTODirectAgentTaskDTO[] }>(`/agent-tasks${suffix}`, config);
   },
 
   listDirectTaskEvents: (taskId: number, afterSeq?: number, config?: RequestConfig) => {

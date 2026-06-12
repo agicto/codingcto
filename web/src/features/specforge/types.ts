@@ -21,11 +21,36 @@ export interface ProductSpec {
 }
 
 export interface ImplementationPlan {
+  contextSnapshotId?: number;
+  expertPolicyId?: number;
   technicalSummary: string;
   affectedAreas: string[];
   securityRisks: string[];
   migrationRisks: string[];
   status: 'draft' | 'approved';
+}
+
+export interface PlanContextSnapshot {
+  id: number;
+  snapshotStatus: string;
+  summary: string;
+  primaryRepositoryId?: string;
+  warningCount: number;
+  missingEvidence: string[];
+  createdAt: string;
+}
+
+export interface PlanExpertPolicy {
+  id: number;
+  version: number;
+  goalBoundary: string;
+  allowedPaths: string[];
+  forbiddenPaths: string[];
+  requiredTestCommands: string[];
+  mergeStrategy?: string;
+  requireManualApproval: boolean;
+  allowAutoMerge: boolean;
+  createdAt: string;
 }
 
 export interface PRNode {
@@ -81,6 +106,8 @@ export interface PlanBundle {
   planId?: number;
   idea: string;
   repoProfile: RepoProfile;
+  contextSnapshot?: PlanContextSnapshot;
+  expertPolicy?: PlanExpertPolicy;
   productSpec: ProductSpec;
   implementationPlan: ImplementationPlan;
   prNodes: PRNode[];

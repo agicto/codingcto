@@ -64,6 +64,8 @@ type ImplementationPlanPO struct {
 	RequirementID        *uint  `gorm:"index:idx_specforge_plan_requirement_version"`
 	IdeaID               uint   `gorm:"not null;uniqueIndex"`
 	ProductSpecID        uint   `gorm:"not null;index"`
+	ContextSnapshotID    *uint  `gorm:"index"`
+	ExpertPolicyID       *uint  `gorm:"index"`
 	Version              int    `gorm:"not null;default:1;index:idx_specforge_plan_requirement_version"`
 	TechnicalSummary     string `gorm:"type:text;not null"`
 	AffectedAreas        string `gorm:"type:text"`
@@ -261,8 +263,10 @@ func (po *ProductSpecPO) toDomain() *domain.SpecForgeProductSpec {
 func newImplementationPlanPO(plan *domain.SpecForgeImplementationPlan) *ImplementationPlanPO {
 	return &ImplementationPlanPO{
 		ID: plan.ID, RequirementID: plan.RequirementID, IdeaID: plan.IdeaID, ProductSpecID: plan.ProductSpecID,
-		Version:          plan.Version,
-		TechnicalSummary: plan.TechnicalSummary, AffectedAreas: encodeStrings(plan.AffectedAreas),
+		ContextSnapshotID: plan.ContextSnapshotID,
+		ExpertPolicyID:    plan.ExpertPolicyID,
+		Version:           plan.Version,
+		TechnicalSummary:  plan.TechnicalSummary, AffectedAreas: encodeStrings(plan.AffectedAreas),
 		DataModelChanges: encodeStrings(plan.DataModelChanges), APIChanges: encodeStrings(plan.APIChanges),
 		UIChanges: encodeStrings(plan.UIChanges), TestStrategy: encodeStrings(plan.TestStrategy),
 		SecurityRisks: encodeStrings(plan.SecurityRisks), MigrationRisks: encodeStrings(plan.MigrationRisks),
@@ -276,8 +280,10 @@ func newImplementationPlanPO(plan *domain.SpecForgeImplementationPlan) *Implemen
 func (po *ImplementationPlanPO) toDomain() *domain.SpecForgeImplementationPlan {
 	return &domain.SpecForgeImplementationPlan{
 		ID: po.ID, RequirementID: po.RequirementID, IdeaID: po.IdeaID, ProductSpecID: po.ProductSpecID,
-		Version:          po.Version,
-		TechnicalSummary: po.TechnicalSummary, AffectedAreas: decodeStrings(po.AffectedAreas),
+		ContextSnapshotID: po.ContextSnapshotID,
+		ExpertPolicyID:    po.ExpertPolicyID,
+		Version:           po.Version,
+		TechnicalSummary:  po.TechnicalSummary, AffectedAreas: decodeStrings(po.AffectedAreas),
 		DataModelChanges: decodeStrings(po.DataModelChanges), APIChanges: decodeStrings(po.APIChanges),
 		UIChanges: decodeStrings(po.UIChanges), TestStrategy: decodeStrings(po.TestStrategy),
 		SecurityRisks: decodeStrings(po.SecurityRisks), MigrationRisks: decodeStrings(po.MigrationRisks),
