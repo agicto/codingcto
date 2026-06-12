@@ -58,6 +58,21 @@ func (r *repository) FindInstallationByGitHubID(ctx context.Context, installatio
 	return po.toDomain(), nil
 }
 
+func (r *repository) ListInstallationsByWorkspaceID(ctx context.Context, workspaceID string) ([]*domain.GitHubInstallation, error) {
+	var rows []*GitHubInstallationPO
+	if err := r.db.WithContext(ctx).
+		Where("workspace_id = ?", workspaceID).
+		Order("updated_at DESC, id DESC").
+		Find(&rows).Error; err != nil {
+		return nil, err
+	}
+	out := make([]*domain.GitHubInstallation, len(rows))
+	for index, row := range rows {
+		out[index] = row.toDomain()
+	}
+	return out, nil
+}
+
 func (r *repository) UpsertRepository(ctx context.Context, repository *domain.Repository) error {
 	po := newRepositoryPO(repository)
 	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{

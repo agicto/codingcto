@@ -27,7 +27,7 @@ export function projectReadinessDecision(
         title: 'Finish GitHub setup',
         description: readiness.summary,
         actionLabel: 'Review GitHub setup',
-        actionHref: projectContextHref(projectId),
+        actionHref: '#github-setup',
         tone: 'warning',
       };
     case 'review_context':

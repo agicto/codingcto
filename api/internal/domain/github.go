@@ -66,6 +66,7 @@ type GitHubIntegrationRepository interface {
 	UpsertInstallation(ctx context.Context, installation *GitHubInstallation) error
 	FindInstallationByID(ctx context.Context, id uint) (*GitHubInstallation, error)
 	FindInstallationByGitHubID(ctx context.Context, installationID int64) (*GitHubInstallation, error)
+	ListInstallationsByWorkspaceID(ctx context.Context, workspaceID string) ([]*GitHubInstallation, error)
 	UpsertRepository(ctx context.Context, repository *Repository) error
 	FindRepositoryByRepositoryID(ctx context.Context, repositoryID string) (*Repository, error)
 	ListRepositoriesByWorkspaceID(ctx context.Context, workspaceID string) ([]*Repository, error)

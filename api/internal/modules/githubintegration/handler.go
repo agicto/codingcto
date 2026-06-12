@@ -63,6 +63,28 @@ func (h *Handler) SyncInstallation(c *gin.Context) {
 	response.Success(c, result)
 }
 
+func (h *Handler) SyncInstallationByID(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	installationID, err := strconv.ParseInt(c.Param("id"), 10, 64)
+	if err != nil || installationID == 0 {
+		response.HandleError(c, "Invalid installation id", err)
+		return
+	}
+	var req SyncInstallationByIDRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+	result, err := h.service.SyncInstallationByID(c.Request.Context(), userID, installationID, &req)
+	if err != nil {
+		response.HandleError(c, "Failed to sync GitHub installation", err)
+		return
+	}
+	response.Success(c, result)
+}
+
 func (h *Handler) GetInstallation(c *gin.Context) {
 	id, err := strconv.ParseUint(c.Param("id"), 10, 64)
 	if err != nil || id == 0 {
@@ -75,6 +97,20 @@ func (h *Handler) GetInstallation(c *gin.Context) {
 		return
 	}
 	response.Success(c, installation)
+}
+
+func (h *Handler) GetInstallationStatus(c *gin.Context) {
+	var req GetInstallationStatusRequest
+	if err := c.ShouldBindQuery(&req); err != nil {
+		response.BadRequest(c, "Invalid request parameters", err)
+		return
+	}
+	status, err := h.service.GetInstallationStatus(c.Request.Context(), req.WorkspaceID)
+	if err != nil {
+		response.HandleError(c, "Failed to get GitHub installation status", err)
+		return
+	}
+	response.Success(c, status)
 }
 
 func (h *Handler) UpsertRepository(c *gin.Context) {

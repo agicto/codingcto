@@ -32,9 +32,32 @@ type SyncInstallationRequest struct {
 	InstallationID int64  `json:"installation_id" binding:"required"`
 }
 
+type SyncInstallationByIDRequest struct {
+	WorkspaceID string `json:"workspace_id" binding:"required,max=255"`
+}
+
 type SyncInstallationResponse struct {
 	Installation *domain.GitHubInstallation `json:"installation"`
 	Repositories []GitHubRepositoryOption   `json:"repositories"`
+}
+
+type GetInstallationStatusRequest struct {
+	WorkspaceID string `form:"workspace_id" binding:"required,max=255"`
+}
+
+type GitHubInstallationStatusResponse struct {
+	WorkspaceID     string                          `json:"workspace_id"`
+	RepositoryCount int                             `json:"repository_count"`
+	Installations   []*GitHubInstallationStatusItem `json:"installations"`
+}
+
+type GitHubInstallationStatusItem struct {
+	ID              uint              `json:"id"`
+	InstallationID  int64             `json:"installation_id"`
+	AccountLogin    string            `json:"account_login"`
+	Permissions     map[string]string `json:"permissions"`
+	RepositoryCount int               `json:"repository_count"`
+	UpdatedAt       string            `json:"updated_at"`
 }
 
 type GitHubRepositoryOption struct {

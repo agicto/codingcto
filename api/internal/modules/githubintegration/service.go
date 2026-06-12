@@ -7,6 +7,7 @@ import (
 	"encoding/hex"
 	"errors"
 	"fmt"
+	"sort"
 	"strings"
 	"time"
 
@@ -17,7 +18,9 @@ import (
 type Service interface {
 	UpsertInstallation(ctx context.Context, userID uint, req *UpsertInstallationRequest) (*domain.GitHubInstallation, error)
 	SyncInstallation(ctx context.Context, userID uint, req *SyncInstallationRequest) (*SyncInstallationResponse, error)
+	SyncInstallationByID(ctx context.Context, userID uint, installationID int64, req *SyncInstallationByIDRequest) (*SyncInstallationResponse, error)
 	GetInstallation(ctx context.Context, id uint) (*domain.GitHubInstallation, error)
+	GetInstallationStatus(ctx context.Context, workspaceID string) (*GitHubInstallationStatusResponse, error)
 	UpsertRepository(ctx context.Context, userID uint, req *UpsertRepositoryRequest) (*domain.Repository, error)
 	GetRepository(ctx context.Context, repositoryID string) (*domain.Repository, error)
 	ListRepositories(ctx context.Context, workspaceID string) ([]*domain.Repository, error)
@@ -140,11 +143,65 @@ func (s *service) SyncInstallation(ctx context.Context, userID uint, req *SyncIn
 	return &SyncInstallationResponse{Installation: installation, Repositories: options}, nil
 }
 
+func (s *service) SyncInstallationByID(ctx context.Context, userID uint, installationID int64, req *SyncInstallationByIDRequest) (*SyncInstallationResponse, error) {
+	if req == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	return s.SyncInstallation(ctx, userID, &SyncInstallationRequest{
+		WorkspaceID:    strings.TrimSpace(req.WorkspaceID),
+		InstallationID: installationID,
+	})
+}
+
 func (s *service) GetInstallation(ctx context.Context, id uint) (*domain.GitHubInstallation, error) {
 	if id == 0 {
 		return nil, domain.ErrInvalidInput
 	}
 	return s.repo.FindInstallationByID(ctx, id)
+}
+
+func (s *service) GetInstallationStatus(ctx context.Context, workspaceID string) (*GitHubInstallationStatusResponse, error) {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	installations, err := s.repo.ListInstallationsByWorkspaceID(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	repositories, err := s.repo.ListRepositoriesByWorkspaceID(ctx, workspaceID)
+	if err != nil {
+		return nil, err
+	}
+	repositoryCountByInstallation := map[uint]int{}
+	for _, repository := range repositories {
+		if repository == nil || repository.GitHubInstallationID == 0 {
+			continue
+		}
+		repositoryCountByInstallation[repository.GitHubInstallationID]++
+	}
+	items := make([]*GitHubInstallationStatusItem, 0, len(installations))
+	for _, installation := range installations {
+		if installation == nil {
+			continue
+		}
+		items = append(items, &GitHubInstallationStatusItem{
+			ID:              installation.ID,
+			InstallationID:  installation.InstallationID,
+			AccountLogin:    installation.AccountLogin,
+			Permissions:     normalizePermissions(installation.Permissions),
+			RepositoryCount: repositoryCountByInstallation[installation.ID],
+			UpdatedAt:       installation.UpdatedAt.UTC().Format(time.RFC3339),
+		})
+	}
+	sort.SliceStable(items, func(i, j int) bool {
+		return items[i].UpdatedAt > items[j].UpdatedAt
+	})
+	return &GitHubInstallationStatusResponse{
+		WorkspaceID:     workspaceID,
+		RepositoryCount: len(repositories),
+		Installations:   items,
+	}, nil
 }
 
 func (s *service) UpsertRepository(ctx context.Context, userID uint, req *UpsertRepositoryRequest) (*domain.Repository, error) {
