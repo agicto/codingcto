@@ -22,12 +22,13 @@ const (
 	ProjectReadinessStatusAttention = "attention"
 	ProjectReadinessStatusReady     = "ready"
 
-	ProjectReadinessStepBindRepository    = "bind_repository"
-	ProjectReadinessStepConfigureGitHub   = "configure_github"
-	ProjectReadinessStepReviewContext     = "review_context"
-	ProjectReadinessStepConnectRuntime    = "connect_runtime"
-	ProjectReadinessStepAddSkills         = "add_skills"
-	ProjectReadinessStepCreateRequirement = "create_requirement"
+	ProjectReadinessStepBindRepository        = "bind_repository"
+	ProjectReadinessStepConfigureGitHub       = "configure_github"
+	ProjectReadinessStepReviewContext         = "review_context"
+	ProjectReadinessStepConnectRuntime        = "connect_runtime"
+	ProjectReadinessStepAddSkills             = "add_skills"
+	ProjectReadinessStepConfigureExpertPolicy = "configure_expert_policy"
+	ProjectReadinessStepCreateRequirement     = "create_requirement"
 )
 
 // SpecForgeProject groups repositories, requirements, plans, and execution runs.
@@ -411,4 +412,9 @@ type SpecForgeProjectRepositoryStore interface {
 	FindActivePrimaryProjectRepository(ctx context.Context, projectID uint) (*SpecForgeProjectRepository, error)
 	CreateProjectContextSnapshot(ctx context.Context, snapshot *SpecForgeProjectContextSnapshot) error
 	FindLatestProjectContextSnapshot(ctx context.Context, projectID uint) (*SpecForgeProjectContextSnapshot, error)
+	CreateProjectExpertPolicy(ctx context.Context, policy *SpecForgeProjectExpertPolicy) error
+	UpdateProjectExpertPolicy(ctx context.Context, policy *SpecForgeProjectExpertPolicy) error
+	FindProjectExpertPolicyByID(ctx context.Context, id uint) (*SpecForgeProjectExpertPolicy, error)
+	FindActiveProjectExpertPolicyByProjectID(ctx context.Context, projectID uint) (*SpecForgeProjectExpertPolicy, error)
+	ListProjectExpertPoliciesByProjectID(ctx context.Context, projectID uint) ([]*SpecForgeProjectExpertPolicy, error)
 }

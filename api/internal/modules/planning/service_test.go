@@ -1300,6 +1300,37 @@ func (r *memoryProjectRepo) FindLatestProjectContextSnapshot(ctx context.Context
 	return nil, domain.ErrNotFound
 }
 
+func (r *memoryProjectRepo) CreateProjectExpertPolicy(ctx context.Context, policy *domain.SpecForgeProjectExpertPolicy) error {
+	if policy == nil {
+		return domain.ErrInvalidInput
+	}
+	copied := *policy
+	if copied.ID == 0 {
+		copied.ID = 1
+	}
+	*policy = copied
+	return nil
+}
+
+func (r *memoryProjectRepo) UpdateProjectExpertPolicy(ctx context.Context, policy *domain.SpecForgeProjectExpertPolicy) error {
+	if policy == nil {
+		return domain.ErrInvalidInput
+	}
+	return nil
+}
+
+func (r *memoryProjectRepo) FindProjectExpertPolicyByID(ctx context.Context, id uint) (*domain.SpecForgeProjectExpertPolicy, error) {
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryProjectRepo) FindActiveProjectExpertPolicyByProjectID(ctx context.Context, projectID uint) (*domain.SpecForgeProjectExpertPolicy, error) {
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryProjectRepo) ListProjectExpertPoliciesByProjectID(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectExpertPolicy, error) {
+	return []*domain.SpecForgeProjectExpertPolicy{}, nil
+}
+
 func cloneBundle(bundle *domain.SpecForgePlanBundle) *domain.SpecForgePlanBundle {
 	out := *bundle
 	idea := *bundle.Idea

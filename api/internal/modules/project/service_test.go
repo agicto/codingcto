@@ -443,6 +443,19 @@ func TestServiceProjectReadinessBecomesReadyWhenSetupSignalsPass(t *testing.T) {
 		Role:         domain.ProjectRepositoryRolePrimary,
 	})
 	require.NoError(t, err)
+	_, err = svc.CreateProjectExpertPolicy(context.Background(), 42, project.ID, &UpsertProjectExpertPolicyRequest{
+		GoalBoundary: "Only touch the project delivery flow.",
+		ReviewPolicy: ProjectExpertReviewPolicyRequest{
+			RequiredApprovals:       1,
+			BlockOnChangesRequested: true,
+			RequireCIGreen:          true,
+		},
+		MergePolicy: ProjectExpertMergePolicyRequest{
+			Strategy:              domain.ProjectMergeStrategySquash,
+			RequireManualApproval: true,
+		},
+	})
+	require.NoError(t, err)
 
 	readiness, err := svc.GetProjectReadiness(context.Background(), project.ID)
 	require.NoError(t, err)
@@ -451,10 +464,11 @@ func TestServiceProjectReadinessBecomesReadyWhenSetupSignalsPass(t *testing.T) {
 	require.Equal(t, 1, readiness.SkillCount)
 	require.Equal(t, 1, readiness.RuntimeCount)
 	require.True(t, readiness.HasPrimaryRepository)
-	require.Len(t, readiness.Checks, 5)
+	require.Len(t, readiness.Checks, 6)
 	require.Equal(t, domain.ProjectReadinessStatusReady, readinessCheckStatusByKey(t, readiness, "github_delivery"))
 	require.Equal(t, domain.ProjectReadinessStatusReady, readinessCheckStatusByKey(t, readiness, "runtime_dispatch"))
 	require.Equal(t, domain.ProjectReadinessStatusReady, readinessCheckStatusByKey(t, readiness, "skill_contract"))
+	require.Equal(t, domain.ProjectReadinessStatusReady, readinessCheckStatusByKey(t, readiness, "expert_policy"))
 }
 
 func TestServiceProjectReadinessBlocksOnGitHubBeforeOtherWarnings(t *testing.T) {
@@ -657,13 +671,164 @@ func TestServiceRefreshProjectContextMarksMissingDeepWikiEvidence(t *testing.T) 
 	require.Contains(t, snapshot.Summary, "no DeepWiki index matched")
 }
 
+func TestServiceCreateAndUpdateProjectExpertPolicyVersions(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil, nil, nil, nil, nil)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "CodingCTO",
+		Slug:        "codingcto",
+	})
+	require.NoError(t, err)
+
+	created, err := svc.CreateProjectExpertPolicy(context.Background(), 42, project.ID, &UpsertProjectExpertPolicyRequest{
+		GoalBoundary:         "Only touch the project delivery flow.",
+		AllowedPaths:         []string{"api/internal/modules/project", "web/src/features/project"},
+		ForbiddenPaths:       []string{"api/internal/modules/execution"},
+		RequiredTestCommands: []string{"cd api && go test ./internal/modules/project"},
+		ReviewPolicy: ProjectExpertReviewPolicyRequest{
+			RequiredApprovals:       1,
+			AllowAuthorApproval:     false,
+			BlockOnChangesRequested: true,
+			RequireCIGreen:          true,
+		},
+		MergePolicy: ProjectExpertMergePolicyRequest{
+			Strategy:              domain.ProjectMergeStrategySquash,
+			RequireManualApproval: true,
+			AllowAutoMerge:        false,
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, created.Version)
+	require.True(t, created.Active)
+	require.Equal(t, []string{"api/internal/modules/project", "web/src/features/project"}, created.AllowedPaths)
+
+	loaded, err := svc.GetProjectExpertPolicy(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.NotNil(t, loaded)
+	require.Equal(t, created.ID, loaded.ID)
+
+	updated, err := svc.UpdateProjectExpertPolicy(context.Background(), 42, project.ID, created.ID, &UpsertProjectExpertPolicyRequest{
+		GoalBoundary:         "Limit work to project setup and review rules.",
+		AllowedPaths:         []string{"api/internal/modules/project"},
+		ForbiddenPaths:       []string{"api/internal/modules/execution", "web/src/features/specforge"},
+		RequiredTestCommands: []string{"cd api && go test ./...", "cd web && pnpm type-check"},
+		ReviewPolicy: ProjectExpertReviewPolicyRequest{
+			RequiredApprovals:       2,
+			AllowAuthorApproval:     false,
+			BlockOnChangesRequested: true,
+			RequireCIGreen:          true,
+		},
+		MergePolicy: ProjectExpertMergePolicyRequest{
+			Strategy:              domain.ProjectMergeStrategyRebase,
+			RequireManualApproval: true,
+			AllowAutoMerge:        false,
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, updated.Version)
+	require.True(t, updated.Active)
+	require.Equal(t, domain.ProjectMergeStrategyRebase, updated.MergePolicy.Strategy)
+
+	history, ok := store.policies[project.ID]
+	require.True(t, ok)
+	require.Len(t, history, 2)
+	require.False(t, history[0].Active)
+	require.True(t, history[1].Active)
+}
+
+func TestServiceProjectReadinessRequiresExpertPolicyBeforeRequirement(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
+		},
+	}
+	profiles := &memoryRepoProfileStore{
+		profiles: map[string]*domain.SpecForgeRepoProfile{
+			"repo_1": {
+				RepositoryID:  "repo_1",
+				DefaultBranch: "main",
+				Summary:       "Primary repo ready.",
+			},
+		},
+		snapshots: map[string]*domain.SpecForgeRepoArchitectureSnapshot{
+			"repo_1": {
+				RepositoryID: "repo_1",
+				CommitSHA:    "abc123",
+				CreatedAt:    nowUTC(),
+			},
+		},
+	}
+	projectSkills := &fakeProjectSkillStore{
+		skills: map[uint][]*domain.SpecForgeProjectSkill{
+			1: {
+				{ID: 10, ProjectID: 1, RepositoryID: "repo_1", SkillID: 50, Active: true},
+			},
+		},
+	}
+	githubReadiness := &fakeGitHubReadinessChecker{
+		response: &githubintegration.GitHubRepositoryReadinessResponse{
+			RepositoryID: "repo_1",
+			Ready:        true,
+		},
+	}
+	runtimes := &fakeRuntimeReadinessStore{
+		runtimes: []*domain.SpecForgeRuntime{
+			{RuntimeID: "runtime_1", Executor: "codex_cli", Status: domain.RuntimeStatusOnline, LastSeenAt: nowUTC()},
+		},
+	}
+	svc := NewService(store, workspaces, github, profiles, &memorySkillStore{}, projectSkills, githubReadiness, runtimes, nil)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "CodingCTO",
+		Slug:        "codingcto",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+
+	readiness, err := svc.GetProjectReadiness(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.ProjectReadinessStepConfigureExpertPolicy, readiness.NextStep)
+	require.Equal(t, domain.ProjectReadinessStatusBlocked, readinessCheckStatusByKey(t, readiness, "expert_policy"))
+
+	_, err = svc.CreateProjectExpertPolicy(context.Background(), 42, project.ID, &UpsertProjectExpertPolicyRequest{
+		GoalBoundary: "Only change project delivery and review flow.",
+		ReviewPolicy: ProjectExpertReviewPolicyRequest{
+			RequiredApprovals:       1,
+			BlockOnChangesRequested: true,
+			RequireCIGreen:          true,
+		},
+		MergePolicy: ProjectExpertMergePolicyRequest{
+			Strategy:              domain.ProjectMergeStrategySquash,
+			RequireManualApproval: true,
+		},
+	})
+	require.NoError(t, err)
+
+	readiness, err = svc.GetProjectReadiness(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.ProjectReadinessStepCreateRequirement, readiness.NextStep)
+	require.Equal(t, domain.ProjectReadinessStatusReady, readinessCheckStatusByKey(t, readiness, "expert_policy"))
+}
+
 type memoryProjectStore struct {
 	nextProjectID  uint
 	nextBindingID  uint
 	nextSnapshotID uint
+	nextPolicyID   uint
 	projects       map[uint]*domain.SpecForgeProject
 	bindings       map[uint]map[string]*domain.SpecForgeProjectRepository
 	snapshots      map[uint][]*domain.SpecForgeProjectContextSnapshot
+	policies       map[uint][]*domain.SpecForgeProjectExpertPolicy
 }
 
 type fakeGitHubReadinessChecker struct {
@@ -785,9 +950,11 @@ func newMemoryProjectStore() *memoryProjectStore {
 		nextProjectID:  1,
 		nextBindingID:  1,
 		nextSnapshotID: 1,
+		nextPolicyID:   1,
 		projects:       map[uint]*domain.SpecForgeProject{},
 		bindings:       map[uint]map[string]*domain.SpecForgeProjectRepository{},
 		snapshots:      map[uint][]*domain.SpecForgeProjectContextSnapshot{},
+		policies:       map[uint][]*domain.SpecForgeProjectExpertPolicy{},
 	}
 }
 
@@ -813,6 +980,7 @@ func (s *memoryProjectStore) DeleteProject(_ context.Context, projectID uint) er
 	delete(s.projects, projectID)
 	delete(s.bindings, projectID)
 	delete(s.snapshots, projectID)
+	delete(s.policies, projectID)
 	return nil
 }
 
@@ -919,6 +1087,64 @@ func (s *memoryProjectStore) FindLatestProjectContextSnapshot(_ context.Context,
 		return nil, domain.ErrNotFound
 	}
 	return cloneProjectContextSnapshot(candidates[len(candidates)-1]), nil
+}
+
+func (s *memoryProjectStore) CreateProjectExpertPolicy(_ context.Context, policy *domain.SpecForgeProjectExpertPolicy) error {
+	if policy == nil {
+		return domain.ErrInvalidInput
+	}
+	copied := cloneProjectExpertPolicy(policy)
+	copied.ID = s.nextPolicyID
+	s.nextPolicyID++
+	s.policies[copied.ProjectID] = append(s.policies[copied.ProjectID], copied)
+	*policy = *cloneProjectExpertPolicy(copied)
+	return nil
+}
+
+func (s *memoryProjectStore) UpdateProjectExpertPolicy(_ context.Context, policy *domain.SpecForgeProjectExpertPolicy) error {
+	if policy == nil {
+		return domain.ErrInvalidInput
+	}
+	items := s.policies[policy.ProjectID]
+	for index, existing := range items {
+		if existing.ID != policy.ID {
+			continue
+		}
+		s.policies[policy.ProjectID][index] = cloneProjectExpertPolicy(policy)
+		*policy = *cloneProjectExpertPolicy(s.policies[policy.ProjectID][index])
+		return nil
+	}
+	return domain.ErrNotFound
+}
+
+func (s *memoryProjectStore) FindProjectExpertPolicyByID(_ context.Context, id uint) (*domain.SpecForgeProjectExpertPolicy, error) {
+	for _, items := range s.policies {
+		for _, policy := range items {
+			if policy.ID == id {
+				return cloneProjectExpertPolicy(policy), nil
+			}
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (s *memoryProjectStore) FindActiveProjectExpertPolicyByProjectID(_ context.Context, projectID uint) (*domain.SpecForgeProjectExpertPolicy, error) {
+	items := s.policies[projectID]
+	for index := len(items) - 1; index >= 0; index-- {
+		if items[index].Active {
+			return cloneProjectExpertPolicy(items[index]), nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (s *memoryProjectStore) ListProjectExpertPoliciesByProjectID(_ context.Context, projectID uint) ([]*domain.SpecForgeProjectExpertPolicy, error) {
+	items := s.policies[projectID]
+	out := make([]*domain.SpecForgeProjectExpertPolicy, 0, len(items))
+	for _, policy := range items {
+		out = append(out, cloneProjectExpertPolicy(policy))
+	}
+	return out, nil
 }
 
 type memoryWorkspaceStore struct {
@@ -1133,6 +1359,17 @@ func cloneProjectContextSnapshot(snapshot *domain.SpecForgeProjectContextSnapsho
 		}
 		copied.Repositories = append(copied.Repositories, &repoCopy)
 	}
+	return &copied
+}
+
+func cloneProjectExpertPolicy(policy *domain.SpecForgeProjectExpertPolicy) *domain.SpecForgeProjectExpertPolicy {
+	if policy == nil {
+		return nil
+	}
+	copied := *policy
+	copied.AllowedPaths = append([]string(nil), policy.AllowedPaths...)
+	copied.ForbiddenPaths = append([]string(nil), policy.ForbiddenPaths...)
+	copied.RequiredTestCommands = append([]string(nil), policy.RequiredTestCommands...)
 	return &copied
 }
 

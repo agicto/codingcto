@@ -26,6 +26,28 @@ type BindRepositoryRequest struct {
 	Role         string `json:"role" binding:"required,oneof=primary dependency docs infra"`
 }
 
+type UpsertProjectExpertPolicyRequest struct {
+	GoalBoundary         string                           `json:"goal_boundary" binding:"required,max=5000"`
+	AllowedPaths         []string                         `json:"allowed_paths"`
+	ForbiddenPaths       []string                         `json:"forbidden_paths"`
+	RequiredTestCommands []string                         `json:"required_test_commands"`
+	ReviewPolicy         ProjectExpertReviewPolicyRequest `json:"review_policy"`
+	MergePolicy          ProjectExpertMergePolicyRequest  `json:"merge_policy"`
+}
+
+type ProjectExpertReviewPolicyRequest struct {
+	RequiredApprovals       int  `json:"required_approvals"`
+	AllowAuthorApproval     bool `json:"allow_author_approval"`
+	BlockOnChangesRequested bool `json:"block_on_changes_requested"`
+	RequireCIGreen          bool `json:"require_ci_green"`
+}
+
+type ProjectExpertMergePolicyRequest struct {
+	Strategy              string `json:"strategy" binding:"omitempty,oneof=squash rebase merge"`
+	RequireManualApproval bool   `json:"require_manual_approval"`
+	AllowAutoMerge        bool   `json:"allow_auto_merge"`
+}
+
 type ProjectResponse struct {
 	Project *domain.SpecForgeProject `json:"project"`
 }
@@ -52,6 +74,10 @@ type ProjectReadinessResponse struct {
 
 type ProjectContextSnapshotResponse struct {
 	Snapshot *domain.SpecForgeProjectContextSnapshot `json:"snapshot"`
+}
+
+type ProjectExpertPolicyResponse struct {
+	Policy *domain.SpecForgeProjectExpertPolicy `json:"policy"`
 }
 
 func newProjectPO(project *domain.SpecForgeProject) *ProjectPO {
