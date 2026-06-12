@@ -19,6 +19,7 @@ func TestApproveReviewDecisionMarksCurrentHeadAsApproved(t *testing.T) {
 			},
 		},
 		&memoryFixAttemptReader{},
+		&memoryCIRefresher{},
 		&memoryMergeRequester{},
 	)
 	svc.now = func() time.Time { return time.Date(2026, 6, 11, 11, 0, 0, 0, time.UTC) }
@@ -42,6 +43,7 @@ func TestApproveReviewDecisionRejectsBlockedPRNode(t *testing.T) {
 		&memoryReviewRepo{},
 		&memoryPRNodeReader{nodes: map[uint]*domain.SpecForgePRNode{7: node}},
 		&memoryFixAttemptReader{},
+		&memoryCIRefresher{},
 		&memoryMergeRequester{},
 	)
 
@@ -67,6 +69,7 @@ func TestGetReviewDecisionExpiresApprovalWhenHeadChanges(t *testing.T) {
 		reviewRepo,
 		&memoryPRNodeReader{nodes: map[uint]*domain.SpecForgePRNode{7: readyForReviewNode()}},
 		&memoryFixAttemptReader{},
+		&memoryCIRefresher{},
 		&memoryMergeRequester{},
 	)
 	svc.now = func() time.Time { return time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC) }
@@ -86,6 +89,7 @@ func TestRejectReviewDecisionRecordsReason(t *testing.T) {
 		&memoryReviewRepo{},
 		&memoryPRNodeReader{nodes: map[uint]*domain.SpecForgePRNode{7: readyForReviewNode()}},
 		&memoryFixAttemptReader{},
+		&memoryCIRefresher{},
 		&memoryMergeRequester{},
 	)
 	svc.now = func() time.Time { return time.Date(2026, 6, 11, 13, 0, 0, 0, time.UTC) }
@@ -113,6 +117,7 @@ func TestApproveReviewDecisionBlocksQueuedFixAttempt(t *testing.T) {
 				},
 			},
 		},
+		&memoryCIRefresher{},
 		&memoryMergeRequester{},
 	)
 
@@ -146,6 +151,7 @@ func TestRequestMergeReviewDecisionPassesApprovedHeadSHA(t *testing.T) {
 		reviewRepo,
 		&memoryPRNodeReader{nodes: map[uint]*domain.SpecForgePRNode{7: readyForReviewNode()}},
 		&memoryFixAttemptReader{},
+		&memoryCIRefresher{},
 		mergeRequester,
 	)
 
@@ -167,6 +173,7 @@ func TestRequestMergeReviewDecisionRequiresCurrentApproval(t *testing.T) {
 		&memoryReviewRepo{},
 		&memoryPRNodeReader{nodes: map[uint]*domain.SpecForgePRNode{7: readyForReviewNode()}},
 		&memoryFixAttemptReader{},
+		&memoryCIRefresher{},
 		&memoryMergeRequester{},
 	)
 
@@ -175,10 +182,47 @@ func TestRequestMergeReviewDecisionRequiresCurrentApproval(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrConflict)
 }
 
+func TestRequestMergeReviewDecisionRefreshesCIAndRejectsBlockedNode(t *testing.T) {
+	reviewRepo := &memoryReviewRepo{
+		decisions: []*domain.SpecForgeReviewDecision{
+			{
+				ID:        1,
+				PRNodeID:  7,
+				Status:    domain.ReviewDecisionStatusApproved,
+				HeadSHA:   "abc123def456",
+				DecidedBy: 42,
+				DecidedAt: time.Date(2026, 6, 11, 11, 0, 0, 0, time.UTC),
+			},
+		},
+	}
+	refresher := &memoryCIRefresher{
+		response: func() *domain.SpecForgePRNode {
+			node := readyForReviewNode()
+			node.Status = domain.PRNodeStatusBlocked
+			return node
+		}(),
+	}
+	svc := NewService(
+		reviewRepo,
+		&memoryPRNodeReader{nodes: map[uint]*domain.SpecForgePRNode{7: readyForReviewNode()}},
+		&memoryFixAttemptReader{},
+		refresher,
+		&memoryMergeRequester{},
+	)
+
+	_, err := svc.RequestMergeReviewDecision(context.Background(), 42, 7, &RequestMergeReviewDecisionRequest{})
+
+	require.ErrorIs(t, err, domain.ErrConflict)
+	require.NotNil(t, refresher.request)
+	require.Equal(t, "github_agicto__codingcto", refresher.request.RepositoryID)
+	require.Equal(t, uint(7), refresher.request.PRNodeID)
+}
+
 func readyForReviewNode() *domain.SpecForgePRNode {
 	number := 81
 	return &domain.SpecForgePRNode{
 		ID:             7,
+		RepositoryID:   "github_agicto__codingcto",
 		NodeKey:        "PR-007",
 		GitHubPRNumber: &number,
 		GitHubPRURL:    "https://github.com/agicto/codingcto/pull/81",
@@ -274,4 +318,20 @@ func (r *memoryMergeRequester) MergePRNode(_ context.Context, req *githubintegra
 	copied := *req
 	r.request = &copied
 	return r.response, r.err
+}
+
+type memoryCIRefresher struct {
+	request  *githubintegration.RefreshPRNodeCIRequest
+	response *domain.SpecForgePRNode
+	err      error
+}
+
+func (r *memoryCIRefresher) RefreshPRNodeCI(_ context.Context, req *githubintegration.RefreshPRNodeCIRequest) (*domain.SpecForgePRNode, error) {
+	copied := *req
+	r.request = &copied
+	if r.response == nil {
+		return nil, r.err
+	}
+	node := *r.response
+	return &node, r.err
 }
