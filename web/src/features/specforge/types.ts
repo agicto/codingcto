@@ -55,6 +55,8 @@ export interface PlanExpertPolicy {
 
 export interface PRNode {
   id: string;
+  planId?: number;
+  repositoryId?: string;
   taskId?: number;
   nodeKey: string;
   order: number;

@@ -28,7 +28,11 @@ import {
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { ProjectPlanningFlowCard } from '@/features/project/components/project-planning-flow-card';
 import { projectPlanningStages } from '@/features/project/project-planning-flow';
-import { projectContextHref, projectSpecForgeHref } from '@/features/project/project-utils';
+import {
+  projectContextHref,
+  projectPRReviewHref,
+  projectSpecForgeHref,
+} from '@/features/project/project-utils';
 import { executionRunFromDTO, planBundleFromDTO } from '@/features/specforge/plan-adapter';
 import { buildPromptPreview } from '@/features/specforge/prompt-preview';
 import {
@@ -353,7 +357,7 @@ function ProjectPlanReview({
           readyRuntimeCount={executionReadiness.healthyRuntimeCount}
           readinessReason={executionReadiness.reason}
         />
-        <VerificationReviewCard plan={plan} />
+        <VerificationReviewCard plan={plan} projectId={projectId} />
       </div>
     </main>
   );
@@ -682,7 +686,7 @@ function DagMeta({ label, value }: { label: string; value: string }) {
   );
 }
 
-function VerificationReviewCard({ plan }: { plan: PlanBundle }) {
+function VerificationReviewCard({ plan, projectId }: { plan: PlanBundle; projectId: number }) {
   const review = verificationReviewForNodes(plan.prNodes);
   const highlightedNodes =
     review.failedNodes.length > 0
@@ -743,6 +747,11 @@ function VerificationReviewCard({ plan }: { plan: PlanBundle }) {
                     Failure: {node.failureReason}
                   </p>
                 ) : null}
+                <div className="mt-2">
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={projectPRReviewHref(projectId, Number(node.id))}>Open review</Link>
+                  </Button>
+                </div>
               </div>
             ))}
             {highlightedNodes.length === 0 ? (

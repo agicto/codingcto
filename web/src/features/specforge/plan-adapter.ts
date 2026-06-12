@@ -158,6 +158,8 @@ function prDAGReviewFromDTO(bundle: SpecForgePlanBundleDTO): string[] {
 export function prNodeFromDTO(node: SpecForgePRNodeDTO): PRNode {
   return {
     id: String(node.id),
+    planId: node.plan_id,
+    repositoryId: node.repository_id,
     nodeKey: node.node_key,
     order: node.order,
     title: node.title,
