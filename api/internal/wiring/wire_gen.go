@@ -16,12 +16,14 @@ import (
 	"github.com/zgiai/luas/api/internal/infra/migration"
 	"github.com/zgiai/luas/api/internal/modules/apikey"
 	"github.com/zgiai/luas/api/internal/modules/audit"
+	"github.com/zgiai/luas/api/internal/modules/deepwiki"
 	"github.com/zgiai/luas/api/internal/modules/execution"
 	"github.com/zgiai/luas/api/internal/modules/expert"
 	"github.com/zgiai/luas/api/internal/modules/githubintegration"
 	"github.com/zgiai/luas/api/internal/modules/planning"
 	"github.com/zgiai/luas/api/internal/modules/project"
 	"github.com/zgiai/luas/api/internal/modules/repocontext"
+	"github.com/zgiai/luas/api/internal/modules/review"
 	"github.com/zgiai/luas/api/internal/modules/user"
 	"github.com/zgiai/luas/api/internal/modules/verification"
 	"github.com/zgiai/luas/api/internal/modules/workspace"
@@ -54,6 +56,10 @@ func InitApplication() (*app.Application, error) {
 	expertRepository := expert.NewRepository(db)
 	expertService := expert.NewService(expertRepository)
 	expertHandler := expert.NewHandler(expertService)
+	deepwikiRepository := deepwiki.NewRepository(db)
+	repoReader := deepwiki.NewDefaultRepoReader()
+	deepwikiService := deepwiki.NewService(deepwikiRepository, repoReader)
+	deepwikiHandler := deepwiki.NewHandler(deepwikiService)
 	planningRepository := planning.NewRepository(db)
 	repocontextRepository := repocontext.NewRepository(db)
 	projectRepository := project.NewRepository(db)
@@ -76,12 +82,23 @@ func InitApplication() (*app.Application, error) {
 	executionHandler := execution.NewHandler(executionService)
 	githubintegrationHandler := githubintegration.NewHandler(githubintegrationService)
 	workspaceRepository := workspace.NewRepository(db)
-	projectService := project.NewService(projectRepository, workspaceRepository, githubintegrationRepository, repocontextRepository, planningRepository)
+	projectSkillStore := project.NewProjectSkillStore(planningRepository)
+	githubReadinessChecker := project.NewGitHubReadinessChecker(githubintegrationService)
+	runtimeReadinessStore := project.NewRuntimeReadinessStore(executionRepository)
+	projectDeepWikiStore := project.NewProjectDeepWikiStore(deepwikiRepository)
+	projectService := project.NewService(projectRepository, workspaceRepository, githubintegrationRepository, repocontextRepository, planningRepository, projectSkillStore, githubReadinessChecker, runtimeReadinessStore, projectDeepWikiStore)
 	projectHandler := project.NewHandler(projectService)
+	reviewRepository := review.NewRepository(db)
+	prNodeReader := review.NewPRNodeReader(planningRepository)
 	verificationRepository := verification.NewRepository(db)
-	prNodeCIRefresher := verification.NewGitHubPRNodeCIRefresher(githubintegrationService)
+	fixAttemptReader := review.NewFixAttemptReader(verificationRepository)
+	prNodeCIRefresher := review.NewPRNodeCIRefresher(githubintegrationService)
+	prNodeMergeRequester := review.NewPRNodeMergeRequester(githubintegrationService)
+	reviewService := review.NewService(reviewRepository, prNodeReader, fixAttemptReader, prNodeCIRefresher, prNodeMergeRequester)
+	reviewHandler := review.NewHandler(reviewService)
+	verificationPRNodeCIRefresher := verification.NewGitHubPRNodeCIRefresher(githubintegrationService)
 	ciFailureReader := verification.NewGitHubCIFailureReader(githubintegrationService)
-	verificationService := verification.NewService(verificationRepository, prNodeCIRefresher, ciFailureReader, eventBus)
+	verificationService := verification.NewService(verificationRepository, verificationPRNodeCIRefresher, ciFailureReader, eventBus)
 	verificationHandler := verification.NewHandler(verificationService)
 	workspaceService := workspace.NewService(workspaceRepository)
 	workspaceHandler := workspace.NewHandler(workspaceService)
@@ -90,7 +107,7 @@ func InitApplication() (*app.Application, error) {
 	userMailer := user.NewUserMailer(service)
 	userService := user.NewService(userRepository, userRepository, jwtService, eventBus, userMailer)
 	userHandler := user.NewHandler(userService, userService, userService, jwtService, userMailer)
-	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, expertHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, projectHandler, verificationHandler, workspaceHandler, userHandler)
+	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, expertHandler, deepwikiHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, projectHandler, reviewHandler, verificationHandler, workspaceHandler, userHandler)
 	if err != nil {
 		return nil, err
 	}
@@ -125,6 +142,10 @@ func InitApplicationWithConfig(cfg *config.Config) (*app.Application, error) {
 	expertRepository := expert.NewRepository(db)
 	expertService := expert.NewService(expertRepository)
 	expertHandler := expert.NewHandler(expertService)
+	deepwikiRepository := deepwiki.NewRepository(db)
+	repoReader := deepwiki.NewDefaultRepoReader()
+	deepwikiService := deepwiki.NewService(deepwikiRepository, repoReader)
+	deepwikiHandler := deepwiki.NewHandler(deepwikiService)
 	planningRepository := planning.NewRepository(db)
 	repocontextRepository := repocontext.NewRepository(db)
 	projectRepository := project.NewRepository(db)
@@ -147,12 +168,23 @@ func InitApplicationWithConfig(cfg *config.Config) (*app.Application, error) {
 	executionHandler := execution.NewHandler(executionService)
 	githubintegrationHandler := githubintegration.NewHandler(githubintegrationService)
 	workspaceRepository := workspace.NewRepository(db)
-	projectService := project.NewService(projectRepository, workspaceRepository, githubintegrationRepository, repocontextRepository, planningRepository)
+	projectSkillStore := project.NewProjectSkillStore(planningRepository)
+	githubReadinessChecker := project.NewGitHubReadinessChecker(githubintegrationService)
+	runtimeReadinessStore := project.NewRuntimeReadinessStore(executionRepository)
+	projectDeepWikiStore := project.NewProjectDeepWikiStore(deepwikiRepository)
+	projectService := project.NewService(projectRepository, workspaceRepository, githubintegrationRepository, repocontextRepository, planningRepository, projectSkillStore, githubReadinessChecker, runtimeReadinessStore, projectDeepWikiStore)
 	projectHandler := project.NewHandler(projectService)
+	reviewRepository := review.NewRepository(db)
+	prNodeReader := review.NewPRNodeReader(planningRepository)
 	verificationRepository := verification.NewRepository(db)
-	prNodeCIRefresher := verification.NewGitHubPRNodeCIRefresher(githubintegrationService)
+	fixAttemptReader := review.NewFixAttemptReader(verificationRepository)
+	prNodeCIRefresher := review.NewPRNodeCIRefresher(githubintegrationService)
+	prNodeMergeRequester := review.NewPRNodeMergeRequester(githubintegrationService)
+	reviewService := review.NewService(reviewRepository, prNodeReader, fixAttemptReader, prNodeCIRefresher, prNodeMergeRequester)
+	reviewHandler := review.NewHandler(reviewService)
+	verificationPRNodeCIRefresher := verification.NewGitHubPRNodeCIRefresher(githubintegrationService)
 	ciFailureReader := verification.NewGitHubCIFailureReader(githubintegrationService)
-	verificationService := verification.NewService(verificationRepository, prNodeCIRefresher, ciFailureReader, eventBus)
+	verificationService := verification.NewService(verificationRepository, verificationPRNodeCIRefresher, ciFailureReader, eventBus)
 	verificationHandler := verification.NewHandler(verificationService)
 	workspaceService := workspace.NewService(workspaceRepository)
 	workspaceHandler := workspace.NewHandler(workspaceService)
@@ -161,7 +193,7 @@ func InitApplicationWithConfig(cfg *config.Config) (*app.Application, error) {
 	userMailer := user.NewUserMailer(service)
 	userService := user.NewService(userRepository, userRepository, jwtService, eventBus, userMailer)
 	userHandler := user.NewHandler(userService, userService, userService, jwtService, userMailer)
-	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, expertHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, projectHandler, verificationHandler, workspaceHandler, userHandler)
+	registry, err := starter.NewDefaultRegistry(handler, apikeyHandler, expertHandler, deepwikiHandler, planningHandler, repocontextHandler, executionHandler, githubintegrationHandler, projectHandler, reviewHandler, verificationHandler, workspaceHandler, userHandler)
 	if err != nil {
 		return nil, err
 	}

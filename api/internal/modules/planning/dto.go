@@ -63,14 +63,16 @@ type UpsertProjectSkillRequest struct {
 }
 
 type PlanReviewResponse struct {
-	Requirement        *domain.SpecForgeRequirement        `json:"requirement,omitempty"`
-	Idea               *domain.SpecForgeIdea               `json:"idea"`
-	RepoProfile        *domain.SpecForgeRepoProfile        `json:"repo_profile,omitempty"`
-	ProjectContext     *domain.SpecForgeProjectContext     `json:"project_context,omitempty"`
-	ProductSpec        *domain.SpecForgeProductSpec        `json:"product_spec"`
-	ImplementationPlan *domain.SpecForgeImplementationPlan `json:"implementation_plan"`
-	PRNodes            []*domain.SpecForgePRNode           `json:"pr_nodes"`
-	PRDAGReview        []string                            `json:"pr_dag_review"`
+	Requirement        *domain.SpecForgeRequirement            `json:"requirement,omitempty"`
+	Idea               *domain.SpecForgeIdea                   `json:"idea"`
+	RepoProfile        *domain.SpecForgeRepoProfile            `json:"repo_profile,omitempty"`
+	ProjectContext     *domain.SpecForgeProjectContext         `json:"project_context,omitempty"`
+	ContextSnapshot    *domain.SpecForgeProjectContextSnapshot `json:"context_snapshot,omitempty"`
+	ExpertPolicy       *domain.SpecForgeProjectExpertPolicy    `json:"expert_policy,omitempty"`
+	ProductSpec        *domain.SpecForgeProductSpec            `json:"product_spec"`
+	ImplementationPlan *domain.SpecForgeImplementationPlan     `json:"implementation_plan"`
+	PRNodes            []*domain.SpecForgePRNode               `json:"pr_nodes"`
+	PRDAGReview        []string                                `json:"pr_dag_review"`
 }
 
 type CompiledPromptResponse struct {
@@ -178,6 +180,8 @@ func toPlanReviewResponse(bundle *domain.SpecForgePlanBundle) *PlanReviewRespons
 		Idea:               bundle.Idea,
 		RepoProfile:        bundle.RepoProfile,
 		ProjectContext:     bundle.ProjectContext,
+		ContextSnapshot:    bundle.ContextSnapshot,
+		ExpertPolicy:       bundle.ExpertPolicy,
 		ProductSpec:        bundle.ProductSpec,
 		ImplementationPlan: bundle.Plan,
 		PRNodes:            bundle.PRNodes,

@@ -1,5 +1,9 @@
 import { env } from '@/config/env';
-import type { ProjectContextDTO } from '@/features/project/services/project-service';
+import type {
+  ProjectContextDTO,
+  ProjectContextSnapshotDTO,
+  ProjectExpertPolicyDTO,
+} from '@/features/project/services/project-service';
 import { createRequest, type RequestConfig } from '@/http';
 
 const request = createRequest({
@@ -71,6 +75,20 @@ export interface ReadPRNodeFailureLogPayload {
 
 export interface VerifyPRNodeCIPayload {
   repository_id: string;
+}
+
+export interface ApproveReviewDecisionPayload {
+  reason?: string;
+}
+
+export interface RejectReviewDecisionPayload {
+  reason: string;
+}
+
+export interface RequestMergeReviewDecisionPayload {
+  merge_method?: 'merge' | 'squash' | 'rebase';
+  commit_title?: string;
+  commit_message?: string;
 }
 
 export interface CreateFixAttemptFromCIPayload {
@@ -257,6 +275,10 @@ export interface SyncGitHubInstallationPayload {
   installation_id: number;
 }
 
+export interface SyncGitHubInstallationByIDPayload {
+  workspace_id: string;
+}
+
 export interface GitHubRepositoryOptionDTO {
   id: number;
   name: string;
@@ -271,6 +293,21 @@ export interface GitHubRepositoryOptionDTO {
 export interface SyncGitHubInstallationDTO {
   installation: GitHubInstallationDTO;
   repositories: GitHubRepositoryOptionDTO[];
+}
+
+export interface GitHubInstallationStatusItemDTO {
+  id: number;
+  installation_id: number;
+  account_login: string;
+  permissions: Record<string, string>;
+  repository_count: number;
+  updated_at: string;
+}
+
+export interface GitHubInstallationStatusDTO {
+  workspace_id: string;
+  repository_count: number;
+  installations: GitHubInstallationStatusItemDTO[];
 }
 
 export interface UpsertGitHubRepositoryPayload {
@@ -409,6 +446,8 @@ export interface SpecForgePlanBundleDTO {
   };
   repo_profile?: SpecForgeRepoProfileDTO;
   project_context?: ProjectContextDTO;
+  context_snapshot?: ProjectContextSnapshotDTO;
+  expert_policy?: ProjectExpertPolicyDTO;
   product_spec: {
     id: number;
     idea_id: number;
@@ -428,6 +467,8 @@ export interface SpecForgePlanBundleDTO {
     requirement_id?: number;
     idea_id: number;
     product_spec_id: number;
+    context_snapshot_id?: number;
+    expert_policy_id?: number;
     version: number;
     technical_summary: string;
     affected_areas: string[];
@@ -572,6 +613,46 @@ export interface SpecForgeEscalationSummaryDTO {
   latest_action_kind: string;
   latest_blocked_reason: string;
   can_continue_auto_fix: boolean;
+}
+
+export interface SpecForgeReviewDecisionDTO {
+  id: number;
+  pr_node_id: number;
+  status: 'approved' | 'rejected' | 'expired';
+  head_sha: string;
+  reason?: string;
+  decided_by: number;
+  decided_at: string;
+  expired_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SpecForgeReviewDecisionCheckDTO {
+  key: string;
+  label: string;
+  status: 'ready' | 'attention' | 'blocked';
+  detail: string;
+  required: boolean;
+}
+
+export interface SpecForgeReviewDecisionResponseDTO {
+  pr_node: SpecForgePRNodeDTO;
+  decision?: SpecForgeReviewDecisionDTO;
+  decision_status: 'pending' | 'approved' | 'rejected' | 'expired';
+  merge_ready: boolean;
+  summary: string;
+  next_action: string;
+  checks: SpecForgeReviewDecisionCheckDTO[];
+}
+
+export interface SpecForgeMergeReviewDecisionResponseDTO {
+  pr_node: SpecForgePRNodeDTO;
+  decision?: SpecForgeReviewDecisionDTO;
+  merge_accepted: boolean;
+  merge_message: string;
+  merge_sha?: string;
+  decision_status: 'pending' | 'approved' | 'rejected' | 'expired';
 }
 
 export interface SpecForgeVerifyPRNodeCIResponseDTO {
@@ -790,21 +871,33 @@ export const specForgeService = {
       payload
     ),
 
+  syncGitHubInstallationByID: (
+    installationId: number,
+    payload: SyncGitHubInstallationByIDPayload
+  ) =>
+    request.post<SyncGitHubInstallationDTO, SyncGitHubInstallationByIDPayload>(
+      `/github/installations/${installationId}/sync`,
+      payload
+    ),
+
+  getGitHubInstallationStatus: (workspaceId: string, config?: RequestConfig) =>
+    request.get<GitHubInstallationStatusDTO>(
+      `/github/installations/status?workspace_id=${encodeURIComponent(workspaceId)}`,
+      config
+    ),
+
   upsertGitHubRepository: (payload: UpsertGitHubRepositoryPayload) =>
     request.post<GitHubRepositoryDTO, UpsertGitHubRepositoryPayload>(
       '/github/repositories',
       payload
     ),
 
-  listGitHubRepositories: (
-    params?: ListGitHubRepositoriesParams,
-    config?: RequestConfig
-  ) => {
+  listGitHubRepositories: (params?: ListGitHubRepositoriesParams, config?: RequestConfig) => {
     const search = new URLSearchParams();
     if (params?.workspace_id) {
-      search.set("workspace_id", params.workspace_id);
+      search.set('workspace_id', params.workspace_id);
     }
-    const suffix = search.toString() ? `?${search.toString()}` : "";
+    const suffix = search.toString() ? `?${search.toString()}` : '';
     return request.get<ListGitHubRepositoriesDTO>(`/github/repositories${suffix}`, config);
   },
 
@@ -812,10 +905,7 @@ export const specForgeService = {
     request.get<GitHubRepositoryDTO>(`/repositories/${repoId}`, config),
 
   getGitHubRepositoryReadiness: (repoId: string, config?: RequestConfig) =>
-    request.get<GitHubRepositoryReadinessDTO>(
-      `/github/repositories/${repoId}/readiness`,
-      config
-    ),
+    request.get<GitHubRepositoryReadinessDTO>(`/github/repositories/${repoId}/readiness`, config),
 
   getGitHubSettings: (workspaceId: string, config?: RequestConfig) =>
     request.get<GitHubSettingsDTO>(
@@ -970,6 +1060,30 @@ export const specForgeService = {
       payload
     ),
 
+  getReviewDecision: (prNodeId: number, config?: RequestConfig) =>
+    request.get<SpecForgeReviewDecisionResponseDTO>(
+      `/pr-nodes/${prNodeId}/review-decision`,
+      config
+    ),
+
+  approveReviewDecision: (prNodeId: number, payload?: ApproveReviewDecisionPayload) =>
+    request.post<SpecForgeReviewDecisionResponseDTO, ApproveReviewDecisionPayload | undefined>(
+      `/pr-nodes/${prNodeId}/review-decision/approve`,
+      payload
+    ),
+
+  rejectReviewDecision: (prNodeId: number, payload: RejectReviewDecisionPayload) =>
+    request.post<SpecForgeReviewDecisionResponseDTO, RejectReviewDecisionPayload>(
+      `/pr-nodes/${prNodeId}/review-decision/reject`,
+      payload
+    ),
+
+  requestMergeReviewDecision: (prNodeId: number, payload?: RequestMergeReviewDecisionPayload) =>
+    request.post<
+      SpecForgeMergeReviewDecisionResponseDTO,
+      RequestMergeReviewDecisionPayload | undefined
+    >(`/pr-nodes/${prNodeId}/review-decision/request-merge`, payload),
+
   createFixAttemptFromCI: (prNodeId: number, payload: CreateFixAttemptFromCIPayload) =>
     request.post<SpecForgeFixAttemptDTO, CreateFixAttemptFromCIPayload>(
       `/pr-nodes/${prNodeId}/fix-attempts/from-ci`,
@@ -1060,10 +1174,7 @@ export const specForgeService = {
     if (params?.runtime_id) query.set('runtime_id', params.runtime_id);
     if (params?.limit) query.set('limit', String(params.limit));
     const suffix = query.toString() ? `?${query.toString()}` : '';
-    return request.get<{ tasks: CodingCTODirectAgentTaskDTO[] }>(
-      `/agent-tasks${suffix}`,
-      config
-    );
+    return request.get<{ tasks: CodingCTODirectAgentTaskDTO[] }>(`/agent-tasks${suffix}`, config);
   },
 
   listDirectTaskEvents: (taskId: number, afterSeq?: number, config?: RequestConfig) => {

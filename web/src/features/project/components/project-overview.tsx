@@ -9,8 +9,14 @@ import { ArrowRight, FileText, Github, RefreshCw } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { env } from '@/config/env';
 import { ApiError } from '@/http/request';
 import { ProjectRepositoryBindPanel } from '@/features/project/components/project-context-panel';
+import {
+  projectReadinessBadgeClass,
+  projectReadinessDecision,
+} from '@/features/project/project-readiness';
 import {
   githubReadinessRecoveryActions,
   githubReadinessRecoveryDiagnostics,
@@ -20,14 +26,22 @@ import {
   githubRepositoryIdentitySummary,
   type GitHubRepositoryIdentitySummary,
 } from '@/features/project/github-repository-identity';
-import { projectKeys, useProjectContext } from '@/features/project/hooks/use-projects';
+import {
+  projectKeys,
+  useProjectContext,
+  useProjectReadiness,
+} from '@/features/project/hooks/use-projects';
 import { projectContextHref, projectOverviewHref } from '@/features/project/project-utils';
 import {
+  useGitHubInstallationStatus,
+  useGitHubSettings,
   useGitHubRepositoryReadiness,
+  useSyncGitHubInstallationByID,
   useReindexRepoArchitecture,
 } from '@/features/specforge/hooks/use-specforge';
 import type {
   ProjectContextDTO,
+  ProjectReadinessDTO,
   ProjectRepositoryContextDTO,
 } from '@/features/project/services/project-service';
 
@@ -36,6 +50,7 @@ export function ProjectOverviewPage() {
   const projectId = Number(params.projectId);
   const validProjectId = Number.isFinite(projectId) ? projectId : 0;
   const contextQuery = useProjectContext(validProjectId);
+  const readinessQuery = useProjectReadiness(validProjectId);
   const context = contextQuery.data?.context;
 
   if (!validProjectId) {
@@ -64,13 +79,22 @@ export function ProjectOverviewPage() {
     );
   }
 
-  return <ProjectRepositoryBindingPage context={context} />;
+  return (
+    <ProjectRepositoryBindingPage context={context} readiness={readinessQuery.data?.readiness} />
+  );
 }
 
-function ProjectRepositoryBindingPage({ context }: { context: ProjectContextDTO }) {
+function ProjectRepositoryBindingPage({
+  context,
+  readiness,
+}: {
+  context: ProjectContextDTO;
+  readiness?: ProjectReadinessDTO;
+}) {
   const repositories = context.repository_contexts ?? [];
   const primaryRepository = repositories.find(item => item.repository.role === 'primary');
   const boundRepositoryIds = repositories.map(item => item.repository.repository_id);
+  const readinessDecision = projectReadinessDecision(context.project.id, readiness);
 
   return (
     <main className="mx-auto flex w-full max-w-5xl flex-col gap-5 px-4 py-6 md:px-8">
@@ -80,10 +104,22 @@ function ProjectRepositoryBindingPage({ context }: { context: ProjectContextDTO 
           <Badge
             variant="outline"
             className={
-              primaryRepository ? 'border-success/30 text-success' : 'border-warning/30 text-warning'
+              readiness
+                ? projectReadinessBadgeClass(readiness.readiness_status)
+                : primaryRepository
+                  ? 'border-success/30 text-success'
+                  : 'border-warning/30 text-warning'
             }
           >
-            {primaryRepository ? 'GitHub bound' : 'GitHub required'}
+            {readiness
+              ? readiness.readiness_status === 'ready'
+                ? 'Execution ready'
+                : readiness.readiness_status === 'blocked'
+                  ? 'Setup blocked'
+                  : 'Needs attention'
+              : primaryRepository
+                ? 'GitHub bound'
+                : 'GitHub required'}
           </Badge>
         </div>
         <h1 className="mt-3 text-2xl font-semibold tracking-tight text-text-main">
@@ -95,6 +131,65 @@ function ProjectRepositoryBindingPage({ context }: { context: ProjectContextDTO 
           </p>
         ) : null}
       </header>
+
+      {readiness ? (
+        <section className="rounded-md border border-border-subtle bg-bg-surface p-4">
+          <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+            <div>
+              <div className="flex flex-wrap items-center gap-2">
+                <Badge
+                  variant="outline"
+                  className={projectReadinessBadgeClass(readiness.readiness_status)}
+                >
+                  {readiness.readiness_status === 'ready'
+                    ? 'Ready'
+                    : readiness.readiness_status === 'blocked'
+                      ? 'Blocked'
+                      : 'Attention'}
+                </Badge>
+                <span className="text-sm font-medium text-text-main">
+                  {readinessDecision.title}
+                </span>
+              </div>
+              <p className="mt-2 text-sm leading-6 text-text-muted">{readiness.summary}</p>
+              <p className="mt-1 text-sm leading-6 text-text-muted">{readiness.next_action}</p>
+            </div>
+            <Button
+              asChild
+              variant={readiness.readiness_status === 'ready' ? 'default' : 'outline'}
+            >
+              <Link href={readinessDecision.actionHref}>
+                {readinessDecision.actionLabel}
+                <ArrowRight className="ml-1.5 h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+          <div className="mt-4 grid gap-2 sm:grid-cols-2">
+            {(readiness.checks ?? []).map(check => (
+              <div key={check.key} className="rounded-md border border-border-subtle px-3 py-3">
+                <div className="flex items-center justify-between gap-3">
+                  <div className="text-sm font-medium text-text-main">{check.label}</div>
+                  <Badge variant="outline" className={projectReadinessBadgeClass(check.status)}>
+                    {check.status === 'ready'
+                      ? 'Ready'
+                      : check.status === 'blocked'
+                        ? 'Blocked'
+                        : 'Attention'}
+                  </Badge>
+                </div>
+                {check.detail ? (
+                  <div className="mt-1 text-xs leading-5 text-text-muted">{check.detail}</div>
+                ) : null}
+              </div>
+            ))}
+          </div>
+        </section>
+      ) : null}
+
+      <ProjectGitHubSetupPanel
+        projectId={context.project.id}
+        workspaceId={context.project.workspace_id}
+      />
 
       <section className="rounded-md border border-border-subtle bg-bg-surface p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
@@ -168,6 +263,179 @@ function ProjectRepositoryBindingPage({ context }: { context: ProjectContextDTO 
   );
 }
 
+function ProjectGitHubSetupPanel({
+  projectId,
+  workspaceId,
+}: {
+  projectId: number;
+  workspaceId: string;
+}) {
+  const queryClient = useQueryClient();
+  const [installationId, setInstallationId] = useState('');
+  const [message, setMessage] = useState('');
+  const installationStatusQuery = useGitHubInstallationStatus(workspaceId);
+  const githubSettingsQuery = useGitHubSettings(workspaceId);
+  const syncInstallation = useSyncGitHubInstallationByID();
+  const githubEnabled = githubSettingsQuery.data?.enabled ?? true;
+  const status = installationStatusQuery.data;
+  const installURL = buildGitHubInstallURL(workspaceId);
+
+  async function handleSync(nextInstallationId?: number) {
+    const parsedInstallationId = nextInstallationId ?? Number.parseInt(installationId.trim(), 10);
+    if (!Number.isFinite(parsedInstallationId) || parsedInstallationId <= 0) {
+      setMessage('Enter a valid GitHub App installation ID before syncing.');
+      return;
+    }
+    setMessage('');
+    try {
+      await syncInstallation.mutateAsync({
+        installationId: parsedInstallationId,
+        workspaceId,
+      });
+      await queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
+      await queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
+      setInstallationId('');
+      setMessage('GitHub installation synced. Bind the primary repository below if needed.');
+    } catch (error) {
+      setMessage(
+        error instanceof ApiError
+          ? `Sync failed: ${error.message}`
+          : 'Sync failed. Check GitHub App configuration and try again.'
+      );
+    }
+  }
+
+  return (
+    <section
+      id="github-setup"
+      className="rounded-md border border-border-subtle bg-bg-surface p-4 scroll-mt-24"
+    >
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h2 className="flex items-center gap-2 text-base font-medium text-text-main">
+            <Github className="h-4 w-4 text-primary" />
+            GitHub setup
+          </h2>
+          <p className="mt-1 text-sm leading-6 text-text-muted">
+            Install the GitHub App, sync its installation, then bind one synced repository as the
+            project primary repository.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={installationStatusQuery.isFetching}
+            onClick={() => installationStatusQuery.refetch()}
+          >
+            Refresh status
+          </Button>
+          {installURL ? (
+            <Button asChild>
+              <Link href={installURL} target="_blank" rel="noreferrer">
+                Install GitHub App
+              </Link>
+            </Button>
+          ) : (
+            <Button asChild variant="outline">
+              <Link href="/console/settings?tab=github">Open GitHub settings</Link>
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {!githubEnabled ? (
+        <Alert className="mt-4 border-warning/30 bg-warning-subtle">
+          <AlertTitle>GitHub is disabled</AlertTitle>
+          <AlertDescription className="mt-2">
+            Enable GitHub in workspace settings before installing or syncing repositories.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <MaterialMetric
+          label="Synced installations"
+          value={String(status?.installations.length ?? 0)}
+        />
+        <MaterialMetric label="Synced repositories" value={String(status?.repository_count ?? 0)} />
+        <MaterialMetric label="Workspace" value={workspaceId || 'Unknown'} />
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+        <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+          <div className="text-sm font-medium text-text-main">Synced installations</div>
+          {installationStatusQuery.isLoading ? (
+            <div className="mt-2 text-sm text-text-muted">Checking GitHub installations.</div>
+          ) : status?.installations.length ? (
+            <div className="mt-3 space-y-2">
+              {status.installations.map(installation => (
+                <div
+                  key={installation.id}
+                  className="flex flex-col gap-2 rounded-md border border-border-subtle bg-bg-surface px-3 py-2 md:flex-row md:items-center md:justify-between"
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-text-main">
+                      {installation.account_login}
+                    </div>
+                    <div className="mt-1 text-xs leading-5 text-text-muted">
+                      Installation ID {installation.installation_id} ·{' '}
+                      {installation.repository_count} synced repos · updated{' '}
+                      {new Date(installation.updated_at).toLocaleString()}
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={syncInstallation.isPending || !githubEnabled}
+                    onClick={() => handleSync(installation.installation_id)}
+                  >
+                    Sync
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-2 text-sm text-text-muted">
+              No GitHub App installation has been synced for this workspace yet.
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+          <div className="text-sm font-medium text-text-main">Sync by installation ID</div>
+          <p className="mt-1 text-xs leading-5 text-text-muted">
+            After installing the GitHub App, paste the installation ID here to sync accessible
+            repositories into CodingCTO.
+          </p>
+          <div className="mt-3 space-y-2">
+            <Input
+              inputMode="numeric"
+              placeholder="12345678"
+              value={installationId}
+              disabled={syncInstallation.isPending || !githubEnabled}
+              onChange={event => setInstallationId(event.target.value)}
+            />
+            <Button
+              type="button"
+              className="w-full"
+              disabled={syncInstallation.isPending || !githubEnabled}
+              onClick={() => handleSync()}
+            >
+              {syncInstallation.isPending ? 'Syncing installation' : 'Sync installation'}
+            </Button>
+            <div className="text-xs leading-5 text-text-muted">
+              Installation ID is the numeric GitHub App installation identifier for this workspace.
+            </div>
+          </div>
+          {message ? <div className="mt-2 text-xs leading-5 text-text-muted">{message}</div> : null}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function ProjectRepositoryMaterialRow({
   projectId,
   item,
@@ -199,10 +467,7 @@ function ProjectRepositoryMaterialRow({
       : inferredRecoveryTarget
         ? { ...inferredRecoveryTarget, returnTo: projectOverviewHref(projectId) }
         : undefined;
-  const recoveryActions = githubReadinessRecoveryActions(
-    readinessBlockingChecks,
-    recoveryTarget
-  );
+  const recoveryActions = githubReadinessRecoveryActions(readinessBlockingChecks, recoveryTarget);
   const recoveryDiagnostics = githubReadinessRecoveryDiagnostics(readinessBlockingChecks);
   const identitySummary = githubRepositoryIdentitySummary({
     repositoryId: item.repository.repository_id,
@@ -220,6 +485,7 @@ function ProjectRepositoryMaterialRow({
       await reindexArchitecture.mutateAsync({
         default_branch: item.profile?.default_branch,
       });
+      await queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
       await queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
       setMessage('Materials generated from repository tree.');
     } catch (error) {
@@ -251,7 +517,9 @@ function ProjectRepositoryMaterialRow({
           <Badge variant="outline">{item.repository.role}</Badge>
           <Badge
             variant="outline"
-            className={analyzed ? 'border-success/30 text-success' : 'border-warning/30 text-warning'}
+            className={
+              analyzed ? 'border-success/30 text-success' : 'border-warning/30 text-warning'
+            }
           >
             {analyzed ? 'Materials ready' : 'Needs scan'}
           </Badge>
@@ -261,11 +529,13 @@ function ProjectRepositoryMaterialRow({
         </div>
         {item.profile || item.architecture_snapshot ? (
           <div className="mt-2 flex flex-wrap gap-1.5">
-            {(item.profile?.stack ?? item.architecture_snapshot?.stack ?? []).slice(0, 5).map(value => (
-              <Badge key={value} variant="outline" className="text-[11px] text-text-muted">
-                {value}
-              </Badge>
-            ))}
+            {(item.profile?.stack ?? item.architecture_snapshot?.stack ?? [])
+              .slice(0, 5)
+              .map(value => (
+                <Badge key={value} variant="outline" className="text-[11px] text-text-muted">
+                  {value}
+                </Badge>
+              ))}
             {(item.architecture_snapshot?.modules ?? []).slice(0, 3).map(value => (
               <Badge key={value} variant="outline" className="text-[11px] text-text-muted">
                 {value}
@@ -301,7 +571,9 @@ function ProjectRepositoryMaterialRow({
       >
         {scanLabel}
         <RefreshCw
-          className={reindexArchitecture.isPending ? 'ml-1.5 h-3.5 w-3.5 animate-spin' : 'ml-1.5 h-3.5 w-3.5'}
+          className={
+            reindexArchitecture.isPending ? 'ml-1.5 h-3.5 w-3.5 animate-spin' : 'ml-1.5 h-3.5 w-3.5'
+          }
         />
       </Button>
     </div>
@@ -335,9 +607,7 @@ function RepositoryMaterialRecoveryPanel({
               <div className="text-xs font-medium leading-5 text-text-main">
                 {diagnostic.checkKey} - {diagnostic.setupStep}
               </div>
-              <div className="mt-0.5 text-xs leading-5 text-text-muted">
-                {diagnostic.detail}
-              </div>
+              <div className="mt-0.5 text-xs leading-5 text-text-muted">{diagnostic.detail}</div>
             </div>
           ))}
         </div>
@@ -356,7 +626,14 @@ function RepositoryMaterialRecoveryPanel({
         </div>
       ) : null}
       <div className="mt-2 flex justify-end">
-        <Button type="button" variant="outline" size="sm" className="h-7 text-xs" disabled={isChecking} onClick={onRefresh}>
+        <Button
+          type="button"
+          variant="outline"
+          size="sm"
+          className="h-7 text-xs"
+          disabled={isChecking}
+          onClick={onRefresh}
+        >
           {isChecking ? 'Checking' : 'Recheck GitHub'}
         </Button>
       </div>
@@ -364,11 +641,7 @@ function RepositoryMaterialRecoveryPanel({
   );
 }
 
-function RepositoryIdentityDiagnostic({
-  identity,
-}: {
-  identity: GitHubRepositoryIdentitySummary;
-}) {
+function RepositoryIdentityDiagnostic({ identity }: { identity: GitHubRepositoryIdentitySummary }) {
   return (
     <div className="mt-2 rounded-md bg-bg-surface px-2.5 py-2">
       <div className="text-xs font-medium leading-5 text-text-main">{identity.headline}</div>
@@ -422,4 +695,23 @@ function ProjectOverviewState({
       ) : null}
     </div>
   );
+}
+
+function buildGitHubInstallURL(workspaceId: string) {
+  const entry = (
+    env.NEXT_PUBLIC_GITHUB_APP_INSTALL_URL ||
+    env.NEXT_PUBLIC_GITHUB_APP_SLUG ||
+    ''
+  ).trim();
+  if (!entry || !workspaceId.trim()) {
+    return '';
+  }
+  if (entry.startsWith('https://github.com/')) {
+    return entry;
+  }
+  const slug = entry
+    .replace(/^https?:\/\/github\.com\/apps\//, '')
+    .replace(/\/installations\/new.*$/, '')
+    .replace(/^\/+|\/+$/g, '');
+  return `https://github.com/apps/${slug}/installations/new?state=${encodeURIComponent(workspaceId.trim())}`;
 }

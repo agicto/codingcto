@@ -9,6 +9,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/zgiai/luas/api/internal/domain"
+	"github.com/zgiai/luas/api/internal/modules/githubintegration"
 )
 
 func TestServiceProjectRepositoryFlow(t *testing.T) {
@@ -19,7 +20,7 @@ func TestServiceProjectRepositoryFlow(t *testing.T) {
 			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
 		},
 	}
-	svc := NewService(store, workspaces, github, nil, nil)
+	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil, nil)
 
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
@@ -113,7 +114,7 @@ func TestServiceProjectContextIncludesRepoProfilesAndSkills(t *testing.T) {
 			},
 		},
 	}
-	svc := NewService(store, workspaces, github, profiles, skills)
+	svc := NewService(store, workspaces, github, profiles, skills, nil, nil, nil, nil)
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
 		Name:        "SpecForge",
@@ -188,7 +189,7 @@ func TestServiceProjectContextReadinessRequiresPrimaryRepository(t *testing.T) {
 			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
 		},
 	}
-	svc := NewService(store, workspaces, github, nil, nil)
+	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil, nil)
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
 		Name:        "SpecForge",
@@ -223,7 +224,7 @@ func TestServiceRejectsSecondPrimaryRepository(t *testing.T) {
 			"repo_2": {RepositoryID: "repo_2", WorkspaceID: "workspace_1"},
 		},
 	}
-	svc := NewService(store, workspaces, github, nil, nil)
+	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil, nil)
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
 		Name:        "SpecForge",
@@ -252,7 +253,7 @@ func TestServiceRejectsCrossWorkspaceRepository(t *testing.T) {
 			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_2"},
 		},
 	}
-	svc := NewService(store, workspaces, github, nil, nil)
+	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil, nil)
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "workspace_1",
 		Name:        "SpecForge",
@@ -270,7 +271,7 @@ func TestServiceRejectsCrossWorkspaceRepository(t *testing.T) {
 func TestServiceCreateProjectResolvesCanonicalWorkspaceID(t *testing.T) {
 	store := newMemoryProjectStore()
 	workspaces := newMemoryWorkspaceStore("local_test")
-	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil)
+	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil, nil, nil, nil, nil)
 
 	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "local-test",
@@ -289,7 +290,7 @@ func TestServiceCreateProjectResolvesCanonicalWorkspaceID(t *testing.T) {
 func TestServiceRejectsProjectForMissingWorkspace(t *testing.T) {
 	store := newMemoryProjectStore()
 	workspaces := newMemoryWorkspaceStore("workspace_1")
-	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil)
+	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil, nil, nil, nil, nil)
 
 	_, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
 		WorkspaceID: "missing-workspace",
@@ -302,19 +303,885 @@ func TestServiceRejectsProjectForMissingWorkspace(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrNotFound)
 }
 
+func TestServiceUpdatesProjectFieldsAndSlug(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil, nil, nil, nil, nil)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "SpecForge",
+		Slug:        "specforge",
+		Description: "Initial description",
+	})
+	require.NoError(t, err)
+	_, err = svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "Existing",
+		Slug:        "existing",
+	})
+	require.NoError(t, err)
+
+	name := "CodingCTO Project"
+	slug := "CodingCTO-Project"
+	description := "Updated description"
+	status := domain.ProjectStatusArchived
+	updated, err := svc.UpdateProject(context.Background(), project.ID, &UpdateProjectRequest{
+		Name:        &name,
+		Slug:        &slug,
+		Description: &description,
+		Status:      &status,
+	})
+	require.NoError(t, err)
+	require.Equal(t, "CodingCTO Project", updated.Name)
+	require.Equal(t, "codingcto-project", updated.Slug)
+	require.Equal(t, "Updated description", updated.Description)
+	require.Equal(t, domain.ProjectStatusArchived, updated.Status)
+
+	duplicateSlug := "existing"
+	_, err = svc.UpdateProject(context.Background(), project.ID, &UpdateProjectRequest{Slug: &duplicateSlug})
+	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
+func TestServiceDeletesProjectAndRepositoryBindings(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
+		},
+	}
+	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil, nil)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "SpecForge",
+		Slug:        "specforge",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+
+	require.NoError(t, svc.DeleteProject(context.Background(), project.ID))
+	_, err = svc.GetProject(context.Background(), project.ID)
+	require.ErrorIs(t, err, domain.ErrNotFound)
+	repositories, err := store.ListProjectRepositories(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.Empty(t, repositories)
+	require.ErrorIs(t, svc.DeleteProject(context.Background(), project.ID), domain.ErrNotFound)
+}
+
+func TestServiceProjectReadinessBecomesReadyWhenSetupSignalsPass(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
+		},
+	}
+	profiles := &memoryRepoProfileStore{
+		profiles: map[string]*domain.SpecForgeRepoProfile{
+			"repo_1": {
+				RepositoryID:  "repo_1",
+				DefaultBranch: "main",
+				Summary:       "Primary repo ready.",
+			},
+		},
+		snapshots: map[string]*domain.SpecForgeRepoArchitectureSnapshot{
+			"repo_1": {
+				RepositoryID: "repo_1",
+				CommitSHA:    "abc123",
+				CreatedAt:    nowUTC(),
+			},
+		},
+	}
+	projectSkills := &fakeProjectSkillStore{
+		skills: map[uint][]*domain.SpecForgeProjectSkill{
+			1: {
+				{
+					ID:           10,
+					ProjectID:    1,
+					RepositoryID: "repo_1",
+					SkillID:      50,
+					Active:       true,
+				},
+			},
+		},
+	}
+	githubReadiness := &fakeGitHubReadinessChecker{
+		response: &githubintegration.GitHubRepositoryReadinessResponse{
+			RepositoryID: "repo_1",
+			Ready:        true,
+			Checks: []githubintegration.GitHubReadinessCheck{
+				{Key: "installation", Status: "ok", Message: "Installation ready", Required: true},
+			},
+		},
+	}
+	runtimes := &fakeRuntimeReadinessStore{
+		runtimes: []*domain.SpecForgeRuntime{
+			{
+				RuntimeID:  "runtime_1",
+				Executor:   "codex_cli",
+				Status:     domain.RuntimeStatusOnline,
+				LastSeenAt: nowUTC(),
+			},
+		},
+	}
+	svc := NewService(store, workspaces, github, profiles, &memorySkillStore{}, projectSkills, githubReadiness, runtimes, nil)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "SpecForge",
+		Slug:        "specforge",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+	_, err = svc.CreateProjectRuntimeBinding(context.Background(), 42, project.ID, &UpsertProjectRuntimeBindingRequest{
+		RepositoryID: "repo_1",
+		RuntimeID:    "runtime_1",
+		RepoDir:      "/Users/mingde/item/codingcto",
+	})
+	require.NoError(t, err)
+	_, err = svc.CreateProjectExpertPolicy(context.Background(), 42, project.ID, &UpsertProjectExpertPolicyRequest{
+		GoalBoundary: "Only touch the project delivery flow.",
+		ReviewPolicy: ProjectExpertReviewPolicyRequest{
+			RequiredApprovals:       1,
+			BlockOnChangesRequested: true,
+			RequireCIGreen:          true,
+		},
+		MergePolicy: ProjectExpertMergePolicyRequest{
+			Strategy:              domain.ProjectMergeStrategySquash,
+			RequireManualApproval: true,
+		},
+	})
+	require.NoError(t, err)
+
+	readiness, err := svc.GetProjectReadiness(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.ProjectReadinessStatusReady, readiness.ReadinessStatus)
+	require.Equal(t, domain.ProjectReadinessStepCreateRequirement, readiness.NextStep)
+	require.Equal(t, 1, readiness.SkillCount)
+	require.Equal(t, 1, readiness.RuntimeCount)
+	require.True(t, readiness.HasPrimaryRepository)
+	require.Len(t, readiness.Checks, 6)
+	require.Equal(t, domain.ProjectReadinessStatusReady, readinessCheckStatusByKey(t, readiness, "github_delivery"))
+	require.Equal(t, domain.ProjectReadinessStatusReady, readinessCheckStatusByKey(t, readiness, "runtime_dispatch"))
+	require.Equal(t, domain.ProjectReadinessStatusReady, readinessCheckStatusByKey(t, readiness, "skill_contract"))
+	require.Equal(t, domain.ProjectReadinessStatusReady, readinessCheckStatusByKey(t, readiness, "expert_policy"))
+}
+
+func TestServiceProjectReadinessBlocksOnGitHubBeforeOtherWarnings(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
+		},
+	}
+	svc := NewService(
+		store,
+		workspaces,
+		github,
+		nil,
+		nil,
+		nil,
+		&fakeGitHubReadinessChecker{
+			response: &githubintegration.GitHubRepositoryReadinessResponse{
+				RepositoryID: "repo_1",
+				Ready:        false,
+				Checks: []githubintegration.GitHubReadinessCheck{
+					{
+						Key:      "installation",
+						Status:   "error",
+						Message:  "Missing installation",
+						Detail:   "Install and sync the GitHub App first.",
+						Required: true,
+					},
+				},
+			},
+		},
+		&fakeRuntimeReadinessStore{},
+		nil,
+	)
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "SpecForge",
+		Slug:        "specforge",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+
+	readiness, err := svc.GetProjectReadiness(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.ProjectReadinessStatusBlocked, readiness.ReadinessStatus)
+	require.Equal(t, domain.ProjectReadinessStepConfigureGitHub, readiness.NextStep)
+	require.Contains(t, readiness.NextAction, "GitHub setup")
+	require.Equal(t, domain.ProjectReadinessStatusBlocked, readinessCheckStatusByKey(t, readiness, "github_delivery"))
+}
+
+func TestServiceRefreshProjectContextPersistsUnifiedSnapshot(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {
+				RepositoryID: "repo_1",
+				WorkspaceID:  "workspace_1",
+				GitHubOwner:  "agicto",
+				GitHubRepo:   "codingcto",
+			},
+		},
+	}
+	profiles := &memoryRepoProfileStore{
+		profiles: map[string]*domain.SpecForgeRepoProfile{
+			"repo_1": {
+				ID:            10,
+				RepositoryID:  "repo_1",
+				DefaultBranch: "main",
+				Summary:       "Primary application repository.",
+				Source:        "repo_context_service",
+			},
+		},
+		snapshots: map[string]*domain.SpecForgeRepoArchitectureSnapshot{
+			"repo_1": {
+				ID:           22,
+				RepositoryID: "repo_1",
+				CommitSHA:    "abc123",
+				Summary:      "DDD module layout with Next.js console.",
+				CreatedAt:    nowUTC(),
+			},
+		},
+	}
+	skills := &memorySkillStore{
+		skills: map[string][]*domain.SpecForgeSkill{
+			"repo_1": {
+				{
+					ID:           7,
+					RepositoryID: "repo_1",
+					Name:         "module-boundaries",
+					Content:      "Keep API and web contracts explicit.",
+					Active:       true,
+				},
+			},
+		},
+	}
+	lastIndexedAt := nowUTC()
+	deepwikiStore := &fakeDeepWikiStore{
+		sources: []*domain.DeepWikiSource{
+			{
+				ID:            50,
+				CreatedBy:     42,
+				SourceType:    domain.DeepWikiSourceTypeGitHubURL,
+				RepoURL:       "https://github.com/agicto/codingcto",
+				Status:        domain.DeepWikiStatusReady,
+				LastIndexedAt: &lastIndexedAt,
+			},
+		},
+		indexes: map[uint]*domain.DeepWikiIndex{
+			50: {
+				ID:          60,
+				SourceID:    50,
+				CommitSHA:   "abc123",
+				FileCount:   120,
+				ChunkCount:  420,
+				Frameworks:  []string{"gin", "next.js"},
+				Entrypoints: []string{"cmd/server/main.go"},
+				Services:    []string{"project", "planning"},
+				Models:      []string{"specforge_projects"},
+				Status:      domain.DeepWikiStatusReady,
+			},
+		},
+		pages: map[uint][]*domain.DeepWikiPage{
+			60: {
+				{ID: 70, IndexID: 60, Slug: "overview", Title: "Repository overview"},
+				{ID: 71, IndexID: 60, Slug: "architecture", Title: "Architecture"},
+			},
+		},
+	}
+	svc := NewService(store, workspaces, github, profiles, skills, nil, nil, nil, deepwikiStore)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "CodingCTO",
+		Slug:        "codingcto",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+
+	snapshot, err := svc.RefreshProjectContext(context.Background(), 42, project.ID)
+	require.NoError(t, err)
+	require.NotZero(t, snapshot.ID)
+	require.Equal(t, domain.ProjectReadinessStatusReady, snapshot.SnapshotStatus)
+	require.Equal(t, "repo_1", snapshot.PrimaryRepositoryID)
+	require.Contains(t, snapshot.EvidenceRefs, "repo_profile:repo_1")
+	require.Contains(t, snapshot.EvidenceRefs, "architecture_snapshot:repo_1:abc123")
+	require.Contains(t, snapshot.EvidenceRefs, "deepwiki_source:50")
+	require.Contains(t, snapshot.EvidenceRefs, "deepwiki_index:60")
+	require.Len(t, snapshot.Repositories, 1)
+	require.NotNil(t, snapshot.Repositories[0].DeepWiki)
+	require.Equal(t, 2, snapshot.Repositories[0].DeepWiki.PageCount)
+	require.Equal(t, []string{"Repository overview", "Architecture"}, snapshot.Repositories[0].DeepWiki.TopPages)
+
+	contextBundle, err := svc.GetProjectContext(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.NotNil(t, contextBundle.LatestSnapshot)
+	require.Equal(t, snapshot.ID, contextBundle.LatestSnapshot.ID)
+}
+
+func TestServiceRefreshProjectContextMarksMissingDeepWikiEvidence(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {
+				RepositoryID: "repo_1",
+				WorkspaceID:  "workspace_1",
+				GitHubOwner:  "agicto",
+				GitHubRepo:   "codingcto",
+			},
+		},
+	}
+	svc := NewService(store, workspaces, github, nil, nil, nil, nil, nil, &fakeDeepWikiStore{})
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "CodingCTO",
+		Slug:        "codingcto",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+
+	snapshot, err := svc.RefreshProjectContext(context.Background(), 42, project.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.ProjectReadinessStatusAttention, snapshot.SnapshotStatus)
+	require.Contains(t, snapshot.MissingEvidence, "deepwiki_index:repo_1")
+	require.Contains(t, snapshot.Summary, "no DeepWiki index matched")
+}
+
+func TestServiceCreateAndUpdateProjectExpertPolicyVersions(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	svc := NewService(store, workspaces, &memoryGitHubRepositoryStore{}, nil, nil, nil, nil, nil, nil)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "CodingCTO",
+		Slug:        "codingcto",
+	})
+	require.NoError(t, err)
+
+	created, err := svc.CreateProjectExpertPolicy(context.Background(), 42, project.ID, &UpsertProjectExpertPolicyRequest{
+		GoalBoundary:         "Only touch the project delivery flow.",
+		AllowedPaths:         []string{"api/internal/modules/project", "web/src/features/project"},
+		ForbiddenPaths:       []string{"api/internal/modules/execution"},
+		RequiredTestCommands: []string{"cd api && go test ./internal/modules/project"},
+		ReviewPolicy: ProjectExpertReviewPolicyRequest{
+			RequiredApprovals:       1,
+			AllowAuthorApproval:     false,
+			BlockOnChangesRequested: true,
+			RequireCIGreen:          true,
+		},
+		MergePolicy: ProjectExpertMergePolicyRequest{
+			Strategy:              domain.ProjectMergeStrategySquash,
+			RequireManualApproval: true,
+			AllowAutoMerge:        false,
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, created.Version)
+	require.True(t, created.Active)
+	require.Equal(t, []string{"api/internal/modules/project", "web/src/features/project"}, created.AllowedPaths)
+
+	loaded, err := svc.GetProjectExpertPolicy(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.NotNil(t, loaded)
+	require.Equal(t, created.ID, loaded.ID)
+
+	updated, err := svc.UpdateProjectExpertPolicy(context.Background(), 42, project.ID, created.ID, &UpsertProjectExpertPolicyRequest{
+		GoalBoundary:         "Limit work to project setup and review rules.",
+		AllowedPaths:         []string{"api/internal/modules/project"},
+		ForbiddenPaths:       []string{"api/internal/modules/execution", "web/src/features/specforge"},
+		RequiredTestCommands: []string{"cd api && go test ./...", "cd web && pnpm type-check"},
+		ReviewPolicy: ProjectExpertReviewPolicyRequest{
+			RequiredApprovals:       2,
+			AllowAuthorApproval:     false,
+			BlockOnChangesRequested: true,
+			RequireCIGreen:          true,
+		},
+		MergePolicy: ProjectExpertMergePolicyRequest{
+			Strategy:              domain.ProjectMergeStrategyRebase,
+			RequireManualApproval: true,
+			AllowAutoMerge:        false,
+		},
+	})
+	require.NoError(t, err)
+	require.Equal(t, 2, updated.Version)
+	require.True(t, updated.Active)
+	require.Equal(t, domain.ProjectMergeStrategyRebase, updated.MergePolicy.Strategy)
+
+	history, ok := store.policies[project.ID]
+	require.True(t, ok)
+	require.Len(t, history, 2)
+	require.False(t, history[0].Active)
+	require.True(t, history[1].Active)
+}
+
+func TestServiceCreateAndUpdateProjectRuntimeBinding(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
+		},
+	}
+	runtimes := &fakeRuntimeReadinessStore{
+		runtimes: []*domain.SpecForgeRuntime{
+			{
+				RuntimeID:  "runtime_1",
+				Executor:   "codex_cli",
+				Status:     domain.RuntimeStatusOnline,
+				LastSeenAt: nowUTC(),
+				Sandbox:    &domain.SpecForgeRuntimeSandbox{Writable: true},
+			},
+			{
+				RuntimeID:  "runtime_2",
+				Executor:   "codex_cli",
+				Status:     domain.RuntimeStatusOnline,
+				LastSeenAt: nowUTC(),
+				Sandbox:    &domain.SpecForgeRuntimeSandbox{Writable: true},
+			},
+		},
+	}
+	svc := NewService(store, workspaces, github, nil, nil, nil, nil, runtimes, nil)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "CodingCTO",
+		Slug:        "codingcto",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+
+	created, err := svc.CreateProjectRuntimeBinding(context.Background(), 42, project.ID, &UpsertProjectRuntimeBindingRequest{
+		RepositoryID: "repo_1",
+		RuntimeID:    "runtime_1",
+		RepoDir:      "/Users/mingde/item/codingcto",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, created)
+	require.True(t, created.Eligible)
+	require.Equal(t, "runtime_1", created.Binding.RuntimeID)
+
+	updated, err := svc.UpdateProjectRuntimeBinding(context.Background(), 42, project.ID, created.Binding.ID, &UpsertProjectRuntimeBindingRequest{
+		RepositoryID: "repo_1",
+		RuntimeID:    "runtime_2",
+		RepoDir:      "/Users/mingde/item/codingcto/api",
+	})
+	require.NoError(t, err)
+	require.NotNil(t, updated)
+	require.True(t, updated.Eligible)
+	require.Equal(t, "runtime_2", updated.Binding.RuntimeID)
+	require.Equal(t, "/Users/mingde/item/codingcto/api", updated.Binding.RepoDir)
+
+	bindings, err := svc.ListProjectRuntimeBindings(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.Len(t, bindings, 1)
+	require.Equal(t, "runtime_2", bindings[0].Binding.RuntimeID)
+}
+
+func TestServiceProjectReadinessRequiresRuntimeBindingBeforeExpertPolicy(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
+		},
+	}
+	profiles := &memoryRepoProfileStore{
+		profiles: map[string]*domain.SpecForgeRepoProfile{
+			"repo_1": {
+				RepositoryID:  "repo_1",
+				DefaultBranch: "main",
+				Summary:       "Primary repo ready.",
+			},
+		},
+		snapshots: map[string]*domain.SpecForgeRepoArchitectureSnapshot{
+			"repo_1": {
+				RepositoryID: "repo_1",
+				CommitSHA:    "abc123",
+				CreatedAt:    nowUTC(),
+			},
+		},
+	}
+	projectSkills := &fakeProjectSkillStore{
+		skills: map[uint][]*domain.SpecForgeProjectSkill{
+			1: {
+				{ID: 10, ProjectID: 1, RepositoryID: "repo_1", SkillID: 50, Active: true},
+			},
+		},
+	}
+	githubReadiness := &fakeGitHubReadinessChecker{
+		response: &githubintegration.GitHubRepositoryReadinessResponse{
+			RepositoryID: "repo_1",
+			Ready:        true,
+		},
+	}
+	runtimes := &fakeRuntimeReadinessStore{
+		runtimes: []*domain.SpecForgeRuntime{
+			{
+				RuntimeID:  "runtime_1",
+				Executor:   "codex_cli",
+				Status:     domain.RuntimeStatusOnline,
+				LastSeenAt: nowUTC(),
+				Sandbox:    &domain.SpecForgeRuntimeSandbox{Writable: true},
+			},
+		},
+	}
+	svc := NewService(store, workspaces, github, profiles, &memorySkillStore{}, projectSkills, githubReadiness, runtimes, nil)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "CodingCTO",
+		Slug:        "codingcto",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+
+	readiness, err := svc.GetProjectReadiness(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.ProjectReadinessStepConnectRuntime, readiness.NextStep)
+	require.Equal(t, domain.ProjectReadinessStatusBlocked, readinessCheckStatusByKey(t, readiness, "runtime_dispatch"))
+
+	_, err = svc.CreateProjectRuntimeBinding(context.Background(), 42, project.ID, &UpsertProjectRuntimeBindingRequest{
+		RepositoryID: "repo_1",
+		RuntimeID:    "runtime_1",
+		RepoDir:      "/Users/mingde/item/codingcto",
+	})
+	require.NoError(t, err)
+
+	readiness, err = svc.GetProjectReadiness(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.ProjectReadinessStepConfigureExpertPolicy, readiness.NextStep)
+	require.Equal(t, domain.ProjectReadinessStatusReady, readinessCheckStatusByKey(t, readiness, "runtime_dispatch"))
+}
+
+func TestServiceProjectReadinessRequiresExpertPolicyBeforeRequirement(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {RepositoryID: "repo_1", WorkspaceID: "workspace_1"},
+		},
+	}
+	profiles := &memoryRepoProfileStore{
+		profiles: map[string]*domain.SpecForgeRepoProfile{
+			"repo_1": {
+				RepositoryID:  "repo_1",
+				DefaultBranch: "main",
+				Summary:       "Primary repo ready.",
+			},
+		},
+		snapshots: map[string]*domain.SpecForgeRepoArchitectureSnapshot{
+			"repo_1": {
+				RepositoryID: "repo_1",
+				CommitSHA:    "abc123",
+				CreatedAt:    nowUTC(),
+			},
+		},
+	}
+	projectSkills := &fakeProjectSkillStore{
+		skills: map[uint][]*domain.SpecForgeProjectSkill{
+			1: {
+				{ID: 10, ProjectID: 1, RepositoryID: "repo_1", SkillID: 50, Active: true},
+			},
+		},
+	}
+	githubReadiness := &fakeGitHubReadinessChecker{
+		response: &githubintegration.GitHubRepositoryReadinessResponse{
+			RepositoryID: "repo_1",
+			Ready:        true,
+		},
+	}
+	runtimes := &fakeRuntimeReadinessStore{
+		runtimes: []*domain.SpecForgeRuntime{
+			{RuntimeID: "runtime_1", Executor: "codex_cli", Status: domain.RuntimeStatusOnline, LastSeenAt: nowUTC()},
+		},
+	}
+	svc := NewService(store, workspaces, github, profiles, &memorySkillStore{}, projectSkills, githubReadiness, runtimes, nil)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "CodingCTO",
+		Slug:        "codingcto",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+	_, err = svc.CreateProjectRuntimeBinding(context.Background(), 42, project.ID, &UpsertProjectRuntimeBindingRequest{
+		RepositoryID: "repo_1",
+		RuntimeID:    "runtime_1",
+		RepoDir:      "/Users/mingde/item/codingcto",
+	})
+	require.NoError(t, err)
+
+	readiness, err := svc.GetProjectReadiness(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.ProjectReadinessStepConfigureExpertPolicy, readiness.NextStep)
+	require.Equal(t, domain.ProjectReadinessStatusBlocked, readinessCheckStatusByKey(t, readiness, "expert_policy"))
+
+	_, err = svc.CreateProjectExpertPolicy(context.Background(), 42, project.ID, &UpsertProjectExpertPolicyRequest{
+		GoalBoundary: "Only change project delivery and review flow.",
+		ReviewPolicy: ProjectExpertReviewPolicyRequest{
+			RequiredApprovals:       1,
+			BlockOnChangesRequested: true,
+			RequireCIGreen:          true,
+		},
+		MergePolicy: ProjectExpertMergePolicyRequest{
+			Strategy:              domain.ProjectMergeStrategySquash,
+			RequireManualApproval: true,
+		},
+	})
+	require.NoError(t, err)
+
+	readiness, err = svc.GetProjectReadiness(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.ProjectReadinessStepCreateRequirement, readiness.NextStep)
+	require.Equal(t, domain.ProjectReadinessStatusReady, readinessCheckStatusByKey(t, readiness, "expert_policy"))
+}
+
 type memoryProjectStore struct {
-	nextProjectID uint
+	nextProjectID  uint
+	nextBindingID  uint
+	nextSnapshotID uint
+	nextPolicyID   uint
+	projects       map[uint]*domain.SpecForgeProject
+	bindings       map[uint]map[string]*domain.SpecForgeProjectRepository
+	snapshots      map[uint][]*domain.SpecForgeProjectContextSnapshot
+	policies       map[uint][]*domain.SpecForgeProjectExpertPolicy
+}
+
+type fakeGitHubReadinessChecker struct {
+	response *githubintegration.GitHubRepositoryReadinessResponse
+	err      error
+}
+
+func (f *fakeGitHubReadinessChecker) CheckRepositoryReadiness(_ context.Context, _ string) (*githubintegration.GitHubRepositoryReadinessResponse, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	return f.response, nil
+}
+
+type fakeRuntimeReadinessStore struct {
 	nextBindingID uint
-	projects      map[uint]*domain.SpecForgeProject
-	bindings      map[uint]map[string]*domain.SpecForgeProjectRepository
+	runtimes      []*domain.SpecForgeRuntime
+	bindings      map[uint][]*domain.SpecForgeProjectRuntimeBinding
+	err           error
+}
+
+func (f *fakeRuntimeReadinessStore) ListRuntimes(_ context.Context, _, _ string, _ int) ([]*domain.SpecForgeRuntime, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	out := make([]*domain.SpecForgeRuntime, 0, len(f.runtimes))
+	for _, runtime := range f.runtimes {
+		if runtime == nil {
+			continue
+		}
+		copied := *runtime
+		out = append(out, &copied)
+	}
+	return out, nil
+}
+
+func (f *fakeRuntimeReadinessStore) FindRuntimeByRuntimeID(_ context.Context, runtimeID string) (*domain.SpecForgeRuntime, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	runtimeID = strings.TrimSpace(runtimeID)
+	for _, runtime := range f.runtimes {
+		if runtime == nil || strings.TrimSpace(runtime.RuntimeID) != runtimeID {
+			continue
+		}
+		copied := *runtime
+		return &copied, nil
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (f *fakeRuntimeReadinessStore) CreateProjectRuntimeBinding(_ context.Context, binding *domain.SpecForgeProjectRuntimeBinding) error {
+	if f.bindings == nil {
+		f.bindings = map[uint][]*domain.SpecForgeProjectRuntimeBinding{}
+	}
+	f.nextBindingID++
+	copied := cloneProjectRuntimeBinding(binding)
+	copied.ID = f.nextBindingID
+	copied.CreatedAt = nowUTC()
+	copied.UpdatedAt = copied.CreatedAt
+	f.bindings[binding.ProjectID] = append(f.bindings[binding.ProjectID], copied)
+	*binding = *cloneProjectRuntimeBinding(copied)
+	return nil
+}
+
+func (f *fakeRuntimeReadinessStore) UpdateProjectRuntimeBinding(_ context.Context, binding *domain.SpecForgeProjectRuntimeBinding) error {
+	items := f.bindings[binding.ProjectID]
+	for index, item := range items {
+		if item == nil || item.ID != binding.ID {
+			continue
+		}
+		copied := cloneProjectRuntimeBinding(binding)
+		copied.CreatedAt = item.CreatedAt
+		copied.UpdatedAt = nowUTC()
+		f.bindings[binding.ProjectID][index] = copied
+		*binding = *cloneProjectRuntimeBinding(copied)
+		return nil
+	}
+	return domain.ErrNotFound
+}
+
+func (f *fakeRuntimeReadinessStore) FindProjectRuntimeBindingByID(_ context.Context, bindingID uint) (*domain.SpecForgeProjectRuntimeBinding, error) {
+	for _, items := range f.bindings {
+		for _, binding := range items {
+			if binding == nil || binding.ID != bindingID {
+				continue
+			}
+			return cloneProjectRuntimeBinding(binding), nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (f *fakeRuntimeReadinessStore) ListProjectRuntimeBindingsByProjectID(_ context.Context, projectID uint) ([]*domain.SpecForgeProjectRuntimeBinding, error) {
+	items := f.bindings[projectID]
+	out := make([]*domain.SpecForgeProjectRuntimeBinding, 0, len(items))
+	for _, binding := range items {
+		out = append(out, cloneProjectRuntimeBinding(binding))
+	}
+	return out, nil
+}
+
+type fakeProjectSkillStore struct {
+	skills map[uint][]*domain.SpecForgeProjectSkill
+}
+
+func (f *fakeProjectSkillStore) ListActiveProjectSkillsByProjectID(_ context.Context, projectID uint) ([]*domain.SpecForgeProjectSkill, error) {
+	out := make([]*domain.SpecForgeProjectSkill, 0, len(f.skills[projectID]))
+	for _, skill := range f.skills[projectID] {
+		if skill == nil || !skill.Active {
+			continue
+		}
+		copied := *skill
+		out = append(out, &copied)
+	}
+	return out, nil
+}
+
+type fakeDeepWikiStore struct {
+	sources []*domain.DeepWikiSource
+	indexes map[uint]*domain.DeepWikiIndex
+	pages   map[uint][]*domain.DeepWikiPage
+	err     error
+}
+
+func (f *fakeDeepWikiStore) ListSources(_ context.Context, filter domain.DeepWikiSourceFilter, page, pageSize int) ([]*domain.DeepWikiSource, int64, error) {
+	if f.err != nil {
+		return nil, 0, f.err
+	}
+	if page < 1 {
+		page = 1
+	}
+	if pageSize <= 0 {
+		pageSize = len(f.sources)
+	}
+	filtered := make([]*domain.DeepWikiSource, 0, len(f.sources))
+	for _, source := range f.sources {
+		if source == nil {
+			continue
+		}
+		if filter.CreatedBy > 0 && source.CreatedBy != filter.CreatedBy {
+			continue
+		}
+		copied := *source
+		filtered = append(filtered, &copied)
+	}
+	start := (page - 1) * pageSize
+	if start >= len(filtered) {
+		return []*domain.DeepWikiSource{}, int64(len(filtered)), nil
+	}
+	end := start + pageSize
+	if end > len(filtered) {
+		end = len(filtered)
+	}
+	return filtered[start:end], int64(len(filtered)), nil
+}
+
+func (f *fakeDeepWikiStore) FindLatestIndexBySourceID(_ context.Context, sourceID uint) (*domain.DeepWikiIndex, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	index, ok := f.indexes[sourceID]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	copied := *index
+	return &copied, nil
+}
+
+func (f *fakeDeepWikiStore) ListPagesByIndexID(_ context.Context, indexID uint) ([]*domain.DeepWikiPage, error) {
+	if f.err != nil {
+		return nil, f.err
+	}
+	out := make([]*domain.DeepWikiPage, 0, len(f.pages[indexID]))
+	for _, page := range f.pages[indexID] {
+		if page == nil {
+			continue
+		}
+		copied := *page
+		out = append(out, &copied)
+	}
+	return out, nil
 }
 
 func newMemoryProjectStore() *memoryProjectStore {
 	return &memoryProjectStore{
-		nextProjectID: 1,
-		nextBindingID: 1,
-		projects:      map[uint]*domain.SpecForgeProject{},
-		bindings:      map[uint]map[string]*domain.SpecForgeProjectRepository{},
+		nextProjectID:  1,
+		nextBindingID:  1,
+		nextSnapshotID: 1,
+		nextPolicyID:   1,
+		projects:       map[uint]*domain.SpecForgeProject{},
+		bindings:       map[uint]map[string]*domain.SpecForgeProjectRepository{},
+		snapshots:      map[uint][]*domain.SpecForgeProjectContextSnapshot{},
+		policies:       map[uint][]*domain.SpecForgeProjectExpertPolicy{},
 	}
 }
 
@@ -330,6 +1197,17 @@ func (s *memoryProjectStore) UpdateProject(_ context.Context, project *domain.Sp
 		return domain.ErrNotFound
 	}
 	s.projects[project.ID] = cloneProject(project)
+	return nil
+}
+
+func (s *memoryProjectStore) DeleteProject(_ context.Context, projectID uint) error {
+	if _, ok := s.projects[projectID]; !ok {
+		return domain.ErrNotFound
+	}
+	delete(s.projects, projectID)
+	delete(s.bindings, projectID)
+	delete(s.snapshots, projectID)
+	delete(s.policies, projectID)
 	return nil
 }
 
@@ -416,6 +1294,95 @@ func (s *memoryProjectStore) FindActivePrimaryProjectRepository(_ context.Contex
 		}
 	}
 	return nil, domain.ErrNotFound
+}
+
+func (s *memoryProjectStore) CreateProjectContextSnapshot(_ context.Context, snapshot *domain.SpecForgeProjectContextSnapshot) error {
+	if snapshot == nil {
+		return domain.ErrInvalidInput
+	}
+	copied := cloneProjectContextSnapshot(snapshot)
+	copied.ID = s.nextSnapshotID
+	s.nextSnapshotID++
+	s.snapshots[copied.ProjectID] = append(s.snapshots[copied.ProjectID], copied)
+	*snapshot = *cloneProjectContextSnapshot(copied)
+	return nil
+}
+
+func (s *memoryProjectStore) FindProjectContextSnapshotByID(_ context.Context, id uint) (*domain.SpecForgeProjectContextSnapshot, error) {
+	for _, candidates := range s.snapshots {
+		for _, candidate := range candidates {
+			if candidate.ID == id {
+				return cloneProjectContextSnapshot(candidate), nil
+			}
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (s *memoryProjectStore) FindLatestProjectContextSnapshot(_ context.Context, projectID uint) (*domain.SpecForgeProjectContextSnapshot, error) {
+	candidates := s.snapshots[projectID]
+	if len(candidates) == 0 {
+		return nil, domain.ErrNotFound
+	}
+	return cloneProjectContextSnapshot(candidates[len(candidates)-1]), nil
+}
+
+func (s *memoryProjectStore) CreateProjectExpertPolicy(_ context.Context, policy *domain.SpecForgeProjectExpertPolicy) error {
+	if policy == nil {
+		return domain.ErrInvalidInput
+	}
+	copied := cloneProjectExpertPolicy(policy)
+	copied.ID = s.nextPolicyID
+	s.nextPolicyID++
+	s.policies[copied.ProjectID] = append(s.policies[copied.ProjectID], copied)
+	*policy = *cloneProjectExpertPolicy(copied)
+	return nil
+}
+
+func (s *memoryProjectStore) UpdateProjectExpertPolicy(_ context.Context, policy *domain.SpecForgeProjectExpertPolicy) error {
+	if policy == nil {
+		return domain.ErrInvalidInput
+	}
+	items := s.policies[policy.ProjectID]
+	for index, existing := range items {
+		if existing.ID != policy.ID {
+			continue
+		}
+		s.policies[policy.ProjectID][index] = cloneProjectExpertPolicy(policy)
+		*policy = *cloneProjectExpertPolicy(s.policies[policy.ProjectID][index])
+		return nil
+	}
+	return domain.ErrNotFound
+}
+
+func (s *memoryProjectStore) FindProjectExpertPolicyByID(_ context.Context, id uint) (*domain.SpecForgeProjectExpertPolicy, error) {
+	for _, items := range s.policies {
+		for _, policy := range items {
+			if policy.ID == id {
+				return cloneProjectExpertPolicy(policy), nil
+			}
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (s *memoryProjectStore) FindActiveProjectExpertPolicyByProjectID(_ context.Context, projectID uint) (*domain.SpecForgeProjectExpertPolicy, error) {
+	items := s.policies[projectID]
+	for index := len(items) - 1; index >= 0; index-- {
+		if items[index].Active {
+			return cloneProjectExpertPolicy(items[index]), nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (s *memoryProjectStore) ListProjectExpertPoliciesByProjectID(_ context.Context, projectID uint) ([]*domain.SpecForgeProjectExpertPolicy, error) {
+	items := s.policies[projectID]
+	out := make([]*domain.SpecForgeProjectExpertPolicy, 0, len(items))
+	for _, policy := range items {
+		out = append(out, cloneProjectExpertPolicy(policy))
+	}
+	return out, nil
 }
 
 type memoryWorkspaceStore struct {
@@ -506,7 +1473,8 @@ func (s *memoryWorkspaceStore) ListWorkspaces(_ context.Context, createdBy uint,
 }
 
 type memoryGitHubRepositoryStore struct {
-	repositories map[string]*domain.Repository
+	repositories  map[string]*domain.Repository
+	installations map[uint]*domain.GitHubInstallation
 }
 
 func (s *memoryGitHubRepositoryStore) FindRepositoryByRepositoryID(_ context.Context, repositoryID string) (*domain.Repository, error) {
@@ -530,14 +1498,42 @@ func (s *memoryGitHubRepositoryStore) ListRepositoriesByWorkspaceID(_ context.Co
 	return out, nil
 }
 
-func (s *memoryGitHubRepositoryStore) UpsertInstallation(context.Context, *domain.GitHubInstallation) error {
-	return errors.New("not implemented")
+func (s *memoryGitHubRepositoryStore) UpsertInstallation(_ context.Context, installation *domain.GitHubInstallation) error {
+	if s.installations == nil {
+		s.installations = make(map[uint]*domain.GitHubInstallation)
+	}
+	copied := *installation
+	s.installations[installation.ID] = &copied
+	return nil
 }
-func (s *memoryGitHubRepositoryStore) FindInstallationByID(context.Context, uint) (*domain.GitHubInstallation, error) {
-	return nil, errors.New("not implemented")
+func (s *memoryGitHubRepositoryStore) FindInstallationByID(_ context.Context, id uint) (*domain.GitHubInstallation, error) {
+	installation, ok := s.installations[id]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	copied := *installation
+	return &copied, nil
 }
-func (s *memoryGitHubRepositoryStore) FindInstallationByGitHubID(context.Context, int64) (*domain.GitHubInstallation, error) {
-	return nil, errors.New("not implemented")
+func (s *memoryGitHubRepositoryStore) FindInstallationByGitHubID(_ context.Context, installationID int64) (*domain.GitHubInstallation, error) {
+	for _, installation := range s.installations {
+		if installation.InstallationID != installationID {
+			continue
+		}
+		copied := *installation
+		return &copied, nil
+	}
+	return nil, domain.ErrNotFound
+}
+func (s *memoryGitHubRepositoryStore) ListInstallationsByWorkspaceID(_ context.Context, workspaceID string) ([]*domain.GitHubInstallation, error) {
+	out := make([]*domain.GitHubInstallation, 0, len(s.installations))
+	for _, installation := range s.installations {
+		if installation.WorkspaceID != workspaceID {
+			continue
+		}
+		copied := *installation
+		out = append(out, &copied)
+	}
+	return out, nil
 }
 func (s *memoryGitHubRepositoryStore) UpsertRepository(context.Context, *domain.Repository) error {
 	return errors.New("not implemented")
@@ -571,6 +1567,87 @@ func cloneBinding(binding *domain.SpecForgeProjectRepository) *domain.SpecForgeP
 	return &copied
 }
 
+func cloneProjectContextSnapshot(snapshot *domain.SpecForgeProjectContextSnapshot) *domain.SpecForgeProjectContextSnapshot {
+	if snapshot == nil {
+		return nil
+	}
+	copied := *snapshot
+	copied.MissingEvidence = append([]string(nil), snapshot.MissingEvidence...)
+	copied.EvidenceRefs = append([]string(nil), snapshot.EvidenceRefs...)
+	if snapshot.Readiness != nil {
+		readiness := *snapshot.Readiness
+		readiness.Guardrails = append([]string(nil), snapshot.Readiness.Guardrails...)
+		copied.Readiness = &readiness
+	}
+	if snapshot.ContextContract != nil {
+		contract := *snapshot.ContextContract
+		contract.ReadOnlyRepositoryIDs = append([]string(nil), snapshot.ContextContract.ReadOnlyRepositoryIDs...)
+		contract.SkillNames = append([]string(nil), snapshot.ContextContract.SkillNames...)
+		contract.MissingEvidence = append([]string(nil), snapshot.ContextContract.MissingEvidence...)
+		contract.Warnings = append([]string(nil), snapshot.ContextContract.Warnings...)
+		contract.PromptGuardrails = append([]string(nil), snapshot.ContextContract.PromptGuardrails...)
+		contract.Repositories = make([]*domain.SpecForgeRepositoryContextContractFragment, 0, len(snapshot.ContextContract.Repositories))
+		for _, repository := range snapshot.ContextContract.Repositories {
+			if repository == nil {
+				continue
+			}
+			repoCopy := *repository
+			repoCopy.Stack = append([]string(nil), repository.Stack...)
+			repoCopy.TestCommands = append([]string(nil), repository.TestCommands...)
+			repoCopy.RiskAreas = append([]string(nil), repository.RiskAreas...)
+			repoCopy.CodingConventions = append([]string(nil), repository.CodingConventions...)
+			repoCopy.ArchitectureModules = append([]string(nil), repository.ArchitectureModules...)
+			repoCopy.ArchitectureEntrypoints = append([]string(nil), repository.ArchitectureEntrypoints...)
+			repoCopy.ArchitectureCIWorkflows = append([]string(nil), repository.ArchitectureCIWorkflows...)
+			repoCopy.SkillNames = append([]string(nil), repository.SkillNames...)
+			contract.Repositories = append(contract.Repositories, &repoCopy)
+		}
+		copied.ContextContract = &contract
+	}
+	copied.Repositories = make([]*domain.SpecForgeProjectContextSnapshotRepository, 0, len(snapshot.Repositories))
+	for _, repository := range snapshot.Repositories {
+		if repository == nil {
+			continue
+		}
+		repoCopy := *repository
+		repoCopy.SkillNames = append([]string(nil), repository.SkillNames...)
+		repoCopy.Warnings = append([]string(nil), repository.Warnings...)
+		repoCopy.MissingEvidence = append([]string(nil), repository.MissingEvidence...)
+		if repository.DeepWiki != nil {
+			deepWikiCopy := *repository.DeepWiki
+			deepWikiCopy.Frameworks = append([]string(nil), repository.DeepWiki.Frameworks...)
+			deepWikiCopy.Entrypoints = append([]string(nil), repository.DeepWiki.Entrypoints...)
+			deepWikiCopy.Routes = append([]string(nil), repository.DeepWiki.Routes...)
+			deepWikiCopy.Services = append([]string(nil), repository.DeepWiki.Services...)
+			deepWikiCopy.Models = append([]string(nil), repository.DeepWiki.Models...)
+			deepWikiCopy.TopPages = append([]string(nil), repository.DeepWiki.TopPages...)
+			deepWikiCopy.Warnings = append([]string(nil), repository.DeepWiki.Warnings...)
+			repoCopy.DeepWiki = &deepWikiCopy
+		}
+		copied.Repositories = append(copied.Repositories, &repoCopy)
+	}
+	return &copied
+}
+
+func cloneProjectExpertPolicy(policy *domain.SpecForgeProjectExpertPolicy) *domain.SpecForgeProjectExpertPolicy {
+	if policy == nil {
+		return nil
+	}
+	copied := *policy
+	copied.AllowedPaths = append([]string(nil), policy.AllowedPaths...)
+	copied.ForbiddenPaths = append([]string(nil), policy.ForbiddenPaths...)
+	copied.RequiredTestCommands = append([]string(nil), policy.RequiredTestCommands...)
+	return &copied
+}
+
+func cloneProjectRuntimeBinding(binding *domain.SpecForgeProjectRuntimeBinding) *domain.SpecForgeProjectRuntimeBinding {
+	if binding == nil {
+		return nil
+	}
+	copied := *binding
+	return &copied
+}
+
 func projectRepoContextByRepositoryID(bundle *domain.SpecForgeProjectContext, repositoryID string) *domain.SpecForgeProjectRepositoryContext {
 	for _, context := range bundle.RepositoryContexts {
 		if context.Repository.RepositoryID == repositoryID {
@@ -590,6 +1667,20 @@ func projectRepoContractByRepositoryID(contract *domain.SpecForgeProjectContextC
 		}
 	}
 	return nil
+}
+
+func readinessCheckStatusByKey(t *testing.T, readiness *domain.SpecForgeProjectReadiness, key string) string {
+	t.Helper()
+	if readiness == nil {
+		require.Fail(t, "missing readiness")
+	}
+	for _, check := range readiness.Checks {
+		if check.Key == key {
+			return check.Status
+		}
+	}
+	require.Failf(t, "missing readiness check", "key %s not found", key)
+	return ""
 }
 
 type memoryRepoProfileStore struct {

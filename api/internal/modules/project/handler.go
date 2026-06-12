@@ -85,6 +85,19 @@ func (h *Handler) UpdateProject(c *gin.Context) {
 	response.Success(c, &ProjectResponse{Project: project})
 }
 
+func (h *Handler) DeleteProject(c *gin.Context) {
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+
+	if err := h.service.DeleteProject(c.Request.Context(), projectID); err != nil {
+		response.HandleError(c, "Failed to delete project", err)
+		return
+	}
+	response.NoContent(c)
+}
+
 func (h *Handler) BindRepository(c *gin.Context) {
 	userID, ok := handler.GetUserID(c)
 	if !ok {
@@ -147,4 +160,158 @@ func (h *Handler) GetProjectContext(c *gin.Context) {
 		return
 	}
 	response.Success(c, &ProjectContextResponse{Context: context})
+}
+
+func (h *Handler) GetProjectReadiness(c *gin.Context) {
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+
+	readiness, err := h.service.GetProjectReadiness(c.Request.Context(), projectID)
+	if err != nil {
+		response.HandleError(c, "Failed to get project readiness", err)
+		return
+	}
+	response.Success(c, &ProjectReadinessResponse{Readiness: readiness})
+}
+
+func (h *Handler) RefreshProjectContext(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+
+	snapshot, err := h.service.RefreshProjectContext(c.Request.Context(), userID, projectID)
+	if err != nil {
+		response.HandleError(c, "Failed to refresh project context", err)
+		return
+	}
+	response.Success(c, &ProjectContextSnapshotResponse{Snapshot: snapshot})
+}
+
+func (h *Handler) GetProjectExpertPolicy(c *gin.Context) {
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+	policy, err := h.service.GetProjectExpertPolicy(c.Request.Context(), projectID)
+	if err != nil {
+		response.HandleError(c, "Failed to get project expert policy", err)
+		return
+	}
+	response.Success(c, &ProjectExpertPolicyResponse{Policy: policy})
+}
+
+func (h *Handler) CreateProjectExpertPolicy(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+
+	var req UpsertProjectExpertPolicyRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+	policy, err := h.service.CreateProjectExpertPolicy(c.Request.Context(), userID, projectID, &req)
+	if err != nil {
+		response.HandleError(c, "Failed to create project expert policy", err)
+		return
+	}
+	response.Created(c, &ProjectExpertPolicyResponse{Policy: policy})
+}
+
+func (h *Handler) UpdateProjectExpertPolicy(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+	policyID, ok := handler.ParseID(c, "policy_id")
+	if !ok {
+		return
+	}
+
+	var req UpsertProjectExpertPolicyRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+	policy, err := h.service.UpdateProjectExpertPolicy(c.Request.Context(), userID, projectID, policyID, &req)
+	if err != nil {
+		response.HandleError(c, "Failed to update project expert policy", err)
+		return
+	}
+	response.Success(c, &ProjectExpertPolicyResponse{Policy: policy})
+}
+
+func (h *Handler) ListProjectRuntimeBindings(c *gin.Context) {
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+	bindings, err := h.service.ListProjectRuntimeBindings(c.Request.Context(), projectID)
+	if err != nil {
+		response.HandleError(c, "Failed to list project runtime bindings", err)
+		return
+	}
+	response.Success(c, &ProjectRuntimeBindingListResponse{Bindings: bindings})
+}
+
+func (h *Handler) CreateProjectRuntimeBinding(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+
+	var req UpsertProjectRuntimeBindingRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+	binding, err := h.service.CreateProjectRuntimeBinding(c.Request.Context(), userID, projectID, &req)
+	if err != nil {
+		response.HandleError(c, "Failed to create project runtime binding", err)
+		return
+	}
+	response.Created(c, &ProjectRuntimeBindingResponse{Binding: binding})
+}
+
+func (h *Handler) UpdateProjectRuntimeBinding(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+	bindingID, ok := handler.ParseID(c, "binding_id")
+	if !ok {
+		return
+	}
+
+	var req UpsertProjectRuntimeBindingRequest
+	if !handler.BindJSON(c, &req) {
+		return
+	}
+	binding, err := h.service.UpdateProjectRuntimeBinding(c.Request.Context(), userID, projectID, bindingID, &req)
+	if err != nil {
+		response.HandleError(c, "Failed to update project runtime binding", err)
+		return
+	}
+	response.Success(c, &ProjectRuntimeBindingResponse{Binding: binding})
 }

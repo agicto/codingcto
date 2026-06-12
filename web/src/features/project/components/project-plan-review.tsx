@@ -28,7 +28,11 @@ import {
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
 import { ProjectPlanningFlowCard } from '@/features/project/components/project-planning-flow-card';
 import { projectPlanningStages } from '@/features/project/project-planning-flow';
-import { projectContextHref, projectSpecForgeHref } from '@/features/project/project-utils';
+import {
+  projectContextHref,
+  projectPRReviewHref,
+  projectSpecForgeHref,
+} from '@/features/project/project-utils';
 import { executionRunFromDTO, planBundleFromDTO } from '@/features/specforge/plan-adapter';
 import { buildPromptPreview } from '@/features/specforge/prompt-preview';
 import {
@@ -354,7 +358,7 @@ function ProjectPlanReview({
           readyRuntimeCount={executionReadiness.healthyRuntimeCount}
           readinessReason={executionReadiness.reason}
         />
-        <VerificationReviewCard plan={plan} />
+        <VerificationReviewCard plan={plan} projectId={projectId} />
       </div>
     </main>
   );
@@ -683,7 +687,7 @@ function DagMeta({ label, value }: { label: string; value: string }) {
   );
 }
 
-function VerificationReviewCard({ plan }: { plan: PlanBundle }) {
+function VerificationReviewCard({ plan, projectId }: { plan: PlanBundle; projectId: number }) {
   const review = verificationReviewForNodes(plan.prNodes);
   const highlightedNodes =
     review.failedNodes.length > 0
@@ -744,6 +748,11 @@ function VerificationReviewCard({ plan }: { plan: PlanBundle }) {
                     Failure: {node.failureReason}
                   </p>
                 ) : null}
+                <div className="mt-2">
+                  <Button asChild size="sm" variant="outline">
+                    <Link href={projectPRReviewHref(projectId, Number(node.id))}>Open review</Link>
+                  </Button>
+                </div>
               </div>
             ))}
             {highlightedNodes.length === 0 ? (
@@ -860,9 +869,21 @@ function PlanMetaCard({ plan, runtimeCount }: { plan: PlanBundle; runtimeCount: 
         </CardTitle>
         <CardDescription className="leading-6">{plan.idea}</CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-3 text-sm md:grid-cols-4">
+      <CardContent className="grid gap-3 text-sm md:grid-cols-6">
         <MetaItem label="Plan ID" value={plan.planId ? String(plan.planId) : 'Draft'} />
         <MetaItem label="Repository" value={plan.repoProfile.repositoryId} />
+        <MetaItem
+          label="Context snapshot"
+          value={
+            plan.implementationPlan.contextSnapshotId
+              ? `#${plan.implementationPlan.contextSnapshotId}`
+              : 'Unpinned'
+          }
+        />
+        <MetaItem
+          label="Expert policy"
+          value={plan.expertPolicy ? `v${plan.expertPolicy.version}` : 'Unpinned'}
+        />
         <MetaItem label="PR nodes" value={String(plan.prNodes.length)} />
         <MetaItem label="Ready runtimes" value={String(runtimeCount)} />
       </CardContent>
