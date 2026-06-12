@@ -164,6 +164,22 @@ type DeliverPRNodeRequest struct {
 	Draft        *bool  `json:"draft" binding:"omitempty"`
 }
 
+type MergePRNodeRequest struct {
+	RepositoryID    string `json:"repository_id" binding:"required,max=255"`
+	PRNodeID        uint   `json:"pr_node_id" binding:"required"`
+	ExpectedHeadSHA string `json:"expected_head_sha" binding:"required,max=255"`
+	MergeMethod     string `json:"merge_method" binding:"omitempty,oneof=merge squash rebase"`
+	CommitTitle     string `json:"commit_title" binding:"omitempty,max=255"`
+	CommitMessage   string `json:"commit_message" binding:"omitempty,max=5000"`
+}
+
+type MergePRNodeResponse struct {
+	PRNode  *domain.SpecForgePRNode `json:"pr_node"`
+	Merged  bool                    `json:"merged"`
+	Message string                  `json:"message"`
+	SHA     string                  `json:"sha,omitempty"`
+}
+
 type PreparePRNodeBranchRequest struct {
 	RepositoryID string `json:"repository_id" binding:"required,max=255"`
 	PRNodeID     uint   `json:"pr_node_id" binding:"required"`

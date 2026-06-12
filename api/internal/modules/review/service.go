@@ -8,6 +8,7 @@ import (
 	"time"
 
 	"github.com/zgiai/luas/api/internal/domain"
+	"github.com/zgiai/luas/api/internal/modules/githubintegration"
 )
 
 const (
@@ -20,6 +21,7 @@ type Service interface {
 	GetReviewDecision(ctx context.Context, prNodeID uint) (*ReviewDecisionResponse, error)
 	ApproveReviewDecision(ctx context.Context, userID, prNodeID uint, req *ApproveReviewDecisionRequest) (*ReviewDecisionResponse, error)
 	RejectReviewDecision(ctx context.Context, userID, prNodeID uint, req *RejectReviewDecisionRequest) (*ReviewDecisionResponse, error)
+	RequestMergeReviewDecision(ctx context.Context, userID, prNodeID uint, req *RequestMergeReviewDecisionRequest) (*RequestMergeReviewDecisionResponse, error)
 }
 
 type PRNodeReader interface {
@@ -30,10 +32,15 @@ type FixAttemptReader interface {
 	ListFixAttemptsByPRNodeID(ctx context.Context, prNodeID uint) ([]*domain.SpecForgeFixAttempt, error)
 }
 
+type PRNodeMergeRequester interface {
+	MergePRNode(ctx context.Context, req *githubintegration.MergePRNodeRequest) (*githubintegration.MergePRNodeResponse, error)
+}
+
 type service struct {
 	reviewRepo       domain.SpecForgeReviewDecisionRepository
 	planningRepo     PRNodeReader
 	verificationRepo FixAttemptReader
+	mergeRequester   PRNodeMergeRequester
 	now              func() time.Time
 }
 
@@ -50,11 +57,13 @@ func NewService(
 	reviewRepo domain.SpecForgeReviewDecisionRepository,
 	planningRepo PRNodeReader,
 	verificationRepo FixAttemptReader,
+	mergeRequester PRNodeMergeRequester,
 ) *service {
 	return &service{
 		reviewRepo:       reviewRepo,
 		planningRepo:     planningRepo,
 		verificationRepo: verificationRepo,
+		mergeRequester:   mergeRequester,
 		now:              time.Now,
 	}
 }
@@ -155,6 +164,46 @@ func (s *service) RejectReviewDecision(ctx context.Context, userID, prNodeID uin
 		return nil, fmt.Errorf("create review rejection: %w", err)
 	}
 	return s.GetReviewDecision(ctx, prNodeID)
+}
+
+func (s *service) RequestMergeReviewDecision(ctx context.Context, userID, prNodeID uint, req *RequestMergeReviewDecisionRequest) (*RequestMergeReviewDecisionResponse, error) {
+	if userID == 0 || prNodeID == 0 || req == nil || s.mergeRequester == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	node, decision, fixAttempts, err := s.loadReviewInputs(ctx, prNodeID)
+	if err != nil {
+		return nil, err
+	}
+	evaluation, err := s.evaluateReviewDecision(ctx, node, decision, fixAttempts)
+	if err != nil {
+		return nil, err
+	}
+	if node == nil || evaluation.Decision == nil || evaluation.Decision.Status != domain.ReviewDecisionStatusApproved || !evaluation.MergeReady {
+		return nil, domain.ErrConflict
+	}
+	mergeResult, err := s.mergeRequester.MergePRNode(ctx, &githubintegration.MergePRNodeRequest{
+		RepositoryID:    strings.TrimSpace(node.RepositoryID),
+		PRNodeID:        node.ID,
+		ExpectedHeadSHA: strings.TrimSpace(evaluation.Decision.HeadSHA),
+		MergeMethod:     strings.TrimSpace(req.MergeMethod),
+		CommitTitle:     strings.TrimSpace(req.CommitTitle),
+		CommitMessage:   strings.TrimSpace(req.CommitMessage),
+	})
+	if err != nil {
+		return nil, err
+	}
+	prNode := node
+	if mergeResult != nil && mergeResult.PRNode != nil {
+		prNode = mergeResult.PRNode
+	}
+	return &RequestMergeReviewDecisionResponse{
+		PRNode:         prNode,
+		Decision:       toReviewDecisionDTO(evaluation.Decision),
+		MergeAccepted:  mergeResult != nil && mergeResult.Merged,
+		MergeMessage:   mergeMessage(mergeResult),
+		MergeSHA:       mergeSHA(mergeResult),
+		DecisionStatus: evaluation.Decision.Status,
+	}, nil
 }
 
 func (s *service) loadReviewInputs(ctx context.Context, prNodeID uint) (*domain.SpecForgePRNode, *domain.SpecForgeReviewDecision, []*domain.SpecForgeFixAttempt, error) {
@@ -448,4 +497,18 @@ func truncateSHA(value string) string {
 		return value
 	}
 	return value[:12]
+}
+
+func mergeMessage(result *githubintegration.MergePRNodeResponse) string {
+	if result == nil || strings.TrimSpace(result.Message) == "" {
+		return "GitHub accepted the merge request. Webhook reconciliation will confirm the final PR state."
+	}
+	return strings.TrimSpace(result.Message)
+}
+
+func mergeSHA(result *githubintegration.MergePRNodeResponse) string {
+	if result == nil {
+		return ""
+	}
+	return strings.TrimSpace(result.SHA)
 }

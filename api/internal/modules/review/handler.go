@@ -87,3 +87,26 @@ func (h *Handler) RejectReviewDecision(c *gin.Context) {
 	}
 	response.Success(c, decision)
 }
+
+func (h *Handler) RequestMergeReviewDecision(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	prNodeID, err := strconv.ParseUint(c.Param("id"), 10, 64)
+	if err != nil || prNodeID == 0 {
+		response.HandleError(c, "Invalid PR node id", err)
+		return
+	}
+	var req RequestMergeReviewDecisionRequest
+	if err := c.ShouldBindJSON(&req); err != nil && !errors.Is(err, io.EOF) {
+		response.BadRequest(c, "Invalid request parameters", err)
+		return
+	}
+	decision, err := h.service.RequestMergeReviewDecision(c.Request.Context(), userID, uint(prNodeID), &req)
+	if err != nil {
+		response.HandleError(c, "Failed to request PR merge", err)
+		return
+	}
+	response.Success(c, decision)
+}

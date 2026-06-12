@@ -7,6 +7,7 @@ import (
 
 	"github.com/stretchr/testify/require"
 	"github.com/zgiai/luas/api/internal/domain"
+	"github.com/zgiai/luas/api/internal/modules/githubintegration"
 )
 
 func TestApproveReviewDecisionMarksCurrentHeadAsApproved(t *testing.T) {
@@ -18,6 +19,7 @@ func TestApproveReviewDecisionMarksCurrentHeadAsApproved(t *testing.T) {
 			},
 		},
 		&memoryFixAttemptReader{},
+		&memoryMergeRequester{},
 	)
 	svc.now = func() time.Time { return time.Date(2026, 6, 11, 11, 0, 0, 0, time.UTC) }
 
@@ -40,6 +42,7 @@ func TestApproveReviewDecisionRejectsBlockedPRNode(t *testing.T) {
 		&memoryReviewRepo{},
 		&memoryPRNodeReader{nodes: map[uint]*domain.SpecForgePRNode{7: node}},
 		&memoryFixAttemptReader{},
+		&memoryMergeRequester{},
 	)
 
 	_, err := svc.ApproveReviewDecision(context.Background(), 42, 7, &ApproveReviewDecisionRequest{})
@@ -64,6 +67,7 @@ func TestGetReviewDecisionExpiresApprovalWhenHeadChanges(t *testing.T) {
 		reviewRepo,
 		&memoryPRNodeReader{nodes: map[uint]*domain.SpecForgePRNode{7: readyForReviewNode()}},
 		&memoryFixAttemptReader{},
+		&memoryMergeRequester{},
 	)
 	svc.now = func() time.Time { return time.Date(2026, 6, 11, 12, 0, 0, 0, time.UTC) }
 
@@ -82,6 +86,7 @@ func TestRejectReviewDecisionRecordsReason(t *testing.T) {
 		&memoryReviewRepo{},
 		&memoryPRNodeReader{nodes: map[uint]*domain.SpecForgePRNode{7: readyForReviewNode()}},
 		&memoryFixAttemptReader{},
+		&memoryMergeRequester{},
 	)
 	svc.now = func() time.Time { return time.Date(2026, 6, 11, 13, 0, 0, 0, time.UTC) }
 
@@ -108,9 +113,64 @@ func TestApproveReviewDecisionBlocksQueuedFixAttempt(t *testing.T) {
 				},
 			},
 		},
+		&memoryMergeRequester{},
 	)
 
 	_, err := svc.ApproveReviewDecision(context.Background(), 42, 7, &ApproveReviewDecisionRequest{})
+
+	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
+func TestRequestMergeReviewDecisionPassesApprovedHeadSHA(t *testing.T) {
+	reviewRepo := &memoryReviewRepo{
+		decisions: []*domain.SpecForgeReviewDecision{
+			{
+				ID:        1,
+				PRNodeID:  7,
+				Status:    domain.ReviewDecisionStatusApproved,
+				HeadSHA:   "abc123def456",
+				DecidedBy: 42,
+				DecidedAt: time.Date(2026, 6, 11, 11, 0, 0, 0, time.UTC),
+			},
+		},
+	}
+	mergeRequester := &memoryMergeRequester{
+		response: &githubintegration.MergePRNodeResponse{
+			PRNode:  readyForReviewNode(),
+			Merged:  true,
+			Message: "Pull Request successfully merged",
+			SHA:     "merge123",
+		},
+	}
+	svc := NewService(
+		reviewRepo,
+		&memoryPRNodeReader{nodes: map[uint]*domain.SpecForgePRNode{7: readyForReviewNode()}},
+		&memoryFixAttemptReader{},
+		mergeRequester,
+	)
+
+	result, err := svc.RequestMergeReviewDecision(context.Background(), 42, 7, &RequestMergeReviewDecisionRequest{
+		MergeMethod:   "squash",
+		CommitTitle:   "feat: merge invite flow",
+		CommitMessage: "approved via CodingCTO",
+	})
+
+	require.NoError(t, err)
+	require.True(t, result.MergeAccepted)
+	require.Equal(t, "abc123def456", mergeRequester.request.ExpectedHeadSHA)
+	require.Equal(t, "squash", mergeRequester.request.MergeMethod)
+	require.Equal(t, "feat: merge invite flow", mergeRequester.request.CommitTitle)
+}
+
+func TestRequestMergeReviewDecisionRequiresCurrentApproval(t *testing.T) {
+	svc := NewService(
+		&memoryReviewRepo{},
+		&memoryPRNodeReader{nodes: map[uint]*domain.SpecForgePRNode{7: readyForReviewNode()}},
+		&memoryFixAttemptReader{},
+		&memoryMergeRequester{},
+	)
+
+	_, err := svc.RequestMergeReviewDecision(context.Background(), 42, 7, &RequestMergeReviewDecisionRequest{})
 
 	require.ErrorIs(t, err, domain.ErrConflict)
 }
@@ -202,4 +262,16 @@ func (r *memoryFixAttemptReader) ListFixAttemptsByPRNodeID(_ context.Context, pr
 		out[i] = &copied
 	}
 	return out, nil
+}
+
+type memoryMergeRequester struct {
+	request  *githubintegration.MergePRNodeRequest
+	response *githubintegration.MergePRNodeResponse
+	err      error
+}
+
+func (r *memoryMergeRequester) MergePRNode(_ context.Context, req *githubintegration.MergePRNodeRequest) (*githubintegration.MergePRNodeResponse, error) {
+	copied := *req
+	r.request = &copied
+	return r.response, r.err
 }

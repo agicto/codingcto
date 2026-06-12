@@ -32,6 +32,7 @@ type Service interface {
 	ReadRepositoryFile(ctx context.Context, req *ReadRepositoryFileRequest) (*RepositoryFileSnapshot, error)
 	PreparePRNodeBranch(ctx context.Context, req *PreparePRNodeBranchRequest) (*domain.SpecForgePRNode, error)
 	DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) (*domain.SpecForgePRNode, error)
+	MergePRNode(ctx context.Context, req *MergePRNodeRequest) (*MergePRNodeResponse, error)
 	RefreshPRNodeCI(ctx context.Context, req *RefreshPRNodeCIRequest) (*domain.SpecForgePRNode, error)
 	ReadPRNodeFailureLog(ctx context.Context, req *ReadPRNodeFailureLogRequest) (*PRNodeFailureLog, error)
 	RecordWebhook(ctx context.Context, req *GitHubWebhookRequest) (*domain.GitHubWebhookEvent, error)
@@ -651,6 +652,73 @@ func (s *service) DeliverPRNode(ctx context.Context, req *DeliverPRNodeRequest) 
 		return nil, err
 	}
 	return node, nil
+}
+
+func (s *service) MergePRNode(ctx context.Context, req *MergePRNodeRequest) (*MergePRNodeResponse, error) {
+	if req == nil || strings.TrimSpace(req.RepositoryID) == "" || req.PRNodeID == 0 || strings.TrimSpace(req.ExpectedHeadSHA) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	if s.planningRepo == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	repository, err := s.repo.FindRepositoryByRepositoryID(ctx, strings.TrimSpace(req.RepositoryID))
+	if err != nil {
+		return nil, err
+	}
+	settings, err := s.settingsForRepository(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
+	if !settings.Enabled {
+		return nil, domain.ErrInvalidInput
+	}
+	node, err := s.planningRepo.FindPRNodeByID(ctx, req.PRNodeID)
+	if err != nil {
+		return nil, err
+	}
+	if err := validatePRNodeTargetRepository(repository.RepositoryID, node); err != nil {
+		return nil, err
+	}
+	if node.GitHubPRNumber == nil || *node.GitHubPRNumber == 0 || strings.TrimSpace(node.GitHubPRURL) == "" {
+		return nil, domain.ErrConflict
+	}
+	currentHeadSHA := strings.TrimSpace(node.GitHubHeadSHA)
+	expectedHeadSHA := strings.TrimSpace(req.ExpectedHeadSHA)
+	if currentHeadSHA == "" || currentHeadSHA != expectedHeadSHA {
+		return nil, fmt.Errorf("github integration: pull request head SHA changed before merge: %w", domain.ErrConflict)
+	}
+	client, err := s.repositoryClientForRepository(ctx, repository)
+	if err != nil {
+		return nil, err
+	}
+	if client == nil {
+		return nil, fmt.Errorf("github integration: repository client is required")
+	}
+	result, err := client.MergePullRequest(ctx, MergePullRequestInput{
+		Owner:         repository.GitHubOwner,
+		Repo:          repository.GitHubRepo,
+		Number:        *node.GitHubPRNumber,
+		SHA:           expectedHeadSHA,
+		MergeMethod:   strings.TrimSpace(req.MergeMethod),
+		CommitTitle:   strings.TrimSpace(req.CommitTitle),
+		CommitMessage: strings.TrimSpace(req.CommitMessage),
+	})
+	if err != nil {
+		return nil, err
+	}
+	if result == nil || !result.Merged {
+		message := "GitHub did not accept the merge request."
+		if result != nil && strings.TrimSpace(result.Message) != "" {
+			message = strings.TrimSpace(result.Message)
+		}
+		return nil, fmt.Errorf("github integration: %s: %w", message, domain.ErrConflict)
+	}
+	return &MergePRNodeResponse{
+		PRNode:  node,
+		Merged:  result.Merged,
+		Message: strings.TrimSpace(result.Message),
+		SHA:     strings.TrimSpace(result.SHA),
+	}, nil
 }
 
 func (s *service) RefreshPRNodeCI(ctx context.Context, req *RefreshPRNodeCIRequest) (*domain.SpecForgePRNode, error) {
