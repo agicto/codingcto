@@ -1795,10 +1795,79 @@ func TestMergePRNodeUsesExpectedHeadSHA(t *testing.T) {
 
 	require.NoError(t, err)
 	require.True(t, result.Merged)
+	require.Equal(t, domain.PRNodeStatusMerged, planningRepo.nodes[0].Status)
 	require.Equal(t, "abc123", client.mergeInput.SHA)
 	require.Equal(t, "squash", client.mergeInput.MergeMethod)
 	require.Equal(t, "feat: merge PR node", client.mergeInput.CommitTitle)
 	require.Equal(t, "approved via CodingCTO", client.mergeInput.CommitMessage)
+}
+
+func TestMergePRNodePublishesDependencySatisfiedEvent(t *testing.T) {
+	repo := &memoryRepo{
+		installation: &domain.GitHubInstallation{
+			ID:             3,
+			InstallationID: 98765,
+		},
+		repository: &domain.Repository{
+			ID:                   1,
+			RepositoryID:         "github_agicto__codingcto",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto",
+			DefaultBranch:        "main",
+		},
+	}
+	prNumber := 43
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{
+				ID:             10,
+				PlanID:         21,
+				NodeKey:        "PR-010",
+				RepositoryID:   "github_agicto__codingcto",
+				Title:          "Original",
+				BranchName:     "specforge/custom",
+				GitHubPRNumber: &prNumber,
+				GitHubPRURL:    "https://github.com/agicto/codingcto/pull/43",
+				GitHubHeadSHA:  "abc123",
+				Status:         domain.PRNodeStatusReadyForReview,
+			},
+		},
+	}
+	client := &fakeRepositoryClient{
+		mergeResult: &MergedPullRequest{
+			Merged:  true,
+			Message: "Pull Request successfully merged",
+			SHA:     "merge123",
+		},
+	}
+	bus := infraevents.NewEventBus()
+	var published domain.SpecForgePRNodeDependencySatisfiedEvent
+	bus.Subscribe(domain.EventSpecForgePRNodeDependencySatisfied, func(ctx context.Context, event infraevents.Event) error {
+		var underlying any = event
+		if wrapped, ok := event.(infraevents.WrappedEvent); ok {
+			underlying = wrapped.Event
+		}
+		typed, ok := underlying.(domain.SpecForgePRNodeDependencySatisfiedEvent)
+		require.True(t, ok)
+		published = typed
+		return nil
+	})
+	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider, bus)
+
+	result, err := svc.MergePRNode(context.Background(), &MergePRNodeRequest{
+		RepositoryID:    "github_agicto__codingcto",
+		PRNodeID:        10,
+		ExpectedHeadSHA: "abc123",
+	})
+
+	require.NoError(t, err)
+	require.True(t, result.Merged)
+	require.Equal(t, domain.PRNodeStatusMerged, result.PRNode.Status)
+	require.Equal(t, uint(10), published.PRNodeID)
+	require.Equal(t, uint(21), published.PlanID)
+	require.Equal(t, domain.PRNodeStatusMerged, published.Status)
 }
 
 func TestMergePRNodeRejectsStaleHeadSHA(t *testing.T) {

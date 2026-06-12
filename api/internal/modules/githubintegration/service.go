@@ -713,6 +713,13 @@ func (s *service) MergePRNode(ctx context.Context, req *MergePRNodeRequest) (*Me
 		}
 		return nil, fmt.Errorf("github integration: %s: %w", message, domain.ErrConflict)
 	}
+	node.Status = domain.PRNodeStatusMerged
+	if err := s.planningRepo.UpdatePRNode(ctx, node); err != nil {
+		return nil, err
+	}
+	if err := s.publishPRNodeDependencySatisfied(ctx, node); err != nil {
+		return nil, err
+	}
 	return &MergePRNodeResponse{
 		PRNode:  node,
 		Merged:  result.Merged,

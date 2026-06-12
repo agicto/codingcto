@@ -36,10 +36,15 @@ type PRNodeMergeRequester interface {
 	MergePRNode(ctx context.Context, req *githubintegration.MergePRNodeRequest) (*githubintegration.MergePRNodeResponse, error)
 }
 
+type PRNodeCIRefresher interface {
+	RefreshPRNodeCI(ctx context.Context, req *githubintegration.RefreshPRNodeCIRequest) (*domain.SpecForgePRNode, error)
+}
+
 type service struct {
 	reviewRepo       domain.SpecForgeReviewDecisionRepository
 	planningRepo     PRNodeReader
 	verificationRepo FixAttemptReader
+	ciRefresher      PRNodeCIRefresher
 	mergeRequester   PRNodeMergeRequester
 	now              func() time.Time
 }
@@ -57,12 +62,14 @@ func NewService(
 	reviewRepo domain.SpecForgeReviewDecisionRepository,
 	planningRepo PRNodeReader,
 	verificationRepo FixAttemptReader,
+	ciRefresher PRNodeCIRefresher,
 	mergeRequester PRNodeMergeRequester,
 ) *service {
 	return &service{
 		reviewRepo:       reviewRepo,
 		planningRepo:     planningRepo,
 		verificationRepo: verificationRepo,
+		ciRefresher:      ciRefresher,
 		mergeRequester:   mergeRequester,
 		now:              time.Now,
 	}
@@ -173,6 +180,18 @@ func (s *service) RequestMergeReviewDecision(ctx context.Context, userID, prNode
 	node, decision, fixAttempts, err := s.loadReviewInputs(ctx, prNodeID)
 	if err != nil {
 		return nil, err
+	}
+	if s.ciRefresher != nil && node != nil && strings.TrimSpace(node.RepositoryID) != "" {
+		refreshedNode, err := s.ciRefresher.RefreshPRNodeCI(ctx, &githubintegration.RefreshPRNodeCIRequest{
+			RepositoryID: strings.TrimSpace(node.RepositoryID),
+			PRNodeID:     node.ID,
+		})
+		if err != nil {
+			return nil, fmt.Errorf("refresh pull request CI before merge: %w", err)
+		}
+		if refreshedNode != nil {
+			node = refreshedNode
+		}
 	}
 	evaluation, err := s.evaluateReviewDecision(ctx, node, decision, fixAttempts)
 	if err != nil {

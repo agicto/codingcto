@@ -12,6 +12,7 @@ var ProviderSet = wire.NewSet(
 	wire.Bind(new(domain.SpecForgeReviewDecisionRepository), new(*repository)),
 	NewPRNodeReader,
 	NewFixAttemptReader,
+	NewPRNodeCIRefresher,
 	NewPRNodeMergeRequester,
 	NewService,
 	wire.Bind(new(Service), new(*service)),
@@ -24,6 +25,10 @@ func NewPRNodeReader(repo domain.SpecForgePlanningRepository) PRNodeReader {
 
 func NewFixAttemptReader(repo domain.SpecForgeVerificationRepository) FixAttemptReader {
 	return repo
+}
+
+func NewPRNodeCIRefresher(service githubintegration.Service) PRNodeCIRefresher {
+	return service
 }
 
 func NewPRNodeMergeRequester(service githubintegration.Service) PRNodeMergeRequester {
