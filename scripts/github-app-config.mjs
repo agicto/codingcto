@@ -93,7 +93,7 @@ function createManifest(args) {
     name,
     url: webURL,
     hook_attributes: {
-      url: `${apiURL}/v1/github/webhook`,
+      url: `${apiURL}/v1/webhooks/github`,
       active: false,
     },
     redirect_url: redirectURL,
