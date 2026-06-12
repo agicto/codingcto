@@ -171,6 +171,17 @@ func (r *repository) CreateProjectContextSnapshot(ctx context.Context, snapshot 
 	return nil
 }
 
+func (r *repository) FindProjectContextSnapshotByID(ctx context.Context, id uint) (*domain.SpecForgeProjectContextSnapshot, error) {
+	var po ProjectContextSnapshotPO
+	if err := r.db.WithContext(ctx).First(&po, id).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return po.toDomain(), nil
+}
+
 func (r *repository) FindLatestProjectContextSnapshot(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContextSnapshot, error) {
 	var po ProjectContextSnapshotPO
 	if err := r.db.WithContext(ctx).

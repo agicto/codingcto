@@ -326,6 +326,7 @@ func TestCreateProjectRequirementRecordsSkillRunPipeline(t *testing.T) {
 			},
 		},
 	}
+	seedProjectPlanningInputs(t, projectRepo, 77, "workspace_1", "repo_web")
 	svc := NewService(repo, profileRepo, repo, projectRepo)
 	_, err := svc.UpsertProjectSkill(context.Background(), 42, 77, &UpsertProjectSkillRequest{
 		RepositoryID: "repo_web",
@@ -346,6 +347,10 @@ func TestCreateProjectRequirementRecordsSkillRunPipeline(t *testing.T) {
 	runs, err := svc.ListSkillRunsForRequirement(context.Background(), bundle.Requirement.ID)
 	require.NoError(t, err)
 	require.Len(t, runs, 4)
+	require.NotNil(t, bundle.ContextSnapshot)
+	require.NotNil(t, bundle.ExpertPolicy)
+	require.Equal(t, bundle.ContextSnapshot.ID, *bundle.Plan.ContextSnapshotID)
+	require.Equal(t, bundle.ExpertPolicy.ID, *bundle.Plan.ExpertPolicyID)
 	require.Equal(t, domain.SkillRunStageProductPlan, runs[0].Stage)
 	require.Equal(t, domain.SkillRunStageTechnicalPlan, runs[1].Stage)
 	require.Equal(t, domain.SkillRunStagePRDAG, runs[2].Stage)
@@ -387,6 +392,7 @@ func TestCreateProjectRequirementIncludesArchitectureEvidence(t *testing.T) {
 			{ID: 1, ProjectID: 77, RepositoryID: "repo_api", Role: domain.ProjectRepositoryRolePrimary, Active: true},
 		},
 	}
+	seedProjectPlanningInputs(t, projectRepo, 77, "workspace_1", "repo_api")
 	svc := NewService(repo, profileRepo, repo, projectRepo)
 
 	bundle, err := svc.CreateProjectRequirement(context.Background(), 42, 77, &CreateIdeaRequest{
@@ -412,7 +418,12 @@ func TestCreateProjectRequirementIncludesArchitectureEvidence(t *testing.T) {
 	prompt, err := svc.CompilePrompt(context.Background(), 42, bundle.PRNodes[0].ID, &CompilePromptRequest{})
 	require.NoError(t, err)
 	require.Contains(t, prompt.EvidenceRefs, "architecture_snapshot:repo_api:abc123")
+	require.Contains(t, prompt.EvidenceRefs, fmt.Sprintf("project_context_snapshot:%d", bundle.ContextSnapshot.ID))
+	require.Contains(t, prompt.EvidenceRefs, fmt.Sprintf("project_expert_policy:%d:v%d", bundle.ExpertPolicy.ID, bundle.ExpertPolicy.Version))
 	require.Contains(t, prompt.PromptText, "Context contract: project_context_contract_v1")
+	require.Contains(t, prompt.PromptText, "Pinned planning inputs")
+	require.Contains(t, prompt.PromptText, "Context snapshot #")
+	require.Contains(t, prompt.PromptText, "Expert policy v1")
 	require.Contains(t, prompt.PromptText, "contract.primary_repository_id: repo_api")
 	require.Contains(t, prompt.PromptText, "contract.repository: repo_api role=primary writable=true")
 	require.Contains(t, prompt.PromptText, "contract.architecture_snapshot_commit: abc123")
@@ -439,6 +450,7 @@ func TestCompilePromptEscalatesMissingProjectArchitectureEvidence(t *testing.T) 
 			{ID: 1, ProjectID: 77, RepositoryID: "repo_api", Role: domain.ProjectRepositoryRolePrimary, Active: true},
 		},
 	}
+	seedProjectPlanningInputs(t, projectRepo, 77, "workspace_1", "repo_api")
 	svc := NewService(repo, profileRepo, repo, projectRepo)
 
 	bundle, err := svc.CreateProjectRequirement(context.Background(), 42, 77, &CreateIdeaRequest{
@@ -532,6 +544,7 @@ func TestCreateProjectIdeaUsesProjectContextProfilesAndSkills(t *testing.T) {
 			{ID: 2, ProjectID: 9, RepositoryID: "repo_web", Role: domain.ProjectRepositoryRoleDependency, Active: true},
 		},
 	}
+	seedProjectPlanningInputs(t, projectRepo, 9, "ws_1", "repo_api")
 	svc := NewService(repo, profileRepo, repo, projectRepo)
 	_, err := svc.UpsertSkill(context.Background(), 42, "repo_web", &UpsertSkillRequest{
 		Name:    "ui-boundaries",
@@ -585,7 +598,7 @@ func TestCreateProjectRequirementRequiresActivePrimaryRepository(t *testing.T) {
 	require.ErrorIs(t, err, domain.ErrInvalidInput)
 }
 
-func TestGenerateRequirementPlanCreatesNextVersionAndApprovalRejectsStalePlan(t *testing.T) {
+func TestCreateProjectRequirementRequiresPinnedSnapshotAndExpertPolicy(t *testing.T) {
 	repo := &memoryRepo{}
 	profileRepo := &memoryProfileRepo{}
 	require.NoError(t, profileRepo.UpsertProfile(context.Background(), &domain.SpecForgeRepoProfile{
@@ -603,6 +616,32 @@ func TestGenerateRequirementPlanCreatesNextVersionAndApprovalRejectsStalePlan(t 
 	}
 	svc := NewService(repo, profileRepo, repo, projectRepo)
 
+	_, err := svc.CreateProjectRequirement(context.Background(), 42, 9, &CreateIdeaRequest{
+		Input: "Add team invite UI and API for workspace admins",
+	})
+
+	require.ErrorIs(t, err, domain.ErrConflict)
+}
+
+func TestGenerateRequirementPlanCreatesNextVersionAndApprovalRejectsStalePlan(t *testing.T) {
+	repo := &memoryRepo{}
+	profileRepo := &memoryProfileRepo{}
+	require.NoError(t, profileRepo.UpsertProfile(context.Background(), &domain.SpecForgeRepoProfile{
+		RepositoryID:  "repo_api",
+		DefaultBranch: "main",
+		Stack:         []string{"Go", "Gin"},
+		TestCommands:  []string{"go test ./..."},
+		Summary:       "API service",
+	}))
+	projectRepo := &memoryProjectRepo{
+		project: &domain.SpecForgeProject{ID: 9, WorkspaceID: "ws_1", Name: "CodingCTO", Slug: "codingcto", Status: domain.ProjectStatusActive},
+		repositories: []*domain.SpecForgeProjectRepository{
+			{ID: 1, ProjectID: 9, RepositoryID: "repo_api", Role: domain.ProjectRepositoryRolePrimary, Active: true},
+		},
+	}
+	seedProjectPlanningInputs(t, projectRepo, 9, "ws_1", "repo_api")
+	svc := NewService(repo, profileRepo, repo, projectRepo)
+
 	v1, err := svc.CreateProjectRequirement(context.Background(), 42, 9, &CreateIdeaRequest{
 		Input: "Add team invite UI and API for workspace admins",
 	})
@@ -616,6 +655,8 @@ func TestGenerateRequirementPlanCreatesNextVersionAndApprovalRejectsStalePlan(t 
 	require.NoError(t, err)
 	require.Equal(t, 2, v2.Plan.Version)
 	require.Equal(t, v1.Requirement.ID, *v2.Plan.RequirementID)
+	require.Equal(t, v1.Plan.ContextSnapshotID, v2.Plan.ContextSnapshotID)
+	require.Equal(t, v1.Plan.ExpertPolicyID, v2.Plan.ExpertPolicyID)
 
 	_, err = svc.ApprovePlan(context.Background(), 7, v1.Plan.ID, &ApprovePlanRequest{Approved: true})
 	require.ErrorIs(t, err, domain.ErrConflict)
@@ -625,6 +666,8 @@ func TestGenerateRequirementPlanCreatesNextVersionAndApprovalRejectsStalePlan(t 
 	require.Equal(t, domain.PlanStatusApproved, approved.Plan.Status)
 	require.NotEmpty(t, approved.Plan.ApprovedSnapshotHash)
 	require.NotNil(t, approved.Plan.ApprovedSnapshotAt)
+	require.NotNil(t, approved.ContextSnapshot)
+	require.NotNil(t, approved.ExpertPolicy)
 }
 
 func TestCompilePromptInjectsProjectContextSkills(t *testing.T) {
@@ -651,6 +694,7 @@ func TestCompilePromptInjectsProjectContextSkills(t *testing.T) {
 			{ID: 2, ProjectID: 9, RepositoryID: "repo_web", Role: domain.ProjectRepositoryRoleDependency, Active: true},
 		},
 	}
+	seedProjectPlanningInputs(t, projectRepo, 9, "ws_1", "repo_api")
 	svc := NewService(repo, profileRepo, repo, projectRepo)
 	_, err := svc.UpsertSkill(context.Background(), 42, "repo_web", &UpsertSkillRequest{
 		Name:         "module-boundaries",
@@ -672,6 +716,8 @@ func TestCompilePromptInjectsProjectContextSkills(t *testing.T) {
 	require.Contains(t, prompt.PromptText, "Repository repo_web (dependency)")
 	require.Contains(t, prompt.PromptText, "Primary repository: repo_api")
 	require.Contains(t, prompt.PromptText, "Read-only repositories: repo_web")
+	require.Contains(t, prompt.PromptText, "Expert policy v1")
+	require.Contains(t, prompt.PromptText, "Goal boundary")
 	require.Contains(t, prompt.PromptText, "Executor must modify only repo_api")
 	require.Contains(t, prompt.PromptText, "Web console")
 	require.Contains(t, prompt.PromptText, "module-boundaries")
@@ -778,6 +824,36 @@ func TestReviewPRDAGReportsCyclesAndOutOfOrderDependencies(t *testing.T) {
 
 func boolPtr(value bool) *bool {
 	return &value
+}
+
+func seedProjectPlanningInputs(t *testing.T, repo *memoryProjectRepo, projectID uint, workspaceID, primaryRepositoryID string) {
+	t.Helper()
+	require.NoError(t, repo.CreateProjectContextSnapshot(context.Background(), &domain.SpecForgeProjectContextSnapshot{
+		WorkspaceID:         workspaceID,
+		ProjectID:           projectID,
+		SnapshotStatus:      domain.ProjectReadinessStatusReady,
+		Summary:             "Pinned planning snapshot is ready.",
+		PrimaryRepositoryID: primaryRepositoryID,
+		CreatedBy:           42,
+	}))
+	require.NoError(t, repo.CreateProjectExpertPolicy(context.Background(), &domain.SpecForgeProjectExpertPolicy{
+		WorkspaceID:  workspaceID,
+		ProjectID:    projectID,
+		Version:      1,
+		Active:       true,
+		GoalBoundary: "Keep the generated plan inside the active product request.",
+		AllowedPaths: []string{"api/internal/modules", "web/src/features"},
+		ReviewPolicy: domain.SpecForgeProjectExpertReviewPolicy{
+			RequiredApprovals:       1,
+			BlockOnChangesRequested: true,
+			RequireCIGreen:          true,
+		},
+		MergePolicy: domain.SpecForgeProjectExpertMergePolicy{
+			Strategy:              domain.ProjectMergeStrategySquash,
+			RequireManualApproval: true,
+		},
+		CreatedBy: 42,
+	}))
 }
 
 type memoryRepo struct {
@@ -1176,6 +1252,8 @@ func (r *memoryRepo) skillByID(skillID uint) *domain.SpecForgeSkill {
 type memoryProjectRepo struct {
 	project      *domain.SpecForgeProject
 	repositories []*domain.SpecForgeProjectRepository
+	snapshots    map[uint][]*domain.SpecForgeProjectContextSnapshot
+	policies     map[uint][]*domain.SpecForgeProjectExpertPolicy
 }
 
 func (r *memoryProjectRepo) CreateProject(ctx context.Context, project *domain.SpecForgeProject) error {
@@ -1290,14 +1368,35 @@ func (r *memoryProjectRepo) CreateProjectContextSnapshot(ctx context.Context, sn
 	}
 	copied := *snapshot
 	if copied.ID == 0 {
-		copied.ID = 1
+		copied.ID = uint(len(r.snapshots[copied.ProjectID]) + 1)
 	}
+	if r.snapshots == nil {
+		r.snapshots = map[uint][]*domain.SpecForgeProjectContextSnapshot{}
+	}
+	r.snapshots[copied.ProjectID] = append(r.snapshots[copied.ProjectID], &copied)
 	*snapshot = copied
 	return nil
 }
 
-func (r *memoryProjectRepo) FindLatestProjectContextSnapshot(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContextSnapshot, error) {
+func (r *memoryProjectRepo) FindProjectContextSnapshotByID(ctx context.Context, id uint) (*domain.SpecForgeProjectContextSnapshot, error) {
+	for _, snapshots := range r.snapshots {
+		for _, snapshot := range snapshots {
+			if snapshot.ID == id {
+				copied := *snapshot
+				return &copied, nil
+			}
+		}
+	}
 	return nil, domain.ErrNotFound
+}
+
+func (r *memoryProjectRepo) FindLatestProjectContextSnapshot(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContextSnapshot, error) {
+	snapshots := r.snapshots[projectID]
+	if len(snapshots) == 0 {
+		return nil, domain.ErrNotFound
+	}
+	copied := *snapshots[len(snapshots)-1]
+	return &copied, nil
 }
 
 func (r *memoryProjectRepo) CreateProjectExpertPolicy(ctx context.Context, policy *domain.SpecForgeProjectExpertPolicy) error {
@@ -1306,8 +1405,12 @@ func (r *memoryProjectRepo) CreateProjectExpertPolicy(ctx context.Context, polic
 	}
 	copied := *policy
 	if copied.ID == 0 {
-		copied.ID = 1
+		copied.ID = uint(len(r.policies[copied.ProjectID]) + 1)
 	}
+	if r.policies == nil {
+		r.policies = map[uint][]*domain.SpecForgeProjectExpertPolicy{}
+	}
+	r.policies[copied.ProjectID] = append(r.policies[copied.ProjectID], &copied)
 	*policy = copied
 	return nil
 }
@@ -1320,15 +1423,36 @@ func (r *memoryProjectRepo) UpdateProjectExpertPolicy(ctx context.Context, polic
 }
 
 func (r *memoryProjectRepo) FindProjectExpertPolicyByID(ctx context.Context, id uint) (*domain.SpecForgeProjectExpertPolicy, error) {
+	for _, policies := range r.policies {
+		for _, policy := range policies {
+			if policy.ID == id {
+				copied := *policy
+				return &copied, nil
+			}
+		}
+	}
 	return nil, domain.ErrNotFound
 }
 
 func (r *memoryProjectRepo) FindActiveProjectExpertPolicyByProjectID(ctx context.Context, projectID uint) (*domain.SpecForgeProjectExpertPolicy, error) {
+	policies := r.policies[projectID]
+	for index := len(policies) - 1; index >= 0; index-- {
+		if policies[index].Active {
+			copied := *policies[index]
+			return &copied, nil
+		}
+	}
 	return nil, domain.ErrNotFound
 }
 
 func (r *memoryProjectRepo) ListProjectExpertPoliciesByProjectID(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectExpertPolicy, error) {
-	return []*domain.SpecForgeProjectExpertPolicy{}, nil
+	policies := r.policies[projectID]
+	out := make([]*domain.SpecForgeProjectExpertPolicy, 0, len(policies))
+	for _, policy := range policies {
+		copied := *policy
+		out = append(out, &copied)
+	}
+	return out, nil
 }
 
 func cloneBundle(bundle *domain.SpecForgePlanBundle) *domain.SpecForgePlanBundle {
@@ -1346,6 +1470,18 @@ func cloneBundle(bundle *domain.SpecForgePlanBundle) *domain.SpecForgePlanBundle
 	if bundle.RepoProfile != nil {
 		profile := *bundle.RepoProfile
 		out.RepoProfile = &profile
+	}
+	if bundle.ContextSnapshot != nil {
+		snapshot := *bundle.ContextSnapshot
+		out.ContextSnapshot = &snapshot
+	}
+	if bundle.ExpertPolicy != nil {
+		policy := *bundle.ExpertPolicy
+		out.ExpertPolicy = &policy
+	}
+	if bundle.ProjectContext != nil {
+		context := *bundle.ProjectContext
+		out.ProjectContext = &context
 	}
 	out.PRNodes = make([]*domain.SpecForgePRNode, len(bundle.PRNodes))
 	for i, node := range bundle.PRNodes {

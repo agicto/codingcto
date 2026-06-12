@@ -54,6 +54,12 @@ type projectPlanHistoryStore interface {
 	FindLatestPlanBundleByProjectID(ctx context.Context, projectID uint) (*domain.SpecForgePlanBundle, error)
 }
 
+type projectPlanningInputs struct {
+	projectContext  *domain.SpecForgeProjectContext
+	contextSnapshot *domain.SpecForgeProjectContextSnapshot
+	expertPolicy    *domain.SpecForgeProjectExpertPolicy
+}
+
 func NewService(repo domain.SpecForgePlanningRepository, profileRepo domain.SpecForgeRepoProfileRepository, skillRepo domain.SpecForgeSkillRepository, projectRepo domain.SpecForgeProjectRepositoryStore) *service {
 	var pipelineRepo domain.SpecForgeSkillPipelineRepository
 	if repo, ok := skillRepo.(domain.SpecForgeSkillPipelineRepository); ok {
@@ -104,10 +110,11 @@ func (s *service) CreateProjectRequirement(ctx context.Context, userID, projectI
 		return nil, domain.ErrInvalidInput
 	}
 
-	projectContext, err := s.projectContextFor(ctx, projectID)
+	inputs, err := s.projectPlanningInputsFor(ctx, projectID)
 	if err != nil {
 		return nil, err
 	}
+	projectContext := inputs.projectContext
 	primaryRepoID := primaryRepositoryID(projectContext)
 	if primaryRepoID == "" {
 		return nil, domain.ErrInvalidInput
@@ -131,8 +138,14 @@ func (s *service) CreateProjectRequirement(ctx context.Context, userID, projectI
 	bundle.Requirement = requirement
 	bundle.Idea.ProjectID = &projectID
 	bundle.ProjectContext = projectContext
+	bundle.ContextSnapshot = inputs.contextSnapshot
+	bundle.ExpertPolicy = inputs.expertPolicy
+	bundle.Plan.ContextSnapshotID = uintPtr(inputs.contextSnapshot.ID)
+	bundle.Plan.ExpertPolicyID = uintPtr(inputs.expertPolicy.ID)
 	bundle.Plan.Version = 1
 	bundle.ProductSpec.Assumptions = append(bundle.ProductSpec.Assumptions, projectContextAssumption(projectContext))
+	bundle.ProductSpec.Assumptions = append(bundle.ProductSpec.Assumptions, projectContextSnapshotAssumption(inputs.contextSnapshot))
+	bundle.ProductSpec.Assumptions = append(bundle.ProductSpec.Assumptions, projectExpertPolicyAssumption(inputs.expertPolicy))
 	if err := s.repo.CreatePlanBundle(ctx, bundle); err != nil {
 		return nil, fmt.Errorf("create project requirement plan bundle: %w", err)
 	}
@@ -156,10 +169,11 @@ func (s *service) GenerateRequirementPlan(ctx context.Context, userID, requireme
 	if requirement.Status == domain.RequirementStatusExecuting {
 		return nil, domain.ErrConflict
 	}
-	projectContext, err := s.projectContextFor(ctx, requirement.ProjectID)
+	inputs, err := s.projectPlanningInputsFor(ctx, requirement.ProjectID)
 	if err != nil {
 		return nil, err
 	}
+	projectContext := inputs.projectContext
 	primaryRepoID := primaryRepositoryID(projectContext)
 	if primaryRepoID == "" {
 		return nil, domain.ErrInvalidInput
@@ -190,9 +204,15 @@ func (s *service) GenerateRequirementPlan(ctx context.Context, userID, requireme
 	bundle.Idea.RequirementID = &requirement.ID
 	bundle.Idea.ProjectID = &requirement.ProjectID
 	bundle.ProjectContext = projectContext
+	bundle.ContextSnapshot = inputs.contextSnapshot
+	bundle.ExpertPolicy = inputs.expertPolicy
 	bundle.Plan.RequirementID = &requirement.ID
+	bundle.Plan.ContextSnapshotID = uintPtr(inputs.contextSnapshot.ID)
+	bundle.Plan.ExpertPolicyID = uintPtr(inputs.expertPolicy.ID)
 	bundle.Plan.Version = version
 	bundle.ProductSpec.Assumptions = append(bundle.ProductSpec.Assumptions, projectContextAssumption(projectContext))
+	bundle.ProductSpec.Assumptions = append(bundle.ProductSpec.Assumptions, projectContextSnapshotAssumption(inputs.contextSnapshot))
+	bundle.ProductSpec.Assumptions = append(bundle.ProductSpec.Assumptions, projectExpertPolicyAssumption(inputs.expertPolicy))
 	if err := s.repo.CreatePlanBundle(ctx, bundle); err != nil {
 		return nil, fmt.Errorf("generate requirement plan: %w", err)
 	}
@@ -267,6 +287,10 @@ func (s *service) ApprovePlan(ctx context.Context, userID, planID uint, req *App
 	if err != nil {
 		return nil, err
 	}
+	bundle, err = s.withRepoProfile(ctx, bundle)
+	if err != nil {
+		return nil, err
+	}
 	if bundle.Plan.Status == domain.PlanStatusApproved {
 		return nil, domain.ErrConflict
 	}
@@ -288,8 +312,8 @@ func (s *service) ApprovePlan(ctx context.Context, userID, planID uint, req *App
 	bundle.Plan.ApprovedBy = &userID
 	bundle.Plan.ApprovedAt = &now
 	bundle.Plan.ApprovedSnapshotAt = &now
-	bundle.Plan.ApprovedSnapshotHash = approvedPlanSnapshotHash(bundle)
 	bundle.Plan.DecisionOverrides = decisionOverridesToStrings(req.DecisionOverrides)
+	bundle.Plan.ApprovedSnapshotHash = approvedPlanSnapshotHash(bundle)
 	if err := s.repo.UpdatePlan(ctx, bundle.Plan); err != nil {
 		return nil, fmt.Errorf("approve plan: %w", err)
 	}
@@ -545,6 +569,19 @@ func (s *service) withRepoProfile(ctx context.Context, bundle *domain.SpecForgeP
 			return nil, err
 		}
 		bundle.ProjectContext = projectContext
+		contextSnapshot, err := s.projectContextSnapshotForBundle(ctx, bundle)
+		if err != nil {
+			return nil, err
+		}
+		expertPolicy, err := s.expertPolicyForBundle(ctx, bundle)
+		if err != nil {
+			return nil, err
+		}
+		bundle.ContextSnapshot = contextSnapshot
+		bundle.ExpertPolicy = expertPolicy
+		if bundle.ProjectContext != nil && contextSnapshot != nil {
+			bundle.ProjectContext.LatestSnapshot = contextSnapshot
+		}
 		bundle.RepoProfile = synthesizedProjectProfile(projectContext, bundle.Idea.RepositoryID)
 		return bundle, nil
 	}
@@ -568,6 +605,54 @@ func (s *service) repoProfileFor(ctx context.Context, repoID string) (*domain.Sp
 		return nil, fmt.Errorf("load repo profile: %w", err)
 	}
 	return profile, nil
+}
+
+func (s *service) projectContextSnapshotForBundle(ctx context.Context, bundle *domain.SpecForgePlanBundle) (*domain.SpecForgeProjectContextSnapshot, error) {
+	if s.projectRepo == nil || bundle == nil || bundle.Idea == nil || bundle.Idea.ProjectID == nil || *bundle.Idea.ProjectID == 0 {
+		return nil, nil
+	}
+	if bundle.Plan != nil && bundle.Plan.ContextSnapshotID != nil && *bundle.Plan.ContextSnapshotID != 0 {
+		snapshot, err := s.projectRepo.FindProjectContextSnapshotByID(ctx, *bundle.Plan.ContextSnapshotID)
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("load project context snapshot: %w", err)
+		}
+		return snapshot, nil
+	}
+	snapshot, err := s.projectRepo.FindLatestProjectContextSnapshot(ctx, *bundle.Idea.ProjectID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load latest project context snapshot: %w", err)
+	}
+	return snapshot, nil
+}
+
+func (s *service) expertPolicyForBundle(ctx context.Context, bundle *domain.SpecForgePlanBundle) (*domain.SpecForgeProjectExpertPolicy, error) {
+	if s.projectRepo == nil || bundle == nil || bundle.Idea == nil || bundle.Idea.ProjectID == nil || *bundle.Idea.ProjectID == 0 {
+		return nil, nil
+	}
+	if bundle.Plan != nil && bundle.Plan.ExpertPolicyID != nil && *bundle.Plan.ExpertPolicyID != 0 {
+		policy, err := s.projectRepo.FindProjectExpertPolicyByID(ctx, *bundle.Plan.ExpertPolicyID)
+		if errors.Is(err, domain.ErrNotFound) {
+			return nil, nil
+		}
+		if err != nil {
+			return nil, fmt.Errorf("load project expert policy: %w", err)
+		}
+		return policy, nil
+	}
+	policy, err := s.projectRepo.FindActiveProjectExpertPolicyByProjectID(ctx, *bundle.Idea.ProjectID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load active project expert policy: %w", err)
+	}
+	return policy, nil
 }
 
 func (s *service) projectContextFor(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContext, error) {
@@ -635,6 +720,50 @@ func (s *service) projectContextFor(ctx context.Context, projectID uint) (*domai
 	return context, nil
 }
 
+func (s *service) projectPlanningInputsFor(ctx context.Context, projectID uint) (*projectPlanningInputs, error) {
+	if s.projectRepo == nil || projectID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	projectContext, err := s.projectContextFor(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	primaryRepoID := primaryRepositoryID(projectContext)
+	if primaryRepoID == "" {
+		return &projectPlanningInputs{projectContext: projectContext}, nil
+	}
+	snapshot, err := s.projectRepo.FindLatestProjectContextSnapshot(ctx, projectID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil, domain.ErrConflict
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load latest project context snapshot: %w", err)
+	}
+	policy, err := s.projectRepo.FindActiveProjectExpertPolicyByProjectID(ctx, projectID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil, domain.ErrConflict
+	}
+	if err != nil {
+		return nil, fmt.Errorf("load active project expert policy: %w", err)
+	}
+	switch {
+	case snapshot == nil:
+		return nil, domain.ErrConflict
+	case strings.EqualFold(snapshot.SnapshotStatus, domain.ProjectReadinessStatusBlocked):
+		return nil, domain.ErrConflict
+	case primaryRepoID != "" && strings.TrimSpace(snapshot.PrimaryRepositoryID) != "" && strings.TrimSpace(snapshot.PrimaryRepositoryID) != primaryRepoID:
+		return nil, domain.ErrConflict
+	case policy == nil:
+		return nil, domain.ErrConflict
+	}
+	projectContext.LatestSnapshot = snapshot
+	return &projectPlanningInputs{
+		projectContext:  projectContext,
+		contextSnapshot: snapshot,
+		expertPolicy:    policy,
+	}, nil
+}
+
 func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, node *domain.SpecForgePRNode, skills []*domain.SpecForgeSkill) string {
 	var b strings.Builder
 	b.WriteString("You are implementing a CodingCTO PR node.\n\n")
@@ -653,6 +782,7 @@ func compilePromptText(promptType string, bundle *domain.SpecForgePlanBundle, no
 	}
 	b.WriteString("\nTechnical plan:\n" + bundle.Plan.TechnicalSummary + "\n\n")
 	writeProjectContext(&b, bundle.ProjectContext)
+	writePinnedPlanningInputs(&b, bundle.ContextSnapshot, bundle.ExpertPolicy)
 	writeRepoProfile(&b, bundle.RepoProfile)
 	writeSkills(&b, skills)
 	writeList(&b, "Expected files", node.ExpectedFiles)
@@ -744,6 +874,12 @@ func writeEvidenceRefs(b *strings.Builder, bundle *domain.SpecForgePlanBundle, n
 	}
 	if bundle != nil && bundle.ProjectContext != nil {
 		writeProjectEvidenceRefs(b, bundle.ProjectContext)
+	}
+	if bundle != nil && bundle.ContextSnapshot != nil {
+		writeProjectContextSnapshotEvidenceRefs(b, bundle.ContextSnapshot)
+	}
+	if bundle != nil && bundle.ExpertPolicy != nil {
+		writeProjectExpertPolicyEvidenceRefs(b, bundle.ExpertPolicy)
 	}
 	writeSkillEvidenceRefs(b, skills)
 	b.WriteString("\n")
@@ -920,6 +1056,36 @@ func writeProjectEvidenceRefs(b *strings.Builder, context *domain.SpecForgeProje
 	}
 }
 
+func writeProjectContextSnapshotEvidenceRefs(b *strings.Builder, snapshot *domain.SpecForgeProjectContextSnapshot) {
+	if snapshot == nil {
+		return
+	}
+	b.WriteString("- project_context_snapshot.id: " + fmt.Sprint(snapshot.ID) + "\n")
+	b.WriteString("- project_context_snapshot.status: " + compactPromptLine(snapshot.SnapshotStatus) + "\n")
+	if strings.TrimSpace(snapshot.Summary) != "" {
+		b.WriteString("- project_context_snapshot.summary: " + compactPromptLine(snapshot.Summary) + "\n")
+	}
+	if strings.TrimSpace(snapshot.PrimaryRepositoryID) != "" {
+		b.WriteString("- project_context_snapshot.primary_repository_id: " + compactPromptLine(snapshot.PrimaryRepositoryID) + "\n")
+	}
+	writeEvidenceListRef(b, "project_context_snapshot.missing_evidence", snapshot.MissingEvidence)
+	writeEvidenceListRef(b, "project_context_snapshot.evidence_refs", snapshot.EvidenceRefs)
+}
+
+func writeProjectExpertPolicyEvidenceRefs(b *strings.Builder, policy *domain.SpecForgeProjectExpertPolicy) {
+	if policy == nil {
+		return
+	}
+	b.WriteString("- project_expert_policy.id: " + fmt.Sprint(policy.ID) + "\n")
+	b.WriteString("- project_expert_policy.version: " + fmt.Sprint(policy.Version) + "\n")
+	if strings.TrimSpace(policy.GoalBoundary) != "" {
+		b.WriteString("- project_expert_policy.goal_boundary: " + compactPromptLine(policy.GoalBoundary) + "\n")
+	}
+	writeEvidenceListRef(b, "project_expert_policy.allowed_paths", policy.AllowedPaths)
+	writeEvidenceListRef(b, "project_expert_policy.forbidden_paths", policy.ForbiddenPaths)
+	writeEvidenceListRef(b, "project_expert_policy.required_test_commands", policy.RequiredTestCommands)
+}
+
 func writeArchitectureEvidenceRefLines(b *strings.Builder, repoContext *domain.SpecForgeProjectRepositoryContext, prefix string) {
 	if repoContext == nil || repoContext.Repository == nil {
 		return
@@ -984,6 +1150,10 @@ func writeScopeGuardrails(b *strings.Builder, bundle *domain.SpecForgePlanBundle
 	if bundle != nil && bundle.ProjectContext != nil && len(bundle.ProjectContext.ReadOnlyRepositoryIDs) > 0 {
 		b.WriteString("- Read-only repositories may be inspected for context but must not be modified: " + strings.Join(normalizePlanList(bundle.ProjectContext.ReadOnlyRepositoryIDs), ", ") + ".\n")
 	}
+	if bundle != nil && bundle.ExpertPolicy != nil {
+		writeGuardrailList(b, "Expert policy allowed paths", bundle.ExpertPolicy.AllowedPaths, "No explicit allowed path contract was recorded in the active expert policy.")
+		writeGuardrailList(b, "Expert policy forbidden paths", bundle.ExpertPolicy.ForbiddenPaths, "No explicit forbidden path contract was recorded in the active expert policy.")
+	}
 	b.WriteString("- Do not edit secrets, generated dependency locks, unrelated docs, formatting-only files, or broad shared infrastructure unless listed in expected files.\n")
 	b.WriteString("- Keep the implementation smaller than the planned PR boundary; create an escalation if the diff needs database + API + UI + integration changes in one node.\n\n")
 }
@@ -1027,6 +1197,9 @@ func writeVerificationContract(b *strings.Builder, bundle *domain.SpecForgePlanB
 	if bundle != nil && bundle.RepoProfile != nil && len(bundle.RepoProfile.TestCommands) > 0 {
 		b.WriteString("- Repo profile test commands are available as supporting evidence: " + strings.Join(normalizePlanList(bundle.RepoProfile.TestCommands), ", ") + ".\n")
 	}
+	if bundle != nil && bundle.ExpertPolicy != nil && len(bundle.ExpertPolicy.RequiredTestCommands) > 0 {
+		b.WriteString("- Active expert policy requires these commands before review: " + strings.Join(normalizePlanList(bundle.ExpertPolicy.RequiredTestCommands), ", ") + ".\n")
+	}
 	b.WriteString("- PR description must include summary, scope, non-goals, evidence refs used, tests run, and remaining risk.\n")
 	b.WriteString("- If a required command cannot run, record the exact blocker and do not mark the PR ready for review.\n\n")
 }
@@ -1058,6 +1231,43 @@ func compactPromptLine(value string) string {
 		return value
 	}
 	return strings.TrimSpace(value[:237]) + "..."
+}
+
+func writePinnedPlanningInputs(b *strings.Builder, snapshot *domain.SpecForgeProjectContextSnapshot, policy *domain.SpecForgeProjectExpertPolicy) {
+	if snapshot == nil && policy == nil {
+		return
+	}
+	b.WriteString("Pinned planning inputs:\n")
+	if snapshot != nil {
+		b.WriteString("- Context snapshot #" + fmt.Sprint(snapshot.ID) + " [" + strings.TrimSpace(snapshot.SnapshotStatus) + "]\n")
+		if strings.TrimSpace(snapshot.Summary) != "" {
+			b.WriteString("  - Summary: " + compactPromptLine(snapshot.Summary) + "\n")
+		}
+		if strings.TrimSpace(snapshot.PrimaryRepositoryID) != "" {
+			b.WriteString("  - Primary repository: " + strings.TrimSpace(snapshot.PrimaryRepositoryID) + "\n")
+		}
+		if len(snapshot.MissingEvidence) > 0 {
+			b.WriteString("  - Missing evidence: " + strings.Join(normalizePlanList(snapshot.MissingEvidence), ", ") + "\n")
+		}
+	}
+	if policy != nil {
+		b.WriteString("- Expert policy v" + fmt.Sprint(policy.Version) + " (#" + fmt.Sprint(policy.ID) + ")\n")
+		if strings.TrimSpace(policy.GoalBoundary) != "" {
+			b.WriteString("  - Goal boundary: " + compactPromptLine(policy.GoalBoundary) + "\n")
+		}
+		if len(policy.AllowedPaths) > 0 {
+			b.WriteString("  - Allowed paths: " + strings.Join(normalizePlanList(policy.AllowedPaths), ", ") + "\n")
+		}
+		if len(policy.ForbiddenPaths) > 0 {
+			b.WriteString("  - Forbidden paths: " + strings.Join(normalizePlanList(policy.ForbiddenPaths), ", ") + "\n")
+		}
+		if len(policy.RequiredTestCommands) > 0 {
+			b.WriteString("  - Required test commands: " + strings.Join(normalizePlanList(policy.RequiredTestCommands), ", ") + "\n")
+		}
+		b.WriteString("  - Review policy: approvals=" + fmt.Sprint(policy.ReviewPolicy.RequiredApprovals) + ", ci_green=" + boolLabel(policy.ReviewPolicy.RequireCIGreen) + ", block_on_changes_requested=" + boolLabel(policy.ReviewPolicy.BlockOnChangesRequested) + "\n")
+		b.WriteString("  - Merge policy: strategy=" + strings.TrimSpace(policy.MergePolicy.Strategy) + ", manual_approval=" + boolLabel(policy.MergePolicy.RequireManualApproval) + ", auto_merge=" + boolLabel(policy.MergePolicy.AllowAutoMerge) + "\n")
+	}
+	b.WriteString("\n")
 }
 
 func writeProjectContext(b *strings.Builder, context *domain.SpecForgeProjectContext) {
@@ -1105,6 +1315,13 @@ func writeProjectContext(b *strings.Builder, context *domain.SpecForgeProjectCon
 		writeArchitectureContext(b, repoContext)
 	}
 	b.WriteString("\n")
+}
+
+func boolLabel(value bool) string {
+	if value {
+		return "true"
+	}
+	return "false"
 }
 
 func writeProjectContextContract(b *strings.Builder, contract *domain.SpecForgeProjectContextContract) {
@@ -1488,6 +1705,22 @@ func evidenceRefsFor(bundle *domain.SpecForgePlanBundle, node *domain.SpecForgeP
 				fmt.Sprintf("implementation_plan:%d:test_strategy", bundle.Plan.ID),
 			)
 		}
+		if bundle.ContextSnapshot != nil && bundle.ContextSnapshot.ID != 0 {
+			refs = append(refs, fmt.Sprintf("project_context_snapshot:%d", bundle.ContextSnapshot.ID))
+			if strings.TrimSpace(bundle.ContextSnapshot.SnapshotStatus) != "" {
+				refs = append(refs, "project_context_snapshot_status:"+strings.TrimSpace(bundle.ContextSnapshot.SnapshotStatus))
+			}
+		} else if bundle.Plan != nil && bundle.Plan.ContextSnapshotID != nil && *bundle.Plan.ContextSnapshotID != 0 {
+			refs = append(refs, fmt.Sprintf("project_context_snapshot:%d", *bundle.Plan.ContextSnapshotID))
+		}
+		if bundle.ExpertPolicy != nil && bundle.ExpertPolicy.ID != 0 {
+			refs = append(refs, fmt.Sprintf("project_expert_policy:%d:v%d", bundle.ExpertPolicy.ID, bundle.ExpertPolicy.Version))
+			if strings.TrimSpace(bundle.ExpertPolicy.MergePolicy.Strategy) != "" {
+				refs = append(refs, "project_expert_policy_merge_strategy:"+strings.TrimSpace(bundle.ExpertPolicy.MergePolicy.Strategy))
+			}
+		} else if bundle.Plan != nil && bundle.Plan.ExpertPolicyID != nil && *bundle.Plan.ExpertPolicyID != 0 {
+			refs = append(refs, fmt.Sprintf("project_expert_policy:%d", *bundle.Plan.ExpertPolicyID))
+		}
 		if bundle.RepoProfile != nil && strings.TrimSpace(bundle.RepoProfile.RepositoryID) != "" {
 			refs = append(refs, "repo_profile:"+strings.TrimSpace(bundle.RepoProfile.RepositoryID))
 			if strings.TrimSpace(bundle.RepoProfile.Source) != "" {
@@ -1804,21 +2037,21 @@ func approvedPlanSnapshotHash(bundle *domain.SpecForgePlanBundle) string {
 		return ""
 	}
 	snapshot := struct {
-		RequirementID *uint                               `json:"requirement_id,omitempty"`
-		Idea          *domain.SpecForgeIdea               `json:"idea"`
-		ProductSpec   *domain.SpecForgeProductSpec        `json:"product_spec"`
-		Plan          *domain.SpecForgeImplementationPlan `json:"implementation_plan"`
-		PRNodes       []*domain.SpecForgePRNode           `json:"pr_nodes"`
+		Requirement     *domain.SpecForgeRequirement            `json:"requirement,omitempty"`
+		Idea            *domain.SpecForgeIdea                   `json:"idea"`
+		ContextSnapshot *domain.SpecForgeProjectContextSnapshot `json:"context_snapshot,omitempty"`
+		ExpertPolicy    *domain.SpecForgeProjectExpertPolicy    `json:"expert_policy,omitempty"`
+		ProductSpec     *domain.SpecForgeProductSpec            `json:"product_spec"`
+		Plan            *domain.SpecForgeImplementationPlan     `json:"implementation_plan"`
+		PRNodes         []*domain.SpecForgePRNode               `json:"pr_nodes"`
 	}{
-		Idea:        bundle.Idea,
-		ProductSpec: bundle.ProductSpec,
-		Plan:        bundle.Plan,
-		PRNodes:     bundle.PRNodes,
-	}
-	if bundle.Requirement != nil {
-		snapshot.RequirementID = &bundle.Requirement.ID
-	} else if bundle.Idea != nil {
-		snapshot.RequirementID = bundle.Idea.RequirementID
+		Requirement:     bundle.Requirement,
+		Idea:            bundle.Idea,
+		ContextSnapshot: bundle.ContextSnapshot,
+		ExpertPolicy:    bundle.ExpertPolicy,
+		ProductSpec:     bundle.ProductSpec,
+		Plan:            bundle.Plan,
+		PRNodes:         bundle.PRNodes,
 	}
 	data, err := json.Marshal(snapshot)
 	if err != nil {
@@ -2130,6 +2363,27 @@ func projectContextAssumption(context *domain.SpecForgeProjectContext) string {
 		return fmt.Sprintf("Plan generation used project context for %s across %d active repositories, but no active primary repository was available.", context.Project.Name, count)
 	}
 	return fmt.Sprintf("Plan generation used project context for %s across %d active repositories; execution is limited to primary repository %s.", context.Project.Name, count, primaryRepoID)
+}
+
+func projectContextSnapshotAssumption(snapshot *domain.SpecForgeProjectContextSnapshot) string {
+	if snapshot == nil {
+		return "No pinned project context snapshot was available when this plan was generated."
+	}
+	return fmt.Sprintf("Plan generation pinned project context snapshot #%d (%s) for repository evidence and DeepWiki structure.", snapshot.ID, strings.TrimSpace(snapshot.SnapshotStatus))
+}
+
+func projectExpertPolicyAssumption(policy *domain.SpecForgeProjectExpertPolicy) string {
+	if policy == nil {
+		return "No active expert policy was available when this plan was generated."
+	}
+	return fmt.Sprintf("Plan generation pinned expert policy v%d with merge strategy %s before approval.", policy.Version, strings.TrimSpace(policy.MergePolicy.Strategy))
+}
+
+func uintPtr(value uint) *uint {
+	if value == 0 {
+		return nil
+	}
+	return &value
 }
 
 func prNode(slug, key string, order int, nodeType, title, goal string, dependsOn, expectedFiles []string, profile *domain.SpecForgeRepoProfile) *domain.SpecForgePRNode {

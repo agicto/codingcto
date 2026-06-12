@@ -3339,6 +3339,7 @@ func (r *memoryExecutionProfileRepo) FindLatestArchitectureSnapshotByRepositoryI
 type memoryExecutionProjectRepo struct {
 	project      *domain.SpecForgeProject
 	repositories []*domain.SpecForgeProjectRepository
+	snapshots    map[uint][]*domain.SpecForgeProjectContextSnapshot
 }
 
 func (r *memoryExecutionProjectRepo) CreateProject(ctx context.Context, project *domain.SpecForgeProject) error {
@@ -3453,14 +3454,35 @@ func (r *memoryExecutionProjectRepo) CreateProjectContextSnapshot(ctx context.Co
 	}
 	copied := *snapshot
 	if copied.ID == 0 {
-		copied.ID = 1
+		copied.ID = uint(len(r.snapshots[copied.ProjectID]) + 1)
 	}
+	if r.snapshots == nil {
+		r.snapshots = map[uint][]*domain.SpecForgeProjectContextSnapshot{}
+	}
+	r.snapshots[copied.ProjectID] = append(r.snapshots[copied.ProjectID], &copied)
 	*snapshot = copied
 	return nil
 }
 
-func (r *memoryExecutionProjectRepo) FindLatestProjectContextSnapshot(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContextSnapshot, error) {
+func (r *memoryExecutionProjectRepo) FindProjectContextSnapshotByID(ctx context.Context, id uint) (*domain.SpecForgeProjectContextSnapshot, error) {
+	for _, snapshots := range r.snapshots {
+		for _, snapshot := range snapshots {
+			if snapshot.ID == id {
+				copied := *snapshot
+				return &copied, nil
+			}
+		}
+	}
 	return nil, domain.ErrNotFound
+}
+
+func (r *memoryExecutionProjectRepo) FindLatestProjectContextSnapshot(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContextSnapshot, error) {
+	snapshots := r.snapshots[projectID]
+	if len(snapshots) == 0 {
+		return nil, domain.ErrNotFound
+	}
+	copied := *snapshots[len(snapshots)-1]
+	return &copied, nil
 }
 
 func (r *memoryExecutionProjectRepo) CreateProjectExpertPolicy(ctx context.Context, policy *domain.SpecForgeProjectExpertPolicy) error {

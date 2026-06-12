@@ -69,6 +69,8 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 		},
 		"specforge_implementation_plans": {
 			"requirement_id",
+			"context_snapshot_id",
+			"expert_policy_id",
 			"version",
 			"technical_summary",
 			"decision_overrides",

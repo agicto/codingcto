@@ -411,6 +411,7 @@ type SpecForgeProjectRepositoryStore interface {
 	CountActiveProjectRepositories(ctx context.Context, projectID uint) (int64, error)
 	FindActivePrimaryProjectRepository(ctx context.Context, projectID uint) (*SpecForgeProjectRepository, error)
 	CreateProjectContextSnapshot(ctx context.Context, snapshot *SpecForgeProjectContextSnapshot) error
+	FindProjectContextSnapshotByID(ctx context.Context, id uint) (*SpecForgeProjectContextSnapshot, error)
 	FindLatestProjectContextSnapshot(ctx context.Context, projectID uint) (*SpecForgeProjectContextSnapshot, error)
 	CreateProjectExpertPolicy(ctx context.Context, policy *SpecForgeProjectExpertPolicy) error
 	UpdateProjectExpertPolicy(ctx context.Context, policy *SpecForgeProjectExpertPolicy) error

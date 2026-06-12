@@ -1308,6 +1308,17 @@ func (s *memoryProjectStore) CreateProjectContextSnapshot(_ context.Context, sna
 	return nil
 }
 
+func (s *memoryProjectStore) FindProjectContextSnapshotByID(_ context.Context, id uint) (*domain.SpecForgeProjectContextSnapshot, error) {
+	for _, candidates := range s.snapshots {
+		for _, candidate := range candidates {
+			if candidate.ID == id {
+				return cloneProjectContextSnapshot(candidate), nil
+			}
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
 func (s *memoryProjectStore) FindLatestProjectContextSnapshot(_ context.Context, projectID uint) (*domain.SpecForgeProjectContextSnapshot, error) {
 	candidates := s.snapshots[projectID]
 	if len(candidates) == 0 {

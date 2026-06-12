@@ -105,6 +105,8 @@ type SpecForgeImplementationPlan struct {
 	RequirementID        *uint      `json:"requirement_id,omitempty"`
 	IdeaID               uint       `json:"idea_id"`
 	ProductSpecID        uint       `json:"product_spec_id"`
+	ContextSnapshotID    *uint      `json:"context_snapshot_id,omitempty"`
+	ExpertPolicyID       *uint      `json:"expert_policy_id,omitempty"`
 	Version              int        `json:"version"`
 	TechnicalSummary     string     `json:"technical_summary"`
 	AffectedAreas        []string   `json:"affected_areas"`
@@ -425,13 +427,15 @@ func SpecForgeRepoArchitectureSnapshotStaleness(snapshot *SpecForgeRepoArchitect
 
 // SpecForgePlanBundle is the aggregate returned to plan review screens.
 type SpecForgePlanBundle struct {
-	Requirement    *SpecForgeRequirement        `json:"requirement,omitempty"`
-	Idea           *SpecForgeIdea               `json:"idea"`
-	RepoProfile    *SpecForgeRepoProfile        `json:"repo_profile,omitempty"`
-	ProjectContext *SpecForgeProjectContext     `json:"project_context,omitempty"`
-	ProductSpec    *SpecForgeProductSpec        `json:"product_spec"`
-	Plan           *SpecForgeImplementationPlan `json:"implementation_plan"`
-	PRNodes        []*SpecForgePRNode           `json:"pr_nodes"`
+	Requirement     *SpecForgeRequirement            `json:"requirement,omitempty"`
+	Idea            *SpecForgeIdea                   `json:"idea"`
+	RepoProfile     *SpecForgeRepoProfile            `json:"repo_profile,omitempty"`
+	ProjectContext  *SpecForgeProjectContext         `json:"project_context,omitempty"`
+	ContextSnapshot *SpecForgeProjectContextSnapshot `json:"context_snapshot,omitempty"`
+	ExpertPolicy    *SpecForgeProjectExpertPolicy    `json:"expert_policy,omitempty"`
+	ProductSpec     *SpecForgeProductSpec            `json:"product_spec"`
+	Plan            *SpecForgeImplementationPlan     `json:"implementation_plan"`
+	PRNodes         []*SpecForgePRNode               `json:"pr_nodes"`
 }
 
 // SpecForgePlanningRepository persists the idea-to-plan aggregate.
