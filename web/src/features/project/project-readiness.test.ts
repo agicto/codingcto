@@ -60,6 +60,25 @@ describe('project readiness helpers', () => {
     expect(decision.tone).toBe('info');
   });
 
+  it('routes GitHub setup to the overview setup anchor', () => {
+    const decision = projectReadinessDecision(12, {
+      project_id: 12,
+      readiness_status: 'blocked',
+      next_step: 'configure_github',
+      next_action: 'Complete GitHub setup.',
+      summary: 'Primary repository is bound, but GitHub delivery is still blocked.',
+      has_primary_repository: true,
+      active_repository_count: 1,
+      read_only_repository_count: 0,
+      skill_count: 0,
+      warning_count: 0,
+      runtime_count: 0,
+    });
+
+    expect(decision.actionHref).toBe('#github-setup');
+    expect(decision.actionLabel).toBe('Review GitHub setup');
+  });
+
   it('routes runtime setup to the context runtime binding anchor', () => {
     const decision = projectReadinessDecision(12, {
       project_id: 12,

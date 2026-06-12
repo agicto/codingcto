@@ -98,6 +98,8 @@ export const specForgeKeys = {
     ] as const,
   githubRepositories: (params?: ListGitHubRepositoriesParams) =>
     [...specForgeKeys.all, 'github-repositories', params?.workspace_id ?? ''] as const,
+  githubInstallationStatus: (workspaceId: string) =>
+    [...specForgeKeys.all, 'github-installation-status', workspaceId] as const,
   githubRepository: (repoId: string) =>
     [...specForgeKeys.all, 'github-repository', repoId] as const,
   githubRepositoryReadiness: (repoId: string) =>
@@ -318,6 +320,16 @@ export function useGitHubRepositories(params?: ListGitHubRepositoriesParams) {
   });
 }
 
+export function useGitHubInstallationStatus(workspaceId?: string) {
+  return useQuery({
+    queryKey: specForgeKeys.githubInstallationStatus(workspaceId ?? ''),
+    queryFn: () =>
+      specForgeService.getGitHubInstallationStatus(workspaceId ?? '', silentQueryConfig),
+    enabled: Boolean(workspaceId),
+    meta: silentQueryMeta,
+  });
+}
+
 export function useGitHubSettings(workspaceId: string) {
   return useQuery({
     queryKey: specForgeKeys.githubSettings(workspaceId),
@@ -349,9 +361,48 @@ export function useUpsertGitHubInstallation() {
 }
 
 export function useSyncGitHubInstallation() {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: (payload: SyncGitHubInstallationPayload) =>
       specForgeService.syncGitHubInstallation(payload),
+    onSuccess: result => {
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubRepositories({
+          workspace_id: result.installation.workspace_id,
+        }),
+      });
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubInstallationStatus(result.installation.workspace_id),
+      });
+    },
+  });
+}
+
+export function useSyncGitHubInstallationByID() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      installationId,
+      workspaceId,
+    }: {
+      installationId: number;
+      workspaceId: string;
+    }) =>
+      specForgeService.syncGitHubInstallationByID(installationId, {
+        workspace_id: workspaceId,
+      }),
+    onSuccess: result => {
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubRepositories({
+          workspace_id: result.installation.workspace_id,
+        }),
+      });
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubInstallationStatus(result.installation.workspace_id),
+      });
+    },
   });
 }
 

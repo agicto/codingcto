@@ -259,6 +259,10 @@ export interface SyncGitHubInstallationPayload {
   installation_id: number;
 }
 
+export interface SyncGitHubInstallationByIDPayload {
+  workspace_id: string;
+}
+
 export interface GitHubRepositoryOptionDTO {
   id: number;
   name: string;
@@ -273,6 +277,21 @@ export interface GitHubRepositoryOptionDTO {
 export interface SyncGitHubInstallationDTO {
   installation: GitHubInstallationDTO;
   repositories: GitHubRepositoryOptionDTO[];
+}
+
+export interface GitHubInstallationStatusItemDTO {
+  id: number;
+  installation_id: number;
+  account_login: string;
+  permissions: Record<string, string>;
+  repository_count: number;
+  updated_at: string;
+}
+
+export interface GitHubInstallationStatusDTO {
+  workspace_id: string;
+  repository_count: number;
+  installations: GitHubInstallationStatusItemDTO[];
 }
 
 export interface UpsertGitHubRepositoryPayload {
@@ -792,6 +811,21 @@ export const specForgeService = {
     request.post<SyncGitHubInstallationDTO, SyncGitHubInstallationPayload>(
       '/github/installations/sync',
       payload
+    ),
+
+  syncGitHubInstallationByID: (
+    installationId: number,
+    payload: SyncGitHubInstallationByIDPayload
+  ) =>
+    request.post<SyncGitHubInstallationDTO, SyncGitHubInstallationByIDPayload>(
+      `/github/installations/${installationId}/sync`,
+      payload
+    ),
+
+  getGitHubInstallationStatus: (workspaceId: string, config?: RequestConfig) =>
+    request.get<GitHubInstallationStatusDTO>(
+      `/github/installations/status?workspace_id=${encodeURIComponent(workspaceId)}`,
+      config
     ),
 
   upsertGitHubRepository: (payload: UpsertGitHubRepositoryPayload) =>

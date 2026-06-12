@@ -9,6 +9,8 @@ import { ArrowRight, FileText, Github, RefreshCw } from 'lucide-react';
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
+import { Input } from '@/components/ui/input';
+import { env } from '@/config/env';
 import { ApiError } from '@/http/request';
 import { ProjectRepositoryBindPanel } from '@/features/project/components/project-context-panel';
 import {
@@ -31,7 +33,10 @@ import {
 } from '@/features/project/hooks/use-projects';
 import { projectContextHref, projectOverviewHref } from '@/features/project/project-utils';
 import {
+  useGitHubInstallationStatus,
+  useGitHubSettings,
   useGitHubRepositoryReadiness,
+  useSyncGitHubInstallationByID,
   useReindexRepoArchitecture,
 } from '@/features/specforge/hooks/use-specforge';
 import type {
@@ -181,6 +186,11 @@ function ProjectRepositoryBindingPage({
         </section>
       ) : null}
 
+      <ProjectGitHubSetupPanel
+        projectId={context.project.id}
+        workspaceId={context.project.workspace_id}
+      />
+
       <section className="rounded-md border border-border-subtle bg-bg-surface p-4">
         <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
           <div>
@@ -250,6 +260,179 @@ function ProjectRepositoryBindingPage({
         </section>
       ) : null}
     </main>
+  );
+}
+
+function ProjectGitHubSetupPanel({
+  projectId,
+  workspaceId,
+}: {
+  projectId: number;
+  workspaceId: string;
+}) {
+  const queryClient = useQueryClient();
+  const [installationId, setInstallationId] = useState('');
+  const [message, setMessage] = useState('');
+  const installationStatusQuery = useGitHubInstallationStatus(workspaceId);
+  const githubSettingsQuery = useGitHubSettings(workspaceId);
+  const syncInstallation = useSyncGitHubInstallationByID();
+  const githubEnabled = githubSettingsQuery.data?.enabled ?? true;
+  const status = installationStatusQuery.data;
+  const installURL = buildGitHubInstallURL(workspaceId);
+
+  async function handleSync(nextInstallationId?: number) {
+    const parsedInstallationId = nextInstallationId ?? Number.parseInt(installationId.trim(), 10);
+    if (!Number.isFinite(parsedInstallationId) || parsedInstallationId <= 0) {
+      setMessage('Enter a valid GitHub App installation ID before syncing.');
+      return;
+    }
+    setMessage('');
+    try {
+      await syncInstallation.mutateAsync({
+        installationId: parsedInstallationId,
+        workspaceId,
+      });
+      await queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
+      await queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
+      setInstallationId('');
+      setMessage('GitHub installation synced. Bind the primary repository below if needed.');
+    } catch (error) {
+      setMessage(
+        error instanceof ApiError
+          ? `Sync failed: ${error.message}`
+          : 'Sync failed. Check GitHub App configuration and try again.'
+      );
+    }
+  }
+
+  return (
+    <section
+      id="github-setup"
+      className="rounded-md border border-border-subtle bg-bg-surface p-4 scroll-mt-24"
+    >
+      <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+        <div>
+          <h2 className="flex items-center gap-2 text-base font-medium text-text-main">
+            <Github className="h-4 w-4 text-primary" />
+            GitHub setup
+          </h2>
+          <p className="mt-1 text-sm leading-6 text-text-muted">
+            Install the GitHub App, sync its installation, then bind one synced repository as the
+            project primary repository.
+          </p>
+        </div>
+        <div className="flex flex-wrap gap-2">
+          <Button
+            type="button"
+            variant="outline"
+            disabled={installationStatusQuery.isFetching}
+            onClick={() => installationStatusQuery.refetch()}
+          >
+            Refresh status
+          </Button>
+          {installURL ? (
+            <Button asChild>
+              <Link href={installURL} target="_blank" rel="noreferrer">
+                Install GitHub App
+              </Link>
+            </Button>
+          ) : (
+            <Button asChild variant="outline">
+              <Link href="/console/settings?tab=github">Open GitHub settings</Link>
+            </Button>
+          )}
+        </div>
+      </div>
+
+      {!githubEnabled ? (
+        <Alert className="mt-4 border-warning/30 bg-warning-subtle">
+          <AlertTitle>GitHub is disabled</AlertTitle>
+          <AlertDescription className="mt-2">
+            Enable GitHub in workspace settings before installing or syncing repositories.
+          </AlertDescription>
+        </Alert>
+      ) : null}
+
+      <div className="mt-4 grid gap-3 md:grid-cols-3">
+        <MaterialMetric
+          label="Synced installations"
+          value={String(status?.installations.length ?? 0)}
+        />
+        <MaterialMetric label="Synced repositories" value={String(status?.repository_count ?? 0)} />
+        <MaterialMetric label="Workspace" value={workspaceId || 'Unknown'} />
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-[minmax(0,1.2fr)_minmax(280px,0.8fr)]">
+        <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+          <div className="text-sm font-medium text-text-main">Synced installations</div>
+          {installationStatusQuery.isLoading ? (
+            <div className="mt-2 text-sm text-text-muted">Checking GitHub installations.</div>
+          ) : status?.installations.length ? (
+            <div className="mt-3 space-y-2">
+              {status.installations.map(installation => (
+                <div
+                  key={installation.id}
+                  className="flex flex-col gap-2 rounded-md border border-border-subtle bg-bg-surface px-3 py-2 md:flex-row md:items-center md:justify-between"
+                >
+                  <div className="min-w-0">
+                    <div className="text-sm font-medium text-text-main">
+                      {installation.account_login}
+                    </div>
+                    <div className="mt-1 text-xs leading-5 text-text-muted">
+                      Installation ID {installation.installation_id} ·{' '}
+                      {installation.repository_count} synced repos · updated{' '}
+                      {new Date(installation.updated_at).toLocaleString()}
+                    </div>
+                  </div>
+                  <Button
+                    type="button"
+                    variant="outline"
+                    size="sm"
+                    disabled={syncInstallation.isPending || !githubEnabled}
+                    onClick={() => handleSync(installation.installation_id)}
+                  >
+                    Sync
+                  </Button>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="mt-2 text-sm text-text-muted">
+              No GitHub App installation has been synced for this workspace yet.
+            </div>
+          )}
+        </div>
+
+        <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+          <div className="text-sm font-medium text-text-main">Sync by installation ID</div>
+          <p className="mt-1 text-xs leading-5 text-text-muted">
+            After installing the GitHub App, paste the installation ID here to sync accessible
+            repositories into CodingCTO.
+          </p>
+          <div className="mt-3 space-y-2">
+            <Input
+              inputMode="numeric"
+              placeholder="12345678"
+              value={installationId}
+              disabled={syncInstallation.isPending || !githubEnabled}
+              onChange={event => setInstallationId(event.target.value)}
+            />
+            <Button
+              type="button"
+              className="w-full"
+              disabled={syncInstallation.isPending || !githubEnabled}
+              onClick={() => handleSync()}
+            >
+              {syncInstallation.isPending ? 'Syncing installation' : 'Sync installation'}
+            </Button>
+            <div className="text-xs leading-5 text-text-muted">
+              Installation ID is the numeric GitHub App installation identifier for this workspace.
+            </div>
+          </div>
+          {message ? <div className="mt-2 text-xs leading-5 text-text-muted">{message}</div> : null}
+        </div>
+      </div>
+    </section>
   );
 }
 
@@ -512,4 +695,23 @@ function ProjectOverviewState({
       ) : null}
     </div>
   );
+}
+
+function buildGitHubInstallURL(workspaceId: string) {
+  const entry = (
+    env.NEXT_PUBLIC_GITHUB_APP_INSTALL_URL ||
+    env.NEXT_PUBLIC_GITHUB_APP_SLUG ||
+    ''
+  ).trim();
+  if (!entry || !workspaceId.trim()) {
+    return '';
+  }
+  if (entry.startsWith('https://github.com/')) {
+    return entry;
+  }
+  const slug = entry
+    .replace(/^https?:\/\/github\.com\/apps\//, '')
+    .replace(/\/installations\/new.*$/, '')
+    .replace(/^\/+|\/+$/g, '');
+  return `https://github.com/apps/${slug}/installations/new?state=${encodeURIComponent(workspaceId.trim())}`;
 }
