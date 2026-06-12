@@ -47,6 +47,7 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 		"specforge_runtimes",
 		"specforge_project_runtime_bindings",
 		"specforge_task_events",
+		"review_decisions",
 		"github_installations",
 		"repositories",
 		"github_webhook_events",
@@ -213,6 +214,15 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 			"type",
 			"input",
 			"output",
+		},
+		"review_decisions": {
+			"pr_node_id",
+			"status",
+			"head_sha",
+			"reason",
+			"decided_by",
+			"decided_at",
+			"expired_at",
 		},
 		"github_webhook_events": {
 			"delivery_id",
