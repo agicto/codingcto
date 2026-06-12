@@ -6,6 +6,7 @@ import {
   projectContextMissingEvidence,
   projectOverviewDecision,
   projectRepositoryEvidence,
+  projectContextSnapshotState,
   projectContextReadiness,
   projectSkillContract,
 } from './project-context';
@@ -137,6 +138,58 @@ describe('project context', () => {
     expect(contract?.primary_repository_id).toBe('repo_app');
     expect(contract?.read_only_repository_ids).toEqual(['repo_sdk']);
     expect(contract?.missing_evidence).toEqual(['architecture_snapshot:repo_sdk']);
+  });
+
+  it('summarizes the latest persisted context snapshot', () => {
+    const context = projectContext([
+      ['dependency', true, 'repo_sdk'],
+      ['primary', true, 'repo_app'],
+    ]);
+    context.latest_snapshot = {
+      id: 9,
+      workspace_id: 'workspace_1',
+      project_id: 1,
+      snapshot_status: 'attention',
+      summary: 'Snapshot covers 2 active repositories and 1 matched DeepWiki index.',
+      primary_repository_id: 'repo_app',
+      warning_count: 2,
+      missing_evidence: ['deepwiki_index:repo_sdk'],
+      evidence_refs: ['repo_profile:repo_app', 'deepwiki_index:60'],
+      repositories: [
+        {
+          repository_id: 'repo_app',
+          role: 'primary',
+          writable: true,
+          architecture_stale: false,
+          warning_count: 0,
+          deepwiki: {
+            source_id: 50,
+            index_id: 60,
+            file_count: 120,
+            chunk_count: 420,
+            page_count: 3,
+          },
+        },
+        {
+          repository_id: 'repo_sdk',
+          role: 'dependency',
+          writable: false,
+          architecture_stale: false,
+          warning_count: 2,
+        },
+      ],
+      created_by: 1,
+      created_at: '',
+      updated_at: '',
+    };
+
+    const snapshot = projectContextSnapshotState(context);
+
+    expect(snapshot.status).toBe('attention');
+    expect(snapshot.repositoryCount).toBe(2);
+    expect(snapshot.deepWikiCount).toBe(1);
+    expect(snapshot.missingEvidenceCount).toBe(1);
+    expect(snapshot.warningCount).toBe(2);
   });
 
   it('asks for a primary repo before planning when none is active', () => {

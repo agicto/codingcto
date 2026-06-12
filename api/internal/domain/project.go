@@ -61,6 +61,7 @@ type SpecForgeProjectContext struct {
 	Project               *SpecForgeProject                    `json:"project"`
 	Repositories          []*SpecForgeProjectRepository        `json:"repositories"`
 	RepositoryContexts    []*SpecForgeProjectRepositoryContext `json:"repository_contexts"`
+	LatestSnapshot        *SpecForgeProjectContextSnapshot     `json:"latest_snapshot,omitempty"`
 	PrimaryRepositoryID   string                               `json:"primary_repository_id,omitempty"`
 	ExecutionRepositoryID string                               `json:"execution_repository_id,omitempty"`
 	ReadOnlyRepositoryIDs []string                             `json:"read_only_repository_ids,omitempty"`
@@ -408,4 +409,6 @@ type SpecForgeProjectRepositoryStore interface {
 	ListProjectRepositories(ctx context.Context, projectID uint) ([]*SpecForgeProjectRepository, error)
 	CountActiveProjectRepositories(ctx context.Context, projectID uint) (int64, error)
 	FindActivePrimaryProjectRepository(ctx context.Context, projectID uint) (*SpecForgeProjectRepository, error)
+	CreateProjectContextSnapshot(ctx context.Context, snapshot *SpecForgeProjectContextSnapshot) error
+	FindLatestProjectContextSnapshot(ctx context.Context, projectID uint) (*SpecForgeProjectContextSnapshot, error)
 }

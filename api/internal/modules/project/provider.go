@@ -13,6 +13,7 @@ var ProviderSet = wire.NewSet(
 	NewProjectSkillStore,
 	NewGitHubReadinessChecker,
 	NewRuntimeReadinessStore,
+	NewProjectDeepWikiStore,
 	NewService,
 	wire.Bind(new(Service), new(*service)),
 	NewHandler,
@@ -31,10 +32,18 @@ func NewRuntimeReadinessStore(repo domain.SpecForgeExecutionRepository) runtimeR
 	return repo
 }
 
+func NewProjectDeepWikiStore(repo domain.DeepWikiRepository) projectDeepWikiStore {
+	store, _ := repo.(projectDeepWikiStore)
+	return store
+}
+
 func NewStarterManifest(handler *Handler) contracts.StarterManifest {
 	return contracts.NewStaticStarterManifest(
 		"project",
 		contracts.WithStarterModule(handler),
-		contracts.WithStarterMigrationNames("2026_05_25_000018_create_specforge_project_tables"),
+		contracts.WithStarterMigrationNames(
+			"2026_05_25_000018_create_specforge_project_tables",
+			"2026_06_11_000031_create_specforge_project_context_snapshots_table",
+		),
 	)
 }

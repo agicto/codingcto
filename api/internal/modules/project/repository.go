@@ -36,6 +36,9 @@ func (r *repository) UpdateProject(ctx context.Context, project *domain.SpecForg
 
 func (r *repository) DeleteProject(ctx context.Context, projectID uint) error {
 	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		if err := tx.Where("project_id = ?", projectID).Delete(&ProjectContextSnapshotPO{}).Error; err != nil {
+			return err
+		}
 		if err := tx.Where("project_id = ?", projectID).Delete(&ProjectRepositoryPO{}).Error; err != nil {
 			return err
 		}
@@ -147,6 +150,29 @@ func (r *repository) FindActivePrimaryProjectRepository(ctx context.Context, pro
 	var po ProjectRepositoryPO
 	if err := r.db.WithContext(ctx).
 		Where("project_id = ? AND role = ? AND active = ?", projectID, domain.ProjectRepositoryRolePrimary, true).
+		First(&po).Error; err != nil {
+		if errors.Is(err, gorm.ErrRecordNotFound) {
+			return nil, domain.ErrNotFound
+		}
+		return nil, err
+	}
+	return po.toDomain(), nil
+}
+
+func (r *repository) CreateProjectContextSnapshot(ctx context.Context, snapshot *domain.SpecForgeProjectContextSnapshot) error {
+	po := newProjectContextSnapshotPO(snapshot)
+	if err := r.db.WithContext(ctx).Create(po).Error; err != nil {
+		return err
+	}
+	*snapshot = *po.toDomain()
+	return nil
+}
+
+func (r *repository) FindLatestProjectContextSnapshot(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContextSnapshot, error) {
+	var po ProjectContextSnapshotPO
+	if err := r.db.WithContext(ctx).
+		Where("project_id = ?", projectID).
+		Order("created_at DESC, id DESC").
 		First(&po).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, domain.ErrNotFound

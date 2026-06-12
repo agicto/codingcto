@@ -113,6 +113,19 @@ export function useProjectContext(projectId: number) {
   });
 }
 
+export function useRefreshProjectContextSnapshot(projectId: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: () => projectService.reindexProjectContext(projectId, silentQueryConfig),
+    meta: silentQueryMeta,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
+    },
+  });
+}
+
 export function useProjectReadiness(projectId: number) {
   return useQuery({
     queryKey: projectKeys.readiness(projectId),

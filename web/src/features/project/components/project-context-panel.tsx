@@ -23,6 +23,7 @@ import { ApiError } from '@/http/request';
 import { useProjectContext } from '@/features/project/hooks/use-projects';
 import {
   useBindProjectRepository,
+  useRefreshProjectContextSnapshot,
   useUnbindProjectRepository,
   projectKeys,
 } from '@/features/project/hooks/use-projects';
@@ -30,6 +31,7 @@ import {
   projectContextContract,
   projectContextMissingEvidence,
   projectContextReadiness,
+  projectContextSnapshotState,
   projectSkillContract,
 } from '@/features/project/project-context';
 import type {
@@ -97,9 +99,185 @@ export function ProjectContextPanel({ context }: { context: ProjectContextDTO })
           item => item.repository.repository_id
         )}
       />
+      <ProjectContextSnapshotPanel context={context} />
       <ProjectSkillContractPanel context={context} />
       <ProjectContextReadiness context={context} />
     </div>
+  );
+}
+
+function ProjectContextSnapshotPanel({ context }: { context: ProjectContextDTO }) {
+  const queryClient = useQueryClient();
+  const snapshotState = projectContextSnapshotState(context);
+  const refreshSnapshot = useRefreshProjectContextSnapshot(context.project.id);
+  const snapshot = snapshotState.snapshot;
+  const [message, setMessage] = useState('');
+
+  async function handleRefreshSnapshot() {
+    setMessage('');
+    try {
+      await refreshSnapshot.mutateAsync();
+      await queryClient.invalidateQueries({ queryKey: projectKeys.context(context.project.id) });
+      setMessage('Unified context snapshot refreshed.');
+    } catch (error) {
+      setMessage(
+        error instanceof ApiError
+          ? `Context snapshot refresh failed: ${error.message}`
+          : 'Context snapshot refresh failed.'
+      );
+    }
+  }
+
+  const badgeClass =
+    snapshotState.status === 'ready'
+      ? 'border-success/30 text-success'
+      : snapshotState.status === 'blocked'
+        ? 'border-warning/30 text-warning'
+        : 'border-primary/30 text-primary';
+  const badgeLabel =
+    snapshotState.status === 'missing'
+      ? 'Not generated'
+      : snapshotState.status === 'ready'
+        ? 'Ready'
+        : snapshotState.status === 'blocked'
+          ? 'Blocked'
+          : 'Attention';
+
+  return (
+    <Card id="context-snapshot" className="scroll-mt-20">
+      <CardHeader>
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <CardTitle className="text-base">Unified context snapshot</CardTitle>
+            <CardDescription className="mt-1">
+              Normalize RepoContext and DeepWiki evidence into one stable project-scoped packet
+              before planning.
+            </CardDescription>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className={badgeClass}>
+              {badgeLabel}
+            </Badge>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleRefreshSnapshot}
+              disabled={refreshSnapshot.isPending}
+            >
+              {refreshSnapshot.isPending ? 'Refreshing' : 'Refresh snapshot'}
+              <RefreshCw
+                className={
+                  refreshSnapshot.isPending
+                    ? 'ml-1.5 h-3.5 w-3.5 animate-spin'
+                    : 'ml-1.5 h-3.5 w-3.5'
+                }
+              />
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm leading-6 text-text-muted">
+          {snapshot?.summary ??
+            'No snapshot has been generated yet. Refresh after binding repositories or updating architecture evidence.'}
+        </p>
+        <div className="grid gap-2 text-xs sm:grid-cols-5">
+          <ReadinessMetric label="Repositories" value={snapshotState.repositoryCount} />
+          <ReadinessMetric label="DeepWiki" value={snapshotState.deepWikiCount} />
+          <ReadinessMetric label="Missing evidence" value={snapshotState.missingEvidenceCount} />
+          <ReadinessMetric label="Warnings" value={snapshotState.warningCount} />
+          <div className="rounded-md border border-border-subtle bg-bg-subtle px-3 py-2">
+            <div className="text-sm font-semibold text-text-main">
+              {snapshot?.updated_at ? new Date(snapshot.updated_at).toLocaleString() : 'Pending'}
+            </div>
+            <div className="mt-1 text-text-muted">Updated</div>
+          </div>
+        </div>
+        {snapshot ? (
+          <div className="space-y-3">
+            <div className="rounded-md border border-border-subtle bg-bg-subtle p-3 text-xs">
+              <div className="grid gap-3 md:grid-cols-3">
+                <div>
+                  <div className="font-medium text-text-main">Primary repository</div>
+                  <div className="mt-1 text-text-muted">
+                    {snapshot.primary_repository_id || 'Missing'}
+                  </div>
+                </div>
+                <div>
+                  <div className="font-medium text-text-main">Evidence refs</div>
+                  <div className="mt-1 text-text-muted">{snapshot.evidence_refs?.length ?? 0}</div>
+                </div>
+                <div>
+                  <div className="font-medium text-text-main">Snapshot ID</div>
+                  <div className="mt-1 text-text-muted">{snapshot.id}</div>
+                </div>
+              </div>
+            </div>
+            {snapshot.repositories?.length ? (
+              <div className="grid gap-3 lg:grid-cols-2">
+                {snapshot.repositories.map(repository => (
+                  <div
+                    key={repository.repository_id}
+                    className="rounded-md border border-border-subtle bg-bg-subtle p-3 text-xs"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate font-medium text-text-main">
+                          {repository.repository_id}
+                        </div>
+                        <div className="mt-1 text-text-muted">
+                          {repository.profile_summary ||
+                            repository.architecture_summary ||
+                            'No compact summary yet.'}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="outline">{repository.role}</Badge>
+                        {repository.deepwiki?.index_id ? (
+                          <Badge variant="outline" className="border-success/30 text-success">
+                            DeepWiki linked
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-warning/30 text-warning">
+                            DeepWiki missing
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-text-muted">
+                      <div>Skills: {repository.skill_names?.length ?? 0}</div>
+                      <div>Warnings: {repository.warning_count}</div>
+                      <div>
+                        Architecture: {repository.architecture_snapshot_commit || 'Missing'}
+                      </div>
+                      <div>Pages: {repository.deepwiki?.page_count ?? 0}</div>
+                    </div>
+                    {repository.deepwiki ? (
+                      <div className="mt-3 rounded-md border border-border-subtle bg-bg-surface px-3 py-2 text-text-muted">
+                        <div>
+                          Frameworks:{' '}
+                          {(repository.deepwiki.frameworks ?? []).slice(0, 3).join(', ') || 'None'}
+                        </div>
+                        <div className="mt-1">
+                          Top pages:{' '}
+                          {(repository.deepwiki.top_pages ?? []).slice(0, 3).join(', ') || 'None'}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {message ? (
+          <div className="rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 text-xs leading-5 text-text-muted">
+            {message}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
   );
 }
 

@@ -175,3 +175,21 @@ func (h *Handler) GetProjectReadiness(c *gin.Context) {
 	}
 	response.Success(c, &ProjectReadinessResponse{Readiness: readiness})
 }
+
+func (h *Handler) RefreshProjectContext(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+
+	snapshot, err := h.service.RefreshProjectContext(c.Request.Context(), userID, projectID)
+	if err != nil {
+		response.HandleError(c, "Failed to refresh project context", err)
+		return
+	}
+	response.Success(c, &ProjectContextSnapshotResponse{Snapshot: snapshot})
+}
