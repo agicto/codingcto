@@ -1473,7 +1473,8 @@ func (s *memoryWorkspaceStore) ListWorkspaces(_ context.Context, createdBy uint,
 }
 
 type memoryGitHubRepositoryStore struct {
-	repositories map[string]*domain.Repository
+	repositories  map[string]*domain.Repository
+	installations map[uint]*domain.GitHubInstallation
 }
 
 func (s *memoryGitHubRepositoryStore) FindRepositoryByRepositoryID(_ context.Context, repositoryID string) (*domain.Repository, error) {
@@ -1497,14 +1498,42 @@ func (s *memoryGitHubRepositoryStore) ListRepositoriesByWorkspaceID(_ context.Co
 	return out, nil
 }
 
-func (s *memoryGitHubRepositoryStore) UpsertInstallation(context.Context, *domain.GitHubInstallation) error {
-	return errors.New("not implemented")
+func (s *memoryGitHubRepositoryStore) UpsertInstallation(_ context.Context, installation *domain.GitHubInstallation) error {
+	if s.installations == nil {
+		s.installations = make(map[uint]*domain.GitHubInstallation)
+	}
+	copied := *installation
+	s.installations[installation.ID] = &copied
+	return nil
 }
-func (s *memoryGitHubRepositoryStore) FindInstallationByID(context.Context, uint) (*domain.GitHubInstallation, error) {
-	return nil, errors.New("not implemented")
+func (s *memoryGitHubRepositoryStore) FindInstallationByID(_ context.Context, id uint) (*domain.GitHubInstallation, error) {
+	installation, ok := s.installations[id]
+	if !ok {
+		return nil, domain.ErrNotFound
+	}
+	copied := *installation
+	return &copied, nil
 }
-func (s *memoryGitHubRepositoryStore) FindInstallationByGitHubID(context.Context, int64) (*domain.GitHubInstallation, error) {
-	return nil, errors.New("not implemented")
+func (s *memoryGitHubRepositoryStore) FindInstallationByGitHubID(_ context.Context, installationID int64) (*domain.GitHubInstallation, error) {
+	for _, installation := range s.installations {
+		if installation.InstallationID != installationID {
+			continue
+		}
+		copied := *installation
+		return &copied, nil
+	}
+	return nil, domain.ErrNotFound
+}
+func (s *memoryGitHubRepositoryStore) ListInstallationsByWorkspaceID(_ context.Context, workspaceID string) ([]*domain.GitHubInstallation, error) {
+	out := make([]*domain.GitHubInstallation, 0, len(s.installations))
+	for _, installation := range s.installations {
+		if installation.WorkspaceID != workspaceID {
+			continue
+		}
+		copied := *installation
+		out = append(out, &copied)
+	}
+	return out, nil
 }
 func (s *memoryGitHubRepositoryStore) UpsertRepository(context.Context, *domain.Repository) error {
 	return errors.New("not implemented")

@@ -86,6 +86,75 @@ func TestSyncInstallationStoresAccountAndListsRepositories(t *testing.T) {
 	require.True(t, syncedRepository.IsPrivate)
 }
 
+func TestGetInstallationStatusSummarizesWorkspaceInstallations(t *testing.T) {
+	repo := &memoryRepo{
+		installations: []*domain.GitHubInstallation{
+			{
+				ID:             3,
+				WorkspaceID:    "workspace_s_d",
+				InstallationID: 42,
+				AccountLogin:   "agicto",
+				Permissions:    map[string]string{"contents": "write"},
+				UpdatedAt:      time.Date(2026, 6, 11, 8, 0, 0, 0, time.UTC),
+			},
+			{
+				ID:             4,
+				WorkspaceID:    "workspace_s_d",
+				InstallationID: 43,
+				AccountLogin:   "agicto-labs",
+				Permissions:    map[string]string{"contents": "read"},
+				UpdatedAt:      time.Date(2026, 6, 11, 9, 0, 0, 0, time.UTC),
+			},
+		},
+		repositories: []*domain.Repository{
+			{RepositoryID: "github_agicto__codingcto", WorkspaceID: "workspace_s_d", GitHubInstallationID: 3},
+			{RepositoryID: "github_agicto__codingcto-web", WorkspaceID: "workspace_s_d", GitHubInstallationID: 3},
+			{RepositoryID: "github_agicto-labs__sandbox", WorkspaceID: "workspace_s_d", GitHubInstallationID: 4},
+		},
+	}
+	svc := NewService(repo, nil, nil, nil, nil)
+
+	status, err := svc.GetInstallationStatus(context.Background(), "workspace_s_d")
+
+	require.NoError(t, err)
+	require.Equal(t, "workspace_s_d", status.WorkspaceID)
+	require.Equal(t, 3, status.RepositoryCount)
+	require.Len(t, status.Installations, 2)
+	require.Equal(t, int64(43), status.Installations[0].InstallationID)
+	require.Equal(t, 1, status.Installations[0].RepositoryCount)
+	require.Equal(t, int64(42), status.Installations[1].InstallationID)
+	require.Equal(t, 2, status.Installations[1].RepositoryCount)
+}
+
+func TestSyncInstallationByIDDelegatesToSyncInstallation(t *testing.T) {
+	repo := &memoryRepo{}
+	client := &fakeRepositoryClient{
+		installationRepos: []InstallationRepository{
+			{ID: 101, Name: "codingcto", FullName: "agicto/codingcto", DefaultBranch: "main"},
+		},
+	}
+	tokenProvider := &fakeInstallationTokenProvider{
+		token: &InstallationToken{Token: "ghs_installation_token"},
+		installation: &GitHubAppInstallation{
+			ID:      42,
+			Account: GitHubAppAccount{Login: "agicto", Type: "Organization"},
+			Permissions: map[string]string{
+				"contents":      "write",
+				"pull_requests": "write",
+			},
+		},
+	}
+	svc := NewService(repo, nil, &fakeRepositoryClientFactory{client: client}, tokenProvider, nil)
+
+	result, err := svc.SyncInstallationByID(context.Background(), 7, 42, &SyncInstallationByIDRequest{
+		WorkspaceID: "workspace_s_d",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, int64(42), result.Installation.InstallationID)
+	require.Len(t, result.Repositories, 1)
+}
+
 func TestUpsertRepositoryDefaultsRepositoryIDAndBranch(t *testing.T) {
 	repo := &memoryRepo{installation: &domain.GitHubInstallation{ID: 3, InstallationID: 123}}
 	client := &fakeRepositoryClient{branchRef: &GitReference{Object: GitRefObject{SHA: "main123"}}}
@@ -1917,6 +1986,7 @@ func (r *memoryPlanningRepo) UpdatePlan(ctx context.Context, plan *domain.SpecFo
 
 type memoryRepo struct {
 	nextID        uint
+	installations []*domain.GitHubInstallation
 	installation  *domain.GitHubInstallation
 	repository    *domain.Repository
 	repositories  []*domain.Repository
@@ -1931,11 +2001,28 @@ func (r *memoryRepo) UpsertInstallation(ctx context.Context, installation *domai
 	}
 	copied := *installation
 	r.installation = &copied
+	replaced := false
+	for index, existing := range r.installations {
+		if existing != nil && (existing.ID == copied.ID || existing.InstallationID == copied.InstallationID) {
+			r.installations[index] = &copied
+			replaced = true
+			break
+		}
+	}
+	if !replaced {
+		r.installations = append(r.installations, &copied)
+	}
 	return nil
 }
 
 func (r *memoryRepo) FindInstallationByID(ctx context.Context, id uint) (*domain.GitHubInstallation, error) {
 	if r.installation == nil || r.installation.ID != id {
+		for _, installation := range r.installations {
+			if installation != nil && installation.ID == id {
+				copied := *installation
+				return &copied, nil
+			}
+		}
 		return nil, domain.ErrNotFound
 	}
 	copied := *r.installation
@@ -1944,10 +2031,41 @@ func (r *memoryRepo) FindInstallationByID(ctx context.Context, id uint) (*domain
 
 func (r *memoryRepo) FindInstallationByGitHubID(ctx context.Context, installationID int64) (*domain.GitHubInstallation, error) {
 	if r.installation == nil || r.installation.InstallationID != installationID {
+		for _, installation := range r.installations {
+			if installation != nil && installation.InstallationID == installationID {
+				copied := *installation
+				return &copied, nil
+			}
+		}
 		return nil, domain.ErrNotFound
 	}
 	copied := *r.installation
 	return &copied, nil
+}
+
+func (r *memoryRepo) ListInstallationsByWorkspaceID(ctx context.Context, workspaceID string) ([]*domain.GitHubInstallation, error) {
+	out := make([]*domain.GitHubInstallation, 0, len(r.installations)+1)
+	for _, installation := range r.installations {
+		if installation == nil || (workspaceID != "" && installation.WorkspaceID != workspaceID) {
+			continue
+		}
+		copied := *installation
+		out = append(out, &copied)
+	}
+	if r.installation != nil && (workspaceID == "" || r.installation.WorkspaceID == workspaceID) {
+		seen := false
+		for _, installation := range out {
+			if installation.ID == r.installation.ID {
+				seen = true
+				break
+			}
+		}
+		if !seen {
+			copied := *r.installation
+			out = append(out, &copied)
+		}
+	}
+	return out, nil
 }
 
 func (r *memoryRepo) UpsertRepository(ctx context.Context, repository *domain.Repository) error {
