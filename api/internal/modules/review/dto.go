@@ -14,6 +14,12 @@ type RejectReviewDecisionRequest struct {
 	Reason string `json:"reason" binding:"required,max=5000"`
 }
 
+type RequestMergeReviewDecisionRequest struct {
+	MergeMethod   string `json:"merge_method" binding:"omitempty,oneof=merge squash rebase"`
+	CommitTitle   string `json:"commit_title" binding:"omitempty,max=255"`
+	CommitMessage string `json:"commit_message" binding:"omitempty,max=5000"`
+}
+
 type ReviewDecisionResponse struct {
 	PRNode         *domain.SpecForgePRNode  `json:"pr_node"`
 	Decision       *ReviewDecisionDTO       `json:"decision,omitempty"`
@@ -22,6 +28,15 @@ type ReviewDecisionResponse struct {
 	Summary        string                   `json:"summary"`
 	NextAction     string                   `json:"next_action"`
 	Checks         []ReviewDecisionCheckDTO `json:"checks"`
+}
+
+type RequestMergeReviewDecisionResponse struct {
+	PRNode         *domain.SpecForgePRNode `json:"pr_node"`
+	Decision       *ReviewDecisionDTO      `json:"decision,omitempty"`
+	MergeAccepted  bool                    `json:"merge_accepted"`
+	MergeMessage   string                  `json:"merge_message"`
+	MergeSHA       string                  `json:"merge_sha,omitempty"`
+	DecisionStatus string                  `json:"decision_status"`
 }
 
 type ReviewDecisionDTO struct {

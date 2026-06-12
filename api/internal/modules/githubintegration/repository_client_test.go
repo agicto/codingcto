@@ -232,6 +232,41 @@ func TestGitHubRepositoryClientCreatePullRequest(t *testing.T) {
 	require.Equal(t, "abc123", pr.Head.SHA)
 }
 
+func TestGitHubRepositoryClientMergePullRequest(t *testing.T) {
+	var payload map[string]any
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		require.Equal(t, http.MethodPut, r.Method)
+		require.Equal(t, "/repos/acme/web/pulls/42/merge", r.URL.Path)
+		require.NoError(t, json.NewDecoder(r.Body).Decode(&payload))
+		w.WriteHeader(http.StatusOK)
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"sha":     "merge123",
+			"merged":  true,
+			"message": "Pull Request successfully merged",
+		})
+	}))
+	defer server.Close()
+	client := newTestRepositoryClient(t, server.URL)
+
+	result, err := client.MergePullRequest(context.Background(), MergePullRequestInput{
+		Owner:         "acme",
+		Repo:          "web",
+		Number:        42,
+		SHA:           "abc123",
+		MergeMethod:   "squash",
+		CommitTitle:   "feat: merge invite flow",
+		CommitMessage: "merged by CodingCTO",
+	})
+
+	require.NoError(t, err)
+	require.Equal(t, "abc123", payload["sha"])
+	require.Equal(t, "squash", payload["merge_method"])
+	require.Equal(t, "feat: merge invite flow", payload["commit_title"])
+	require.Equal(t, "merged by CodingCTO", payload["commit_message"])
+	require.True(t, result.Merged)
+	require.Equal(t, "merge123", result.SHA)
+}
+
 func TestGitHubRepositoryClientListWorkflowRuns(t *testing.T) {
 	createdAt := time.Date(2026, 5, 25, 10, 0, 0, 0, time.UTC)
 	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {

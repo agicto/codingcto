@@ -1744,6 +1744,107 @@ func TestDeliverPRNodeRejectsMalformedPullRequestResponse(t *testing.T) {
 	require.Empty(t, planningRepo.nodes[0].GitHubPRURL)
 }
 
+func TestMergePRNodeUsesExpectedHeadSHA(t *testing.T) {
+	repo := &memoryRepo{
+		installation: &domain.GitHubInstallation{
+			ID:             3,
+			InstallationID: 98765,
+		},
+		repository: &domain.Repository{
+			ID:                   1,
+			RepositoryID:         "github_agicto__codingcto",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto",
+			DefaultBranch:        "main",
+		},
+	}
+	prNumber := 43
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{
+				ID:             10,
+				RepositoryID:   "github_agicto__codingcto",
+				Title:          "Original",
+				BranchName:     "specforge/custom",
+				GitHubPRNumber: &prNumber,
+				GitHubPRURL:    "https://github.com/agicto/codingcto/pull/43",
+				GitHubHeadSHA:  "abc123",
+				Status:         domain.PRNodeStatusReadyForReview,
+			},
+		},
+	}
+	client := &fakeRepositoryClient{
+		mergeResult: &MergedPullRequest{
+			Merged:  true,
+			Message: "Pull Request successfully merged",
+			SHA:     "merge123",
+		},
+	}
+	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider, nil)
+
+	result, err := svc.MergePRNode(context.Background(), &MergePRNodeRequest{
+		RepositoryID:    "github_agicto__codingcto",
+		PRNodeID:        10,
+		ExpectedHeadSHA: "abc123",
+		MergeMethod:     "squash",
+		CommitTitle:     "feat: merge PR node",
+		CommitMessage:   "approved via CodingCTO",
+	})
+
+	require.NoError(t, err)
+	require.True(t, result.Merged)
+	require.Equal(t, "abc123", client.mergeInput.SHA)
+	require.Equal(t, "squash", client.mergeInput.MergeMethod)
+	require.Equal(t, "feat: merge PR node", client.mergeInput.CommitTitle)
+	require.Equal(t, "approved via CodingCTO", client.mergeInput.CommitMessage)
+}
+
+func TestMergePRNodeRejectsStaleHeadSHA(t *testing.T) {
+	repo := &memoryRepo{
+		installation: &domain.GitHubInstallation{
+			ID:             3,
+			InstallationID: 98765,
+		},
+		repository: &domain.Repository{
+			ID:                   1,
+			RepositoryID:         "github_agicto__codingcto",
+			GitHubInstallationID: 3,
+			GitHubOwner:          "agicto",
+			GitHubRepo:           "codingcto",
+			DefaultBranch:        "main",
+		},
+	}
+	prNumber := 43
+	planningRepo := &memoryPlanningRepo{
+		nodes: []*domain.SpecForgePRNode{
+			{
+				ID:             10,
+				RepositoryID:   "github_agicto__codingcto",
+				Title:          "Original",
+				BranchName:     "specforge/custom",
+				GitHubPRNumber: &prNumber,
+				GitHubPRURL:    "https://github.com/agicto/codingcto/pull/43",
+				GitHubHeadSHA:  "abc123",
+				Status:         domain.PRNodeStatusReadyForReview,
+			},
+		},
+	}
+	client := &fakeRepositoryClient{mergeResult: &MergedPullRequest{Merged: true}}
+	tokenProvider := &fakeInstallationTokenProvider{token: &InstallationToken{Token: "ghs_installation_token"}}
+	svc := NewService(repo, planningRepo, &fakeRepositoryClientFactory{client: client}, tokenProvider, nil)
+
+	_, err := svc.MergePRNode(context.Background(), &MergePRNodeRequest{
+		RepositoryID:    "github_agicto__codingcto",
+		PRNodeID:        10,
+		ExpectedHeadSHA: "outdated",
+	})
+
+	require.ErrorIs(t, err, domain.ErrConflict)
+	require.Equal(t, "", client.mergeInput.SHA)
+}
+
 func TestVerifyGitHubSignature(t *testing.T) {
 	body := []byte(`{"zen":"Keep it logically awesome."}`)
 	signature := githubSignature("secret", body)
@@ -1782,6 +1883,9 @@ type fakeRepositoryClient struct {
 	issueErr           error
 	input              CreatePullRequestInput
 	pr                 *PullRequest
+	mergeInput         MergePullRequestInput
+	mergeResult        *MergedPullRequest
+	mergeErr           error
 	err                error
 	branchRef          *GitReference
 	getBranchOwner     string
@@ -1849,6 +1953,11 @@ func (c *fakeRepositoryClient) CreateIssue(ctx context.Context, input CreateIssu
 func (c *fakeRepositoryClient) CreatePullRequest(ctx context.Context, input CreatePullRequestInput) (*PullRequest, error) {
 	c.input = input
 	return c.pr, c.err
+}
+
+func (c *fakeRepositoryClient) MergePullRequest(ctx context.Context, input MergePullRequestInput) (*MergedPullRequest, error) {
+	c.mergeInput = input
+	return c.mergeResult, c.mergeErr
 }
 
 func (c *fakeRepositoryClient) ListWorkflowRuns(ctx context.Context, owner, repo, branch string) ([]WorkflowRun, error) {
