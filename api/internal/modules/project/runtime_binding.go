@@ -1,0 +1,98 @@
+package project
+
+import (
+	"fmt"
+	"path/filepath"
+	"strings"
+	"time"
+
+	"github.com/zgiai/luas/api/internal/domain"
+)
+
+const runtimeBindingFreshness = 5 * time.Minute
+
+func buildProjectRuntimeBinding(project *domain.SpecForgeProject, userID uint, runtime *domain.SpecForgeRuntime, repositoryID string, req *UpsertProjectRuntimeBindingRequest) (*domain.SpecForgeProjectRuntimeBinding, error) {
+	if project == nil || runtime == nil || req == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	repositoryID = strings.TrimSpace(repositoryID)
+	runtimeID := strings.TrimSpace(runtime.RuntimeID)
+	executor := strings.TrimSpace(req.Executor)
+	repoDir := filepath.Clean(strings.TrimSpace(req.RepoDir))
+
+	if repositoryID == "" || runtimeID == "" || repoDir == "" || !filepath.IsAbs(repoDir) {
+		return nil, domain.ErrInvalidInput
+	}
+	if executor == "" {
+		executor = strings.TrimSpace(runtime.Executor)
+	}
+	if executor == "" || executor != strings.TrimSpace(runtime.Executor) {
+		return nil, domain.ErrInvalidInput
+	}
+
+	return &domain.SpecForgeProjectRuntimeBinding{
+		WorkspaceID:  strings.TrimSpace(project.WorkspaceID),
+		ProjectID:    project.ID,
+		RepositoryID: repositoryID,
+		RuntimeID:    runtimeID,
+		Executor:     executor,
+		RepoDir:      repoDir,
+		Active:       true,
+		CreatedBy:    userID,
+	}, nil
+}
+
+func buildProjectRuntimeBindingStatus(now time.Time, primaryRepositoryID string, binding *domain.SpecForgeProjectRuntimeBinding, runtime *domain.SpecForgeRuntime) *domain.SpecForgeProjectRuntimeBindingStatus {
+	if binding == nil {
+		return nil
+	}
+	primaryRepositoryID = strings.TrimSpace(primaryRepositoryID)
+	status := &domain.SpecForgeProjectRuntimeBindingStatus{
+		Binding:  binding,
+		Runtime:  runtime,
+		Eligible: true,
+	}
+	if !binding.Active {
+		status.Eligible = false
+		status.Warnings = appendCompactProjectStrings(status.Warnings, "Runtime binding is inactive.")
+	}
+	if primaryRepositoryID == "" {
+		status.Eligible = false
+		status.Warnings = appendCompactProjectStrings(status.Warnings, "Project does not have a primary repository yet.")
+	} else if strings.TrimSpace(binding.RepositoryID) != primaryRepositoryID {
+		status.Eligible = false
+		status.Warnings = appendCompactProjectStrings(
+			status.Warnings,
+			fmt.Sprintf("Binding targets %s, but the primary repository is %s.", binding.RepositoryID, primaryRepositoryID),
+		)
+	}
+	if strings.TrimSpace(binding.RepoDir) == "" || !filepath.IsAbs(strings.TrimSpace(binding.RepoDir)) {
+		status.Eligible = false
+		status.Warnings = appendCompactProjectStrings(status.Warnings, "Runtime binding repo directory must be an absolute path.")
+	}
+	if runtime == nil {
+		status.Eligible = false
+		status.Warnings = appendCompactProjectStrings(status.Warnings, "Bound runtime has not heartbeated yet.")
+		return status
+	}
+	if strings.TrimSpace(runtime.Executor) != strings.TrimSpace(binding.Executor) {
+		status.Eligible = false
+		status.Warnings = appendCompactProjectStrings(
+			status.Warnings,
+			fmt.Sprintf("Binding expects executor %s, but runtime reports %s.", binding.Executor, runtime.Executor),
+		)
+	}
+	if runtime.Status != domain.RuntimeStatusOnline {
+		status.Eligible = false
+		status.Warnings = appendCompactProjectStrings(status.Warnings, "Bound runtime is not online.")
+	}
+	if runtime.Sandbox != nil && !runtime.Sandbox.Writable {
+		status.Eligible = false
+		status.Warnings = appendCompactProjectStrings(status.Warnings, "Bound runtime sandbox is not writable.")
+	}
+	if runtime.LastSeenAt.IsZero() || now.UTC().Sub(runtime.LastSeenAt.UTC()) > runtimeBindingFreshness {
+		status.Eligible = false
+		status.Warnings = appendCompactProjectStrings(status.Warnings, "Bound runtime heartbeat is stale.")
+	}
+	return status
+}

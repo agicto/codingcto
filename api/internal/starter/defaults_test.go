@@ -29,7 +29,7 @@ func TestDefaultManifestsRegisterDefaultAssets(t *testing.T) {
 	}
 
 	migrations := registry.Migrations()
-	assert.Len(t, migrations, 43)
+	assert.Len(t, migrations, 44)
 	assert.Contains(t, migrations, "2026_04_26_000000_create_audit_logs_table")
 	assert.Contains(t, migrations, "2026_04_27_000002_add_business_fields_to_audit_logs")
 	assert.Contains(t, migrations, "2025_06_18_000000_create_users_table")
@@ -40,6 +40,7 @@ func TestDefaultManifestsRegisterDefaultAssets(t *testing.T) {
 	assert.Contains(t, migrations, "2026_06_10_000030_create_deepwiki_tables")
 	assert.Contains(t, migrations, "2026_06_11_000031_create_specforge_project_context_snapshots_table")
 	assert.Contains(t, migrations, "2026_06_11_000032_create_specforge_project_expert_policies_table")
+	assert.Contains(t, migrations, "2026_06_11_000033_create_specforge_project_runtime_bindings_table")
 	assert.Contains(t, migrations, "2026_05_31_000026_create_workspaces_table")
 	assert.Contains(t, migrations, "2026_05_25_000000_create_specforge_planning_tables")
 	assert.Contains(t, migrations, "2026_05_25_000001_create_specforge_compiled_prompts_table")

@@ -2430,12 +2430,13 @@ func TestSweepStaleTasksPublishesLinkedFixTaskResult(t *testing.T) {
 }
 
 type memoryExecutionRepo struct {
-	nextID       uint
-	bundle       *domain.SpecForgeExecutionBundle
-	runtimes     map[string]*domain.SpecForgeRuntime
-	events       map[uint][]*domain.SpecForgeTaskEvent
-	directTasks  map[uint]*domain.CodingCTODirectAgentTask
-	directEvents map[uint][]*domain.CodingCTODirectTaskEvent
+	nextID          uint
+	bundle          *domain.SpecForgeExecutionBundle
+	runtimes        map[string]*domain.SpecForgeRuntime
+	runtimeBindings map[uint][]*domain.SpecForgeProjectRuntimeBinding
+	events          map[uint][]*domain.SpecForgeTaskEvent
+	directTasks     map[uint]*domain.CodingCTODirectAgentTask
+	directEvents    map[uint][]*domain.CodingCTODirectTaskEvent
 }
 
 func (r *memoryExecutionRepo) CreateExecutionBundle(ctx context.Context, bundle *domain.SpecForgeExecutionBundle) error {
@@ -2580,6 +2581,18 @@ func (r *memoryExecutionRepo) UpsertRuntime(ctx context.Context, runtime *domain
 	return nil
 }
 
+func (r *memoryExecutionRepo) FindRuntimeByRuntimeID(ctx context.Context, runtimeID string) (*domain.SpecForgeRuntime, error) {
+	runtimeID = strings.TrimSpace(runtimeID)
+	if runtimeID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	if r.runtimes == nil || r.runtimes[runtimeID] == nil {
+		return nil, domain.ErrNotFound
+	}
+	copied := *r.runtimes[runtimeID]
+	return &copied, nil
+}
+
 func (r *memoryExecutionRepo) ListRuntimes(ctx context.Context, executor, status string, limit int) ([]*domain.SpecForgeRuntime, error) {
 	executor = strings.TrimSpace(executor)
 	status = strings.TrimSpace(status)
@@ -2608,6 +2621,73 @@ func (r *memoryExecutionRepo) ListRuntimes(ctx context.Context, executor, status
 	})
 	if len(out) > limit {
 		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (r *memoryExecutionRepo) CreateProjectRuntimeBinding(ctx context.Context, binding *domain.SpecForgeProjectRuntimeBinding) error {
+	if binding == nil || binding.ProjectID == 0 {
+		return domain.ErrInvalidInput
+	}
+	if r.runtimeBindings == nil {
+		r.runtimeBindings = map[uint][]*domain.SpecForgeProjectRuntimeBinding{}
+	}
+	r.nextID++
+	copied := *binding
+	copied.ID = r.nextID
+	binding.ID = copied.ID
+	r.runtimeBindings[binding.ProjectID] = append(r.runtimeBindings[binding.ProjectID], &copied)
+	return nil
+}
+
+func (r *memoryExecutionRepo) UpdateProjectRuntimeBinding(ctx context.Context, binding *domain.SpecForgeProjectRuntimeBinding) error {
+	if binding == nil || binding.ID == 0 || binding.ProjectID == 0 {
+		return domain.ErrInvalidInput
+	}
+	for projectID, items := range r.runtimeBindings {
+		for index, current := range items {
+			if current == nil || current.ID != binding.ID {
+				continue
+			}
+			if projectID != binding.ProjectID {
+				return domain.ErrPermissionDenied
+			}
+			copied := *binding
+			r.runtimeBindings[projectID][index] = &copied
+			return nil
+		}
+	}
+	return domain.ErrNotFound
+}
+
+func (r *memoryExecutionRepo) FindProjectRuntimeBindingByID(ctx context.Context, bindingID uint) (*domain.SpecForgeProjectRuntimeBinding, error) {
+	if bindingID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	for _, items := range r.runtimeBindings {
+		for _, binding := range items {
+			if binding == nil || binding.ID != bindingID {
+				continue
+			}
+			copied := *binding
+			return &copied, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryExecutionRepo) ListProjectRuntimeBindingsByProjectID(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectRuntimeBinding, error) {
+	if projectID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	items := r.runtimeBindings[projectID]
+	out := make([]*domain.SpecForgeProjectRuntimeBinding, 0, len(items))
+	for _, binding := range items {
+		if binding == nil {
+			continue
+		}
+		copied := *binding
+		out = append(out, &copied)
 	}
 	return out, nil
 }

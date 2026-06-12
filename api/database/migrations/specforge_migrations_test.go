@@ -45,6 +45,7 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 		"specforge_fix_attempts",
 		"specforge_skills",
 		"specforge_runtimes",
+		"specforge_project_runtime_bindings",
 		"specforge_task_events",
 		"github_installations",
 		"repositories",
@@ -169,6 +170,15 @@ func TestSpecForgeMigrationsCreateMVPDeliverySchema(t *testing.T) {
 			"required_test_commands_json",
 			"review_policy_json",
 			"merge_policy_json",
+		},
+		"specforge_project_runtime_bindings": {
+			"workspace_id",
+			"project_id",
+			"repository_id",
+			"runtime_id",
+			"executor",
+			"repo_dir",
+			"active",
 		},
 		"specforge_skill_runs": {
 			"requirement_id",

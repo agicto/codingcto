@@ -25,6 +25,9 @@ type Service interface {
 	GetProjectExpertPolicy(ctx context.Context, projectID uint) (*domain.SpecForgeProjectExpertPolicy, error)
 	CreateProjectExpertPolicy(ctx context.Context, userID, projectID uint, req *UpsertProjectExpertPolicyRequest) (*domain.SpecForgeProjectExpertPolicy, error)
 	UpdateProjectExpertPolicy(ctx context.Context, userID, projectID, policyID uint, req *UpsertProjectExpertPolicyRequest) (*domain.SpecForgeProjectExpertPolicy, error)
+	ListProjectRuntimeBindings(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectRuntimeBindingStatus, error)
+	CreateProjectRuntimeBinding(ctx context.Context, userID, projectID uint, req *UpsertProjectRuntimeBindingRequest) (*domain.SpecForgeProjectRuntimeBindingStatus, error)
+	UpdateProjectRuntimeBinding(ctx context.Context, userID, projectID, bindingID uint, req *UpsertProjectRuntimeBindingRequest) (*domain.SpecForgeProjectRuntimeBindingStatus, error)
 }
 
 type service struct {
@@ -54,6 +57,11 @@ type githubReadinessChecker interface {
 
 type runtimeReadinessStore interface {
 	ListRuntimes(ctx context.Context, executor, status string, limit int) ([]*domain.SpecForgeRuntime, error)
+	FindRuntimeByRuntimeID(ctx context.Context, runtimeID string) (*domain.SpecForgeRuntime, error)
+	CreateProjectRuntimeBinding(ctx context.Context, binding *domain.SpecForgeProjectRuntimeBinding) error
+	UpdateProjectRuntimeBinding(ctx context.Context, binding *domain.SpecForgeProjectRuntimeBinding) error
+	FindProjectRuntimeBindingByID(ctx context.Context, bindingID uint) (*domain.SpecForgeProjectRuntimeBinding, error)
+	ListProjectRuntimeBindingsByProjectID(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectRuntimeBinding, error)
 }
 
 type projectDeepWikiStore interface {
@@ -371,7 +379,7 @@ func (s *service) GetProjectReadiness(ctx context.Context, projectID uint) (*dom
 
 	runtimeCount := 0
 	runtimeReady := false
-	runtimeDetail := "No online runtimes detected yet."
+	runtimeDetail := "No project runtime binding is configured yet."
 	if s.runtimeReadiness != nil {
 		runtimes, err := s.runtimeReadiness.ListRuntimes(ctx, "", domain.RuntimeStatusOnline, 20)
 		if err != nil {
@@ -379,10 +387,49 @@ func (s *service) GetProjectReadiness(ctx context.Context, projectID uint) (*dom
 			warnings = appendCompactProjectStrings(warnings, runtimeDetail)
 		} else {
 			runtimeCount = len(runtimes)
-			runtimeReady = runtimeCount > 0
-			if runtimeReady {
-				runtimeDetail = fmt.Sprintf("%d online runtime(s) can accept local execution work.", runtimeCount)
+		}
+		bindingStatuses, err := s.listProjectRuntimeBindingStatuses(ctx, projectID, contextBundle.PrimaryRepositoryID)
+		if err != nil {
+			return nil, fmt.Errorf("load project runtime bindings: %w", err)
+		}
+		eligibleCount := 0
+		for _, bindingStatus := range bindingStatuses {
+			if bindingStatus == nil {
+				continue
 			}
+			if bindingStatus.Eligible {
+				eligibleCount++
+			}
+			for _, warning := range bindingStatus.Warnings {
+				warnings = appendCompactProjectStrings(warnings, warning)
+			}
+		}
+		runtimeReady = eligibleCount > 0
+		switch {
+		case !hasPrimary:
+			runtimeDetail = "Primary repository must be bound before a runtime can be attached."
+		case len(bindingStatuses) == 0 && runtimeCount > 0:
+			runtimeDetail = "Online runtimes exist, but this project still needs an explicit runtime binding."
+		case len(bindingStatuses) == 0:
+			runtimeDetail = "No project runtime binding targets the primary repository yet."
+		case runtimeReady:
+			runtimeDetail = fmt.Sprintf("%d runtime binding(s) are eligible for local execution.", eligibleCount)
+		case len(bindingStatuses[0].Warnings) > 0:
+			runtimeDetail = bindingStatuses[0].Warnings[0]
+		default:
+			runtimeDetail = "Configured runtime bindings are not eligible for local execution yet."
+		}
+		if runtimeReady && runtimeCount > 0 {
+			runtimeDetail = fmt.Sprintf("%s (%d online runtime(s) detected).", runtimeDetail, runtimeCount)
+		} else if runtimeCount > 0 && len(bindingStatuses) == 0 {
+			runtimeDetail = fmt.Sprintf("%s (%d online runtime(s) detected).", runtimeDetail, runtimeCount)
+		} else if runtimeCount == 0 && len(bindingStatuses) == 0 {
+			runtimeDetail = "No online runtimes detected yet."
+		}
+		if runtimeReady && runtimeCount == 0 {
+			runtimeDetail = "Runtime binding exists, but no online runtime heartbeat is available."
+			runtimeReady = false
+			warnings = appendCompactProjectStrings(warnings, runtimeDetail)
 		}
 	}
 	checks = append(checks, domain.SpecForgeProjectReadinessCheck{
@@ -537,6 +584,142 @@ func (s *service) UpdateProjectExpertPolicy(ctx context.Context, userID, project
 		return nil, fmt.Errorf("create next project expert policy version: %w", err)
 	}
 	return next, nil
+}
+
+func (s *service) ListProjectRuntimeBindings(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectRuntimeBindingStatus, error) {
+	if _, err := s.repo.FindProjectByID(ctx, projectID); err != nil {
+		return nil, err
+	}
+	primaryRepositoryID, err := s.projectPrimaryRepositoryID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return s.listProjectRuntimeBindingStatuses(ctx, projectID, primaryRepositoryID)
+}
+
+func (s *service) CreateProjectRuntimeBinding(ctx context.Context, userID, projectID uint, req *UpsertProjectRuntimeBindingRequest) (*domain.SpecForgeProjectRuntimeBindingStatus, error) {
+	if req == nil || s.runtimeReadiness == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	project, err := s.repo.FindProjectByID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	repository, err := s.repo.FindProjectRepository(ctx, projectID, strings.TrimSpace(req.RepositoryID))
+	if err != nil {
+		return nil, err
+	}
+	if !repository.Active {
+		return nil, domain.ErrInvalidInput
+	}
+	existingBindings, err := s.runtimeReadiness.ListProjectRuntimeBindingsByProjectID(ctx, projectID)
+	if err != nil {
+		return nil, fmt.Errorf("list project runtime bindings: %w", err)
+	}
+	for _, existing := range existingBindings {
+		if existing != nil && existing.Active {
+			return nil, domain.ErrConflict
+		}
+	}
+	runtime, err := s.runtimeReadiness.FindRuntimeByRuntimeID(ctx, req.RuntimeID)
+	if err != nil {
+		return nil, err
+	}
+	binding, err := buildProjectRuntimeBinding(project, userID, runtime, repository.RepositoryID, req)
+	if err != nil {
+		return nil, err
+	}
+	if err := s.runtimeReadiness.CreateProjectRuntimeBinding(ctx, binding); err != nil {
+		return nil, fmt.Errorf("create project runtime binding: %w", err)
+	}
+	primaryRepositoryID, err := s.projectPrimaryRepositoryID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return buildProjectRuntimeBindingStatus(nowUTC(), primaryRepositoryID, binding, runtime), nil
+}
+
+func (s *service) UpdateProjectRuntimeBinding(ctx context.Context, userID, projectID, bindingID uint, req *UpsertProjectRuntimeBindingRequest) (*domain.SpecForgeProjectRuntimeBindingStatus, error) {
+	if req == nil || s.runtimeReadiness == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	project, err := s.repo.FindProjectByID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	current, err := s.runtimeReadiness.FindProjectRuntimeBindingByID(ctx, bindingID)
+	if err != nil {
+		return nil, err
+	}
+	if current.ProjectID != projectID {
+		return nil, domain.ErrPermissionDenied
+	}
+	repository, err := s.repo.FindProjectRepository(ctx, projectID, strings.TrimSpace(req.RepositoryID))
+	if err != nil {
+		return nil, err
+	}
+	if !repository.Active {
+		return nil, domain.ErrInvalidInput
+	}
+	runtime, err := s.runtimeReadiness.FindRuntimeByRuntimeID(ctx, req.RuntimeID)
+	if err != nil {
+		return nil, err
+	}
+	next, err := buildProjectRuntimeBinding(project, userID, runtime, repository.RepositoryID, req)
+	if err != nil {
+		return nil, err
+	}
+	next.ID = current.ID
+	next.Active = current.Active
+	next.CreatedBy = current.CreatedBy
+	next.CreatedAt = current.CreatedAt
+	if err := s.runtimeReadiness.UpdateProjectRuntimeBinding(ctx, next); err != nil {
+		return nil, fmt.Errorf("update project runtime binding: %w", err)
+	}
+	primaryRepositoryID, err := s.projectPrimaryRepositoryID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	return buildProjectRuntimeBindingStatus(nowUTC(), primaryRepositoryID, next, runtime), nil
+}
+
+func (s *service) projectPrimaryRepositoryID(ctx context.Context, projectID uint) (string, error) {
+	repositories, err := s.repo.ListProjectRepositories(ctx, projectID)
+	if err != nil {
+		return "", err
+	}
+	for _, repository := range repositories {
+		if repository == nil || !repository.Active || repository.Role != domain.ProjectRepositoryRolePrimary {
+			continue
+		}
+		return strings.TrimSpace(repository.RepositoryID), nil
+	}
+	return "", nil
+}
+
+func (s *service) listProjectRuntimeBindingStatuses(ctx context.Context, projectID uint, primaryRepositoryID string) ([]*domain.SpecForgeProjectRuntimeBindingStatus, error) {
+	if s.runtimeReadiness == nil {
+		return []*domain.SpecForgeProjectRuntimeBindingStatus{}, nil
+	}
+	bindings, err := s.runtimeReadiness.ListProjectRuntimeBindingsByProjectID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	statuses := make([]*domain.SpecForgeProjectRuntimeBindingStatus, 0, len(bindings))
+	for _, binding := range bindings {
+		if binding == nil {
+			continue
+		}
+		runtime, err := s.runtimeReadiness.FindRuntimeByRuntimeID(ctx, binding.RuntimeID)
+		if err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return nil, err
+		}
+		if errors.Is(err, domain.ErrNotFound) {
+			runtime = nil
+		}
+		statuses = append(statuses, buildProjectRuntimeBindingStatus(nowUTC(), primaryRepositoryID, binding, runtime))
+	}
+	return statuses, nil
 }
 
 func (s *service) projectContextBundle(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContext, error) {

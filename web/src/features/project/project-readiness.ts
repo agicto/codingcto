@@ -1,9 +1,5 @@
 import type { ProjectReadinessDTO } from './services/project-service';
-import {
-  projectContextHref,
-  projectRequirementNewHref,
-  projectSpecForgeHref,
-} from './project-utils';
+import { projectContextHref, projectRequirementNewHref } from './project-utils';
 
 export interface ProjectReadinessDecision {
   title: string;
@@ -46,8 +42,8 @@ export function projectReadinessDecision(
       return {
         title: 'Connect a local runtime',
         description: readiness.summary,
-        actionLabel: 'Open CodingCTO',
-        actionHref: projectSpecForgeHref(projectId),
+        actionLabel: 'Bind runtime',
+        actionHref: `${projectContextHref(projectId)}#runtime-binding`,
         tone: 'info',
       };
     case 'add_skills':
