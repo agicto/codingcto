@@ -7,6 +7,8 @@ import type {
 import type {
   ExecutionRun,
   ImplementationPlan,
+  PlanContextSnapshot,
+  PlanExpertPolicy,
   PlanBundle,
   PRNode,
   RepoProfile,
@@ -59,9 +61,7 @@ function coerceNodeStatus(status: string): PRNode['status'] {
   if (status === 'dispatched') {
     return 'running';
   }
-  return nodeStatuses.has(status as PRNode['status'])
-    ? (status as PRNode['status'])
-    : 'planned';
+  return nodeStatuses.has(status as PRNode['status']) ? (status as PRNode['status']) : 'planned';
 }
 
 function coerceRunStatus(status: string): ExecutionRun['status'] {
@@ -113,13 +113,46 @@ function implementationStatus(status: string): ImplementationPlan['status'] {
   return status === 'approved' ? 'approved' : 'draft';
 }
 
+function contextSnapshotFromDTO(bundle: SpecForgePlanBundleDTO): PlanContextSnapshot | undefined {
+  const snapshot = bundle.context_snapshot;
+  if (!snapshot) {
+    return undefined;
+  }
+  return {
+    id: snapshot.id,
+    snapshotStatus: snapshot.snapshot_status,
+    summary: snapshot.summary ?? '',
+    primaryRepositoryId: snapshot.primary_repository_id,
+    warningCount: snapshot.warning_count ?? 0,
+    missingEvidence: snapshot.missing_evidence ?? [],
+    createdAt: snapshot.created_at,
+  };
+}
+
+function expertPolicyFromDTO(bundle: SpecForgePlanBundleDTO): PlanExpertPolicy | undefined {
+  const policy = bundle.expert_policy;
+  if (!policy) {
+    return undefined;
+  }
+  return {
+    id: policy.id,
+    version: policy.version,
+    goalBoundary: policy.goal_boundary ?? '',
+    allowedPaths: policy.allowed_paths ?? [],
+    forbiddenPaths: policy.forbidden_paths ?? [],
+    requiredTestCommands: policy.required_test_commands ?? [],
+    mergeStrategy: policy.merge_policy?.strategy,
+    requireManualApproval: Boolean(policy.merge_policy?.require_manual_approval),
+    allowAutoMerge: Boolean(policy.merge_policy?.allow_auto_merge),
+    createdAt: policy.created_at,
+  };
+}
+
 function prDAGReviewFromDTO(bundle: SpecForgePlanBundleDTO): string[] {
   if (bundle.pr_dag_review && bundle.pr_dag_review.length > 0) {
     return bundle.pr_dag_review;
   }
-  return (bundle.product_spec.assumptions ?? []).filter((item) =>
-    item.startsWith('PR DAG review:')
-  );
+  return (bundle.product_spec.assumptions ?? []).filter(item => item.startsWith('PR DAG review:'));
 }
 
 export function prNodeFromDTO(node: SpecForgePRNodeDTO): PRNode {
@@ -150,6 +183,8 @@ export function planBundleFromDTO(bundle: SpecForgePlanBundleDTO): PlanBundle {
     planId: bundle.implementation_plan.id,
     idea: bundle.idea.raw_input,
     repoProfile: repoProfileFromDTO(bundle.repo_profile, bundle.idea.repository_id),
+    contextSnapshot: contextSnapshotFromDTO(bundle),
+    expertPolicy: expertPolicyFromDTO(bundle),
     productSpec: {
       goals: bundle.product_spec.goals ?? [],
       businessRules: bundle.product_spec.business_rules ?? [],
@@ -158,6 +193,8 @@ export function planBundleFromDTO(bundle: SpecForgePlanBundleDTO): PlanBundle {
       assumptions: bundle.product_spec.assumptions ?? [],
     },
     implementationPlan: {
+      contextSnapshotId: bundle.implementation_plan.context_snapshot_id,
+      expertPolicyId: bundle.implementation_plan.expert_policy_id,
       technicalSummary: bundle.implementation_plan.technical_summary,
       affectedAreas: bundle.implementation_plan.affected_areas ?? [],
       securityRisks: bundle.implementation_plan.security_risks ?? [],
@@ -174,8 +211,8 @@ export function executionRunFromDTO(
   fallbackPlan?: PlanBundle
 ): { plan?: PlanBundle; run: ExecutionRun } {
   const plan = bundle.plan ? planBundleFromDTO(bundle.plan) : fallbackPlan;
-  const nodesById = new Map((plan?.prNodes ?? []).map((node) => [Number(node.id), node]));
-  const tasks = bundle.tasks.map((task) => {
+  const nodesById = new Map((plan?.prNodes ?? []).map(node => [Number(node.id), node]));
+  const tasks = bundle.tasks.map(task => {
     const node = nodesById.get(task.pr_node_id);
     return {
       ...(node ?? {
@@ -218,9 +255,9 @@ export function executionRunFromDTO(
       runId: bundle.run.id,
       status: coerceRunStatus(bundle.run.status),
       startedAt: bundle.run.started_at,
-      selectedPRNodeIds: (bundle.selected_pr_node_ids ?? bundle.tasks.map((task) => task.pr_node_id)).map(
-        String
-      ),
+      selectedPRNodeIds: (
+        bundle.selected_pr_node_ids ?? bundle.tasks.map(task => task.pr_node_id)
+      ).map(String),
       tasks,
     },
   };

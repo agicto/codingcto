@@ -29,7 +29,11 @@ function listSection(title: string, items: string[]) {
   return `${title}:\n${items.map(item => `- ${item}`).join('\n')}`;
 }
 
-export function buildPromptPreview(plan: PlanBundle, node: PRNode, context: PromptPreviewContext = {}) {
+export function buildPromptPreview(
+  plan: PlanBundle,
+  node: PRNode,
+  context: PromptPreviewContext = {}
+) {
   const activeSkills = context.activeSkills ?? [];
   const attachedSkillNames = activeSkillNames(activeSkills);
   const attachedSkillRefs = activeSkillEvidenceRefs(activeSkills);
@@ -85,10 +89,11 @@ export function buildPromptPreview(plan: PlanBundle, node: PRNode, context: Prom
     '',
     'Expert and skill run evidence:',
     ...(skillRuns.length
-      ? skillRuns.map(run =>
-          `- ${skillRunStageLabel(run.stage)} [${run.status}]: ${
-            run.output_summary || 'No output summary recorded.'
-          }`
+      ? skillRuns.map(
+          run =>
+            `- ${skillRunStageLabel(run.stage)} [${run.status}]: ${
+              run.output_summary || 'No output summary recorded.'
+            }`
         )
       : ['- No skill run records are loaded yet; generate or refresh the plan before execution.']),
     '',
@@ -104,6 +109,18 @@ export function buildPromptPreview(plan: PlanBundle, node: PRNode, context: Prom
     '',
     'Evidence refs:',
     `- idea.raw_input: ${plan.idea}`,
+    plan.contextSnapshot
+      ? `- project_context_snapshot.id: ${plan.contextSnapshot.id}`
+      : '- project_context_snapshot.id: none',
+    plan.contextSnapshot
+      ? `- project_context_snapshot.status: ${plan.contextSnapshot.snapshotStatus}`
+      : '- project_context_snapshot.status: missing',
+    plan.expertPolicy
+      ? `- project_expert_policy.id: ${plan.expertPolicy.id}`
+      : '- project_expert_policy.id: none',
+    plan.expertPolicy
+      ? `- project_expert_policy.version: ${plan.expertPolicy.version}`
+      : '- project_expert_policy.version: missing',
     `- repo_wiki.repository_id: ${plan.repoProfile.repositoryId}`,
     `- repo_wiki.default_branch: ${plan.repoProfile.defaultBranch || 'main'}`,
     `- repo_wiki.summary: ${plan.repoProfile.summary || 'No repository wiki summary available.'}`,

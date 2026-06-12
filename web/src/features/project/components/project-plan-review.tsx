@@ -859,9 +859,21 @@ function PlanMetaCard({ plan, runtimeCount }: { plan: PlanBundle; runtimeCount: 
         </CardTitle>
         <CardDescription className="leading-6">{plan.idea}</CardDescription>
       </CardHeader>
-      <CardContent className="grid gap-3 text-sm md:grid-cols-4">
+      <CardContent className="grid gap-3 text-sm md:grid-cols-6">
         <MetaItem label="Plan ID" value={plan.planId ? String(plan.planId) : 'Draft'} />
         <MetaItem label="Repository" value={plan.repoProfile.repositoryId} />
+        <MetaItem
+          label="Context snapshot"
+          value={
+            plan.implementationPlan.contextSnapshotId
+              ? `#${plan.implementationPlan.contextSnapshotId}`
+              : 'Unpinned'
+          }
+        />
+        <MetaItem
+          label="Expert policy"
+          value={plan.expertPolicy ? `v${plan.expertPolicy.version}` : 'Unpinned'}
+        />
         <MetaItem label="PR nodes" value={String(plan.prNodes.length)} />
         <MetaItem label="Ready runtimes" value={String(runtimeCount)} />
       </CardContent>
