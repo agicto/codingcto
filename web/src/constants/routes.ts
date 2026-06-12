@@ -23,6 +23,7 @@ export const ROUTES = {
     PROJECT_CONTEXT: '/console/projects/:projectId/context',
     PROJECT_REQUIREMENT_NEW: '/console/projects/:projectId/requirements/new',
     PROJECT_PLAN: '/console/projects/:projectId/plans/:planId',
+    PROJECT_PR: '/console/projects/:projectId/prs/:prNodeId',
     PROJECT_SPECFORGE: '/console/projects/:projectId/codingcto',
     SPECFORGE: '/console/codingcto',
     DEEPWIKI: '/console/deepwiki',

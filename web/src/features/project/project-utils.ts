@@ -33,6 +33,10 @@ export function projectPlanHref(projectId: number, planId: number): string {
   return buildRoute(ROUTES.CONSOLE.PROJECT_PLAN, { projectId, planId });
 }
 
+export function projectPRReviewHref(projectId: number, prNodeId: number): string {
+  return buildRoute(ROUTES.CONSOLE.PROJECT_PR, { projectId, prNodeId });
+}
+
 export function projectIdFromConsolePathname(pathname: string): number | undefined {
   const match = pathname.match(/^\/console\/projects\/(\d+)(?:\/|$)/);
   if (!match) {

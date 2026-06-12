@@ -76,6 +76,20 @@ export interface VerifyPRNodeCIPayload {
   repository_id: string;
 }
 
+export interface ApproveReviewDecisionPayload {
+  reason?: string;
+}
+
+export interface RejectReviewDecisionPayload {
+  reason: string;
+}
+
+export interface RequestMergeReviewDecisionPayload {
+  merge_method?: 'merge' | 'squash' | 'rebase';
+  commit_title?: string;
+  commit_message?: string;
+}
+
 export interface CreateFixAttemptFromCIPayload {
   repository_id: string;
   workflow_run_id?: number;
@@ -599,6 +613,46 @@ export interface SpecForgeEscalationSummaryDTO {
   can_continue_auto_fix: boolean;
 }
 
+export interface SpecForgeReviewDecisionDTO {
+  id: number;
+  pr_node_id: number;
+  status: 'approved' | 'rejected' | 'expired';
+  head_sha: string;
+  reason?: string;
+  decided_by: number;
+  decided_at: string;
+  expired_at?: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SpecForgeReviewDecisionCheckDTO {
+  key: string;
+  label: string;
+  status: 'ready' | 'attention' | 'blocked';
+  detail: string;
+  required: boolean;
+}
+
+export interface SpecForgeReviewDecisionResponseDTO {
+  pr_node: SpecForgePRNodeDTO;
+  decision?: SpecForgeReviewDecisionDTO;
+  decision_status: 'pending' | 'approved' | 'rejected' | 'expired';
+  merge_ready: boolean;
+  summary: string;
+  next_action: string;
+  checks: SpecForgeReviewDecisionCheckDTO[];
+}
+
+export interface SpecForgeMergeReviewDecisionResponseDTO {
+  pr_node: SpecForgePRNodeDTO;
+  decision?: SpecForgeReviewDecisionDTO;
+  merge_accepted: boolean;
+  merge_message: string;
+  merge_sha?: string;
+  decision_status: 'pending' | 'approved' | 'rejected' | 'expired';
+}
+
 export interface SpecForgeVerifyPRNodeCIResponseDTO {
   pr_node: SpecForgePRNodeDTO;
   fix_attempt?: SpecForgeFixAttemptDTO;
@@ -1001,6 +1055,30 @@ export const specForgeService = {
       `/pr-nodes/${prNodeId}/verify-ci`,
       payload
     ),
+
+  getReviewDecision: (prNodeId: number, config?: RequestConfig) =>
+    request.get<SpecForgeReviewDecisionResponseDTO>(
+      `/pr-nodes/${prNodeId}/review-decision`,
+      config
+    ),
+
+  approveReviewDecision: (prNodeId: number, payload?: ApproveReviewDecisionPayload) =>
+    request.post<SpecForgeReviewDecisionResponseDTO, ApproveReviewDecisionPayload | undefined>(
+      `/pr-nodes/${prNodeId}/review-decision/approve`,
+      payload
+    ),
+
+  rejectReviewDecision: (prNodeId: number, payload: RejectReviewDecisionPayload) =>
+    request.post<SpecForgeReviewDecisionResponseDTO, RejectReviewDecisionPayload>(
+      `/pr-nodes/${prNodeId}/review-decision/reject`,
+      payload
+    ),
+
+  requestMergeReviewDecision: (prNodeId: number, payload?: RequestMergeReviewDecisionPayload) =>
+    request.post<
+      SpecForgeMergeReviewDecisionResponseDTO,
+      RequestMergeReviewDecisionPayload | undefined
+    >(`/pr-nodes/${prNodeId}/review-decision/request-merge`, payload),
 
   createFixAttemptFromCI: (prNodeId: number, payload: CreateFixAttemptFromCIPayload) =>
     request.post<SpecForgeFixAttemptDTO, CreateFixAttemptFromCIPayload>(
