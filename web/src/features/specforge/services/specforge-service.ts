@@ -325,6 +325,9 @@ export interface GitHubRepositoryDTO {
   repository_id: string;
   workspace_id: string;
   github_installation_id: number;
+  github_connection_id?: number;
+  github_repository_access_id?: number;
+  access_source?: string;
   github_owner: string;
   github_repo: string;
   default_branch: string;
@@ -340,6 +343,82 @@ export interface ListGitHubRepositoriesParams {
 
 export interface ListGitHubRepositoriesDTO {
   repositories: GitHubRepositoryDTO[];
+}
+
+export interface StartGitHubOAuthPayload {
+  workspace_id: string;
+  redirect_to?: string;
+}
+
+export interface StartGitHubOAuthDTO {
+  authorization_url: string;
+  state: string;
+}
+
+export interface GitHubConnectionDTO {
+  id: number;
+  workspace_id: string;
+  github_user_id: number;
+  github_login: string;
+  github_name: string;
+  github_avatar_url: string;
+  scope_string: string;
+  token_status: 'connected' | 'expired' | 'revoked' | 'insufficient_scope' | string;
+  last_verified_at?: string;
+  last_synced_at?: string;
+}
+
+export interface GitHubConnectionResponseDTO {
+  connection?: GitHubConnectionDTO | null;
+}
+
+export interface SyncGitHubRepositoriesPayload {
+  workspace_id: string;
+}
+
+export interface GitHubRepositoryAccessDTO {
+  id: number;
+  workspace_id: string;
+  connection_id: number;
+  github_repo_id: number;
+  owner_login: string;
+  repo_name: string;
+  full_name: string;
+  html_url: string;
+  default_branch: string;
+  visibility: string;
+  is_private: boolean;
+  source_type: 'personal' | 'organization' | string;
+  organization_login: string;
+  permissions: Record<string, boolean>;
+  archived: boolean;
+  disabled: boolean;
+  last_seen_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface SyncGitHubRepositoriesDTO {
+  connection?: GitHubConnectionDTO | null;
+  repository_count: number;
+  personal_count: number;
+  organization_count: number;
+  synced_at: string;
+  repositories: GitHubRepositoryOptionDTO[];
+}
+
+export interface ListGitHubRepositoryAccessesParams {
+  workspace_id?: string;
+  source_type?: 'personal' | 'organization';
+  organization_login?: string;
+  query?: string;
+}
+
+export interface ListGitHubRepositoryAccessesDTO {
+  repositories: GitHubRepositoryAccessDTO[];
+  repository_count: number;
+  personal_count: number;
+  organization_count: number;
 }
 
 export interface GitHubSettingsPayload {
@@ -885,6 +964,58 @@ export const specForgeService = {
       `/github/installations/status?workspace_id=${encodeURIComponent(workspaceId)}`,
       config
     ),
+
+  startGitHubOAuth: (payload: StartGitHubOAuthPayload, config?: RequestConfig) => {
+    const search = new URLSearchParams();
+    search.set('workspace_id', payload.workspace_id);
+    if (payload.redirect_to) {
+      search.set('redirect_to', payload.redirect_to);
+    }
+    return request.get<StartGitHubOAuthDTO>(`/github/oauth/start?${search.toString()}`, config);
+  },
+
+  getGitHubConnection: (workspaceId: string, config?: RequestConfig) =>
+    request.get<GitHubConnectionResponseDTO>(
+      `/github/connection?workspace_id=${encodeURIComponent(workspaceId)}`,
+      config
+    ),
+
+  disconnectGitHubConnection: (workspaceId: string, config?: RequestConfig) =>
+    request.delete<void>(
+      `/github/connection?workspace_id=${encodeURIComponent(workspaceId)}`,
+      config
+    ),
+
+  syncGitHubRepositories: (payload: SyncGitHubRepositoriesPayload, config?: RequestConfig) =>
+    request.post<SyncGitHubRepositoriesDTO, SyncGitHubRepositoriesPayload>(
+      '/github/repositories/sync',
+      payload,
+      config
+    ),
+
+  listGitHubRepositoryAccesses: (
+    params?: ListGitHubRepositoryAccessesParams,
+    config?: RequestConfig
+  ) => {
+    const search = new URLSearchParams();
+    if (params?.workspace_id) {
+      search.set('workspace_id', params.workspace_id);
+    }
+    if (params?.source_type) {
+      search.set('source_type', params.source_type);
+    }
+    if (params?.organization_login) {
+      search.set('organization_login', params.organization_login);
+    }
+    if (params?.query) {
+      search.set('query', params.query);
+    }
+    const suffix = search.toString() ? `?${search.toString()}` : '';
+    return request.get<ListGitHubRepositoryAccessesDTO>(
+      `/github/repository-accesses${suffix}`,
+      config
+    );
+  },
 
   upsertGitHubRepository: (payload: UpsertGitHubRepositoryPayload) =>
     request.post<GitHubRepositoryDTO, UpsertGitHubRepositoryPayload>(

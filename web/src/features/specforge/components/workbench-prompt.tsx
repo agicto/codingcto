@@ -115,7 +115,7 @@ export function PRDag({
       rememberDeliveredNode(prNodeFromDTO(updated));
     } catch {
       setDeliveryError(
-        'GitHub delivery controls require the CodingCTO backend and GitHub App setup.'
+        'GitHub delivery controls require the CodingCTO backend, GitHub connection, and repository permissions.'
       );
     } finally {
       setDeliveryActionNodeId(undefined);
@@ -190,7 +190,7 @@ export function PRDag({
       setFailureLog(log);
     } catch {
       setFailureLogError(
-        'Failure logs require a failed GitHub workflow run and GitHub App access.'
+        'Failure logs require a failed GitHub workflow run and GitHub access.'
       );
     }
   }

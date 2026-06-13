@@ -20,6 +20,8 @@ export const projectKeys = {
   workspaces: () => [...projectKeys.all, 'workspaces'] as const,
   list: (workspaceId: string) => [...projectKeys.all, 'list', workspaceId] as const,
   detail: (projectId: number) => [...projectKeys.all, 'detail', projectId] as const,
+  repositoryOptions: (projectId: number) =>
+    [...projectKeys.all, 'repository-options', projectId] as const,
   readiness: (projectId: number) => [...projectKeys.all, 'readiness', projectId] as const,
   context: (projectId: number) => [...projectKeys.all, 'context', projectId] as const,
   expertPolicy: (projectId: number) => [...projectKeys.all, 'expert-policy', projectId] as const,
@@ -113,6 +115,15 @@ export function useProjectContext(projectId: number) {
   return useQuery({
     queryKey: projectKeys.context(projectId),
     queryFn: () => projectService.getProjectContext(projectId, silentQueryConfig),
+    enabled: Boolean(projectId),
+    meta: silentQueryMeta,
+  });
+}
+
+export function useProjectRepositoryOptions(projectId: number) {
+  return useQuery({
+    queryKey: projectKeys.repositoryOptions(projectId),
+    queryFn: () => projectService.listRepositoryOptions(projectId, silentQueryConfig),
     enabled: Boolean(projectId),
     meta: silentQueryMeta,
   });
@@ -233,6 +244,7 @@ export function useBindProjectRepository(projectId: number) {
       projectService.bindRepository(projectId, payload, silentQueryConfig),
     meta: silentQueryMeta,
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.repositoryOptions(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.runtimeBindings(projectId) });
@@ -253,6 +265,7 @@ export function useBindAnyProjectRepository() {
     }) => projectService.bindRepository(projectId, payload, silentQueryConfig),
     meta: silentQueryMeta,
     onSuccess: (_response, { projectId }) => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.repositoryOptions(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.runtimeBindings(projectId) });
@@ -268,6 +281,7 @@ export function useUnbindProjectRepository(projectId: number) {
       projectService.unbindRepository(projectId, repositoryId, silentQueryConfig),
     meta: silentQueryMeta,
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.repositoryOptions(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.runtimeBindings(projectId) });

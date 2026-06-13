@@ -36,7 +36,7 @@ const messages: SettingsMessages = {
     description: 'Only backend-backed GitHub settings are shown for now. Organization, notification, security, and API administration will appear after those capabilities are implemented.',
     liveOnly: 'Live features only',
     panel: {
-      intro: 'Install the GitHub App, sync accessible repositories, then bind one or more repos to projects so CodingCTO prompts can use repo context.',
+      intro: 'Connect GitHub, sync authorized repositories, then bind one or more repos to projects so CodingCTO prompts can use repo context.',
       connectionPage: {
         title: 'GitHub',
         description:
@@ -54,6 +54,7 @@ const messages: SettingsMessages = {
           manageConnection: 'Manage connection',
           refresh: 'Refresh',
           sync: 'Sync',
+          disconnect: 'Disconnect',
           manageRepositories: 'Manage repositories',
         },
         notConfiguredMessage:
@@ -76,6 +77,7 @@ const messages: SettingsMessages = {
           description: 'Projects can select these repositories as primary or context repositories.',
           loading: 'Loading repositories...',
           empty: 'No repositories have been synced yet. Connect GitHub and choose accessible repositories first.',
+          showing: 'Showing {visible} of {count} authorized repositories.',
         },
         advanced: {
           title: 'Advanced',
@@ -191,6 +193,11 @@ const messages: SettingsMessages = {
         validInstallationId: 'Install the GitHub App first, or enter a valid installation ID.',
         syncedWithRepos: 'GitHub App synced. Choose the repository to bind, then save it.',
         syncedNoRepos: 'GitHub App synced, but no accessible repositories were returned. Check the repositories selected during installation.',
+        oauthConnected: 'GitHub account connected. Sync repositories to refresh the authorized repository pool.',
+        oauthDisconnected: 'GitHub account disconnected for this workspace.',
+        oauthSyncedWithRepos: 'GitHub repositories synced. {count} repositories are available for project binding.',
+        oauthSyncedNoRepos: 'GitHub synced, but no repositories were returned. Check the GitHub OAuth authorization and repository access.',
+        oauthConfigHint: 'Confirm the backend has GITHUB_OAUTH_CLIENT_ID, GITHUB_OAUTH_CLIENT_SECRET, and OAuth secrets configured.',
         githubAppConfigHint: 'Confirm the backend has GITHUB_APP_ID and GITHUB_APP_PRIVATE_KEY configured.',
         selectWorkspaceBeforeSettings: 'Create or select a workspace before changing GitHub feature settings.',
         settingsSaved: 'GitHub feature settings saved.',
