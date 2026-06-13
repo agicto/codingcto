@@ -19,6 +19,7 @@ type Service interface {
 	BindRepository(ctx context.Context, userID, projectID uint, req *BindRepositoryRequest) (*domain.SpecForgeProjectRepository, error)
 	UnbindRepository(ctx context.Context, projectID uint, repositoryID string) error
 	ListRepositories(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectRepository, error)
+	ListRepositoryOptions(ctx context.Context, projectID uint) ([]*ProjectRepositoryOption, error)
 	GetProjectContext(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContext, error)
 	GetProjectReadiness(ctx context.Context, projectID uint) (*domain.SpecForgeProjectReadiness, error)
 	RefreshProjectContext(ctx context.Context, userID, projectID uint) (*domain.SpecForgeProjectContextSnapshot, error)
@@ -53,6 +54,11 @@ type projectSkillStore interface {
 
 type githubReadinessChecker interface {
 	CheckRepositoryReadiness(ctx context.Context, repositoryID string) (*githubintegration.GitHubRepositoryReadinessResponse, error)
+}
+
+type githubRepositoryAccessStore interface {
+	ListRepositoryAccesses(ctx context.Context, workspaceID, sourceType, organizationLogin, query string) ([]*domain.GitHubRepositoryAccess, error)
+	FindRepositoryAccessByID(ctx context.Context, id uint) (*domain.GitHubRepositoryAccess, error)
 }
 
 type runtimeReadinessStore interface {
@@ -214,6 +220,9 @@ func (s *service) BindRepository(ctx context.Context, userID, projectID uint, re
 	if repository.WorkspaceID != project.WorkspaceID {
 		return nil, domain.ErrPermissionDenied
 	}
+	if err := s.validateOAuthRepositoryAccess(ctx, project.WorkspaceID, repository); err != nil {
+		return nil, err
+	}
 
 	if _, err := s.repo.FindProjectRepository(ctx, projectID, repositoryID); err == nil {
 		return nil, domain.ErrConflict
@@ -279,6 +288,63 @@ func (s *service) ListRepositories(ctx context.Context, projectID uint) ([]*doma
 		return nil, err
 	}
 	return s.repo.ListProjectRepositories(ctx, projectID)
+}
+
+func (s *service) ListRepositoryOptions(ctx context.Context, projectID uint) ([]*ProjectRepositoryOption, error) {
+	project, err := s.repo.FindProjectByID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	store, ok := s.githubRepo.(githubRepositoryAccessStore)
+	if !ok || store == nil {
+		return []*ProjectRepositoryOption{}, nil
+	}
+	accesses, err := store.ListRepositoryAccesses(ctx, project.WorkspaceID, "", "", "")
+	if err != nil {
+		return nil, fmt.Errorf("list github repository access options: %w", err)
+	}
+	bindings, err := s.repo.ListProjectRepositories(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	bound := map[string]*domain.SpecForgeProjectRepository{}
+	for _, binding := range bindings {
+		if binding == nil {
+			continue
+		}
+		bound[strings.TrimSpace(binding.RepositoryID)] = binding
+	}
+	options := make([]*ProjectRepositoryOption, 0, len(accesses))
+	for _, access := range accesses {
+		if access == nil {
+			continue
+		}
+		repositoryID := projectGitHubRepositoryID(access.OwnerLogin, access.RepoName)
+		if repositoryID == "" {
+			continue
+		}
+		binding := bound[repositoryID]
+		writable := repositoryAccessWritable(access)
+		option := &ProjectRepositoryOption{
+			RepositoryID: repositoryID,
+			Access:       access,
+			AlreadyBound: binding != nil && binding.Active,
+			Writable:     writable,
+			Selectable:   binding == nil || !binding.Active,
+		}
+		if binding != nil {
+			option.BoundRole = binding.Role
+		}
+		switch {
+		case access.Archived || access.Disabled:
+			option.Selectable = false
+			option.DisabledReason = "Repository is archived or disabled."
+		case option.AlreadyBound:
+			option.DisabledReason = "Repository is already bound to this project."
+		}
+		options = append(options, option)
+	}
+	return options, nil
 }
 
 func (s *service) GetProjectContext(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContext, error) {
@@ -854,7 +920,7 @@ func projectGitHubReadinessDetail(result *githubintegration.GitHubRepositoryRead
 		return "GitHub delivery readiness could not be determined."
 	}
 	if result.Ready {
-		return "GitHub App installation, token exchange, and repository permissions are ready."
+		return "GitHub account connection, token access, and repository permissions are ready."
 	}
 	blocking := []string{}
 	for _, check := range result.Checks {
@@ -868,7 +934,7 @@ func projectGitHubReadinessDetail(result *githubintegration.GitHubRepositoryRead
 		blocking = append(blocking, detail)
 	}
 	if len(blocking) == 0 {
-		return "GitHub delivery is still blocked; review installation and repository permissions."
+		return "GitHub delivery is still blocked; review account connection and repository permissions."
 	}
 	if len(blocking) == 1 {
 		return blocking[0]
@@ -930,6 +996,58 @@ func validRepositoryRole(role string) bool {
 	default:
 		return false
 	}
+}
+
+func (s *service) validateOAuthRepositoryAccess(ctx context.Context, workspaceID string, repository *domain.Repository) error {
+	if repository == nil || !projectRepositoryUsesOAuth(repository) {
+		return nil
+	}
+	store, ok := s.githubRepo.(githubRepositoryAccessStore)
+	if !ok || store == nil {
+		return fmt.Errorf("%w: github oauth repository access store is unavailable", domain.ErrInvalidInput)
+	}
+	if repository.GitHubRepositoryAccessID == 0 {
+		return fmt.Errorf("%w: repository is missing oauth access record", domain.ErrInvalidInput)
+	}
+	access, err := store.FindRepositoryAccessByID(ctx, repository.GitHubRepositoryAccessID)
+	if err != nil {
+		return err
+	}
+	if strings.TrimSpace(access.WorkspaceID) != strings.TrimSpace(workspaceID) {
+		return domain.ErrPermissionDenied
+	}
+	if access.Archived || access.Disabled {
+		return fmt.Errorf("%w: repository access is archived or disabled", domain.ErrInvalidInput)
+	}
+	if !strings.EqualFold(projectGitHubRepositoryID(access.OwnerLogin, access.RepoName), strings.TrimSpace(repository.RepositoryID)) {
+		return fmt.Errorf("%w: repository access identity mismatch", domain.ErrInvalidInput)
+	}
+	return nil
+}
+
+func projectRepositoryUsesOAuth(repository *domain.Repository) bool {
+	if repository == nil {
+		return false
+	}
+	return repository.AccessSource == domain.RepositoryAccessSourceOAuthUser ||
+		repository.GitHubConnectionID > 0 ||
+		repository.GitHubRepositoryAccessID > 0
+}
+
+func projectGitHubRepositoryID(owner, repo string) string {
+	owner = strings.TrimSpace(owner)
+	repo = strings.TrimSpace(repo)
+	if owner == "" || repo == "" {
+		return ""
+	}
+	return fmt.Sprintf("github_%s__%s", owner, repo)
+}
+
+func repositoryAccessWritable(access *domain.GitHubRepositoryAccess) bool {
+	if access == nil {
+		return false
+	}
+	return access.Permissions["push"] || access.Permissions["maintain"] || access.Permissions["admin"]
 }
 
 func (s *service) resolveActiveWorkspace(ctx context.Context, workspaceID string) (*domain.Workspace, error) {
