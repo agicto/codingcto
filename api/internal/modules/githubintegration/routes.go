@@ -4,10 +4,16 @@ import "github.com/zgiai/luas/api/internal/infra/router"
 
 func (h *Handler) RegisterRoutes(r *router.Router) {
 	r.POST("/webhooks/github", h.ReceiveWebhook).Name("github.webhooks.receive")
+	r.GET("/github/oauth/callback", h.HandleOAuthCallback).Name("github.oauth.callback")
 
 	r.Group("", func(auth *router.Router) {
 		auth.WithMiddleware("auth")
 
+		auth.GET("/github/oauth/start", h.StartOAuth).Name("github.oauth.start")
+		auth.GET("/github/connection", h.GetConnection).Name("github.connection.show")
+		auth.DELETE("/github/connection", h.DisconnectConnection).Name("github.connection.destroy")
+		auth.POST("/github/repositories/sync", h.SyncRepositories).Name("github.repositories.sync")
+		auth.GET("/github/repository-accesses", h.ListRepositoryAccesses).Name("github.repository_accesses.index")
 		auth.POST("/github/installations", h.UpsertInstallation).Name("github.installations.store")
 		auth.POST("/github/installations/sync", h.SyncInstallation).Name("github.installations.sync")
 		auth.POST("/github/installations/:id/sync", h.SyncInstallationByID).Name("github.installations.sync_by_id").WhereNumber("id")

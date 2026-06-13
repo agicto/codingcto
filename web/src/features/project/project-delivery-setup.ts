@@ -45,7 +45,7 @@ export function projectDeliverySetupChecklist({
     },
     {
       id: 'github',
-      label: 'GitHub App 权限',
+      label: 'GitHub 仓库权限',
       state: !hasRepository
         ? 'waiting'
         : githubReady
@@ -54,9 +54,9 @@ export function projectDeliverySetupChecklist({
             ? 'waiting'
             : 'blocked',
       detail: githubReady
-        ? 'GitHub App、安装 token 和必需权限已通过检查。'
+        ? 'GitHub 账号连接、访问令牌和必需仓库权限已通过检查。'
         : githubChecking
-          ? '正在检查 GitHub App 安装、token 和仓库权限。'
+          ? '正在检查 GitHub 连接、token 和仓库权限。'
           : githubBlockingCheckCount > 0
             ? `${githubBlockingCheckCount} 个 GitHub readiness 检查阻塞正式试跑。`
             : '等待 GitHub readiness 检查结果。',

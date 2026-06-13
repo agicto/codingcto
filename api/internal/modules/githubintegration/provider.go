@@ -24,5 +24,6 @@ func NewStarterManifest(handler *Handler) contracts.StarterManifest {
 		contracts.WithStarterMigrationNames("2026_05_25_000006_create_github_webhook_events_table"),
 		contracts.WithStarterMigrationNames("2026_05_25_000007_add_github_fields_to_specforge_pr_nodes"),
 		contracts.WithStarterMigrationNames("2026_05_30_000018_create_github_settings_table"),
+		contracts.WithStarterMigrationNames("2026_06_13_000035_add_github_oauth_repository_access"),
 	)
 }

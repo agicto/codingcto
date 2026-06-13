@@ -34,7 +34,7 @@ const messages = {
     description: '当前只保留已经接入后端的 GitHub 设置。组织、通知、安全和 API 管理会在对应能力完成后再展示。',
     liveOnly: '仅显示真实功能',
     panel: {
-      intro: '安装 GitHub App，同步可访问仓库，再把一个或多个仓库绑定到项目，后续 CodingCTO 提示词会依赖这些仓库上下文。',
+      intro: '连接 GitHub，同步授权仓库，再把一个或多个仓库绑定到项目，后续 CodingCTO 提示词会依赖这些仓库上下文。',
       connectionPage: {
         title: 'GitHub',
         description: '连接一次 GitHub，选择允许 CodingCTO 访问的账号和仓库。项目只从这些已授权仓库中选择主仓库。',
@@ -51,6 +51,7 @@ const messages = {
           manageConnection: '管理连接',
           refresh: '刷新',
           sync: '同步',
+          disconnect: '断开连接',
           manageRepositories: '管理仓库',
         },
         notConfiguredMessage: '本地还没有配置 GitHub App。请在高级设置里创建或接入一个 GitHub App，然后重启 Web/API。',
@@ -72,6 +73,7 @@ const messages = {
           description: '这些仓库可以被项目选择为主仓库或上下文仓库。',
           loading: '正在加载仓库...',
           empty: '还没有同步到仓库。先连接 GitHub 并选择可访问仓库。',
+          showing: '正在显示 {count} 个授权仓库中的 {visible} 个。',
         },
         advanced: {
           title: '高级设置',
@@ -187,6 +189,11 @@ const messages = {
         validInstallationId: '请先安装 GitHub App，或填写有效的安装 ID。',
         syncedWithRepos: 'GitHub App 已同步。请选择要绑定的仓库，然后保存。',
         syncedNoRepos: 'GitHub App 已同步，但没有返回可访问仓库。请检查安装时选择的仓库范围。',
+        oauthConnected: 'GitHub 账号已连接。请同步仓库以刷新授权仓库池。',
+        oauthDisconnected: '已断开当前工作区的 GitHub 账号连接。',
+        oauthSyncedWithRepos: 'GitHub 仓库已同步，当前有 {count} 个仓库可绑定到项目。',
+        oauthSyncedNoRepos: 'GitHub 已同步，但没有返回仓库。请检查 OAuth 授权和仓库访问范围。',
+        oauthConfigHint: '请确认后端已经配置 GITHUB_OAUTH_CLIENT_ID、GITHUB_OAUTH_CLIENT_SECRET 和 OAuth 密钥。',
         githubAppConfigHint: '请确认后端已经配置 GITHUB_APP_ID 和 GITHUB_APP_PRIVATE_KEY。',
         selectWorkspaceBeforeSettings: '请先创建或选择工作区，再修改 GitHub 功能设置。',
         settingsSaved: 'GitHub 功能设置已保存。',

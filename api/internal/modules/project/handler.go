@@ -135,6 +135,20 @@ func (h *Handler) ListRepositories(c *gin.Context) {
 	response.Success(c, &ProjectRepositoryListResponse{Repositories: repositories})
 }
 
+func (h *Handler) ListRepositoryOptions(c *gin.Context) {
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+
+	repositories, err := h.service.ListRepositoryOptions(c.Request.Context(), projectID)
+	if err != nil {
+		response.HandleError(c, "Failed to list project repository options", err)
+		return
+	}
+	response.Success(c, &ProjectRepositoryOptionsResponse{Repositories: repositories})
+}
+
 func (h *Handler) UnbindRepository(c *gin.Context) {
 	projectID, ok := handler.ParseID(c, "id")
 	if !ok {

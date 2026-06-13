@@ -294,7 +294,7 @@ export function ExecutionStatus({
       }));
     } catch {
       setTaskActionError(
-        'CI review requires GitHub App access and a workflow run for this PR node.'
+        'CI review requires GitHub access and a workflow run for this PR node.'
       );
     } finally {
       setCIReviewActionNodeId(undefined);

@@ -41,6 +41,38 @@ export interface ProjectRepositoryDTO {
   updated_at: string;
 }
 
+export interface ProjectGitHubRepositoryAccessDTO {
+  id: number;
+  workspace_id: string;
+  connection_id: number;
+  github_repo_id: number;
+  owner_login: string;
+  repo_name: string;
+  full_name: string;
+  html_url: string;
+  default_branch: string;
+  visibility: string;
+  is_private: boolean;
+  source_type: 'personal' | 'organization' | string;
+  organization_login: string;
+  permissions: Record<string, boolean>;
+  archived: boolean;
+  disabled: boolean;
+  last_seen_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectRepositoryOptionDTO {
+  repository_id: string;
+  access: ProjectGitHubRepositoryAccessDTO;
+  already_bound: boolean;
+  bound_role?: string;
+  writable: boolean;
+  selectable: boolean;
+  disabled_reason?: string;
+}
+
 export interface ProjectRepoProfileDTO {
   id: number;
   repository_id: string;
@@ -406,6 +438,12 @@ export const projectService = {
 
   getProjectContext: (projectId: number, config?: RequestConfig) =>
     request.get<{ context: ProjectContextDTO }>(`/projects/${projectId}/context`, config),
+
+  listRepositoryOptions: (projectId: number, config?: RequestConfig) =>
+    request.get<{ repositories: ProjectRepositoryOptionDTO[] }>(
+      `/projects/${projectId}/repositories/options`,
+      config
+    ),
 
   reindexProjectContext: (projectId: number, config?: RequestConfig) =>
     request.post<{ snapshot: ProjectContextSnapshotDTO }>(

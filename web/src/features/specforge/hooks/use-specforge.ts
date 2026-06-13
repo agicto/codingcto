@@ -18,6 +18,7 @@ import {
   type DispatchRunPayload,
   type ExecuteTaskPayload,
   type GitHubSettingsPayload,
+  type ListGitHubRepositoryAccessesParams,
   type InferRepoProfilePayload,
   type ListGitHubRepositoriesParams,
   type ListGitHubWebhookEventsParams,
@@ -37,6 +38,8 @@ import {
   type RuntimeSweepPayload,
   type StartRunPayload,
   type StaleTaskSweepPayload,
+  type StartGitHubOAuthPayload,
+  type SyncGitHubRepositoriesPayload,
   type SyncGitHubInstallationPayload,
   type SubmitTaskResultPayload,
   type UpsertGitHubInstallationPayload,
@@ -103,6 +106,17 @@ export const specForgeKeys = {
     ] as const,
   githubRepositories: (params?: ListGitHubRepositoriesParams) =>
     [...specForgeKeys.all, 'github-repositories', params?.workspace_id ?? ''] as const,
+  githubRepositoryAccesses: (params?: ListGitHubRepositoryAccessesParams) =>
+    [
+      ...specForgeKeys.all,
+      'github-repository-accesses',
+      params?.workspace_id ?? '',
+      params?.source_type ?? '',
+      params?.organization_login ?? '',
+      params?.query ?? '',
+    ] as const,
+  githubConnection: (workspaceId: string) =>
+    [...specForgeKeys.all, 'github-connection', workspaceId] as const,
   githubInstallationStatus: (workspaceId: string) =>
     [...specForgeKeys.all, 'github-installation-status', workspaceId] as const,
   githubRepository: (repoId: string) =>
@@ -344,12 +358,93 @@ export function useGitHubInstallationStatus(workspaceId?: string) {
   });
 }
 
+export function useGitHubConnection(workspaceId?: string) {
+  return useQuery({
+    queryKey: specForgeKeys.githubConnection(workspaceId ?? ''),
+    queryFn: () => specForgeService.getGitHubConnection(workspaceId ?? '', silentQueryConfig),
+    enabled: Boolean(workspaceId),
+    meta: silentQueryMeta,
+  });
+}
+
+export function useGitHubRepositoryAccesses(params?: ListGitHubRepositoryAccessesParams) {
+  const workspaceId = params?.workspace_id ?? '';
+  return useQuery({
+    queryKey: specForgeKeys.githubRepositoryAccesses({
+      ...params,
+      workspace_id: workspaceId,
+    }),
+    queryFn: () =>
+      specForgeService.listGitHubRepositoryAccesses(
+        {
+          ...params,
+          workspace_id: workspaceId,
+        },
+        silentQueryConfig
+      ),
+    enabled: Boolean(workspaceId),
+    meta: silentQueryMeta,
+  });
+}
+
 export function useGitHubSettings(workspaceId: string) {
   return useQuery({
     queryKey: specForgeKeys.githubSettings(workspaceId),
     queryFn: () => specForgeService.getGitHubSettings(workspaceId, silentQueryConfig),
     enabled: Boolean(workspaceId),
     meta: silentQueryMeta,
+  });
+}
+
+export function useStartGitHubOAuth() {
+  return useMutation({
+    mutationFn: (payload: StartGitHubOAuthPayload) =>
+      specForgeService.startGitHubOAuth(payload),
+  });
+}
+
+export function useDisconnectGitHubConnection() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (workspaceId: string) => specForgeService.disconnectGitHubConnection(workspaceId),
+    onSuccess: (_response, workspaceId) => {
+      queryClient.invalidateQueries({ queryKey: specForgeKeys.githubConnection(workspaceId) });
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubRepositoryAccesses({ workspace_id: workspaceId }),
+      });
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubRepositories({ workspace_id: workspaceId }),
+      });
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubInstallationStatus(workspaceId),
+      });
+    },
+  });
+}
+
+export function useSyncGitHubRepositories() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: SyncGitHubRepositoriesPayload) =>
+      specForgeService.syncGitHubRepositories(payload),
+    onSuccess: result => {
+      const workspaceId = result.connection?.workspace_id ?? '';
+      if (!workspaceId) {
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: specForgeKeys.githubConnection(workspaceId) });
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubRepositoryAccesses({ workspace_id: workspaceId }),
+      });
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubRepositories({ workspace_id: workspaceId }),
+      });
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubInstallationStatus(workspaceId),
+      });
+    },
   });
 }
 

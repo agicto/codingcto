@@ -86,14 +86,14 @@ export function qualityGatesForPlanDelivery(
             ? 'waiting'
             : 'blocked',
       detail: !hasPlan
-        ? '生成计划后，正式交付前会检查 GitHub App、installation token 和仓库写权限。'
+        ? '生成计划后，正式交付前会检查 GitHub 账号连接、访问令牌和仓库写权限。'
         : decisions.githubReady
-          ? 'GitHub App、安装 token 和 Issues/Contents/Pull requests 权限已通过检查。'
+          ? 'GitHub 连接、访问令牌和 Issues/Contents/Pull requests 权限已通过检查。'
           : decisions.githubChecking
-            ? '正在检查 GitHub App 安装、token 和仓库权限。'
+            ? '正在检查 GitHub 连接、token 和仓库权限。'
             : githubBlockingCheckCount > 0
               ? `${githubBlockingCheckCount} 个 GitHub readiness 检查阻塞正式 PR 交付。`
-              : 'GitHub readiness 未通过；请安装或同步 GitHub App，并确认仓库权限。',
+              : 'GitHub readiness 未通过；请连接 GitHub、同步授权仓库，并确认仓库权限。',
     },
     {
       id: 'pr',

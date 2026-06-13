@@ -16,6 +16,12 @@ import (
 )
 
 type Service interface {
+	StartOAuth(ctx context.Context, userID uint, req *OAuthStartRequest) (*OAuthStartResponse, error)
+	HandleOAuthCallback(ctx context.Context, req *OAuthCallbackRequest) (*GitHubConnectionSummary, string, error)
+	GetConnection(ctx context.Context, workspaceID string) (*GitHubConnectionSummary, error)
+	DisconnectConnection(ctx context.Context, workspaceID string) error
+	SyncRepositories(ctx context.Context, req *SyncRepositoriesRequest) (*SyncRepositoriesResponse, error)
+	ListRepositoryAccesses(ctx context.Context, req *ListRepositoryAccessesRequest) (*ListRepositoryAccessesResponse, error)
 	UpsertInstallation(ctx context.Context, userID uint, req *UpsertInstallationRequest) (*domain.GitHubInstallation, error)
 	SyncInstallation(ctx context.Context, userID uint, req *SyncInstallationRequest) (*SyncInstallationResponse, error)
 	SyncInstallationByID(ctx context.Context, userID uint, installationID int64, req *SyncInstallationByIDRequest) (*SyncInstallationResponse, error)
@@ -44,6 +50,7 @@ type service struct {
 	planningRepo  domain.SpecForgePlanningRepository
 	clientFactory RepositoryClientFactory
 	tokenProvider InstallationTokenProvider
+	oauthClient   OAuthClient
 	eventBus      *events.EventBus
 }
 
@@ -54,7 +61,263 @@ func NewService(repo domain.GitHubIntegrationRepository, planningRepo domain.Spe
 	if tokenProvider == nil {
 		tokenProvider = defaultInstallationTokenProvider{}
 	}
-	return &service{repo: repo, planningRepo: planningRepo, clientFactory: clientFactory, tokenProvider: tokenProvider, eventBus: eventBus}
+	return &service{repo: repo, planningRepo: planningRepo, clientFactory: clientFactory, tokenProvider: tokenProvider, oauthClient: NewDefaultOAuthClient(), eventBus: eventBus}
+}
+
+type githubOAuthStore interface {
+	UpsertAccountConnection(ctx context.Context, connection *domain.GitHubAccountConnection) error
+	FindAccountConnectionByWorkspaceID(ctx context.Context, workspaceID string) (*domain.GitHubAccountConnection, error)
+	DeleteAccountConnectionByWorkspaceID(ctx context.Context, workspaceID string) error
+	TouchAccountConnectionSyncedAt(ctx context.Context, workspaceID string, syncedAt time.Time) error
+	UpsertRepositoryAccess(ctx context.Context, access *domain.GitHubRepositoryAccess) error
+	FindRepositoryAccessByID(ctx context.Context, id uint) (*domain.GitHubRepositoryAccess, error)
+	ListRepositoryAccesses(ctx context.Context, workspaceID, sourceType, organizationLogin, query string) ([]*domain.GitHubRepositoryAccess, error)
+}
+
+func (s *service) oauthStore() (githubOAuthStore, error) {
+	store, ok := s.repo.(githubOAuthStore)
+	if !ok || store == nil {
+		return nil, fmt.Errorf("github integration: oauth repository store is not available")
+	}
+	return store, nil
+}
+
+func (s *service) StartOAuth(ctx context.Context, userID uint, req *OAuthStartRequest) (*OAuthStartResponse, error) {
+	if userID == 0 || req == nil || strings.TrimSpace(req.WorkspaceID) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	state, err := newOAuthState(req.WorkspaceID, userID, req.RedirectTo)
+	if err != nil {
+		return nil, err
+	}
+	authorizationURL, err := s.oauthClient.AuthorizationURL(state)
+	if err != nil {
+		return nil, err
+	}
+	return &OAuthStartResponse{AuthorizationURL: authorizationURL, State: state}, nil
+}
+
+func (s *service) HandleOAuthCallback(ctx context.Context, req *OAuthCallbackRequest) (*GitHubConnectionSummary, string, error) {
+	if req == nil || strings.TrimSpace(req.Code) == "" || strings.TrimSpace(req.State) == "" {
+		return nil, "", domain.ErrInvalidInput
+	}
+	state, err := parseOAuthState(req.State)
+	if err != nil {
+		return nil, "", err
+	}
+	token, err := s.oauthClient.ExchangeCode(ctx, req.Code)
+	if err != nil {
+		return nil, "", err
+	}
+	user, err := s.oauthClient.GetAuthenticatedUser(ctx, token.AccessToken)
+	if err != nil {
+		return nil, "", err
+	}
+	encryptedAccessToken, err := encryptGitHubToken(token.AccessToken)
+	if err != nil {
+		return nil, "", err
+	}
+	encryptedRefreshToken, err := encryptGitHubToken(token.RefreshToken)
+	if err != nil {
+		return nil, "", err
+	}
+	now := time.Now().UTC()
+	connection := &domain.GitHubAccountConnection{
+		WorkspaceID:           strings.TrimSpace(state.WorkspaceID),
+		UserID:                state.UserID,
+		GitHubUserID:          user.ID,
+		GitHubLogin:           strings.TrimSpace(user.Login),
+		GitHubName:            strings.TrimSpace(user.Name),
+		GitHubAvatarURL:       strings.TrimSpace(user.AvatarURL),
+		AccessTokenEncrypted:  encryptedAccessToken,
+		RefreshTokenEncrypted: encryptedRefreshToken,
+		ScopeString:           strings.TrimSpace(token.Scope),
+		TokenStatus:           domain.GitHubConnectionStatusConnected,
+		LastVerifiedAt:        &now,
+	}
+	store, err := s.oauthStore()
+	if err != nil {
+		return nil, "", err
+	}
+	if err := store.UpsertAccountConnection(ctx, connection); err != nil {
+		return nil, "", fmt.Errorf("upsert github oauth connection: %w", err)
+	}
+	return summarizeConnection(connection), strings.TrimSpace(state.RedirectTo), nil
+}
+
+func (s *service) GetConnection(ctx context.Context, workspaceID string) (*GitHubConnectionSummary, error) {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	store, err := s.oauthStore()
+	if err != nil {
+		return nil, err
+	}
+	connection, err := store.FindAccountConnectionByWorkspaceID(ctx, workspaceID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil, nil
+	}
+	if err != nil {
+		return nil, err
+	}
+	return summarizeConnection(connection), nil
+}
+
+func (s *service) DisconnectConnection(ctx context.Context, workspaceID string) error {
+	workspaceID = strings.TrimSpace(workspaceID)
+	if workspaceID == "" {
+		return domain.ErrInvalidInput
+	}
+	store, err := s.oauthStore()
+	if err != nil {
+		return err
+	}
+	err = store.DeleteAccountConnectionByWorkspaceID(ctx, workspaceID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return nil
+	}
+	return err
+}
+
+func (s *service) SyncRepositories(ctx context.Context, req *SyncRepositoriesRequest) (*SyncRepositoriesResponse, error) {
+	if req == nil || strings.TrimSpace(req.WorkspaceID) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	store, err := s.oauthStore()
+	if err != nil {
+		return nil, err
+	}
+	connection, err := store.FindAccountConnectionByWorkspaceID(ctx, req.WorkspaceID)
+	if err != nil {
+		return nil, err
+	}
+	if connection.TokenStatus != domain.GitHubConnectionStatusConnected {
+		return nil, fmt.Errorf("%w: github connection is %s", domain.ErrInvalidInput, connection.TokenStatus)
+	}
+	token, err := decryptGitHubToken(connection.AccessTokenEncrypted)
+	if err != nil {
+		return nil, err
+	}
+	repositories, err := s.oauthClient.ListAuthenticatedRepositories(ctx, token)
+	if err != nil {
+		return nil, err
+	}
+	now := time.Now().UTC()
+	options := make([]GitHubRepositoryOption, 0, len(repositories))
+	personalCount := 0
+	organizationCount := 0
+	for _, repository := range repositories {
+		owner, repoName := splitRepositoryFullName(repository.FullName)
+		if owner == "" {
+			owner = strings.TrimSpace(repository.Owner.Login)
+		}
+		if repoName == "" {
+			repoName = strings.TrimSpace(repository.Name)
+		}
+		if owner == "" || repoName == "" || repository.ID == 0 {
+			continue
+		}
+		sourceType := domain.GitHubRepositoryAccessSourcePersonal
+		organizationLogin := ""
+		if strings.EqualFold(strings.TrimSpace(repository.Owner.Type), "Organization") {
+			sourceType = domain.GitHubRepositoryAccessSourceOrganization
+			organizationLogin = owner
+			organizationCount++
+		} else {
+			personalCount++
+		}
+		defaultBranch := defaultText(strings.TrimSpace(repository.DefaultBranch), "main")
+		access := &domain.GitHubRepositoryAccess{
+			WorkspaceID:       strings.TrimSpace(connection.WorkspaceID),
+			ConnectionID:      connection.ID,
+			GitHubRepoID:      repository.ID,
+			OwnerLogin:        owner,
+			RepoName:          repoName,
+			FullName:          defaultText(strings.TrimSpace(repository.FullName), owner+"/"+repoName),
+			HTMLURL:           strings.TrimSpace(repository.HTMLURL),
+			DefaultBranch:     defaultBranch,
+			Visibility:        defaultText(strings.TrimSpace(repository.Visibility), repositoryVisibility(repository.Private)),
+			IsPrivate:         repository.Private,
+			SourceType:        sourceType,
+			OrganizationLogin: organizationLogin,
+			Permissions:       repository.Permissions,
+			Archived:          repository.Archived,
+			Disabled:          repository.Disabled,
+			LastSeenAt:        now,
+		}
+		if err := store.UpsertRepositoryAccess(ctx, access); err != nil {
+			return nil, fmt.Errorf("upsert github repository access: %w", err)
+		}
+		if err := s.repo.UpsertRepository(ctx, &domain.Repository{
+			RepositoryID:             githubRepositoryID(owner, repoName),
+			WorkspaceID:              connection.WorkspaceID,
+			GitHubConnectionID:       connection.ID,
+			GitHubRepositoryAccessID: access.ID,
+			AccessSource:             domain.RepositoryAccessSourceOAuthUser,
+			GitHubOwner:              owner,
+			GitHubRepo:               repoName,
+			DefaultBranch:            defaultBranch,
+			IsPrivate:                repository.Private,
+			CreatedBy:                connection.UserID,
+		}); err != nil {
+			return nil, fmt.Errorf("upsert oauth repository: %w", err)
+		}
+		options = append(options, GitHubRepositoryOption{
+			ID:            repository.ID,
+			Name:          repoName,
+			FullName:      access.FullName,
+			Owner:         owner,
+			Repo:          repoName,
+			DefaultBranch: defaultBranch,
+			IsPrivate:     repository.Private,
+			HTMLURL:       repository.HTMLURL,
+		})
+	}
+	if err := store.TouchAccountConnectionSyncedAt(ctx, connection.WorkspaceID, now); err != nil {
+		return nil, fmt.Errorf("touch github oauth connection sync time: %w", err)
+	}
+	connection.LastSyncedAt = &now
+	return &SyncRepositoriesResponse{
+		Connection:        summarizeConnection(connection),
+		RepositoryCount:   len(options),
+		PersonalCount:     personalCount,
+		OrganizationCount: organizationCount,
+		SyncedAt:          now.Format(time.RFC3339),
+		Repositories:      options,
+	}, nil
+}
+
+func (s *service) ListRepositoryAccesses(ctx context.Context, req *ListRepositoryAccessesRequest) (*ListRepositoryAccessesResponse, error) {
+	if req == nil || strings.TrimSpace(req.WorkspaceID) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	store, err := s.oauthStore()
+	if err != nil {
+		return nil, err
+	}
+	repositories, err := store.ListRepositoryAccesses(ctx, req.WorkspaceID, req.SourceType, req.OrganizationLogin, req.Query)
+	if err != nil {
+		return nil, err
+	}
+	personalCount := 0
+	organizationCount := 0
+	for _, repository := range repositories {
+		if repository == nil {
+			continue
+		}
+		if repository.SourceType == domain.GitHubRepositoryAccessSourceOrganization {
+			organizationCount++
+		} else {
+			personalCount++
+		}
+	}
+	return &ListRepositoryAccessesResponse{
+		Repositories:      repositories,
+		RepositoryCount:   len(repositories),
+		PersonalCount:     personalCount,
+		OrganizationCount: organizationCount,
+	}, nil
 }
 
 func (s *service) UpsertInstallation(ctx context.Context, userID uint, req *UpsertInstallationRequest) (*domain.GitHubInstallation, error) {
@@ -329,27 +592,31 @@ func (s *service) CheckRepositoryReadiness(ctx context.Context, repositoryID str
 		checks = append(checks, readinessOK("settings", "GitHub 功能已启用", "", true))
 	}
 
-	var installation *domain.GitHubInstallation
-	if repository.GitHubInstallationID == 0 {
-		checks = append(checks, readinessError("installation", "仓库没有关联 GitHub App 安装记录", "请先安装 GitHub App 并同步仓库，再绑定项目。", true))
+	if repositoryUsesOAuth(repository) {
+		checks = append(checks, s.oauthRepositoryReadinessChecks(ctx, repository)...)
 	} else {
-		installation, err = s.repo.FindInstallationByID(ctx, repository.GitHubInstallationID)
-		if err != nil {
-			checks = append(checks, readinessError("installation", "找不到 GitHub App 安装记录", err.Error(), true))
+		var installation *domain.GitHubInstallation
+		if repository.GitHubInstallationID == 0 {
+			checks = append(checks, readinessError("installation", "仓库没有关联 GitHub App 安装记录", "请先连接 GitHub 账号并刷新仓库，或使用兼容的 GitHub App 安装记录。", true))
 		} else {
-			checks = append(checks, readinessOK("installation", "GitHub App 安装记录已同步", installation.AccountLogin, true))
-			checks = append(checks, permissionReadinessChecks(installation.Permissions)...)
+			installation, err = s.repo.FindInstallationByID(ctx, repository.GitHubInstallationID)
+			if err != nil {
+				checks = append(checks, readinessError("installation", "找不到 GitHub App 安装记录", err.Error(), true))
+			} else {
+				checks = append(checks, readinessOK("installation", "GitHub App 安装记录已同步", installation.AccountLogin, true))
+				checks = append(checks, permissionReadinessChecks(installation.Permissions)...)
+			}
 		}
-	}
 
-	if installation != nil {
-		token, err := s.tokenProvider.InstallationToken(ctx, installation.InstallationID)
-		if err != nil {
-			checks = append(checks, readinessError("installation_token", "GitHub App 令牌交换失败", userFacingGitHubError(err), true))
-		} else if token == nil || strings.TrimSpace(token.Token) == "" {
-			checks = append(checks, readinessError("installation_token", "GitHub App 令牌为空", "请检查 GITHUB_APP_ID 和 GITHUB_APP_PRIVATE_KEY 是否对应当前安装。", true))
-		} else {
-			checks = append(checks, readinessOK("installation_token", "GitHub App 令牌可用", "", true))
+		if installation != nil {
+			token, err := s.tokenProvider.InstallationToken(ctx, installation.InstallationID)
+			if err != nil {
+				checks = append(checks, readinessError("installation_token", "GitHub App 令牌交换失败", userFacingGitHubError(err), true))
+			} else if token == nil || strings.TrimSpace(token.Token) == "" {
+				checks = append(checks, readinessError("installation_token", "GitHub App 令牌为空", "请检查 GITHUB_APP_ID 和 GITHUB_APP_PRIVATE_KEY 是否对应当前安装。", true))
+			} else {
+				checks = append(checks, readinessOK("installation_token", "GitHub App 令牌可用", "", true))
+			}
 		}
 	}
 
@@ -412,12 +679,14 @@ func (s *service) CreateIssue(ctx context.Context, req *CreateIssueRequest) (*Gi
 	if !settings.Enabled {
 		return nil, domain.ErrInvalidInput
 	}
-	installation, err := s.repo.FindInstallationByID(ctx, repository.GitHubInstallationID)
-	if err != nil {
-		return nil, err
-	}
-	if !permissionAllows(installation.Permissions, "issues", "write") {
-		return nil, fmt.Errorf("github integration: GitHub App requires issues:write permission to create issues")
+	if !repositoryUsesOAuth(repository) {
+		installation, err := s.repo.FindInstallationByID(ctx, repository.GitHubInstallationID)
+		if err != nil {
+			return nil, err
+		}
+		if !permissionAllows(installation.Permissions, "issues", "write") {
+			return nil, fmt.Errorf("github integration: GitHub App requires issues:write permission to create issues")
+		}
 	}
 	client, err := s.repositoryClientForRepository(ctx, repository)
 	if err != nil {
@@ -831,6 +1100,25 @@ func (s *service) ReadPRNodeFailureLog(ctx context.Context, req *ReadPRNodeFailu
 }
 
 func (s *service) repositoryClientForRepository(ctx context.Context, repository *domain.Repository) (RepositoryClient, error) {
+	if repositoryUsesOAuth(repository) {
+		token, err := s.oauthTokenForRepository(ctx, repository)
+		if err == nil && strings.TrimSpace(token) != "" {
+			client, err := s.clientFactory.NewRepositoryClient(strings.TrimSpace(token))
+			if err != nil {
+				return nil, err
+			}
+			if client == nil {
+				return nil, fmt.Errorf("github integration: repository client is required")
+			}
+			return client, nil
+		}
+		if repository.GitHubInstallationID == 0 {
+			if err != nil {
+				return nil, err
+			}
+			return nil, fmt.Errorf("github integration: oauth token is required")
+		}
+	}
 	installation, err := s.repo.FindInstallationByID(ctx, repository.GitHubInstallationID)
 	if err != nil {
 		return nil, err
@@ -880,6 +1168,87 @@ func (s *service) settingsForRepository(ctx context.Context, repository *domain.
 		workspaceID = strings.TrimSpace(repository.WorkspaceID)
 	}
 	return s.GetSettings(ctx, workspaceID)
+}
+
+func (s *service) oauthTokenForRepository(ctx context.Context, repository *domain.Repository) (string, error) {
+	if repository == nil || strings.TrimSpace(repository.WorkspaceID) == "" {
+		return "", domain.ErrInvalidInput
+	}
+	store, err := s.oauthStore()
+	if err != nil {
+		return "", err
+	}
+	connection, err := store.FindAccountConnectionByWorkspaceID(ctx, repository.WorkspaceID)
+	if err != nil {
+		return "", err
+	}
+	if connection.TokenStatus != domain.GitHubConnectionStatusConnected {
+		return "", fmt.Errorf("%w: github connection is %s", domain.ErrInvalidInput, connection.TokenStatus)
+	}
+	token, err := decryptGitHubToken(connection.AccessTokenEncrypted)
+	if err != nil {
+		return "", err
+	}
+	if strings.TrimSpace(token) == "" {
+		return "", fmt.Errorf("github integration: oauth token is required")
+	}
+	return token, nil
+}
+
+func (s *service) oauthRepositoryReadinessChecks(ctx context.Context, repository *domain.Repository) []GitHubReadinessCheck {
+	checks := []GitHubReadinessCheck{}
+	store, err := s.oauthStore()
+	if err != nil {
+		return append(checks, readinessError("connection", "GitHub OAuth 存储不可用", err.Error(), true))
+	}
+	connection, err := store.FindAccountConnectionByWorkspaceID(ctx, repository.WorkspaceID)
+	if err != nil {
+		return append(checks, readinessError("connection", "未连接 GitHub 账号", "请在工作区设置中连接 GitHub 账号并刷新仓库。", true))
+	}
+	if connection.TokenStatus != domain.GitHubConnectionStatusConnected {
+		checks = append(checks, readinessError("connection", "GitHub 账号连接不可用", "当前状态："+connection.TokenStatus+"。请重新连接 GitHub。", true))
+	} else {
+		checks = append(checks, readinessOK("connection", "GitHub 账号已连接", connection.GitHubLogin, true))
+	}
+	if repository.GitHubRepositoryAccessID > 0 {
+		access, err := store.FindRepositoryAccessByID(ctx, repository.GitHubRepositoryAccessID)
+		if err != nil {
+			checks = append(checks, readinessError("repository_access", "找不到 OAuth 仓库访问记录", err.Error(), true))
+		} else {
+			readAllowed := access.Permissions["pull"] || access.Permissions["push"] || access.Permissions["maintain"] || access.Permissions["admin"]
+			writeAllowed := access.Permissions["push"] || access.Permissions["maintain"] || access.Permissions["admin"]
+			if readAllowed {
+				checks = append(checks, readinessOK("repository_read", "仓库读取权限可用", access.FullName, true))
+			} else {
+				checks = append(checks, readinessError("repository_read", "仓库读取权限不足", "请确认 OAuth 授权仍可读取该仓库。", true))
+			}
+			if writeAllowed {
+				checks = append(checks, readinessOK("repository_write", "仓库写入权限可用", access.FullName, true))
+			} else {
+				checks = append(checks, readinessError("repository_write", "仓库写入权限不足", "主仓库需要写入权限才能创建分支和 PR。", true))
+			}
+		}
+	} else {
+		checks = append(checks, readinessError("repository_access", "仓库没有 OAuth 访问记录", "请刷新 GitHub 仓库后重新绑定。", true))
+	}
+	token, err := s.oauthTokenForRepository(ctx, repository)
+	if err != nil {
+		return append(checks, readinessError("oauth_token", "GitHub OAuth 令牌不可用", userFacingGitHubError(err), true))
+	}
+	checks = append(checks, readinessOK("oauth_token", "GitHub OAuth 令牌可用", "", true))
+	client, err := s.clientFactory.NewRepositoryClient(token)
+	if err != nil {
+		return append(checks, readinessError("repository_client", "GitHub 仓库客户端初始化失败", err.Error(), true))
+	}
+	branch := resolveBaseBranch(repository, "")
+	ref, err := client.GetBranchRef(ctx, repository.GitHubOwner, repository.GitHubRepo, branch)
+	if err != nil {
+		return append(checks, readinessError("repository_ref", "无法读取默认分支", userFacingGitHubError(err), true))
+	}
+	if ref == nil || strings.TrimSpace(ref.Object.SHA) == "" {
+		return append(checks, readinessError("repository_ref", "默认分支响应缺少 SHA", branch, true))
+	}
+	return append(checks, readinessOK("repository_ref", "默认分支可读取", branch, true))
 }
 
 func (s *service) RecordWebhook(ctx context.Context, req *GitHubWebhookRequest) (*domain.GitHubWebhookEvent, error) {
@@ -999,6 +1368,48 @@ func defaultText(value, fallback string) string {
 		return fallback
 	}
 	return value
+}
+
+func summarizeConnection(connection *domain.GitHubAccountConnection) *GitHubConnectionSummary {
+	if connection == nil {
+		return nil
+	}
+	return &GitHubConnectionSummary{
+		ID:              connection.ID,
+		WorkspaceID:     connection.WorkspaceID,
+		GitHubUserID:    connection.GitHubUserID,
+		GitHubLogin:     connection.GitHubLogin,
+		GitHubName:      connection.GitHubName,
+		GitHubAvatarURL: connection.GitHubAvatarURL,
+		ScopeString:     connection.ScopeString,
+		TokenStatus:     connection.TokenStatus,
+		LastVerifiedAt:  optionalTimeString(connection.LastVerifiedAt),
+		LastSyncedAt:    optionalTimeString(connection.LastSyncedAt),
+	}
+}
+
+func optionalTimeString(value *time.Time) *string {
+	if value == nil {
+		return nil
+	}
+	formatted := value.UTC().Format(time.RFC3339)
+	return &formatted
+}
+
+func repositoryVisibility(private bool) string {
+	if private {
+		return "private"
+	}
+	return "public"
+}
+
+func repositoryUsesOAuth(repository *domain.Repository) bool {
+	if repository == nil {
+		return false
+	}
+	return repository.AccessSource == domain.RepositoryAccessSourceOAuthUser ||
+		repository.GitHubConnectionID > 0 ||
+		repository.GitHubRepositoryAccessID > 0
 }
 
 func compactStrings(values []string) []string {

@@ -32,7 +32,7 @@ describe('projectDeliverySetupChecklist', () => {
 
     expect(summary.canStart).toBe(false);
     expect(summary.items.find(item => item.id === 'github')?.state).toBe('waiting');
-    expect(summary.nextAction).toContain('GitHub App 权限');
+    expect(summary.nextAction).toContain('GitHub 仓库权限');
   });
 
   it('blocks start when GitHub readiness reports required failures', () => {

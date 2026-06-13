@@ -501,7 +501,7 @@ const messages: DashboardMessages = {
       },
       github: {
         title: 'GitHub binding',
-        description: 'Install the GitHub App, sync repositories, then bind repos as primary, dependency, docs, or infra.',
+        description: 'Connect GitHub, sync authorized repositories, then bind repos as primary, dependency, docs, or infra.',
       },
       review: {
         title: 'Review Queue',
@@ -734,7 +734,7 @@ const messages: DashboardMessages = {
       noRepositoryMatchesTitle: 'No matching repositories',
       noRepositoryMatchesDescription: 'Try another keyword or authorize more repositories in GitHub.',
       emptyRepositoriesTitle: 'No repositories available',
-      emptyRepositoriesDescription: 'Connect the GitHub App and sync authorized repositories, then import a project here.',
+      emptyRepositoriesDescription: 'Connect GitHub and sync authorized repositories, then import a project here.',
       manageGitHub: 'Manage GitHub',
       import: 'Import',
       importing: 'Importing',
@@ -921,8 +921,8 @@ const messages: DashboardMessages = {
       dialogDescription:
         'Choose repositories from the authorized GitHub pool for this project. One repository should be the writable primary target.',
       connectedRepositories: 'Connected to this project',
-      availableRepositories: 'GitHub App repositories',
-      authorizedCount: '{count} authorized by the GitHub App',
+      availableRepositories: 'Authorized GitHub repositories',
+      authorizedCount: '{count} authorized repositories',
       primaryNotAppAuthorized:
         'This primary repository was added manually and is not ready for GitHub delivery.',
       searchPlaceholder: 'Search owner, repository, or ID',
@@ -947,11 +947,11 @@ const messages: DashboardMessages = {
       binding: 'Binding',
       authorizeMore: 'Authorize more repositories',
       allAuthorizedBoundTitle: 'All authorized repositories are already connected',
-      allAuthorizedBoundHint: 'All currently authorized repositories are already bound. To add more, authorize more repositories in the GitHub App, then return here to bind them.',
-      manualRepositoriesTitle: 'Repositories that need GitHub App access',
+      allAuthorizedBoundHint: 'All currently authorized repositories are already bound. To add more, authorize more repositories in GitHub, sync again, then return here to bind them.',
+      manualRepositoriesTitle: 'Repositories that need GitHub authorization',
       manualRepositoriesDescription:
-        'These repository records were added manually or before the GitHub App sync. Authorize them in GitHub and sync again before using them for delivery.',
-      needsAppAuthorization: 'Needs GitHub App access',
+        'These repository records were added manually or before repository access sync. Authorize them in GitHub and sync again before using them for delivery.',
+      needsAppAuthorization: 'Needs GitHub access',
       primaryAction: 'Set primary',
       contextAction: 'Use as context',
       boundMessage: 'Repository bound to this project.',
@@ -1051,12 +1051,15 @@ const messages: DashboardMessages = {
       emptyRepositories: 'No authorized GitHub repositories are available for this workspace yet.',
       connectRepository: 'Connect GitHub',
       syncRepositories: 'Sync repositories',
+      refreshRepositories: 'Refresh list',
       openDialog: 'Bind repository',
       dialogTitle: 'Bind repository',
       dialogDescription: 'Select a GitHub repository from the workspace authorized repository pool.',
       dialogHint: 'Open the repository picker to bind one to this project.',
       cancel: 'Cancel',
       role: 'Role',
+      writable: 'Writable',
+      readOnly: 'Read-only',
       binding: 'Binding',
       submit: 'Select repository',
       roles: {
@@ -1083,7 +1086,7 @@ const messages: DashboardMessages = {
       readiness: {
         title: 'Preflight checks',
         description:
-          'Check GitHub App installation, repository permissions, and access tokens before creating Issues, pushing branches, and opening PRs.',
+          'Check the GitHub account connection, repository permissions, and access tokens before creating Issues, pushing branches, and opening PRs.',
         error: 'Could not load preflight checks. Confirm the API is running, sign in again, and retry.',
         checkingRepository: 'Checking the current primary repository...',
         noChecks: 'Some preflight checks have not passed yet. Resolve them before retrying.',

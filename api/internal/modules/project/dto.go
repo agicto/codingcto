@@ -71,6 +71,20 @@ type ProjectRepositoryListResponse struct {
 	Repositories []*domain.SpecForgeProjectRepository `json:"repositories"`
 }
 
+type ProjectRepositoryOptionsResponse struct {
+	Repositories []*ProjectRepositoryOption `json:"repositories"`
+}
+
+type ProjectRepositoryOption struct {
+	RepositoryID   string                         `json:"repository_id"`
+	Access         *domain.GitHubRepositoryAccess `json:"access"`
+	AlreadyBound   bool                           `json:"already_bound"`
+	BoundRole      string                         `json:"bound_role,omitempty"`
+	Writable       bool                           `json:"writable"`
+	Selectable     bool                           `json:"selectable"`
+	DisabledReason string                         `json:"disabled_reason,omitempty"`
+}
+
 type ProjectContextResponse struct {
 	Context *domain.SpecForgeProjectContext `json:"context"`
 }
