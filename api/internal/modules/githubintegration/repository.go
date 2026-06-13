@@ -79,7 +79,7 @@ func (r *repository) UpsertAccountConnection(ctx context.Context, connection *do
 	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
 		Columns: []clause.Column{{Name: "workspace_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
-			"user_id", "github_user_id", "github_login", "github_name", "github_avatar_url",
+			"user_id", "git_hub_user_id", "git_hub_login", "git_hub_name", "git_hub_avatar_url",
 			"access_token_encrypted", "refresh_token_encrypted", "scope_string", "token_status",
 			"last_verified_at", "last_synced_at", "updated_at",
 		}),
@@ -136,7 +136,7 @@ func (r *repository) TouchAccountConnectionSyncedAt(ctx context.Context, workspa
 func (r *repository) UpsertRepositoryAccess(ctx context.Context, access *domain.GitHubRepositoryAccess) error {
 	po := newGitHubRepositoryAccessPO(access)
 	if err := r.db.WithContext(ctx).Clauses(clause.OnConflict{
-		Columns: []clause.Column{{Name: "workspace_id"}, {Name: "github_repo_id"}},
+		Columns: []clause.Column{{Name: "workspace_id"}, {Name: "git_hub_repo_id"}},
 		DoUpdates: clause.AssignmentColumns([]string{
 			"connection_id", "owner_login", "repo_name", "full_name", "html_url",
 			"default_branch", "visibility", "is_private", "source_type", "organization_login",
@@ -156,7 +156,7 @@ func (r *repository) UpsertRepositoryAccess(ctx context.Context, access *domain.
 func (r *repository) FindRepositoryAccessByWorkspaceAndGitHubRepoID(ctx context.Context, workspaceID string, githubRepoID int64) (*domain.GitHubRepositoryAccess, error) {
 	var po GitHubRepositoryAccessPO
 	if err := r.db.WithContext(ctx).
-		Where("workspace_id = ? AND github_repo_id = ?", strings.TrimSpace(workspaceID), githubRepoID).
+		Where("workspace_id = ? AND git_hub_repo_id = ?", strings.TrimSpace(workspaceID), githubRepoID).
 		First(&po).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, domain.ErrNotFound
