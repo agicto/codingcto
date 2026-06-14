@@ -7,20 +7,32 @@ import (
 )
 
 type CreateSourceRequest struct {
-	SourceType string `json:"source_type" binding:"required,oneof=github_url local_path"`
-	RepoURL    string `json:"repo_url" binding:"omitempty,max=1000"`
-	LocalPath  string `json:"local_path" binding:"omitempty,max=1000"`
-	Branch     string `json:"branch" binding:"omitempty,max=120"`
-	PAT        string `json:"pat" binding:"omitempty,max=4000"`
+	SourceType    string `json:"source_type" binding:"required,oneof=github_url local_path github_repository"`
+	WorkspaceID   string `json:"workspace_id" binding:"omitempty,max=255"`
+	ProjectID     uint   `json:"project_id" binding:"omitempty"`
+	RepositoryID  string `json:"repository_id" binding:"omitempty,max=255"`
+	RepoURL       string `json:"repo_url" binding:"omitempty,max=1000"`
+	LocalPath     string `json:"local_path" binding:"omitempty,max=1000"`
+	Branch        string `json:"branch" binding:"omitempty,max=120"`
+	GitHubOwner   string `json:"github_owner" binding:"omitempty,max=255"`
+	GitHubRepo    string `json:"github_repo" binding:"omitempty,max=255"`
+	DefaultBranch string `json:"default_branch" binding:"omitempty,max=120"`
+	PAT           string `json:"pat" binding:"omitempty,max=4000"`
 }
 
 type SourceResponse struct {
 	ID            uint       `json:"id"`
 	CreatedBy     uint       `json:"created_by"`
+	WorkspaceID   string     `json:"workspace_id,omitempty"`
+	ProjectID     uint       `json:"project_id,omitempty"`
+	RepositoryID  string     `json:"repository_id,omitempty"`
 	SourceType    string     `json:"source_type"`
 	RepoURL       string     `json:"repo_url,omitempty"`
 	LocalPath     string     `json:"local_path,omitempty"`
 	Branch        string     `json:"branch,omitempty"`
+	GitHubOwner   string     `json:"github_owner,omitempty"`
+	GitHubRepo    string     `json:"github_repo,omitempty"`
+	DefaultBranch string     `json:"default_branch,omitempty"`
 	Status        string     `json:"status"`
 	LastIndexedAt *time.Time `json:"last_indexed_at,omitempty"`
 	LastFailure   string     `json:"last_failure,omitempty"`
@@ -34,24 +46,28 @@ type SourceListResponse struct {
 }
 
 type IndexResponse struct {
-	ID              uint           `json:"id"`
-	SourceID        uint           `json:"source_id"`
-	CommitSHA       string         `json:"commit_sha,omitempty"`
-	FileCount       int            `json:"file_count"`
-	ChunkCount      int            `json:"chunk_count"`
-	LanguageSummary map[string]int `json:"language_summary"`
-	FileTree        []string       `json:"file_tree"`
-	Entrypoints     []string       `json:"entrypoints"`
-	Routes          []string       `json:"routes"`
-	Services        []string       `json:"services"`
-	Models          []string       `json:"models"`
-	Configs         []string       `json:"configs"`
-	Frameworks      []string       `json:"frameworks"`
-	PackageManager  string         `json:"package_manager,omitempty"`
-	Status          string         `json:"status"`
-	ErrorMessage    string         `json:"error_message,omitempty"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+	ID                uint           `json:"id"`
+	SourceID          uint           `json:"source_id"`
+	CommitSHA         string         `json:"commit_sha,omitempty"`
+	FileCount         int            `json:"file_count"`
+	ChunkCount        int            `json:"chunk_count"`
+	LanguageSummary   map[string]int `json:"language_summary"`
+	FileTree          []string       `json:"file_tree"`
+	Entrypoints       []string       `json:"entrypoints"`
+	Routes            []string       `json:"routes"`
+	Services          []string       `json:"services"`
+	Models            []string       `json:"models"`
+	Configs           []string       `json:"configs"`
+	Frameworks        []string       `json:"frameworks"`
+	PackageManager    string         `json:"package_manager,omitempty"`
+	GenerationMode    string         `json:"generation_mode"`
+	GeneratorProvider string         `json:"generator_provider,omitempty"`
+	GeneratorModel    string         `json:"generator_model,omitempty"`
+	PromptVersion     string         `json:"prompt_version,omitempty"`
+	Status            string         `json:"status"`
+	ErrorMessage      string         `json:"error_message,omitempty"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
 }
 
 type PageResponse struct {
@@ -102,10 +118,16 @@ func sourceResponse(source *domain.DeepWikiSource) *SourceResponse {
 	return &SourceResponse{
 		ID:            source.ID,
 		CreatedBy:     source.CreatedBy,
+		WorkspaceID:   source.WorkspaceID,
+		ProjectID:     source.ProjectID,
+		RepositoryID:  source.RepositoryID,
 		SourceType:    source.SourceType,
 		RepoURL:       source.RepoURL,
 		LocalPath:     source.LocalPath,
 		Branch:        source.Branch,
+		GitHubOwner:   source.GitHubOwner,
+		GitHubRepo:    source.GitHubRepo,
+		DefaultBranch: source.DefaultBranch,
 		Status:        source.Status,
 		LastIndexedAt: source.LastIndexedAt,
 		LastFailure:   source.LastFailure,
@@ -128,24 +150,28 @@ func indexResponse(index *domain.DeepWikiIndex) *IndexResponse {
 		return nil
 	}
 	return &IndexResponse{
-		ID:              index.ID,
-		SourceID:        index.SourceID,
-		CommitSHA:       index.CommitSHA,
-		FileCount:       index.FileCount,
-		ChunkCount:      index.ChunkCount,
-		LanguageSummary: index.LanguageSummary,
-		FileTree:        index.FileTree,
-		Entrypoints:     index.Entrypoints,
-		Routes:          index.Routes,
-		Services:        index.Services,
-		Models:          index.Models,
-		Configs:         index.Configs,
-		Frameworks:      index.Frameworks,
-		PackageManager:  index.PackageManager,
-		Status:          index.Status,
-		ErrorMessage:    index.ErrorMessage,
-		CreatedAt:       index.CreatedAt,
-		UpdatedAt:       index.UpdatedAt,
+		ID:                index.ID,
+		SourceID:          index.SourceID,
+		CommitSHA:         index.CommitSHA,
+		FileCount:         index.FileCount,
+		ChunkCount:        index.ChunkCount,
+		LanguageSummary:   index.LanguageSummary,
+		FileTree:          index.FileTree,
+		Entrypoints:       index.Entrypoints,
+		Routes:            index.Routes,
+		Services:          index.Services,
+		Models:            index.Models,
+		Configs:           index.Configs,
+		Frameworks:        index.Frameworks,
+		PackageManager:    index.PackageManager,
+		GenerationMode:    domain.NormalizeDeepWikiGenerationMode(index.GenerationMode),
+		GeneratorProvider: index.GeneratorProvider,
+		GeneratorModel:    index.GeneratorModel,
+		PromptVersion:     index.PromptVersion,
+		Status:            index.Status,
+		ErrorMessage:      index.ErrorMessage,
+		CreatedAt:         index.CreatedAt,
+		UpdatedAt:         index.UpdatedAt,
 	}
 }
 

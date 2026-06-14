@@ -45,6 +45,7 @@ import { useCreateWorkspace } from '@/features/project/hooks/use-projects';
 import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
 import {
   projectDeliveryIntakeHref,
+  projectDeepWikiHref,
   projectIdFromConsolePathname,
   projectSpecForgeHref,
   slugFromProjectName,
@@ -101,6 +102,9 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const boardHref = currentProjectId
     ? projectSpecForgeHref(currentProjectId)
     : ROUTES.CONSOLE.SPECFORGE;
+  const deepWikiHref = currentProjectId
+    ? projectDeepWikiHref(currentProjectId)
+    : ROUTES.CONSOLE.DEEPWIKI;
   const agentsHref = `${ROUTES.CONSOLE.AGENTS}?return_to=${encodeURIComponent(boardHref)}`;
   const newRequirementHref = currentProjectId
     ? projectDeliveryIntakeHref(currentProjectId)
@@ -127,7 +131,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
     },
     {
       title: sidebarT('items.deepwiki.title'),
-      href: ROUTES.CONSOLE.DEEPWIKI,
+      href: deepWikiHref,
       icon: BookOpen,
       description: sidebarT('items.deepwiki.description'),
       activeOn: 'deepwiki',
@@ -598,8 +602,10 @@ function isSidebarItemActive(
   }
   if (item.activeOn === 'projects') {
     const isProjectScopedDelivery = pathname.includes('/codingcto');
+    const isProjectScopedDeepWiki = pathname.includes('/deepwiki');
     return (
       !isProjectScopedDelivery &&
+      !isProjectScopedDeepWiki &&
       (pathname === ROUTES.CONSOLE.PROJECTS || pathname.startsWith('/console/projects/'))
     );
   }
@@ -607,7 +613,11 @@ function isSidebarItemActive(
     return pathname.includes('/codingcto');
   }
   if (item.activeOn === 'deepwiki') {
-    return pathname === ROUTES.CONSOLE.DEEPWIKI || pathname.startsWith(`${ROUTES.CONSOLE.DEEPWIKI}/`);
+    return (
+      pathname === ROUTES.CONSOLE.DEEPWIKI ||
+      pathname.startsWith(`${ROUTES.CONSOLE.DEEPWIKI}/`) ||
+      /^\/console\/projects\/\d+\/deepwiki(?:\/|$)/.test(pathname)
+    );
   }
   if (item.activeOn === 'experts') {
     return pathname === ROUTES.CONSOLE.EXPERTS || pathname.startsWith(`${ROUTES.CONSOLE.EXPERTS}/`);

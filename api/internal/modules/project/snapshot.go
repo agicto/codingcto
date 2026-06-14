@@ -140,7 +140,7 @@ func (s *service) deepWikiSummaryForRepository(ctx context.Context, userID uint,
 		SourceType:    strings.TrimSpace(source.SourceType),
 		SourceStatus:  strings.TrimSpace(source.Status),
 		RepoURL:       strings.TrimSpace(source.RepoURL),
-		MatchedBy:     "github_url",
+		MatchedBy:     deepWikiSourceMatchReason(source, repository),
 		LastIndexedAt: source.LastIndexedAt,
 		Warnings:      []string{},
 	}
@@ -159,6 +159,10 @@ func (s *service) deepWikiSummaryForRepository(ctx context.Context, userID uint,
 	summary.IndexStatus = strings.TrimSpace(index.Status)
 	summary.FileCount = index.FileCount
 	summary.ChunkCount = index.ChunkCount
+	summary.GenerationMode = domain.NormalizeDeepWikiGenerationMode(index.GenerationMode)
+	summary.GeneratorProvider = strings.TrimSpace(index.GeneratorProvider)
+	summary.GeneratorModel = strings.TrimSpace(index.GeneratorModel)
+	summary.PromptVersion = strings.TrimSpace(index.PromptVersion)
 	summary.Frameworks = compactProjectSnapshotStrings(index.Frameworks)
 	summary.Entrypoints = compactProjectSnapshotStrings(index.Entrypoints)
 	summary.Routes = compactProjectSnapshotStrings(index.Routes)
@@ -205,6 +209,20 @@ func (s *service) findMatchedDeepWikiSource(ctx context.Context, userID uint, re
 	if s.deepwikiStore == nil || repository == nil || userID == 0 {
 		return nil, nil
 	}
+	repositoryID := strings.TrimSpace(repository.RepositoryID)
+	if repositoryID != "" && strings.TrimSpace(repository.WorkspaceID) != "" {
+		sources, _, err := s.deepwikiStore.ListSources(ctx, domain.DeepWikiSourceFilter{
+			WorkspaceID:  strings.TrimSpace(repository.WorkspaceID),
+			RepositoryID: repositoryID,
+			SourceType:   domain.DeepWikiSourceTypeGitHubRepository,
+		}, 1, 1)
+		if err != nil {
+			return nil, err
+		}
+		if len(sources) > 0 {
+			return sources[0], nil
+		}
+	}
 
 	page := 1
 	pageSize := 100
@@ -237,6 +255,16 @@ func deepWikiSourceMatchesRepository(source *domain.DeepWikiSource, repository *
 		return false
 	}
 	return normalizeGitHubRepoPath(source.RepoURL) == normalizeGitHubRepoOwnerRepo(repository.GitHubOwner, repository.GitHubRepo)
+}
+
+func deepWikiSourceMatchReason(source *domain.DeepWikiSource, repository *domain.Repository) string {
+	if source == nil || repository == nil {
+		return ""
+	}
+	if strings.TrimSpace(source.RepositoryID) != "" && strings.TrimSpace(source.RepositoryID) == strings.TrimSpace(repository.RepositoryID) {
+		return "repository_id"
+	}
+	return "github_url"
 }
 
 func normalizeGitHubRepoOwnerRepo(owner, repo string) string {

@@ -590,16 +590,20 @@ func TestServiceRefreshProjectContextPersistsUnifiedSnapshot(t *testing.T) {
 		},
 		indexes: map[uint]*domain.DeepWikiIndex{
 			50: {
-				ID:          60,
-				SourceID:    50,
-				CommitSHA:   "abc123",
-				FileCount:   120,
-				ChunkCount:  420,
-				Frameworks:  []string{"gin", "next.js"},
-				Entrypoints: []string{"cmd/server/main.go"},
-				Services:    []string{"project", "planning"},
-				Models:      []string{"specforge_projects"},
-				Status:      domain.DeepWikiStatusReady,
+				ID:                60,
+				SourceID:          50,
+				CommitSHA:         "abc123",
+				FileCount:         120,
+				ChunkCount:        420,
+				Frameworks:        []string{"gin", "next.js"},
+				Entrypoints:       []string{"cmd/server/main.go"},
+				Services:          []string{"project", "planning"},
+				Models:            []string{"specforge_projects"},
+				GenerationMode:    domain.DeepWikiGenerationModeLLM,
+				GeneratorProvider: "openai",
+				GeneratorModel:    "gpt-5",
+				PromptVersion:     "deepwiki-llm-v1",
+				Status:            domain.DeepWikiStatusReady,
 			},
 		},
 		pages: map[uint][]*domain.DeepWikiPage{
@@ -635,6 +639,8 @@ func TestServiceRefreshProjectContextPersistsUnifiedSnapshot(t *testing.T) {
 	require.Len(t, snapshot.Repositories, 1)
 	require.NotNil(t, snapshot.Repositories[0].DeepWiki)
 	require.Equal(t, 2, snapshot.Repositories[0].DeepWiki.PageCount)
+	require.Equal(t, domain.DeepWikiGenerationModeLLM, snapshot.Repositories[0].DeepWiki.GenerationMode)
+	require.Equal(t, "gpt-5", snapshot.Repositories[0].DeepWiki.GeneratorModel)
 	require.Equal(t, []string{"Repository overview", "Architecture"}, snapshot.Repositories[0].DeepWiki.TopPages)
 
 	contextBundle, err := svc.GetProjectContext(context.Background(), project.ID)
@@ -675,6 +681,139 @@ func TestServiceRefreshProjectContextMarksMissingDeepWikiEvidence(t *testing.T) 
 	require.Equal(t, domain.ProjectReadinessStatusAttention, snapshot.SnapshotStatus)
 	require.Contains(t, snapshot.MissingEvidence, "deepwiki_index:repo_1")
 	require.Contains(t, snapshot.Summary, "no DeepWiki index matched")
+}
+
+func TestServiceListProjectDeepWikiReadsExistingWikiWithoutAutoEnsure(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {
+				RepositoryID:  "repo_1",
+				WorkspaceID:   "workspace_1",
+				GitHubOwner:   "agicto",
+				GitHubRepo:    "codingcto",
+				DefaultBranch: "main",
+			},
+		},
+	}
+	deepwikiStore := &fakeDeepWikiStore{
+		sources: []*domain.DeepWikiSource{
+			{
+				ID:           50,
+				WorkspaceID:  "workspace_1",
+				RepositoryID: "repo_1",
+				SourceType:   domain.DeepWikiSourceTypeGitHubRepository,
+				Status:       domain.DeepWikiStatusReady,
+			},
+		},
+		indexes: map[uint]*domain.DeepWikiIndex{
+			50: {
+				ID:         60,
+				SourceID:   50,
+				FileCount:  12,
+				ChunkCount: 34,
+				Status:     domain.DeepWikiStatusReady,
+			},
+		},
+		pages: map[uint][]*domain.DeepWikiPage{
+			60: {
+				{ID: 70, IndexID: 60, Slug: "overview", Title: "Overview"},
+			},
+		},
+	}
+	indexer := &fakeProjectDeepWikiIndexer{}
+	svc := NewServiceWithDeepWikiIndexer(store, workspaces, github, nil, nil, nil, nil, nil, deepwikiStore, indexer)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "CodingCTO",
+		Slug:        "codingcto",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+	indexer.ensureCount = 0
+
+	repositories, err := svc.ListProjectDeepWiki(context.Background(), 42, project.ID)
+	require.NoError(t, err)
+	require.Len(t, repositories, 1)
+	require.NotNil(t, repositories[0].Source)
+	require.Equal(t, uint(50), repositories[0].Source.ID)
+	require.NotNil(t, repositories[0].Index)
+	require.Equal(t, uint(60), repositories[0].Index.ID)
+	require.Equal(t, domain.DeepWikiGenerationModeLegacyTemplate, repositories[0].Index.GenerationMode)
+	require.Len(t, repositories[0].Pages, 1)
+	require.Equal(t, 0, indexer.ensureCount)
+}
+
+func TestServiceBindRepositoryEnsuresDeepWiki(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {
+				RepositoryID:  "repo_1",
+				WorkspaceID:   "workspace_1",
+				GitHubOwner:   "agicto",
+				GitHubRepo:    "codingcto",
+				DefaultBranch: "main",
+			},
+		},
+	}
+	indexer := &fakeProjectDeepWikiIndexer{}
+	svc := NewServiceWithDeepWikiIndexer(store, workspaces, github, nil, nil, nil, nil, nil, &fakeDeepWikiStore{}, indexer)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "CodingCTO",
+		Slug:        "codingcto",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+	require.Equal(t, 1, indexer.ensureCount)
+}
+
+func TestServiceDeleteProjectRepositoryDeepWikiCallsIndexer(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"repo_1": {
+				RepositoryID:  "repo_1",
+				WorkspaceID:   "workspace_1",
+				GitHubOwner:   "agicto",
+				GitHubRepo:    "codingcto",
+				DefaultBranch: "main",
+			},
+		},
+	}
+	indexer := &fakeProjectDeepWikiIndexer{}
+	svc := NewServiceWithDeepWikiIndexer(store, workspaces, github, nil, nil, nil, nil, nil, &fakeDeepWikiStore{}, indexer)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "CodingCTO",
+		Slug:        "codingcto",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "repo_1",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+	indexer.deleteCount = 0
+
+	require.NoError(t, svc.DeleteProjectRepositoryDeepWiki(context.Background(), 42, project.ID, "repo_1"))
+	require.Equal(t, 1, indexer.deleteCount)
+	require.Equal(t, "repo_1", indexer.deletedRepositoryID)
 }
 
 func TestServiceCreateAndUpdateProjectExpertPolicyVersions(t *testing.T) {
@@ -1131,6 +1270,21 @@ func (f *fakeDeepWikiStore) ListSources(_ context.Context, filter domain.DeepWik
 		if filter.CreatedBy > 0 && source.CreatedBy != filter.CreatedBy {
 			continue
 		}
+		if strings.TrimSpace(filter.WorkspaceID) != "" && source.WorkspaceID != strings.TrimSpace(filter.WorkspaceID) {
+			continue
+		}
+		if filter.ProjectID > 0 && source.ProjectID != filter.ProjectID {
+			continue
+		}
+		if strings.TrimSpace(filter.RepositoryID) != "" && source.RepositoryID != strings.TrimSpace(filter.RepositoryID) {
+			continue
+		}
+		if strings.TrimSpace(filter.SourceType) != "" && source.SourceType != strings.TrimSpace(filter.SourceType) {
+			continue
+		}
+		if strings.TrimSpace(filter.Status) != "" && source.Status != strings.TrimSpace(filter.Status) {
+			continue
+		}
 		copied := *source
 		filtered = append(filtered, &copied)
 	}
@@ -1170,6 +1324,76 @@ func (f *fakeDeepWikiStore) ListPagesByIndexID(_ context.Context, indexID uint) 
 		out = append(out, &copied)
 	}
 	return out, nil
+}
+
+type fakeProjectDeepWikiIndexer struct {
+	source              *domain.DeepWikiSource
+	index               *domain.DeepWikiIndex
+	ensureCount         int
+	reindexCount        int
+	deleteCount         int
+	deletedRepositoryID string
+	err                 error
+}
+
+func (f *fakeProjectDeepWikiIndexer) EnsureRepositoryWiki(_ context.Context, _ uint, _ uint, repository *domain.Repository) (*domain.DeepWikiSource, *domain.DeepWikiIndex, error) {
+	f.ensureCount++
+	if f.err != nil {
+		return nil, nil, f.err
+	}
+	return f.repositorySource(repository), f.repositoryIndex(), nil
+}
+
+func (f *fakeProjectDeepWikiIndexer) ReindexRepositoryWiki(_ context.Context, _ uint, _ uint, repository *domain.Repository) (*domain.DeepWikiSource, *domain.DeepWikiIndex, error) {
+	f.reindexCount++
+	if f.err != nil {
+		return nil, nil, f.err
+	}
+	return f.repositorySource(repository), f.repositoryIndex(), nil
+}
+
+func (f *fakeProjectDeepWikiIndexer) DeleteRepositoryWiki(_ context.Context, _ uint, _ uint, repository *domain.Repository) error {
+	f.deleteCount++
+	if repository != nil {
+		f.deletedRepositoryID = repository.RepositoryID
+	}
+	return f.err
+}
+
+func (f *fakeProjectDeepWikiIndexer) repositorySource(repository *domain.Repository) *domain.DeepWikiSource {
+	if f.source != nil {
+		copied := *f.source
+		return &copied
+	}
+	source := &domain.DeepWikiSource{
+		ID:           500,
+		SourceType:   domain.DeepWikiSourceTypeGitHubRepository,
+		Status:       domain.DeepWikiStatusReady,
+		RepositoryID: "",
+	}
+	if repository != nil {
+		source.WorkspaceID = repository.WorkspaceID
+		source.RepositoryID = repository.RepositoryID
+		source.GitHubOwner = repository.GitHubOwner
+		source.GitHubRepo = repository.GitHubRepo
+	}
+	return source
+}
+
+func (f *fakeProjectDeepWikiIndexer) repositoryIndex() *domain.DeepWikiIndex {
+	if f.index != nil {
+		copied := *f.index
+		return &copied
+	}
+	return &domain.DeepWikiIndex{
+		ID:                600,
+		SourceID:          500,
+		GenerationMode:    domain.DeepWikiGenerationModeLLM,
+		GeneratorProvider: "openai",
+		GeneratorModel:    "gpt-5",
+		PromptVersion:     "deepwiki-llm-v1",
+		Status:            domain.DeepWikiStatusReady,
+	}
 }
 
 func newMemoryProjectStore() *memoryProjectStore {

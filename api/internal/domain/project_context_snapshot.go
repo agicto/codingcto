@@ -40,22 +40,26 @@ type SpecForgeProjectContextSnapshotRepository struct {
 
 // SpecForgeProjectContextDeepWikiSummary is the compact DeepWiki view injected into project context snapshots.
 type SpecForgeProjectContextDeepWikiSummary struct {
-	SourceID      uint       `json:"source_id"`
-	IndexID       uint       `json:"index_id"`
-	SourceType    string     `json:"source_type,omitempty"`
-	SourceStatus  string     `json:"source_status,omitempty"`
-	IndexStatus   string     `json:"index_status,omitempty"`
-	RepoURL       string     `json:"repo_url,omitempty"`
-	MatchedBy     string     `json:"matched_by,omitempty"`
-	LastIndexedAt *time.Time `json:"last_indexed_at,omitempty"`
-	FileCount     int        `json:"file_count"`
-	ChunkCount    int        `json:"chunk_count"`
-	PageCount     int        `json:"page_count"`
-	Frameworks    []string   `json:"frameworks,omitempty"`
-	Entrypoints   []string   `json:"entrypoints,omitempty"`
-	Routes        []string   `json:"routes,omitempty"`
-	Services      []string   `json:"services,omitempty"`
-	Models        []string   `json:"models,omitempty"`
-	TopPages      []string   `json:"top_pages,omitempty"`
-	Warnings      []string   `json:"warnings,omitempty"`
+	SourceID          uint       `json:"source_id"`
+	IndexID           uint       `json:"index_id"`
+	SourceType        string     `json:"source_type,omitempty"`
+	SourceStatus      string     `json:"source_status,omitempty"`
+	IndexStatus       string     `json:"index_status,omitempty"`
+	RepoURL           string     `json:"repo_url,omitempty"`
+	MatchedBy         string     `json:"matched_by,omitempty"`
+	LastIndexedAt     *time.Time `json:"last_indexed_at,omitempty"`
+	FileCount         int        `json:"file_count"`
+	ChunkCount        int        `json:"chunk_count"`
+	PageCount         int        `json:"page_count"`
+	GenerationMode    string     `json:"generation_mode,omitempty"`
+	GeneratorProvider string     `json:"generator_provider,omitempty"`
+	GeneratorModel    string     `json:"generator_model,omitempty"`
+	PromptVersion     string     `json:"prompt_version,omitempty"`
+	Frameworks        []string   `json:"frameworks,omitempty"`
+	Entrypoints       []string   `json:"entrypoints,omitempty"`
+	Routes            []string   `json:"routes,omitempty"`
+	Services          []string   `json:"services,omitempty"`
+	Models            []string   `json:"models,omitempty"`
+	TopPages          []string   `json:"top_pages,omitempty"`
+	Warnings          []string   `json:"warnings,omitempty"`
 }

@@ -30,6 +30,9 @@ var ConfiguredProviderSet = wire.NewSet(
 	// Email Service - depends on Config
 	email.NewService,
 
+	// AI capability manager - depends on Config
+	NewAIManager,
+
 	// Event Bus
 	events.NewEventBus,
 

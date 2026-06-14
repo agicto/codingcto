@@ -4,6 +4,7 @@ import (
 	"github.com/google/wire"
 	"github.com/zgiai/luas/api/internal/contracts"
 	"github.com/zgiai/luas/api/internal/domain"
+	"github.com/zgiai/luas/api/internal/modules/deepwiki"
 	"github.com/zgiai/luas/api/internal/modules/githubintegration"
 )
 
@@ -14,7 +15,8 @@ var ProviderSet = wire.NewSet(
 	NewGitHubReadinessChecker,
 	NewRuntimeReadinessStore,
 	NewProjectDeepWikiStore,
-	NewService,
+	NewProjectDeepWikiIndexer,
+	NewServiceWithDeepWikiIndexer,
 	wire.Bind(new(Service), new(*service)),
 	NewHandler,
 )
@@ -35,6 +37,10 @@ func NewRuntimeReadinessStore(repo domain.SpecForgeExecutionRepository) runtimeR
 func NewProjectDeepWikiStore(repo domain.DeepWikiRepository) projectDeepWikiStore {
 	store, _ := repo.(projectDeepWikiStore)
 	return store
+}
+
+func NewProjectDeepWikiIndexer(service deepwiki.Service) projectDeepWikiIndexer {
+	return service
 }
 
 func NewStarterManifest(handler *Handler) contracts.StarterManifest {

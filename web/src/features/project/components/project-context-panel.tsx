@@ -51,13 +51,18 @@ import {
 } from '@/features/project/project-context';
 import type {
   ProjectContextDTO,
+  ProjectContextDeepWikiSummaryDTO,
   ProjectRepositoryContextDTO,
 } from '@/features/project/services/project-service';
 import {
   useGitHubRepositories,
   useReindexRepoArchitecture,
 } from '@/features/specforge/hooks/use-specforge';
-import { projectOverviewHref, projectSpecForgeHref } from '@/features/project/project-utils';
+import {
+  projectDeepWikiRepositoryHref,
+  projectOverviewHref,
+  projectSpecForgeHref,
+} from '@/features/project/project-utils';
 import { useT } from '@/i18n';
 
 export function ProjectContextPage() {
@@ -280,8 +285,21 @@ function ProjectContextSnapshotPanel({ context }: { context: ProjectContextDTO }
                           Top pages:{' '}
                           {(repository.deepwiki.top_pages ?? []).slice(0, 3).join(', ') || 'None'}
                         </div>
+                        <div className="mt-1">
+                          Generator: {deepWikiGeneratorLabel(repository.deepwiki)}
+                        </div>
                       </div>
                     ) : null}
+                    <Button asChild variant="outline" size="sm" className="mt-3 rounded-[4px]">
+                      <Link
+                        href={projectDeepWikiRepositoryHref(
+                          context.project.id,
+                          repository.repository_id
+                        )}
+                      >
+                        Open DeepWiki
+                      </Link>
+                    </Button>
                   </div>
                 ))}
               </div>
@@ -296,6 +314,19 @@ function ProjectContextSnapshotPanel({ context }: { context: ProjectContextDTO }
       </CardContent>
     </Card>
   );
+}
+
+function deepWikiGeneratorLabel(deepwiki: ProjectContextDeepWikiSummaryDTO | undefined) {
+  if (!deepwiki) {
+    return 'Missing';
+  }
+  if (deepwiki.generation_mode === 'llm') {
+    const model = [deepwiki.generator_provider, deepwiki.generator_model]
+      .filter(Boolean)
+      .join('/');
+    return model ? `LLM · ${model}` : 'LLM';
+  }
+  return 'Legacy template';
 }
 
 type ExpertPolicyFormState = {

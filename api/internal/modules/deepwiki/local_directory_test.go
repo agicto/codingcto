@@ -24,7 +24,7 @@ func TestBrowseLocalDirectories(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	svc := NewService(nil, nil)
+	svc := NewService(nil, nil, nil)
 	result, err := svc.BrowseLocalDirectories(context.Background(), 1, root)
 	if err != nil {
 		t.Fatalf("browse local directories: %v", err)
@@ -53,7 +53,7 @@ func TestBrowseLocalDirectoriesRejectsFiles(t *testing.T) {
 		t.Fatalf("write file: %v", err)
 	}
 
-	svc := NewService(nil, nil)
+	svc := NewService(nil, nil, nil)
 	_, err := svc.BrowseLocalDirectories(context.Background(), 1, filePath)
 	if !errors.Is(err, domain.ErrInvalidInput) {
 		t.Fatalf("expected invalid input, got %v", err)

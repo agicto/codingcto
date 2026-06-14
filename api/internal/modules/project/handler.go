@@ -208,6 +208,56 @@ func (h *Handler) RefreshProjectContext(c *gin.Context) {
 	response.Success(c, &ProjectContextSnapshotResponse{Snapshot: snapshot})
 }
 
+func (h *Handler) ListProjectDeepWiki(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+	repositories, err := h.service.ListProjectDeepWiki(c.Request.Context(), userID, projectID)
+	if err != nil {
+		response.HandleError(c, "Failed to list project DeepWiki", err)
+		return
+	}
+	response.Success(c, &ProjectDeepWikiResponse{Repositories: repositories})
+}
+
+func (h *Handler) ReindexProjectRepositoryDeepWiki(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+	repository, err := h.service.ReindexProjectRepositoryDeepWiki(c.Request.Context(), userID, projectID, c.Param("repository_id"))
+	if err != nil {
+		response.HandleError(c, "Failed to reindex project repository DeepWiki", err)
+		return
+	}
+	response.Success(c, &ProjectRepositoryDeepWikiResultResponse{Repository: repository})
+}
+
+func (h *Handler) DeleteProjectRepositoryDeepWiki(c *gin.Context) {
+	userID, ok := handler.GetUserID(c)
+	if !ok {
+		return
+	}
+	projectID, ok := handler.ParseID(c, "id")
+	if !ok {
+		return
+	}
+	if err := h.service.DeleteProjectRepositoryDeepWiki(c.Request.Context(), userID, projectID, c.Param("repository_id")); err != nil {
+		response.HandleError(c, "Failed to delete project repository DeepWiki", err)
+		return
+	}
+	response.NoContent(c)
+}
+
 func (h *Handler) GetProjectExpertPolicy(c *gin.Context) {
 	projectID, ok := handler.ParseID(c, "id")
 	if !ok {
