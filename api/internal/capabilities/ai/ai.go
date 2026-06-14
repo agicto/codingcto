@@ -9,9 +9,9 @@
 //     [Manager] for a stream and get [ErrStreamingUnsupported] when the
 //     selected provider only supports one-shot.
 //
-// Today the only built-in provider is OpenAI. Adding a new provider is
-// a single file: implement [Provider] (and optionally [StreamingProvider])
-// and register it in [NewManager].
+// Built-in providers are OpenAI and DeepSeek. Adding a new provider is a
+// single file: implement [Provider] (and optionally [StreamingProvider]) and
+// register it in [NewManager].
 package ai
 
 import (
@@ -25,6 +25,8 @@ import (
 const (
 	// ProviderOpenAI is the built-in OpenAI Responses-API provider.
 	ProviderOpenAI = "openai"
+	// ProviderDeepSeek is the built-in DeepSeek chat-completions provider.
+	ProviderDeepSeek = "deepseek"
 )
 
 var (
@@ -53,6 +55,7 @@ type Config struct {
 	DefaultModel    string
 	RequestTimeout  time.Duration
 	OpenAI          ProviderConfig
+	DeepSeek        ProviderConfig
 }
 
 // TextRequest is a provider-neutral text generation request.
@@ -122,6 +125,9 @@ func NewManager(cfg Config) *Manager {
 
 	if strings.TrimSpace(cfg.OpenAI.APIKey) != "" {
 		manager.providers[ProviderOpenAI] = NewOpenAIProvider(cfg.OpenAI, timeout)
+	}
+	if strings.TrimSpace(cfg.DeepSeek.APIKey) != "" {
+		manager.providers[ProviderDeepSeek] = NewDeepSeekProvider(cfg.DeepSeek, timeout)
 	}
 
 	return manager

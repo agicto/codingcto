@@ -114,6 +114,8 @@ func (r *Repository) loadFromEnv() {
 	r.Set("ai.request_timeout", env.GetDuration("AI_REQUEST_TIMEOUT", 120*time.Second))
 	r.Set("ai.openai.api_key", env.Get("OPENAI_API_KEY", ""))
 	r.Set("ai.openai.base_url", env.Get("OPENAI_BASE_URL", "https://api.openai.com/v1"))
+	r.Set("ai.deepseek.api_key", env.Get("DEEPSEEK_API_KEY", ""))
+	r.Set("ai.deepseek.base_url", env.Get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"))
 	r.Set("ai.anthropic.api_key", env.Get("ANTHROPIC_API_KEY", ""))
 	r.Set("ai.anthropic.base_url", env.Get("ANTHROPIC_BASE_URL", ""))
 	r.Set("ai.gemini.api_key", env.Get("GEMINI_API_KEY", ""))

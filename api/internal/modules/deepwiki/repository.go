@@ -148,7 +148,7 @@ func (r *repository) FindLatestIndexBySourceID(ctx context.Context, sourceID uin
 	var po IndexPO
 	if err := r.db.WithContext(ctx).
 		Where("source_id = ?", sourceID).
-		Order("created_at DESC, id DESC").
+		Order("updated_at DESC, id DESC").
 		First(&po).Error; err != nil {
 		if errors.Is(err, gorm.ErrRecordNotFound) {
 			return nil, domain.ErrNotFound

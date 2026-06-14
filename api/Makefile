@@ -11,6 +11,7 @@ LOCAL_PG_PASSWORD ?= luas_pass
 LOCAL_PG_ADMIN_DB ?= postgres
 LOCAL_PG_ADMIN_USER ?= postgres
 LOCAL_API_PORT ?= 2010
+LOCAL_AI_ENABLED ?= true
 
 LOCAL_PG_ENV = APP_ENV=development \
 	APP_DEBUG=true \
@@ -27,7 +28,7 @@ LOCAL_PG_ENV = APP_ENV=development \
 	DB_SSLMODE=disable \
 	DB_TIMEZONE=UTC \
 	JWT_SECRET=local-dev-secret-change-before-production \
-	AI_ENABLED=false \
+	AI_ENABLED=$(LOCAL_AI_ENABLED) \
 	TRACING_ENABLED=false \
 	LOG_CH_ENABLED=false
 

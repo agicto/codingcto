@@ -15,6 +15,8 @@ const request = createRequest({
   baseURL: env.NEXT_PUBLIC_SPECFORGE_API_URL,
 });
 
+const DEEPWIKI_GENERATION_TIMEOUT_MS = 10 * 60 * 1000;
+
 export const deepWikiService = {
   listSources: (config?: RequestConfig) =>
     request.get<DeepWikiSourceDTO[]>('/deepwiki/sources', config),
@@ -37,7 +39,7 @@ export const deepWikiService = {
     request.post<DeepWikiIndexDTO, IndexDeepWikiSourcePayload>(
       `/deepwiki/sources/${sourceId}/index`,
       payload,
-      config
+      { timeout: DEEPWIKI_GENERATION_TIMEOUT_MS, ...config }
     ),
 
   getLatestIndex: (sourceId: number, config?: RequestConfig) =>

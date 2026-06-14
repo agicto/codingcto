@@ -96,6 +96,10 @@ func loadAIConfig() ai.Config {
 			APIKey:  env.Get("OPENAI_API_KEY", ""),
 			BaseURL: env.Get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
 		},
+		DeepSeek: ai.ProviderConfig{
+			APIKey:  env.Get("DEEPSEEK_API_KEY", ""),
+			BaseURL: env.Get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
+		},
 	}
 }
 

@@ -139,6 +139,7 @@ type AIConfig struct {
 	DefaultModel    string
 	RequestTimeout  time.Duration
 	OpenAI          AIProviderConfig
+	DeepSeek        AIProviderConfig
 	// To add a new provider: add a field here, wire it in config.Load,
 	// and register the provider in ai.NewManager.
 }
@@ -260,6 +261,10 @@ func Load() (*Config, error) {
 			OpenAI: AIProviderConfig{
 				APIKey:  env.Get("OPENAI_API_KEY", ""),
 				BaseURL: env.Get("OPENAI_BASE_URL", "https://api.openai.com/v1"),
+			},
+			DeepSeek: AIProviderConfig{
+				APIKey:  env.Get("DEEPSEEK_API_KEY", ""),
+				BaseURL: env.Get("DEEPSEEK_BASE_URL", "https://api.deepseek.com"),
 			},
 		},
 		R2: R2Config{

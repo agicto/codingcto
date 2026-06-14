@@ -70,6 +70,71 @@ func TestOpenAIProviderGenerateText(t *testing.T) {
 	}
 }
 
+func TestDeepSeekProviderGenerateText(t *testing.T) {
+	server := httptest.NewServer(http.HandlerFunc(func(w http.ResponseWriter, r *http.Request) {
+		if r.URL.Path != "/chat/completions" {
+			t.Fatalf("path = %s, want /chat/completions", r.URL.Path)
+		}
+		if got := r.Header.Get("Authorization"); got != "Bearer test-key" {
+			t.Fatalf("authorization = %s, want Bearer test-key", got)
+		}
+
+		var body struct {
+			Model    string `json:"model"`
+			Messages []struct {
+				Role    string `json:"role"`
+				Content string `json:"content"`
+			} `json:"messages"`
+		}
+		if err := json.NewDecoder(r.Body).Decode(&body); err != nil {
+			t.Fatalf("decode request: %v", err)
+		}
+		if body.Model != "deepseek-v4-pro" {
+			t.Fatalf("model = %v, want deepseek-v4-pro", body.Model)
+		}
+		if len(body.Messages) != 2 || body.Messages[0].Role != "system" || body.Messages[1].Role != "user" {
+			t.Fatalf("messages = %#v, want system and user messages", body.Messages)
+		}
+		if body.Messages[1].Content != "ping" {
+			t.Fatalf("user content = %q, want ping", body.Messages[1].Content)
+		}
+
+		_ = json.NewEncoder(w).Encode(map[string]any{
+			"id":    "chat_1",
+			"model": "deepseek-v4-pro",
+			"choices": []map[string]any{
+				{
+					"message": map[string]any{
+						"content": "pong",
+					},
+				},
+			},
+		})
+	}))
+	defer server.Close()
+
+	provider := NewDeepSeekProvider(ProviderConfig{
+		APIKey:  "test-key",
+		BaseURL: server.URL,
+	}, 5*time.Second)
+
+	resp, err := provider.GenerateText(context.Background(), &TextRequest{
+		Model:        "deepseek-v4-pro",
+		Input:        "ping",
+		Instructions: "Be terse.",
+	})
+	if err != nil {
+		t.Fatalf("GenerateText() error = %v", err)
+	}
+
+	if resp.Text != "pong" {
+		t.Fatalf("text = %q, want pong", resp.Text)
+	}
+	if resp.Provider != ProviderDeepSeek {
+		t.Fatalf("provider = %q, want %q", resp.Provider, ProviderDeepSeek)
+	}
+}
+
 func TestManagerUsesDefaults(t *testing.T) {
 	manager := NewManager(Config{
 		Enabled:         true,
@@ -83,6 +148,23 @@ func TestManagerUsesDefaults(t *testing.T) {
 
 	if _, err := manager.GenerateText(context.Background(), &TextRequest{}); err != ErrInputRequired {
 		t.Fatalf("GenerateText() error = %v, want %v", err, ErrInputRequired)
+	}
+}
+
+func TestManagerRegistersDeepSeekProvider(t *testing.T) {
+	manager := NewManager(Config{
+		Enabled:         true,
+		DefaultProvider: ProviderDeepSeek,
+		DefaultModel:    "deepseek-v4-pro",
+		DeepSeek: ProviderConfig{
+			APIKey:  "test-key",
+			BaseURL: "http://127.0.0.1:1",
+		},
+	})
+
+	names := strings.Join(manager.ProviderNames(), ",")
+	if !strings.Contains(names, ProviderDeepSeek) {
+		t.Fatalf("ProviderNames() = %q, want %q", names, ProviderDeepSeek)
 	}
 }
 

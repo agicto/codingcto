@@ -137,6 +137,55 @@ func TestServiceFailsIndexWhenAIUnavailable(t *testing.T) {
 	}
 }
 
+func TestRepositoryFindLatestIndexBySourceIDUsesLastUpdatedIndex(t *testing.T) {
+	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	if err != nil {
+		t.Fatalf("open sqlite: %v", err)
+	}
+	if err := db.AutoMigrate(&SourcePO{}, &IndexPO{}, &ChunkPO{}, &PagePO{}); err != nil {
+		t.Fatalf("migrate: %v", err)
+	}
+	repo := NewRepository(db)
+	source := &domain.DeepWikiSource{
+		CreatedBy:  42,
+		SourceType: domain.DeepWikiSourceTypeLocalPath,
+		LocalPath:  "/tmp/example",
+		Status:     domain.DeepWikiStatusReady,
+	}
+	if err := repo.CreateSource(context.Background(), source); err != nil {
+		t.Fatalf("create source: %v", err)
+	}
+	base := time.Date(2026, 6, 14, 10, 0, 0, 0, time.UTC)
+	ready := &domain.DeepWikiIndex{
+		SourceID:  source.ID,
+		CommitSHA: "ready",
+		Status:    domain.DeepWikiStatusReady,
+		CreatedAt: base,
+		UpdatedAt: base.Add(3 * time.Minute),
+	}
+	if err := repo.CreateIndex(context.Background(), ready); err != nil {
+		t.Fatalf("create ready index: %v", err)
+	}
+	staleGenerating := &domain.DeepWikiIndex{
+		SourceID:  source.ID,
+		CommitSHA: "stale",
+		Status:    domain.DeepWikiStatusGenerating,
+		CreatedAt: base.Add(30 * time.Second),
+		UpdatedAt: base.Add(30 * time.Second),
+	}
+	if err := repo.CreateIndex(context.Background(), staleGenerating); err != nil {
+		t.Fatalf("create stale generating index: %v", err)
+	}
+
+	latest, err := repo.FindLatestIndexBySourceID(context.Background(), source.ID)
+	if err != nil {
+		t.Fatalf("find latest index: %v", err)
+	}
+	if latest.ID != ready.ID {
+		t.Fatalf("latest index id = %d, want ready index %d", latest.ID, ready.ID)
+	}
+}
+
 func TestServiceRetriesInvalidLLMJSON(t *testing.T) {
 	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
 	if err != nil {

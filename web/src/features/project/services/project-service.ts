@@ -6,6 +6,8 @@ const request = createRequest({
   baseURL: env.NEXT_PUBLIC_SPECFORGE_API_URL,
 });
 
+const DEEPWIKI_GENERATION_TIMEOUT_MS = 10 * 60 * 1000;
+
 export interface ProjectDTO {
   id: number;
   workspace_id: string;
@@ -499,7 +501,7 @@ export const projectService = {
     request.post<{ repository: ProjectRepositoryDeepWikiDTO }>(
       `/projects/${projectId}/repositories/${encodeURIComponent(repositoryId)}/deepwiki/reindex`,
       undefined,
-      config
+      { timeout: DEEPWIKI_GENERATION_TIMEOUT_MS, ...config }
     ),
 
   deleteProjectRepositoryDeepWiki: (

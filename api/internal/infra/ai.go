@@ -18,5 +18,9 @@ func NewAIManager(cfg *config.Config) *ai.Manager {
 			APIKey:  cfg.AI.OpenAI.APIKey,
 			BaseURL: cfg.AI.OpenAI.BaseURL,
 		},
+		DeepSeek: ai.ProviderConfig{
+			APIKey:  cfg.AI.DeepSeek.APIKey,
+			BaseURL: cfg.AI.DeepSeek.BaseURL,
+		},
 	})
 }

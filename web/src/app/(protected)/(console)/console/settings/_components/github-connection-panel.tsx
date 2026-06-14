@@ -78,6 +78,11 @@ function withGitHubInstallState(installURL: string, workspaceId: string) {
   }
 }
 
+function absoluteBrowserURL(path: string) {
+  const origin = typeof window === 'undefined' ? env.NEXT_PUBLIC_APP_URL : window.location.origin;
+  return new URL(path, origin).toString();
+}
+
 function shellArg(value: string) {
   return `'${value.replaceAll("'", "'\\''")}'`;
 }
@@ -247,7 +252,8 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
     }
     setMessage('');
     try {
-      const redirectTo = `${ROUTES.CONSOLE.SETTINGS}?tab=github${targetQuery ? `&${targetQuery}` : ''}`;
+      const redirectPath = `${ROUTES.CONSOLE.SETTINGS}?tab=github${targetQuery ? `&${targetQuery}` : ''}`;
+      const redirectTo = absoluteBrowserURL(redirectPath);
       const result = await startOAuth.mutateAsync({
         workspace_id: workspaceId.trim(),
         redirect_to: redirectTo,

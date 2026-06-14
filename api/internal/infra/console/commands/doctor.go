@@ -26,9 +26,11 @@ func NewDoctorCommand() *DoctorCommand {
 	return &DoctorCommand{output: console.NewOutput()}
 }
 
-func (c *DoctorCommand) Name() string        { return "doctor" }
-func (c *DoctorCommand) Description() string { return "Audit .env vs .env.example and flag misconfigurations" }
-func (c *DoctorCommand) Usage() string       { return "doctor" }
+func (c *DoctorCommand) Name() string { return "doctor" }
+func (c *DoctorCommand) Description() string {
+	return "Audit .env vs .env.example and flag misconfigurations"
+}
+func (c *DoctorCommand) Usage() string { return "doctor" }
 
 func (c *DoctorCommand) Run(args []string) error {
 	c.output.Title("luas doctor")
@@ -119,10 +121,20 @@ func (c *DoctorCommand) Run(args []string) error {
 			check("ok", fmt.Sprintf("AI_DEFAULT_MODEL=%s", cfg.AI.DefaultModel), "")
 		}
 
-		if cfg.AI.OpenAI.APIKey == "" {
-			check("warn", "AI enabled but OPENAI_API_KEY is empty", "ai:chat will fail")
-		} else {
-			check("ok", "OPENAI_API_KEY is set", "")
+		defaultProvider := strings.ToLower(strings.TrimSpace(cfg.AI.DefaultProvider))
+		switch defaultProvider {
+		case "deepseek":
+			if cfg.AI.DeepSeek.APIKey == "" {
+				check("warn", "AI enabled but DEEPSEEK_API_KEY is empty", "ai:chat and DeepWiki generation will fail")
+			} else {
+				check("ok", "DEEPSEEK_API_KEY is set", "")
+			}
+		default:
+			if cfg.AI.OpenAI.APIKey == "" {
+				check("warn", "AI enabled but OPENAI_API_KEY is empty", "ai:chat and DeepWiki generation will fail")
+			} else {
+				check("ok", "OPENAI_API_KEY is set", "")
+			}
 		}
 	} else {
 		check("ok", "AI capability is disabled", "")
