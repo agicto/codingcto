@@ -2430,12 +2430,13 @@ func TestSweepStaleTasksPublishesLinkedFixTaskResult(t *testing.T) {
 }
 
 type memoryExecutionRepo struct {
-	nextID       uint
-	bundle       *domain.SpecForgeExecutionBundle
-	runtimes     map[string]*domain.SpecForgeRuntime
-	events       map[uint][]*domain.SpecForgeTaskEvent
-	directTasks  map[uint]*domain.CodingCTODirectAgentTask
-	directEvents map[uint][]*domain.CodingCTODirectTaskEvent
+	nextID          uint
+	bundle          *domain.SpecForgeExecutionBundle
+	runtimes        map[string]*domain.SpecForgeRuntime
+	runtimeBindings map[uint][]*domain.SpecForgeProjectRuntimeBinding
+	events          map[uint][]*domain.SpecForgeTaskEvent
+	directTasks     map[uint]*domain.CodingCTODirectAgentTask
+	directEvents    map[uint][]*domain.CodingCTODirectTaskEvent
 }
 
 func (r *memoryExecutionRepo) CreateExecutionBundle(ctx context.Context, bundle *domain.SpecForgeExecutionBundle) error {
@@ -2580,6 +2581,18 @@ func (r *memoryExecutionRepo) UpsertRuntime(ctx context.Context, runtime *domain
 	return nil
 }
 
+func (r *memoryExecutionRepo) FindRuntimeByRuntimeID(ctx context.Context, runtimeID string) (*domain.SpecForgeRuntime, error) {
+	runtimeID = strings.TrimSpace(runtimeID)
+	if runtimeID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	if r.runtimes == nil || r.runtimes[runtimeID] == nil {
+		return nil, domain.ErrNotFound
+	}
+	copied := *r.runtimes[runtimeID]
+	return &copied, nil
+}
+
 func (r *memoryExecutionRepo) ListRuntimes(ctx context.Context, executor, status string, limit int) ([]*domain.SpecForgeRuntime, error) {
 	executor = strings.TrimSpace(executor)
 	status = strings.TrimSpace(status)
@@ -2608,6 +2621,73 @@ func (r *memoryExecutionRepo) ListRuntimes(ctx context.Context, executor, status
 	})
 	if len(out) > limit {
 		out = out[:limit]
+	}
+	return out, nil
+}
+
+func (r *memoryExecutionRepo) CreateProjectRuntimeBinding(ctx context.Context, binding *domain.SpecForgeProjectRuntimeBinding) error {
+	if binding == nil || binding.ProjectID == 0 {
+		return domain.ErrInvalidInput
+	}
+	if r.runtimeBindings == nil {
+		r.runtimeBindings = map[uint][]*domain.SpecForgeProjectRuntimeBinding{}
+	}
+	r.nextID++
+	copied := *binding
+	copied.ID = r.nextID
+	binding.ID = copied.ID
+	r.runtimeBindings[binding.ProjectID] = append(r.runtimeBindings[binding.ProjectID], &copied)
+	return nil
+}
+
+func (r *memoryExecutionRepo) UpdateProjectRuntimeBinding(ctx context.Context, binding *domain.SpecForgeProjectRuntimeBinding) error {
+	if binding == nil || binding.ID == 0 || binding.ProjectID == 0 {
+		return domain.ErrInvalidInput
+	}
+	for projectID, items := range r.runtimeBindings {
+		for index, current := range items {
+			if current == nil || current.ID != binding.ID {
+				continue
+			}
+			if projectID != binding.ProjectID {
+				return domain.ErrPermissionDenied
+			}
+			copied := *binding
+			r.runtimeBindings[projectID][index] = &copied
+			return nil
+		}
+	}
+	return domain.ErrNotFound
+}
+
+func (r *memoryExecutionRepo) FindProjectRuntimeBindingByID(ctx context.Context, bindingID uint) (*domain.SpecForgeProjectRuntimeBinding, error) {
+	if bindingID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	for _, items := range r.runtimeBindings {
+		for _, binding := range items {
+			if binding == nil || binding.ID != bindingID {
+				continue
+			}
+			copied := *binding
+			return &copied, nil
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryExecutionRepo) ListProjectRuntimeBindingsByProjectID(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectRuntimeBinding, error) {
+	if projectID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	items := r.runtimeBindings[projectID]
+	out := make([]*domain.SpecForgeProjectRuntimeBinding, 0, len(items))
+	for _, binding := range items {
+		if binding == nil {
+			continue
+		}
+		copied := *binding
+		out = append(out, &copied)
 	}
 	return out, nil
 }
@@ -3286,6 +3366,7 @@ func (r *memoryExecutionProfileRepo) FindLatestArchitectureSnapshotByRepositoryI
 type memoryExecutionProjectRepo struct {
 	project      *domain.SpecForgeProject
 	repositories []*domain.SpecForgeProjectRepository
+	snapshots    map[uint][]*domain.SpecForgeProjectContextSnapshot
 }
 
 func (r *memoryExecutionProjectRepo) CreateProject(ctx context.Context, project *domain.SpecForgeProject) error {
@@ -3300,6 +3381,15 @@ func (r *memoryExecutionProjectRepo) UpdateProject(ctx context.Context, project 
 	}
 	copied := *project
 	r.project = &copied
+	return nil
+}
+
+func (r *memoryExecutionProjectRepo) DeleteProject(ctx context.Context, projectID uint) error {
+	if r.project == nil || r.project.ID != projectID {
+		return domain.ErrNotFound
+	}
+	r.project = nil
+	r.repositories = nil
 	return nil
 }
 
@@ -3383,6 +3473,74 @@ func (r *memoryExecutionProjectRepo) FindActivePrimaryProjectRepository(ctx cont
 		}
 	}
 	return nil, domain.ErrNotFound
+}
+
+func (r *memoryExecutionProjectRepo) CreateProjectContextSnapshot(ctx context.Context, snapshot *domain.SpecForgeProjectContextSnapshot) error {
+	if snapshot == nil {
+		return domain.ErrInvalidInput
+	}
+	copied := *snapshot
+	if copied.ID == 0 {
+		copied.ID = uint(len(r.snapshots[copied.ProjectID]) + 1)
+	}
+	if r.snapshots == nil {
+		r.snapshots = map[uint][]*domain.SpecForgeProjectContextSnapshot{}
+	}
+	r.snapshots[copied.ProjectID] = append(r.snapshots[copied.ProjectID], &copied)
+	*snapshot = copied
+	return nil
+}
+
+func (r *memoryExecutionProjectRepo) FindProjectContextSnapshotByID(ctx context.Context, id uint) (*domain.SpecForgeProjectContextSnapshot, error) {
+	for _, snapshots := range r.snapshots {
+		for _, snapshot := range snapshots {
+			if snapshot.ID == id {
+				copied := *snapshot
+				return &copied, nil
+			}
+		}
+	}
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryExecutionProjectRepo) FindLatestProjectContextSnapshot(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContextSnapshot, error) {
+	snapshots := r.snapshots[projectID]
+	if len(snapshots) == 0 {
+		return nil, domain.ErrNotFound
+	}
+	copied := *snapshots[len(snapshots)-1]
+	return &copied, nil
+}
+
+func (r *memoryExecutionProjectRepo) CreateProjectExpertPolicy(ctx context.Context, policy *domain.SpecForgeProjectExpertPolicy) error {
+	if policy == nil {
+		return domain.ErrInvalidInput
+	}
+	copied := *policy
+	if copied.ID == 0 {
+		copied.ID = 1
+	}
+	*policy = copied
+	return nil
+}
+
+func (r *memoryExecutionProjectRepo) UpdateProjectExpertPolicy(ctx context.Context, policy *domain.SpecForgeProjectExpertPolicy) error {
+	if policy == nil {
+		return domain.ErrInvalidInput
+	}
+	return nil
+}
+
+func (r *memoryExecutionProjectRepo) FindProjectExpertPolicyByID(ctx context.Context, id uint) (*domain.SpecForgeProjectExpertPolicy, error) {
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryExecutionProjectRepo) FindActiveProjectExpertPolicyByProjectID(ctx context.Context, projectID uint) (*domain.SpecForgeProjectExpertPolicy, error) {
+	return nil, domain.ErrNotFound
+}
+
+func (r *memoryExecutionProjectRepo) ListProjectExpertPoliciesByProjectID(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectExpertPolicy, error) {
+	return []*domain.SpecForgeProjectExpertPolicy{}, nil
 }
 
 type fakeExecutor struct {

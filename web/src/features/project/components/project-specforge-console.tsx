@@ -1,6 +1,6 @@
 'use client';
 
-import { FormEvent, useMemo, useState } from 'react';
+import { useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
@@ -37,7 +37,11 @@ import {
 } from '@/components/ui/dialog';
 import { useLocale } from '@/hooks/use-locale';
 import { useT } from '@/i18n';
-import { useBindProjectRepository, useProjectContext } from '@/features/project/hooks/use-projects';
+import {
+  useBindProjectRepository,
+  useProjectContext,
+  useProjectRepositoryOptions,
+} from '@/features/project/hooks/use-projects';
 import { primaryRepositoryContext } from '@/features/project/project-context';
 import { projectRequirementNewHref, projectSpecForgeHref } from '@/features/project/project-utils';
 import {
@@ -62,12 +66,10 @@ import {
   useCreateGitHubIssue,
   useCreateSpecForgeProjectIdea,
   useDispatchExecutionRun,
-  useGitHubRepositories,
   useGitHubRepositoryReadiness,
   useRepoArchitectureStatus,
   useSpecForgeRuntimes,
   useStartExecutionRun,
-  useUpsertGitHubRepository,
 } from '@/features/specforge/hooks/use-specforge';
 import {
   specForgeService,
@@ -128,10 +130,7 @@ export function ProjectSpecForgeConsole() {
               {t('primaryRequired.description')}
             </AlertDescription>
           </Alert>
-          <ProjectRepositoryBindPanel
-            projectId={projectId}
-            workspaceId={loadedContext.project.workspace_id}
-          />
+          <ProjectRepositoryBindPanel projectId={projectId} />
         </div>
       ) : (
         <ProjectMvpBoard
@@ -226,7 +225,7 @@ function ProjectMvpBoard({
       tone: repoReady && codexReady ? 'ready' : 'blocked',
       details: [
         `项目：${projectName}`,
-        repoReady ? `目标仓库：${repoId}` : '还没有绑定主仓库',
+        repoReady ? `目标仓库：${repoId}` : '还没有选择主仓库',
         wikiReady ? '仓库上下文已可用，可用于计划生成。' : '仓库上下文还不完整，建议先生成或更新。',
         codexReady ? 'Codex runtime 已在线。' : 'Codex runtime 未在线；可以先生成计划，执行前再处理。',
         githubReady ? 'GitHub readiness 检查通过。' : 'GitHub readiness 还需要检查。',
@@ -533,61 +532,31 @@ function ProjectScopedState({
   );
 }
 
-function ProjectRepositoryBindPanel({
-  projectId,
-  workspaceId,
-}: {
-  projectId: number;
-  workspaceId: string;
-}) {
+function ProjectRepositoryBindPanel({ projectId }: { projectId: number }) {
   const t = useT('dashboard.projectDelivery.bindPanel');
   const bindRepository = useBindProjectRepository(projectId);
-  const globalRepositoriesQuery = useGitHubRepositories();
-  const upsertRepository = useUpsertGitHubRepository();
-  const repositories = globalRepositoriesQuery.data?.repositories ?? [];
-  const [repositoryUrl, setRepositoryUrl] = useState('');
+  const repositoryOptionsQuery = useProjectRepositoryOptions(projectId);
+  const repositories = repositoryOptionsQuery.data?.repositories ?? [];
+  const selectableRepositories = repositories.filter(repository => repository.selectable);
+  const [selectedRepositoryId, setSelectedRepositoryId] = useState('');
   const [role, setRole] = useState('primary');
   const [message, setMessage] = useState('');
-  const parsedRepository = useMemo(() => parseGitHubRepositoryURL(repositoryUrl), [repositoryUrl]);
+  const selectedRepository = repositories.find(
+    repository => repository.repository_id === selectedRepositoryId
+  );
 
-  function findInstalledRepository() {
-    if (!parsedRepository) {
-      return undefined;
-    }
-    return repositories.find(
-      repository =>
-        repository.github_owner.toLowerCase() === parsedRepository.owner.toLowerCase() &&
-        repository.github_repo.toLowerCase() === parsedRepository.repo.toLowerCase()
-    );
-  }
-
-  async function bindRepositoryToProject(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
-    if (!parsedRepository) {
-      setMessage('请输入有效的 GitHub 仓库链接，例如 https://github.com/owner/repo。');
-      return;
-    }
-    const installedRepository = findInstalledRepository();
-    if (!installedRepository) {
-      setMessage('GitHub App 已安装，但当前可访问仓库列表里没有这个仓库。请确认安装时选择了该仓库，然后刷新。');
+  async function bindRepositoryToProject() {
+    if (!selectedRepository?.selectable) {
+      setMessage(t('messages.repositoryRequired'));
       return;
     }
     setMessage('');
     try {
-      const repository = await upsertRepository.mutateAsync({
-        repository_id: installedRepository.repository_id,
-        workspace_id: workspaceId,
-        github_installation_id: installedRepository.github_installation_id,
-        github_owner: installedRepository.github_owner,
-        github_repo: installedRepository.github_repo,
-        default_branch: installedRepository.default_branch,
-        is_private: installedRepository.is_private,
-      });
       const response = await bindRepository.mutateAsync({
-        repository_id: repository.repository_id,
+        repository_id: selectedRepository.repository_id,
         role: role as 'primary' | 'dependency' | 'docs' | 'infra',
       });
-      setRepositoryUrl('');
+      setSelectedRepositoryId('');
       setRole('primary');
       setMessage(
         t('messages.bound', {
@@ -604,33 +573,90 @@ function ProjectRepositoryBindPanel({
     <Card className="mt-4">
       <CardHeader>
         <CardTitle className="text-base">{t('title')}</CardTitle>
-        <CardDescription>
-          直接粘贴 GitHub 仓库链接。CodingCTO 会从已安装的 GitHub App 仓库列表中匹配，然后绑定到当前项目。
-        </CardDescription>
+        <CardDescription>{t('description')}</CardDescription>
       </CardHeader>
-      <CardContent>
-        <form
-          className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]"
-          onSubmit={bindRepositoryToProject}
-        >
-          <div className="space-y-2">
-            <Label htmlFor="project-repository-url">GitHub 仓库链接</Label>
-            <Input
-              id="project-repository-url"
-              value={repositoryUrl}
-              onChange={event => setRepositoryUrl(event.target.value)}
-              placeholder="https://github.com/owner/repo"
-            />
-            {repositories.length > 0 ? (
-              <div className="text-xs leading-5 text-text-muted">
-                已检测到 {repositories.length} 个 GitHub App 可访问仓库。
-              </div>
-            ) : (
-              <div className="text-xs leading-5 text-warning">
-                暂未读取到 GitHub App 仓库，请先在 GitHub 设置里同步安装结果。
-              </div>
-            )}
+      <CardContent className="space-y-4">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div className="text-xs leading-5 text-text-muted">
+            {repositoryOptionsQuery.isLoading
+              ? t('loadingRepositories')
+              : t('repositoryCount', { count: selectableRepositories.length })}
           </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Button asChild variant="outline" size="sm">
+              <Link href="/console/settings?tab=github">{t('connectRepository')}</Link>
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              disabled={repositoryOptionsQuery.isFetching}
+              onClick={() => repositoryOptionsQuery.refetch()}
+            >
+              {t('refreshRepositories')}
+            </Button>
+          </div>
+        </div>
+
+        {repositoryOptionsQuery.isLoading ? (
+          <div className="rounded-[4px] border border-border-subtle bg-bg-subtle p-3 text-sm leading-6 text-text-muted">
+            {t('loadingRepositories')}
+          </div>
+        ) : repositories.length > 0 ? (
+          <div className="max-h-[360px] space-y-2 overflow-y-auto pr-1">
+            {repositories.map(repository => {
+              const selected = selectedRepositoryId === repository.repository_id;
+              return (
+                <button
+                  key={repository.repository_id}
+                  type="button"
+                  disabled={!repository.selectable}
+                  onClick={() => setSelectedRepositoryId(repository.repository_id)}
+                  className={cn(
+                    'flex w-full items-start justify-between gap-3 rounded-[4px] border px-3 py-3 text-left transition-colors',
+                    selected
+                      ? 'border-primary bg-primary-subtle'
+                      : 'border-border-subtle bg-bg-surface hover:bg-bg-subtle',
+                    !repository.selectable && 'cursor-not-allowed opacity-65 hover:bg-bg-surface'
+                  )}
+                >
+                  <span className="min-w-0">
+                    <span className="block truncate text-sm font-medium text-text-main">
+                      {repository.access.full_name}
+                    </span>
+                    <span className="mt-0.5 block text-xs leading-5 text-text-muted">
+                      {repository.access.default_branch} · {repositorySourceLabel(repository)}
+                      {repository.disabled_reason ? ` · ${repository.disabled_reason}` : ''}
+                    </span>
+                  </span>
+                  <span className="flex shrink-0 flex-wrap justify-end gap-1">
+                    {repository.already_bound ? (
+                      <Badge variant="outline" className="border-border-subtle text-text-muted">
+                        {t(`roles.${repository.bound_role || 'dependency'}`)}
+                      </Badge>
+                    ) : null}
+                    <Badge
+                      variant="outline"
+                      className={
+                        repository.writable
+                          ? 'border-success/30 text-success'
+                          : 'border-border-subtle text-text-muted'
+                      }
+                    >
+                      {repository.writable ? t('writable') : t('readOnly')}
+                    </Badge>
+                  </span>
+                </button>
+              );
+            })}
+          </div>
+        ) : (
+          <div className="rounded-[4px] border border-border-subtle bg-bg-subtle p-3 text-sm leading-6 text-text-muted">
+            {t('emptyRepositories')}
+          </div>
+        )}
+
+        <div className="grid gap-3 md:grid-cols-[220px_auto] md:items-end">
           <div className="space-y-2">
             <Label htmlFor="project-repository-role">{t('role')}</Label>
             <Select value={role} onValueChange={setRole}>
@@ -646,19 +672,17 @@ function ProjectRepositoryBindPanel({
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-end">
+          <div className="flex justify-end">
             <Button
-              type="submit"
-              disabled={
-                bindRepository.isPending ||
-                upsertRepository.isPending ||
-                !repositoryUrl.trim()
-              }
+              type="button"
+              disabled={bindRepository.isPending || !selectedRepository?.selectable}
+              onClick={bindRepositoryToProject}
             >
-              {bindRepository.isPending || upsertRepository.isPending ? t('binding') : '绑定仓库'}
+              {bindRepository.isPending ? t('binding') : t('submit')}
             </Button>
           </div>
-        </form>
+        </div>
+
         {message && (
           <div className="mt-3 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm leading-5 text-text-muted">
             {message}
@@ -667,6 +691,20 @@ function ProjectRepositoryBindPanel({
       </CardContent>
     </Card>
   );
+}
+
+function repositorySourceLabel(repository: {
+  access: {
+    source_type: string;
+    organization_login?: string;
+    visibility?: string;
+  };
+}) {
+  const source =
+    repository.access.source_type === 'organization' && repository.access.organization_login
+      ? repository.access.organization_login
+      : 'personal';
+  return `${source} · ${repository.access.visibility || 'repository'}`;
 }
 
 type FlowStepStatus = 'pending' | 'running' | 'success' | 'error';
@@ -1136,7 +1174,7 @@ function ReadinessRecoveryActions({
     <div className="mt-3 rounded-md border border-warning/30 bg-warning-subtle p-3">
       <div className="text-sm font-medium text-warning">下一步处理</div>
       <p className="mt-1 text-xs leading-5 text-warning">
-        真实端到端试跑需要 GitHub App 安装、仓库绑定和写权限都就绪。先完成下面的配置，再回到这里重新检查。
+        真实端到端试跑需要 GitHub 连接、仓库绑定和写权限都就绪。先完成下面的配置，再回到这里重新检查。
       </p>
       <ProjectRepositoryIdentityDiagnostic identity={identity} />
       <div className="mt-3 grid gap-2 md:grid-cols-2">
@@ -1283,8 +1321,14 @@ function localizeGitHubReadinessCheck(
   const messages: Record<string, string> = {
     repository: 'Repository is bound to this project',
     settings: 'GitHub integration is enabled',
-    installation: 'GitHub App installation is synced',
-    installation_token: 'GitHub App token is available',
+    connection: 'GitHub account connection is active',
+    oauth_token: 'GitHub OAuth token is available',
+    repository_access: 'Repository access record is available',
+    repository_read: 'Repository can be read',
+    repository_write: 'Repository can be written',
+    repository_ref: 'Default branch can be read',
+    installation: 'Legacy GitHub App installation is synced',
+    installation_token: 'Legacy GitHub App token is available',
   };
 
   return {
@@ -1298,9 +1342,9 @@ function permissionReadinessMessage(permissionName: string, status: GitHubReposi
     return `${permissionName} permission is available`;
   }
   if (status === 'warning') {
-    return `GitHub App is missing ${permissionName}; later CI reads may be unavailable`;
+    return `GitHub access is missing ${permissionName}; later CI reads may be unavailable`;
   }
-  return `GitHub App is missing required ${permissionName} permission`;
+  return `GitHub access is missing required ${permissionName} permission`;
 }
 
 function githubPermissionLabel(key: string) {
@@ -1347,28 +1391,4 @@ async function waitForRuntimeTaskCompletion(runId: number, taskId: number, timeo
 
 function sleep(ms: number) {
   return new Promise(resolve => window.setTimeout(resolve, ms));
-}
-
-function parseGitHubRepositoryURL(value: string) {
-  const normalized = value.trim();
-  if (!normalized) {
-    return null;
-  }
-  const shorthand = normalized.match(/^([\w.-]+)\/([\w.-]+?)(?:\.git)?$/);
-  if (shorthand) {
-    return { owner: shorthand[1], repo: shorthand[2] };
-  }
-  try {
-    const url = new URL(normalized);
-    if (!url.hostname.endsWith('github.com')) {
-      return null;
-    }
-    const [owner, repo] = url.pathname.replace(/^\/+|\/+$/g, '').split('/');
-    if (!owner || !repo) {
-      return null;
-    }
-    return { owner, repo: repo.replace(/\.git$/, '') };
-  } catch {
-    return null;
-  }
 }

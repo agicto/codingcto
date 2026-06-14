@@ -252,14 +252,14 @@ func (w *RuntimeWorker) executeDirectClaim(ctx context.Context, claim *ClaimAgen
 		Tool:      w.connector.Name(),
 		Content:   "Runtime claimed direct task and is starting executor.",
 	})
-	runCtx, cancelRun := context.WithCancel(ctx)
-	defer cancelRun()
-	cancelWatcherDone := w.watchDirectTaskCancellation(runCtx, cancelRun, taskID)
 	envelope, err := DirectTaskEnvelope(w.cfg.RuntimeID, w.cfg.Executor, w.cfg.SessionID, workdir, claim)
 	if err != nil {
 		return nil, err
 	}
 	envelope.Env = w.cfg.Env
+	runCtx, cancelRun := context.WithCancel(ctx)
+	defer cancelRun()
+	cancelWatcherDone := w.watchDirectTaskCancellation(runCtx, cancelRun, taskID)
 	reporter := &directRuntimeProgressReporter{
 		client:    w.client,
 		taskID:    taskID,

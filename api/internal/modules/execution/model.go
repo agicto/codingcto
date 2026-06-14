@@ -78,6 +78,24 @@ func (RuntimePO) TableName() string {
 	return "specforge_runtimes"
 }
 
+type ProjectRuntimeBindingPO struct {
+	ID           uint   `gorm:"primaryKey"`
+	WorkspaceID  string `gorm:"size:255;not null;index"`
+	ProjectID    uint   `gorm:"not null;index:idx_specforge_project_runtime_binding"`
+	RepositoryID string `gorm:"size:255;not null;index:idx_specforge_project_runtime_binding"`
+	RuntimeID    string `gorm:"size:100;not null;index"`
+	Executor     string `gorm:"size:100;not null;index"`
+	RepoDir      string `gorm:"type:text;not null"`
+	Active       bool   `gorm:"not null;default:true;index"`
+	CreatedBy    uint   `gorm:"not null;index"`
+	CreatedAt    time.Time
+	UpdatedAt    time.Time
+}
+
+func (ProjectRuntimeBindingPO) TableName() string {
+	return "specforge_project_runtime_bindings"
+}
+
 type TaskEventPO struct {
 	ID        uint   `gorm:"primaryKey"`
 	TaskID    uint   `gorm:"not null;uniqueIndex:idx_specforge_task_events_task_seq"`
@@ -282,6 +300,38 @@ func normalizeRuntimeMaxConcurrency(value int) int {
 		return 1
 	}
 	return value
+}
+
+func newProjectRuntimeBindingPO(binding *domain.SpecForgeProjectRuntimeBinding) *ProjectRuntimeBindingPO {
+	return &ProjectRuntimeBindingPO{
+		ID:           binding.ID,
+		WorkspaceID:  binding.WorkspaceID,
+		ProjectID:    binding.ProjectID,
+		RepositoryID: binding.RepositoryID,
+		RuntimeID:    binding.RuntimeID,
+		Executor:     binding.Executor,
+		RepoDir:      binding.RepoDir,
+		Active:       binding.Active,
+		CreatedBy:    binding.CreatedBy,
+		CreatedAt:    binding.CreatedAt,
+		UpdatedAt:    binding.UpdatedAt,
+	}
+}
+
+func (po *ProjectRuntimeBindingPO) toDomain() *domain.SpecForgeProjectRuntimeBinding {
+	return &domain.SpecForgeProjectRuntimeBinding{
+		ID:           po.ID,
+		WorkspaceID:  po.WorkspaceID,
+		ProjectID:    po.ProjectID,
+		RepositoryID: po.RepositoryID,
+		RuntimeID:    po.RuntimeID,
+		Executor:     po.Executor,
+		RepoDir:      po.RepoDir,
+		Active:       po.Active,
+		CreatedBy:    po.CreatedBy,
+		CreatedAt:    po.CreatedAt,
+		UpdatedAt:    po.UpdatedAt,
+	}
 }
 
 func mustMarshalRuntimeJSON(value any, fallback string) string {

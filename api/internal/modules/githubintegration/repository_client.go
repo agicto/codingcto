@@ -27,6 +27,7 @@ type RepositoryClient interface {
 	CreateBranch(ctx context.Context, owner, repo, branch, sha string) (*GitReference, error)
 	CreateIssue(ctx context.Context, input CreateIssueInput) (*Issue, error)
 	CreatePullRequest(ctx context.Context, input CreatePullRequestInput) (*PullRequest, error)
+	MergePullRequest(ctx context.Context, input MergePullRequestInput) (*MergedPullRequest, error)
 	ListWorkflowRuns(ctx context.Context, owner, repo, branch string) ([]WorkflowRun, error)
 	ListWorkflowJobs(ctx context.Context, owner, repo string, runID int64) ([]WorkflowJob, error)
 	GetWorkflowJobLogs(ctx context.Context, owner, repo string, jobID int64) (string, error)
@@ -166,6 +167,22 @@ type CreatePullRequestInput struct {
 	Base  string
 	Body  string
 	Draft bool
+}
+
+type MergePullRequestInput struct {
+	Owner         string
+	Repo          string
+	Number        int
+	SHA           string
+	MergeMethod   string
+	CommitTitle   string
+	CommitMessage string
+}
+
+type MergedPullRequest struct {
+	SHA     string `json:"sha"`
+	Merged  bool   `json:"merged"`
+	Message string `json:"message"`
 }
 
 type WorkflowRun struct {
@@ -352,6 +369,34 @@ func (c *GitHubRepositoryClient) CreatePullRequest(ctx context.Context, input Cr
 		return nil, err
 	}
 	return &pr, nil
+}
+
+func (c *GitHubRepositoryClient) MergePullRequest(ctx context.Context, input MergePullRequestInput) (*MergedPullRequest, error) {
+	if err := requireRepoArgs(input.Owner, input.Repo); err != nil {
+		return nil, err
+	}
+	if input.Number == 0 {
+		return nil, fmt.Errorf("github repository client: pull request number is required")
+	}
+	payload := map[string]any{}
+	if strings.TrimSpace(input.SHA) != "" {
+		payload["sha"] = strings.TrimSpace(input.SHA)
+	}
+	if strings.TrimSpace(input.MergeMethod) != "" {
+		payload["merge_method"] = strings.TrimSpace(input.MergeMethod)
+	}
+	if strings.TrimSpace(input.CommitTitle) != "" {
+		payload["commit_title"] = strings.TrimSpace(input.CommitTitle)
+	}
+	if strings.TrimSpace(input.CommitMessage) != "" {
+		payload["commit_message"] = strings.TrimSpace(input.CommitMessage)
+	}
+	var result MergedPullRequest
+	path := fmt.Sprintf("/repos/%s/%s/pulls/%d/merge", url.PathEscape(input.Owner), url.PathEscape(input.Repo), input.Number)
+	if err := c.do(ctx, http.MethodPut, path, payload, &result); err != nil {
+		return nil, err
+	}
+	return &result, nil
 }
 
 func (c *GitHubRepositoryClient) ListWorkflowRuns(ctx context.Context, owner, repo, branch string) ([]WorkflowRun, error) {

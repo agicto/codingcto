@@ -48,5 +48,6 @@ func NewStarterManifest(handler *Handler) contracts.StarterManifest {
 		contracts.WithStarterMigrationNames("2026_05_31_000028_add_task_progress_fields_to_specforge_agent_tasks"),
 		contracts.WithStarterMigrationNames("2026_06_02_000029_create_codingcto_direct_agent_tasks"),
 		contracts.WithStarterMigrationNames("2026_06_04_000030_add_runtime_concurrency"),
+		contracts.WithStarterMigrationNames("2026_06_11_000033_create_specforge_project_runtime_bindings_table"),
 	)
 }

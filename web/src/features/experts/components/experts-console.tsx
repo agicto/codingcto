@@ -11,6 +11,7 @@ import {
   Sparkles,
   WandSparkles,
 } from 'lucide-react';
+import Link from 'next/link';
 
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
@@ -23,6 +24,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
+import { useCodingCTOExperts } from '@/features/experts/hooks/use-experts';
 import type {
   ExpertSkillInput,
   ExpertImplementationPlanResponse,
@@ -40,7 +42,8 @@ import { cn } from '@/utils';
 type ExpertPlanMode = NonNullable<GenerateExpertImplementationPlanPayload['mode']>;
 type ExpertSkillOption = ExpertSkillInput & {
   id: string | number;
-  source: 'project' | 'recommended';
+  source: 'codingcto' | 'project' | 'recommended';
+  expert_id?: number;
 };
 
 const modeOptions: Array<{ id: ExpertPlanMode; label: string; hint: string }> = [
@@ -117,6 +120,26 @@ export function ExpertsConsole() {
   const selectedRepository = repositories.find(
     repository => repository.repository_id === effectiveRepoId
   );
+  const codingExpertsQuery = useCodingCTOExperts(true);
+  const codingExpertSkills = useMemo<ExpertSkillOption[]>(
+    () =>
+      (codingExpertsQuery.data?.experts ?? []).map(expert => ({
+        id: `expert-${expert.id}`,
+        source: 'codingcto',
+        expert_id: expert.id,
+        name: expert.name,
+        description: expert.description,
+        content: [
+          `Use this exact skill name in expert_skills: ${expert.name}.`,
+          expert.system_prompt,
+          expert.description,
+        ]
+          .filter(Boolean)
+          .join('\n'),
+        target_agents: ['planning'],
+      })),
+    [codingExpertsQuery.data?.experts]
+  );
   const skillsQuery = useSpecForgeSkills(effectiveRepoId);
   const skills = useMemo(() => skillsQuery.data?.skills ?? [], [skillsQuery.data?.skills]);
   const projectPlanningSkills = useMemo<ExpertSkillOption[]>(
@@ -134,13 +157,25 @@ export function ExpertsConsole() {
         })),
     [skills]
   );
-  const usingRecommendedSkills = !skillsQuery.isLoading && projectPlanningSkills.length === 0;
+  const usingCodingCTOExperts = !codingExpertsQuery.isLoading && codingExpertSkills.length > 0;
+  const usingRecommendedSkills =
+    !usingCodingCTOExperts && !skillsQuery.isLoading && projectPlanningSkills.length === 0;
   const availableSkills = useMemo(() => {
-    if (skillsQuery.isLoading) {
+    if (codingExpertsQuery.isLoading || skillsQuery.isLoading) {
       return [];
     }
+    if (usingCodingCTOExperts) {
+      return codingExpertSkills;
+    }
     return usingRecommendedSkills ? recommendedExpertSkills : projectPlanningSkills;
-  }, [projectPlanningSkills, skillsQuery.isLoading, usingRecommendedSkills]);
+  }, [
+    codingExpertSkills,
+    codingExpertsQuery.isLoading,
+    projectPlanningSkills,
+    skillsQuery.isLoading,
+    usingCodingCTOExperts,
+    usingRecommendedSkills,
+  ]);
   const defaultSelectedSkillIds = useMemo(
     () => availableSkills.map(skill => String(skill.id)).slice(0, 8),
     [availableSkills]
@@ -167,6 +202,9 @@ export function ExpertsConsole() {
   const selectedSkills = availableSkills.filter(skill =>
     selectedSkillIds.includes(String(skill.id))
   );
+  const selectedExpertIds = selectedSkills
+    .map(skill => skill.expert_id)
+    .filter((id): id is number => typeof id === 'number');
 
   async function runExpertPlan() {
     const trimmedIdea = idea.trim();
@@ -189,6 +227,7 @@ export function ExpertsConsole() {
           mode,
           repository: repositoryPayload(selectedRepository),
           skills: selectedSkills.map(skillPayload),
+          expert_ids: selectedExpertIds,
         },
         {
           onEvent: event => {
@@ -245,16 +284,21 @@ export function ExpertsConsole() {
             </p>
           </div>
         </div>
-        <Button
-          type="button"
-          size="sm"
-          onClick={runExpertPlan}
-          disabled={isGenerating}
-          loading={isGenerating}
-        >
-          <WandSparkles className="h-4 w-4" />
-          生成方案
-        </Button>
+        <div className="flex items-center gap-2">
+          <Button type="button" variant="outline" size="sm" asChild>
+            <Link href="/console/experts/manage">Manage experts</Link>
+          </Button>
+          <Button
+            type="button"
+            size="sm"
+            onClick={runExpertPlan}
+            disabled={isGenerating}
+            loading={isGenerating}
+          >
+            <WandSparkles className="h-4 w-4" />
+            生成方案
+          </Button>
+        </div>
       </header>
 
       <main className="min-h-0 flex-1 overflow-y-auto px-4 py-5 md:px-8">
@@ -559,6 +603,15 @@ function PlanSummary({ result }: { result: ExpertImplementationPlanResponse }) {
           {result.plan.title}
         </div>
         <p className="mt-2 text-sm leading-6 text-text-muted">{result.plan.summary}</p>
+        {result.expert_run_refs?.length ? (
+          <div className="mt-3 flex flex-wrap gap-1.5">
+            {result.expert_run_refs.map(ref => (
+              <Badge key={ref} variant="outline" className="text-[10px] text-text-muted">
+                {ref}
+              </Badge>
+            ))}
+          </div>
+        ) : null}
       </div>
       <div className="grid grid-cols-4 gap-2 lg:grid-cols-2">
         {metrics.map(metric => (

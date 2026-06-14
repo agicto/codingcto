@@ -13,6 +13,127 @@ export interface ExpertSkillInput {
   target_agents?: string[];
 }
 
+export interface CodingCTOExpertDTO {
+  id: number;
+  key: string;
+  name: string;
+  role: string;
+  description: string;
+  system_prompt: string;
+  default_provider: string;
+  default_model: string;
+  active: boolean;
+  sort_order: number;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CodingCTOExpertSkillVersionDTO {
+  id: number;
+  skill_id: number;
+  version: number;
+  content: string;
+  content_hash: string;
+  change_summary: string;
+  source: string;
+  created_by: number;
+  promoted_by?: number;
+  promoted_at?: string;
+  created_at: string;
+}
+
+export interface CodingCTOExpertSkillDTO {
+  id: number;
+  expert_id: number;
+  workspace_id?: string;
+  project_id?: number;
+  repository_id?: string;
+  name: string;
+  description: string;
+  active: boolean;
+  target_agents?: string[];
+  current_version_id?: number;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+  current_version?: CodingCTOExpertSkillVersionDTO;
+}
+
+export interface CodingCTOExpertRunDTO {
+  id: number;
+  expert_id: number;
+  requirement_id?: number;
+  plan_id?: number;
+  repository_id?: string;
+  input_json: string;
+  output_json: string;
+  provider: string;
+  model: string;
+  status: string;
+  skill_version_refs?: string[];
+  error_message?: string;
+  started_at?: string;
+  completed_at?: string;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface CodingCTOSkillEvolutionProposalDTO {
+  id: number;
+  expert_id: number;
+  skill_id: number;
+  base_version_id: number;
+  proposed_content: string;
+  proposed_content_hash: string;
+  rationale: string;
+  eval_notes: string;
+  status: 'draft' | 'pending_review' | 'approved' | 'rejected' | 'promoted';
+  reviewed_by?: number;
+  reviewed_at?: string;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface UpsertCodingCTOExpertPayload {
+  key: string;
+  name: string;
+  role: string;
+  description?: string;
+  system_prompt: string;
+  default_provider?: string;
+  default_model?: string;
+  active?: boolean;
+  sort_order?: number;
+}
+
+export interface UpsertCodingCTOExpertSkillPayload {
+  workspace_id?: string;
+  project_id?: number;
+  repository_id?: string;
+  name: string;
+  description?: string;
+  content: string;
+  change_summary?: string;
+  active?: boolean;
+  target_agents?: string[];
+}
+
+export interface CreateCodingCTOExpertSkillVersionPayload {
+  content: string;
+  change_summary?: string;
+  source?: string;
+  promote?: boolean;
+}
+
+export interface CreateCodingCTOSkillEvolutionProposalPayload {
+  proposed_content: string;
+  rationale: string;
+  eval_notes?: string;
+}
+
 export interface ExpertRepositoryInput {
   repository_id?: string;
   full_name?: string;
@@ -24,6 +145,7 @@ export interface GenerateExpertImplementationPlanPayload {
   mode?: 'mvp' | 'standard' | 'deep';
   repository?: ExpertRepositoryInput;
   skills?: ExpertSkillInput[];
+  expert_ids?: number[];
 }
 
 export interface ExpertImplementationPlan {
@@ -73,6 +195,8 @@ export interface ExpertImplementationPlanResponse {
     finish_reason?: string;
   };
   usage: Record<string, unknown>;
+  expert_run_refs?: string[];
+  skill_version_refs?: string[];
 }
 
 export interface ExpertPlanStreamEvent {
@@ -94,6 +218,63 @@ export interface GenerateExpertImplementationPlanStreamOptions {
 }
 
 export const expertsService = {
+  listExperts: (activeOnly = false) => {
+    const suffix = activeOnly ? '?active=true' : '';
+    return request.get<{ experts: CodingCTOExpertDTO[] }>(`/experts${suffix}`);
+  },
+  upsertExpert: (payload: UpsertCodingCTOExpertPayload) =>
+    request.post<{ expert: CodingCTOExpertDTO }, UpsertCodingCTOExpertPayload>(
+      '/experts',
+      payload
+    ),
+  listExpertSkills: (expertId: number) =>
+    request.get<{ skills: CodingCTOExpertSkillDTO[] }>(`/experts/${expertId}/skills`),
+  upsertExpertSkill: (expertId: number, payload: UpsertCodingCTOExpertSkillPayload) =>
+    request.post<{ skill: CodingCTOExpertSkillDTO }, UpsertCodingCTOExpertSkillPayload>(
+      `/experts/${expertId}/skills`,
+      payload
+    ),
+  listExpertSkillVersions: (skillId: number) =>
+    request.get<{ versions: CodingCTOExpertSkillVersionDTO[] }>(
+      `/expert-skills/${skillId}/versions`
+    ),
+  createExpertSkillVersion: (
+    skillId: number,
+    payload: CreateCodingCTOExpertSkillVersionPayload
+  ) =>
+    request.post<
+      { version: CodingCTOExpertSkillVersionDTO },
+      CreateCodingCTOExpertSkillVersionPayload
+    >(`/expert-skills/${skillId}/versions`, payload),
+  listExpertRuns: (expertId: number) =>
+    request.get<{ runs: CodingCTOExpertRunDTO[] }>(`/experts/${expertId}/runs`),
+  listEvolutionProposals: (skillId: number) =>
+    request.get<{ proposals: CodingCTOSkillEvolutionProposalDTO[] }>(
+      `/expert-skills/${skillId}/evolution-proposals`
+    ),
+  createEvolutionProposal: (
+    skillId: number,
+    payload: CreateCodingCTOSkillEvolutionProposalPayload
+  ) =>
+    request.post<
+      { proposal: CodingCTOSkillEvolutionProposalDTO },
+      CreateCodingCTOSkillEvolutionProposalPayload
+    >(`/expert-skills/${skillId}/evolution-proposals`, payload),
+  approveEvolutionProposal: (proposalId: number) =>
+    request.post<{ proposal: CodingCTOSkillEvolutionProposalDTO }, undefined>(
+      `/skill-evolution-proposals/${proposalId}/approve`,
+      undefined
+    ),
+  rejectEvolutionProposal: (proposalId: number) =>
+    request.post<{ proposal: CodingCTOSkillEvolutionProposalDTO }, undefined>(
+      `/skill-evolution-proposals/${proposalId}/reject`,
+      undefined
+    ),
+  promoteEvolutionProposal: (proposalId: number) =>
+    request.post<{ version: CodingCTOExpertSkillVersionDTO }, undefined>(
+      `/skill-evolution-proposals/${proposalId}/promote`,
+      undefined
+    ),
   generateImplementationPlan: (payload: GenerateExpertImplementationPlanPayload) =>
     request.post<ExpertImplementationPlanResponse, GenerateExpertImplementationPlanPayload>(
       '/experts/implementation-plan',

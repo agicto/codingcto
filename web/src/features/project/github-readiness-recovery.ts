@@ -47,14 +47,20 @@ export function githubReadinessRecoveryActions(
 
   if (
     keys.has('settings') ||
+    keys.has('connection') ||
+    keys.has('oauth_token') ||
+    keys.has('repository_access') ||
+    keys.has('repository_read') ||
+    keys.has('repository_write') ||
+    keys.has('repository_ref') ||
     keys.has('installation') ||
     keys.has('installation_token') ||
     [...keys].some(key => key.startsWith('permission_'))
   ) {
     actions.push({
       id: 'github-settings',
-      label: '去 GitHub 设置',
-      description: '安装或同步 GitHub App，确认 token 和仓库写权限。',
+      label: '去 GitHub 连接',
+      description: '连接 GitHub、同步授权仓库，并确认 token 和仓库写权限。',
       href: githubRecoveryHref('github', targetRepository),
     });
   }
@@ -122,6 +128,41 @@ export function githubReadinessRecoveryDiagnostics(
         detail: `给 GitHub App installation 授权 ${permissionName(check.key)}，然后重新同步。`,
       };
     }
+    if (check.key === 'connection') {
+      return {
+        checkKey: check.key,
+        setupStep: '连接 GitHub',
+        detail: '在设置里连接 GitHub 账号，然后同步授权仓库。',
+      };
+    }
+    if (check.key === 'oauth_token') {
+      return {
+        checkKey: check.key,
+        setupStep: '刷新 OAuth token',
+        detail: '重新连接 GitHub 或重新授权 CodingCTO，以恢复可用 token。',
+      };
+    }
+    if (check.key === 'repository_access') {
+      return {
+        checkKey: check.key,
+        setupStep: '同步授权仓库',
+        detail: '同步 GitHub 授权仓库池，然后从授权仓库重新绑定项目仓库。',
+      };
+    }
+    if (check.key === 'repository_read' || check.key === 'repository_write') {
+      return {
+        checkKey: check.key,
+        setupStep: '检查仓库权限',
+        detail: '确认 GitHub OAuth 授权仍包含该仓库，并且账号具备读取和写入权限。',
+      };
+    }
+    if (check.key === 'repository_ref') {
+      return {
+        checkKey: check.key,
+        setupStep: '检查默认分支',
+        detail: '确认仓库默认分支仍存在，然后重新同步授权仓库。',
+      };
+    }
     if (check.key === 'repository') {
       return {
         checkKey: check.key,
@@ -132,7 +173,7 @@ export function githubReadinessRecoveryDiagnostics(
     return {
       checkKey: check.key,
       setupStep: '恢复 GitHub readiness',
-      detail: '检查 GitHub 设置和仓库绑定，然后重新检查 readiness。',
+      detail: '检查 GitHub 连接和仓库选择，然后重新检查 readiness。',
     };
   });
 }

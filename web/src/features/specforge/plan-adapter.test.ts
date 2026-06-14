@@ -1,9 +1,6 @@
 import { describe, expect, it } from 'vitest';
 
-import {
-  executionRunFromDTO,
-  planBundleFromDTO,
-} from '@/features/specforge/plan-adapter';
+import { executionRunFromDTO, planBundleFromDTO } from '@/features/specforge/plan-adapter';
 import type {
   SpecForgeExecutionBundleDTO,
   SpecForgePlanBundleDTO,
@@ -38,6 +35,46 @@ const baseBundle: SpecForgePlanBundleDTO = {
     created_at: '2026-05-29T12:00:00Z',
     updated_at: '2026-05-29T12:00:00Z',
   },
+  context_snapshot: {
+    id: 11,
+    workspace_id: 'workspace_1',
+    project_id: 77,
+    snapshot_status: 'ready',
+    summary: 'Primary repo and DeepWiki evidence are ready.',
+    primary_repository_id: 'repo_abc',
+    warning_count: 0,
+    missing_evidence: [],
+    evidence_refs: ['project:77', 'repo_profile:repo_abc'],
+    repositories: [],
+    created_by: 1,
+    created_at: '2026-05-29T12:00:00Z',
+    updated_at: '2026-05-29T12:00:00Z',
+  },
+  expert_policy: {
+    id: 9,
+    workspace_id: 'workspace_1',
+    project_id: 77,
+    version: 3,
+    active: true,
+    goal_boundary: 'Limit changes to invitation APIs and console UI.',
+    allowed_paths: ['api/internal/modules/invitation', 'web/src/features/invitations'],
+    forbidden_paths: ['api/internal/modules/billing'],
+    required_test_commands: ['go test ./...', 'pnpm type-check'],
+    review_policy: {
+      required_approvals: 1,
+      allow_author_approval: false,
+      block_on_changes_requested: true,
+      require_ci_green: true,
+    },
+    merge_policy: {
+      strategy: 'squash',
+      require_manual_approval: true,
+      allow_auto_merge: false,
+    },
+    created_by: 1,
+    created_at: '2026-05-29T12:00:00Z',
+    updated_at: '2026-05-29T12:00:00Z',
+  },
   product_spec: {
     id: 1,
     idea_id: 1,
@@ -56,6 +93,8 @@ const baseBundle: SpecForgePlanBundleDTO = {
     id: 1,
     idea_id: 1,
     product_spec_id: 1,
+    context_snapshot_id: 11,
+    expert_policy_id: 9,
     version: 1,
     technical_summary: 'Add invitation model, APIs, and UI.',
     affected_areas: ['api/internal/modules/invitation'],
@@ -113,6 +152,16 @@ describe('planBundleFromDTO', () => {
         warnings: ['GitHub tree response was truncated; inferred profile may miss files.'],
         lastIndexedAt: '2026-05-29T12:00:00Z',
       },
+      contextSnapshot: {
+        id: 11,
+        snapshotStatus: 'ready',
+        primaryRepositoryId: 'repo_abc',
+      },
+      expertPolicy: {
+        id: 9,
+        version: 3,
+        mergeStrategy: 'squash',
+      },
       productSpec: {
         goals: ['Invite workspace members.'],
         businessRules: ['Invites expire.'],
@@ -120,6 +169,8 @@ describe('planBundleFromDTO', () => {
         acceptanceCriteria: ['Admin can create invite.'],
       },
       implementationPlan: {
+        contextSnapshotId: 11,
+        expertPolicyId: 9,
         technicalSummary: 'Add invitation model, APIs, and UI.',
         affectedAreas: ['api/internal/modules/invitation'],
         status: 'draft',

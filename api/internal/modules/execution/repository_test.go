@@ -289,6 +289,45 @@ func TestRepositoryListsRuntimesWithFiltersAndLimit(t *testing.T) {
 	require.Equal(t, "runtime-new", all[1].RuntimeID)
 }
 
+func TestRepositoryCreatesAndUpdatesProjectRuntimeBinding(t *testing.T) {
+	repo := newTestExecutionRepository(t)
+	require.NoError(t, repo.UpsertRuntime(context.Background(), &domain.SpecForgeRuntime{
+		RuntimeID:  "runtime_1",
+		Executor:   ExecutorNameCodexCLI,
+		Status:     domain.RuntimeStatusOnline,
+		LastSeenAt: time.Now(),
+	}))
+
+	binding := &domain.SpecForgeProjectRuntimeBinding{
+		WorkspaceID:  "workspace_1",
+		ProjectID:    9,
+		RepositoryID: "repo_1",
+		RuntimeID:    "runtime_1",
+		Executor:     ExecutorNameCodexCLI,
+		RepoDir:      "/Users/mingde/item/codingcto",
+		Active:       true,
+		CreatedBy:    42,
+	}
+	require.NoError(t, repo.CreateProjectRuntimeBinding(context.Background(), binding))
+	require.NotZero(t, binding.ID)
+
+	runtime, err := repo.FindRuntimeByRuntimeID(context.Background(), "runtime_1")
+	require.NoError(t, err)
+	require.Equal(t, ExecutorNameCodexCLI, runtime.Executor)
+
+	bindings, err := repo.ListProjectRuntimeBindingsByProjectID(context.Background(), 9)
+	require.NoError(t, err)
+	require.Len(t, bindings, 1)
+	require.Equal(t, "/Users/mingde/item/codingcto", bindings[0].RepoDir)
+
+	binding.RepoDir = "/Users/mingde/item/codingcto/api"
+	require.NoError(t, repo.UpdateProjectRuntimeBinding(context.Background(), binding))
+
+	loaded, err := repo.FindProjectRuntimeBindingByID(context.Background(), binding.ID)
+	require.NoError(t, err)
+	require.Equal(t, "/Users/mingde/item/codingcto/api", loaded.RepoDir)
+}
+
 func TestRepositoryDeregistersRuntimeAndFailsOnlyItsTasks(t *testing.T) {
 	repo := newTestExecutionRepository(t)
 	require.NoError(t, repo.UpsertRuntime(context.Background(), &domain.SpecForgeRuntime{
@@ -488,6 +527,6 @@ func newTestExecutionRepository(t *testing.T) *repository {
 	t.Helper()
 	db, err := gorm.Open(sqlite.Open(":memory:"), &gorm.Config{})
 	require.NoError(t, err)
-	require.NoError(t, db.AutoMigrate(&ExecutionRunPO{}, &AgentTaskPO{}, &RuntimePO{}, &TaskEventPO{}))
+	require.NoError(t, db.AutoMigrate(&ExecutionRunPO{}, &AgentTaskPO{}, &RuntimePO{}, &ProjectRuntimeBindingPO{}, &TaskEventPO{}))
 	return NewRepository(db)
 }

@@ -1,0 +1,4 @@
+interface:
+  display_name: "CodingCTO Product UI"
+  short_description: "Business-first console UI rules."
+  default_prompt: "Use CodingCTO Product UI to design, simplify, or verify this console flow with minimal production-grade interaction."

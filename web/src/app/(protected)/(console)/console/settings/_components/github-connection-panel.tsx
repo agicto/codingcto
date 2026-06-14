@@ -4,26 +4,17 @@ import Link from 'next/link';
 import { useCallback, useEffect, useMemo, useRef, useState, type ReactNode } from 'react';
 import { useRouter, useSearchParams } from 'next/navigation';
 import {
-  ArrowRight,
-  CheckCircle2,
+  ChevronDown,
   Github,
   GitPullRequest,
   Link2,
   PanelRight,
-  Plus,
+  RefreshCw,
+  ShieldCheck,
   SlidersHorizontal,
-  X,
 } from 'lucide-react';
 
-import { Button, buttonVariants } from '@/components/ui/button';
-import {
-  Card,
-  CardContent,
-  CardDescription,
-  CardHeader,
-  CardTitle,
-} from '@/components/ui/card';
-import { Input } from '@/components/ui/input';
+import { Button } from '@/components/ui/button';
 import { Switch } from '@/components/ui/switch';
 import { env } from '@/config/env';
 import { ROUTES } from '@/constants/routes';
@@ -34,15 +25,17 @@ import {
 import { useT } from '@/i18n';
 import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
 import {
+  useDisconnectGitHubConnection,
+  useGitHubConnection,
   useGitHubRepositories,
+  useGitHubRepositoryAccesses,
   useGitHubSettings,
+  useStartGitHubOAuth,
   useSyncGitHubInstallation,
+  useSyncGitHubRepositories,
   useUpsertGitHubSettings,
-  useUpsertGitHubRepository,
 } from '@/features/specforge/hooks/use-specforge';
-import {
-  parseGitHubRepositoryURL,
-} from '@/features/specforge/github-repositories';
+import type { GitHubRepositoryAccessDTO } from '@/features/specforge/services/specforge-service';
 
 type GitHubSettings = {
   enabled: boolean;
@@ -57,27 +50,13 @@ const defaultSettings: GitHubSettings = {
   coAuthoredByTrailer: true,
   issuePrAutoLink: true,
 };
-const defaultRepositoryURL = 'https://github.com/agicto/codingcto-key';
 const githubRecoveryStoragePrefix = 'codingcto.githubRecovery.';
-
-type PendingRepository = {
-  repositoryId: string;
-  owner: string;
-  repo: string;
-  defaultBranch: string;
-  isPrivate: boolean;
-};
 
 function errorMessage(error: unknown, fallback: string) {
   if (error instanceof Error) {
     return error.message;
   }
   return fallback;
-}
-
-function parsedTargetRepositoryLabel(repositoryURL: string) {
-  const parsed = parseGitHubRepositoryURL(repositoryURL);
-  return parsed ? `${parsed.owner}/${parsed.repo}` : '';
 }
 
 function safeConsoleReturnPath(value: string) {
@@ -89,12 +68,18 @@ function githubRecoveryStorageKey(workspaceId: string) {
   return `${githubRecoveryStoragePrefix}${workspaceId.trim()}`;
 }
 
-function shellArg(value: string) {
-  return `'${value.replaceAll("'", "'\\''")}'`;
+function withGitHubInstallState(installURL: string, workspaceId: string) {
+  try {
+    const url = new URL(installURL);
+    url.searchParams.set('state', workspaceId);
+    return url.toString();
+  } catch {
+    return installURL;
+  }
 }
 
-function repositoryIdFor(owner: string, repo: string) {
-  return `github_${owner.trim()}__${repo.trim()}`;
+function shellArg(value: string) {
+  return `'${value.replaceAll("'", "'\\''")}'`;
 }
 
 type GitHubConnectionPanelProps = {
@@ -112,26 +97,15 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
   const targetRepo = searchParams.get('repo')?.trim() || '';
   const targetRepositoryId = searchParams.get('repository_id')?.trim() || '';
   const returnTo = safeConsoleReturnPath(searchParams.get('return_to') || '');
-  const [, setInstallationId] = useState(
-    () => searchParams.get('installation_id')?.trim() || ''
-  );
-  const [repositoryURL, setRepositoryURL] = useState(
-    () =>
-      targetRepositoryURL ||
-      (targetOwner && targetRepo ? `https://github.com/${targetOwner}/${targetRepo}` : '') ||
-      defaultRepositoryURL
-  );
-  const [defaultBranch] = useState('main');
-  const [pendingRepositories, setPendingRepositories] = useState<PendingRepository[]>([]);
-  const [savedRepoId, setSavedRepoId] = useState('');
   const [message, setMessage] = useState('');
+  const [advancedOpen, setAdvancedOpen] = useState(false);
   const [installEntry] = useState(
     env.NEXT_PUBLIC_GITHUB_APP_INSTALL_URL || env.NEXT_PUBLIC_GITHUB_APP_SLUG || ''
   );
   const targetRepositoryLabel =
     targetOwner && targetRepo
       ? `${targetOwner}/${targetRepo}`
-      : targetRepositoryId || parsedTargetRepositoryLabel(targetRepositoryURL);
+      : targetRepositoryId || targetRepositoryURL;
   const targetQuery = useMemo(() => {
     const params = new URLSearchParams();
     if (targetOwner) {
@@ -157,41 +131,32 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
     selectedWorkspaceId: workspaceId,
   } = useSelectedWorkspace(stateWorkspaceId);
   const githubSettings = useGitHubSettings(workspaceId.trim());
-  const connectedRepositoriesQuery = useGitHubRepositories(
+  const legacyRepositoriesQuery = useGitHubRepositories(
     workspaceId.trim() ? { workspace_id: workspaceId.trim() } : undefined
   );
-  const connectedRepositories = connectedRepositoriesQuery.data?.repositories ?? [];
-  const connectedRepository = connectedRepositories[0];
-  const visibleRepositoryDrafts = [
-    ...pendingRepositories.map(repository => ({
-      id: repository.repositoryId,
-      owner: repository.owner,
-      repo: repository.repo,
-      defaultBranch: repository.defaultBranch,
-      isPending: true,
-    })),
-    ...connectedRepositories
-      .filter(
-        repository =>
-          !pendingRepositories.some(
-            pending => pending.repositoryId === repository.repository_id
-          )
-      )
-      .map(repository => ({
-        id: repository.repository_id,
-        owner: repository.github_owner,
-        repo: repository.github_repo,
-        defaultBranch: repository.default_branch,
-        isPending: false,
-      })),
-  ];
+  const connectionQuery = useGitHubConnection(workspaceId.trim());
+  const repositoryAccessesQuery = useGitHubRepositoryAccesses(
+    workspaceId.trim() ? { workspace_id: workspaceId.trim() } : undefined
+  );
+  const legacyRepositories = legacyRepositoriesQuery.data?.repositories ?? [];
+  const repositoryAccesses = repositoryAccessesQuery.data?.repositories ?? [];
+  const visibleRepositoryAccesses = repositoryAccesses.slice(0, mode === 'repositories' ? 50 : 6);
+  const connection = connectionQuery.data?.connection ?? null;
+  const authorizedRepositoryCount =
+    repositoryAccessesQuery.data?.repository_count ?? repositoryAccesses.length;
   const upsertSettings = useUpsertGitHubSettings();
+  const startOAuth = useStartGitHubOAuth();
+  const disconnectOAuth = useDisconnectGitHubConnection();
+  const syncOAuthRepositories = useSyncGitHubRepositories();
   const syncInstallation = useSyncGitHubInstallation();
-  const upsertRepository = useUpsertGitHubRepository();
   const isSaving =
     upsertSettings.isPending ||
+    startOAuth.isPending ||
+    disconnectOAuth.isPending ||
+    syncOAuthRepositories.isPending ||
     syncInstallation.isPending ||
-    upsertRepository.isPending;
+    connectionQuery.isFetching ||
+    repositoryAccessesQuery.isFetching;
   const settings: GitHubSettings = {
     enabled: githubSettings.data?.enabled ?? defaultSettings.enabled,
     pullRequestSidebar:
@@ -200,30 +165,29 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
       githubSettings.data?.co_authored_by_trailer ?? defaultSettings.coAuthoredByTrailer,
     issuePrAutoLink: githubSettings.data?.issue_pr_auto_link ?? defaultSettings.issuePrAutoLink,
   };
-  const repoIdForHref = savedRepoId || connectedRepository?.repository_id || '';
-  const specForgeHref = repoIdForHref
-    ? `${ROUTES.CONSOLE.SPECFORGE}?repo_id=${encodeURIComponent(repoIdForHref)}`
-    : ROUTES.CONSOLE.SPECFORGE;
   const installURL = useMemo(() => {
     const entry = installEntry.trim();
-    if (!entry) {
+    const workspaceState = workspaceId.trim();
+    if (!entry || !workspaceState) {
       return '';
     }
     if (entry.startsWith('https://github.com/')) {
-      return entry;
+      return withGitHubInstallState(entry, workspaceState);
     }
     const slug = entry
       .replace(/^https?:\/\/github\.com\/apps\//, '')
       .replace(/\/installations\/new.*$/, '')
       .replace(/^\/+|\/+$/g, '');
-    const state = encodeURIComponent(workspaceId.trim());
-    return `https://github.com/apps/${slug}/installations/new?state=${state}`;
+    return withGitHubInstallState(
+      `https://github.com/apps/${slug}/installations/new`,
+      workspaceState
+    );
   }, [installEntry, workspaceId]);
   const setupChecklist = githubSetupChecklist({
     workspaceId,
     enabled: settings.enabled,
     installURL,
-    connectedRepositoryCount: connectedRepositories.length,
+    connectedRepositoryCount: legacyRepositories.length,
   });
   const rememberGitHubRecoveryContext = useCallback(() => {
     if (!workspaceId.trim() || !targetQuery) {
@@ -252,7 +216,6 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
           workspace_id: workspaceIdValue.trim(),
           installation_id: parsedInstallationId,
         });
-        setInstallationId(String(result.installation.installation_id));
         setMessage(
           result.repositories.length > 0
             ? t('messages.syncedWithRepos')
@@ -276,6 +239,79 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
     },
     [router, syncInstallation, t]
   );
+
+  const startGitHubOAuth = useCallback(async () => {
+    if (!workspaceId.trim()) {
+      setMessage(t('messages.selectWorkspaceBeforeInstall'));
+      return;
+    }
+    setMessage('');
+    try {
+      const redirectTo = `${ROUTES.CONSOLE.SETTINGS}?tab=github${targetQuery ? `&${targetQuery}` : ''}`;
+      const result = await startOAuth.mutateAsync({
+        workspace_id: workspaceId.trim(),
+        redirect_to: redirectTo,
+      });
+      window.location.assign(result.authorization_url);
+    } catch (error) {
+      setMessage(`${errorMessage(error, t('messages.connectionFailed'))} ${t('messages.oauthConfigHint')}`);
+    }
+  }, [startOAuth, t, targetQuery, workspaceId]);
+
+  const syncAuthorizedRepositories = useCallback(async () => {
+    if (!workspaceId.trim()) {
+      setMessage(t('messages.selectWorkspaceBeforeSync'));
+      return;
+    }
+    setMessage('');
+    try {
+      const result = await syncOAuthRepositories.mutateAsync({
+        workspace_id: workspaceId.trim(),
+      });
+      setMessage(
+        result.repository_count > 0
+          ? t('messages.oauthSyncedWithRepos', { count: result.repository_count })
+          : t('messages.oauthSyncedNoRepos')
+      );
+    } catch (error) {
+      setMessage(`${errorMessage(error, t('messages.connectionFailed'))} ${t('messages.backendAuthHint')}`);
+    }
+  }, [syncOAuthRepositories, t, workspaceId]);
+
+  const disconnectGitHubOAuth = useCallback(async () => {
+    if (!workspaceId.trim()) {
+      setMessage(t('messages.selectWorkspaceBeforeSettings'));
+      return;
+    }
+    setMessage('');
+    try {
+      await disconnectOAuth.mutateAsync(workspaceId.trim());
+      setMessage(t('messages.oauthDisconnected'));
+    } catch (error) {
+      setMessage(`${errorMessage(error, t('messages.connectionFailed'))} ${t('messages.settingsNotSaved')}`);
+    }
+  }, [disconnectOAuth, t, workspaceId]);
+
+  useEffect(() => {
+    const githubResult = searchParams.get('github')?.trim();
+    if (!githubResult) {
+      return;
+    }
+    const params = new URLSearchParams(searchParams.toString());
+    params.delete('github');
+    const nextQuery = params.toString();
+    router.replace(`${ROUTES.CONSOLE.SETTINGS}${nextQuery ? `?${nextQuery}` : ''}`, {
+      scroll: false,
+    });
+    const timeoutId = window.setTimeout(() => {
+      setMessage(
+        githubResult === 'connected'
+          ? t('messages.oauthConnected')
+          : t('messages.connectionFailed')
+      );
+    }, 0);
+    return () => window.clearTimeout(timeoutId);
+  }, [router, searchParams, t]);
 
   useEffect(() => {
     const returnedInstallationId = searchParams.get('installation_id')?.trim();
@@ -311,21 +347,6 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
     return () => window.clearTimeout(timeoutId);
   }, [router, searchParams, syncGitHubInstallation, targetQuery, workspaceId]);
 
-  useEffect(() => {
-    if (!targetRepositoryURL && (!targetOwner || !targetRepo)) {
-      return;
-    }
-    const nextURL =
-      targetRepositoryURL || `https://github.com/${targetOwner}/${targetRepo}`;
-    const timeoutId = window.setTimeout(() => {
-      setRepositoryURL(current => {
-        const trimmed = current.trim();
-        return !trimmed || trimmed === defaultRepositoryURL ? nextURL : current;
-      });
-    }, 0);
-    return () => window.clearTimeout(timeoutId);
-  }, [targetOwner, targetRepo, targetRepositoryURL]);
-
   async function updateSetting<Key extends keyof GitHubSettings>(
     key: Key,
     value: GitHubSettings[Key]
@@ -350,106 +371,9 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
     }
   }
 
-  function addRepositoryDraft() {
-    const parsedRepository = parseGitHubRepositoryURL(repositoryURL);
-    if (!workspaceId.trim()) {
-      setMessage(t('messages.selectWorkspaceBeforeSettings'));
-      return false;
-    }
-    if (!parsedRepository) {
-      setMessage(t('messages.repositoryURLInvalid'));
-      return false;
-    }
-
-    const repositoryId = repositoryIdFor(parsedRepository.owner, parsedRepository.repo);
-    const alreadyExists =
-      connectedRepositories.some(repository => repository.repository_id === repositoryId) ||
-      pendingRepositories.some(repository => repository.repositoryId === repositoryId);
-    if (alreadyExists) {
-      setSavedRepoId(repositoryId);
-      setRepositoryURL('');
-      setMessage(t('messages.repositoryAlreadyAdded'));
-      return true;
-    }
-
-    setPendingRepositories(current => [
-      {
-        repositoryId,
-        owner: parsedRepository.owner,
-        repo: parsedRepository.repo,
-        defaultBranch: defaultBranch.trim() || 'main',
-        isPrivate: false,
-      },
-      ...current,
-    ]);
-    setSavedRepoId(repositoryId);
-    setRepositoryURL('');
-    setMessage(t('messages.repositoryQueued'));
-    return true;
-  }
-
-  async function saveRepository(repository: PendingRepository) {
-    return upsertRepository.mutateAsync({
-      repository_id: repository.repositoryId,
-      workspace_id: workspaceId.trim(),
-      github_owner: repository.owner,
-      github_repo: repository.repo,
-      default_branch: repository.defaultBranch,
-      is_private: repository.isPrivate,
-    });
-  }
-
-  async function saveRepositoryURL() {
-    if (!workspaceId.trim()) {
-      setMessage(t('messages.selectWorkspaceBeforeSettings'));
-      return;
-    }
-    let repositoriesToSave = pendingRepositories;
-    if (repositoriesToSave.length === 0 && repositoryURL.trim()) {
-      const parsedRepository = parseGitHubRepositoryURL(repositoryURL);
-      if (!parsedRepository) {
-        setMessage(t('messages.repositoryURLInvalid'));
-        return;
-      }
-      repositoriesToSave = [
-        {
-          repositoryId: repositoryIdFor(parsedRepository.owner, parsedRepository.repo),
-          owner: parsedRepository.owner,
-          repo: parsedRepository.repo,
-          defaultBranch: defaultBranch.trim() || 'main',
-          isPrivate: false,
-        },
-      ];
-    }
-    if (repositoriesToSave.length === 0) {
-      setMessage(t('messages.noRepositoryToSave'));
-      return;
-    }
-
-    setMessage('');
-    try {
-      let lastRepositoryId = '';
-      for (const repository of repositoriesToSave) {
-        const saved = await saveRepository(repository);
-        lastRepositoryId = saved.repository_id;
-      }
-      setPendingRepositories(current =>
-        current.filter(
-          pending =>
-            !repositoriesToSave.some(repository => repository.repositoryId === pending.repositoryId)
-        )
-      );
-      setRepositoryURL('');
-      setSavedRepoId(lastRepositoryId);
-      setMessage(t('messages.repositorySaved'));
-    } catch (error) {
-      setMessage(`${errorMessage(error, t('messages.connectionFailed'))} ${t('messages.backendAuthHint')}`);
-    }
-  }
-
   if (mode === 'repositories') {
     return (
-      <div className="mx-auto w-full max-w-3xl">
+      <div className="mx-auto w-full max-w-4xl space-y-4">
         {message ? (
           <div className="mb-3 rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm leading-6 text-text-muted">
             {message}
@@ -465,137 +389,73 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
           />
         ) : null}
 
-        <Card>
-          <CardHeader>
-            <CardTitle>{t('simpleRepository.title')}</CardTitle>
-            <CardDescription>{t('simpleRepository.description')}</CardDescription>
-          </CardHeader>
-          <CardContent className="space-y-4">
-            <Input
-              value={repositoryURL}
-              onChange={event => setRepositoryURL(event.target.value)}
-              placeholder="https://github.com/agicto/codingcto-key"
-            />
-            <div className="flex flex-wrap items-center justify-between gap-3">
-              <Button type="button" variant="outline" onClick={addRepositoryDraft}>
-                <Plus className="h-4 w-4" />
-                {t('simpleRepository.addRepository')}
-              </Button>
-              <div className="flex items-center gap-3">
-                <span className="text-sm text-text-muted">
-                  {pendingRepositories.length > 0
-                    ? t('simpleRepository.unsaved', { count: pendingRepositories.length })
-                    : t('simpleRepository.saved')}
-                </span>
-                <Button type="button" onClick={saveRepositoryURL} disabled={upsertRepository.isPending}>
-                  {upsertRepository.isPending ? t('actions.connecting') : t('simpleRepository.save')}
-                </Button>
-              </div>
+        <section className="rounded-[4px] border border-border-subtle bg-bg-surface">
+          <div className="flex flex-col gap-3 border-b border-border-subtle px-5 py-4 md:flex-row md:items-center md:justify-between">
+            <div>
+              <h3 className="text-sm font-semibold text-text-main">
+                {t('connectionPage.repositories.title')}
+              </h3>
+              <p className="mt-1 text-sm leading-6 text-text-muted">
+                {t('connectionPage.repositories.description')}
+              </p>
             </div>
-
-            {visibleRepositoryDrafts.length > 0 ? (
-              <div className="space-y-2">
-                {visibleRepositoryDrafts.map(repository => (
-                  <div
-                    key={repository.id}
-                    className="flex items-center justify-between gap-3 rounded-lg border border-border-subtle bg-bg-subtle px-3 py-2 text-sm text-text-muted"
-                  >
-                    <div className="min-w-0">
-                      <div className="truncate font-medium text-text-main">
-                        {repository.owner}/{repository.repo}
-                      </div>
-                      <div className="mt-0.5 text-xs">
-                        {repository.isPending
-                          ? t('simpleRepository.pending')
-                          : repository.defaultBranch}
-                      </div>
-                    </div>
-                    {repository.isPending ? (
-                      <Button
-                        type="button"
-                        variant="ghost"
-                        size="sm"
-                        className="h-8 w-8 shrink-0"
-                        onClick={() =>
-                          setPendingRepositories(current =>
-                            current.filter(item => item.repositoryId !== repository.id)
-                          )
-                        }
-                        aria-label={t('simpleRepository.removePending')}
-                      >
-                        <X className="h-4 w-4" />
-                      </Button>
-                    ) : null}
-                  </div>
-                ))}
-              </div>
+            <div className="flex flex-wrap gap-2">
+              <Button
+                type="button"
+                variant="outline"
+                size="sm"
+                disabled={repositoryAccessesQuery.isFetching}
+                onClick={() => repositoryAccessesQuery.refetch()}
+              >
+                <RefreshCw
+                  className={
+                    repositoryAccessesQuery.isFetching
+                      ? 'h-4 w-4 animate-spin'
+                      : 'h-4 w-4'
+                  }
+                />
+                {t('connectionPage.actions.refresh')}
+              </Button>
+              <Button
+                type="button"
+                size="sm"
+                disabled={!settings.enabled || !connection || syncOAuthRepositories.isPending}
+                onClick={syncAuthorizedRepositories}
+              >
+                {syncOAuthRepositories.isPending
+                  ? t('actions.syncing')
+                  : t('connectionPage.actions.sync')}
+              </Button>
+            </div>
+          </div>
+          <div className="divide-y divide-border-subtle">
+            {repositoryAccessesQuery.isLoading ? (
+              <ConnectionEmptyRow text={t('connectionPage.repositories.loading')} />
+            ) : visibleRepositoryAccesses.length > 0 ? (
+              visibleRepositoryAccesses.map(repository => (
+                <RepositoryAccessRow key={repository.id} repository={repository} />
+              ))
             ) : null}
-          </CardContent>
-        </Card>
+            {!repositoryAccessesQuery.isLoading && visibleRepositoryAccesses.length === 0 ? (
+              <ConnectionEmptyRow text={t('connectionPage.repositories.empty')} />
+            ) : null}
+          </div>
+        </section>
       </div>
     );
   }
 
-  const repositoryManagementCard = (
-    <section className="space-y-3">
-      <h3 className="text-base font-semibold">{t('sections.repository')}</h3>
-      <Card>
-        <CardContent className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
-          <div className="flex gap-3">
-            <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-bg-subtle">
-              {connectedRepository ? (
-                <CheckCircle2 className="h-5 w-5 text-success" />
-              ) : (
-                <GitPullRequest className="h-5 w-5" />
-              )}
-            </div>
-            <div>
-              <div className="font-medium">
-                {connectedRepository
-                  ? `${connectedRepository.github_owner}/${connectedRepository.github_repo}`
-                  : t('repositoryCta.title')}
-              </div>
-              <p className="mt-1 text-sm leading-6 text-text-muted">
-                {connectedRepository
-                  ? `${t('status.connected', { repoId: connectedRepository.repository_id })} · ${connectedRepository.default_branch}`
-                  : t('repositoryCta.description')}
-              </p>
-            </div>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Link
-              href={`${ROUTES.CONSOLE.SETTINGS}?tab=repositories`}
-              className={buttonVariants({
-                variant: 'outline',
-                className: 'inline-flex flex-row items-center gap-1.5 whitespace-nowrap',
-              })}
-            >
-              <span>{t('actions.enterRepository')}</span>
-              <ArrowRight className="h-4 w-4 shrink-0" />
-            </Link>
-            {connectedRepository ? (
-              <Link
-                href={specForgeHref}
-                className={buttonVariants({
-                  className: 'inline-flex flex-row items-center gap-1.5 whitespace-nowrap',
-                })}
-              >
-                <span>{t('actions.useInCodingCTO')}</span>
-                <ArrowRight className="h-4 w-4 shrink-0" />
-              </Link>
-            ) : null}
-          </div>
-        </CardContent>
-      </Card>
-    </section>
-  );
+  const connectionStatus = !settings.enabled
+    ? 'disabled'
+    : connectionQuery.isFetching
+      ? 'checking'
+      : connection?.token_status === 'connected'
+        ? 'connected'
+        : 'notConnected';
+  const connectionReady = connectionStatus === 'connected';
 
   return (
-    <div className="mx-auto max-w-4xl space-y-8">
-      <p className="text-sm leading-6 text-text-muted">
-        {t('intro')}
-      </p>
-
+    <div className="mx-auto max-w-4xl space-y-6">
       {message ? (
         <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3 text-sm leading-6 text-text-muted">
           {message}
@@ -611,100 +471,209 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
         />
       ) : null}
 
-      {mode === 'github' ? (
-        <>
-          <GitHubSetupChecklistPanel
-            summary={setupChecklist}
-            installURL={installURL}
-            enabled={settings.enabled}
-            isSaving={isSaving}
-            repositorySettingsHref={repositorySettingsHref}
-            targetOwner={targetOwner}
-            targetRepo={targetRepo}
-            targetRepositoryURL={targetRepositoryURL}
-            targetRepositoryId={targetRepositoryId}
-            returnTo={returnTo}
-            onBeforeInstall={rememberGitHubRecoveryContext}
-            onMissingInstall={() => {
-              setMessage(
-                workspaceId.trim()
-                  ? t('messages.installEntryRequired')
-                  : t('messages.selectWorkspaceBeforeInstall')
-              );
-            }}
-          />
+      <section className="rounded-[4px] border border-border-subtle bg-bg-surface">
+        <div className="flex flex-col gap-5 border-b border-border-subtle p-6 md:flex-row md:items-start md:justify-between">
+          <div className="flex min-w-0 gap-4">
+            <div className="flex h-11 w-11 shrink-0 items-center justify-center rounded-[4px] border border-border-subtle bg-bg-subtle">
+              <Github className="h-5 w-5 text-text-main" />
+            </div>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-lg font-semibold tracking-tight text-text-main">
+                  {t('connectionPage.title')}
+                </h3>
+                <span className={githubConnectionStatusClassName(connectionStatus)}>
+                  {t(`connectionPage.status.${connectionStatus}`)}
+                </span>
+              </div>
+              <p className="mt-2 max-w-2xl text-sm leading-6 text-text-muted">
+                {t('connectionPage.description')}
+              </p>
+            </div>
+          </div>
+          <div className="flex shrink-0 flex-wrap gap-2">
+            <Button
+              type="button"
+              disabled={!settings.enabled || startOAuth.isPending || !workspaceId.trim()}
+              onClick={startGitHubOAuth}
+            >
+              {startOAuth.isPending
+                ? t('actions.connecting')
+                : connectionReady
+                  ? t('connectionPage.actions.manageConnection')
+                  : t('connectionPage.actions.connect')}
+            </Button>
+            <Button
+              type="button"
+              variant="outline"
+              disabled={connectionQuery.isFetching || repositoryAccessesQuery.isFetching}
+              onClick={() => {
+                connectionQuery.refetch();
+                repositoryAccessesQuery.refetch();
+              }}
+            >
+              <RefreshCw
+                className={
+                  connectionQuery.isFetching || repositoryAccessesQuery.isFetching
+                    ? 'h-4 w-4 animate-spin'
+                    : 'h-4 w-4'
+                }
+              />
+              {t('connectionPage.actions.refresh')}
+            </Button>
+          </div>
+        </div>
 
-          <Card>
-            <CardContent className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
-              <div className="flex gap-3">
-                <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-bg-subtle">
-                  <Github className="h-5 w-5" />
-                </div>
-                <div>
-                  <div className="font-medium">{t('enable.title')}</div>
-                  <p className="mt-1 text-sm leading-6 text-text-muted">
-                    {t('enable.description')}
-                  </p>
+        <div className="grid divide-y divide-border-subtle md:grid-cols-3 md:divide-x md:divide-y-0">
+          <ConnectionMetric
+            label={t('connectionPage.metrics.owners')}
+            value={connection ? '1' : '0'}
+          />
+          <ConnectionMetric
+            label={t('connectionPage.metrics.repositories')}
+            value={String(authorizedRepositoryCount)}
+          />
+          <ConnectionToggleMetric
+            label={t('connectionPage.metrics.enabled')}
+            checked={settings.enabled}
+            disabled={isSaving}
+            onCheckedChange={checked => updateSetting('enabled', checked)}
+          />
+        </div>
+      </section>
+
+      <section className="rounded-[4px] border border-border-subtle bg-bg-surface">
+        <div className="border-b border-border-subtle px-5 py-4">
+          <h3 className="text-sm font-semibold text-text-main">
+            {t('connectionPage.accounts.title')}
+          </h3>
+          <p className="mt-1 text-sm leading-6 text-text-muted">
+            {t('connectionPage.accounts.description')}
+          </p>
+        </div>
+        <div className="divide-y divide-border-subtle">
+          {connectionQuery.isLoading ? (
+            <ConnectionEmptyRow text={t('connectionPage.accounts.loading')} />
+          ) : connection ? (
+            <div className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between">
+              <div className="flex min-w-0 items-center gap-3">
+                {connection.github_avatar_url ? (
+                  // eslint-disable-next-line @next/next/no-img-element
+                  <img
+                    src={connection.github_avatar_url}
+                    alt=""
+                    className="h-9 w-9 shrink-0 rounded-[4px] border border-border-subtle"
+                  />
+                ) : (
+                  <Github className="h-5 w-5 shrink-0 text-text-main" />
+                )}
+                <div className="min-w-0">
+                  <div className="truncate text-sm font-medium text-text-main">
+                    {connection.github_name || connection.github_login}
+                  </div>
+                  <div className="mt-0.5 text-xs leading-5 text-text-muted">
+                    @{connection.github_login} · {connection.token_status}
+                    {connection.last_synced_at
+                      ? ` · ${t('connectionPage.accounts.lastSynced')} ${formatDate(connection.last_synced_at)}`
+                      : ''}
+                  </div>
                 </div>
               </div>
-              <Switch
-                checked={settings.enabled}
-                disabled={isSaving}
-                onCheckedChange={checked => updateSetting('enabled', checked)}
-              />
-            </CardContent>
-          </Card>
+              <div className="flex flex-wrap gap-2">
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={syncOAuthRepositories.isPending || !settings.enabled}
+                  onClick={syncAuthorizedRepositories}
+                >
+                  {syncOAuthRepositories.isPending
+                    ? t('actions.syncing')
+                    : t('connectionPage.actions.sync')}
+                </Button>
+                <Button
+                  type="button"
+                  variant="outline"
+                  size="sm"
+                  disabled={disconnectOAuth.isPending || !settings.enabled}
+                  onClick={disconnectGitHubOAuth}
+                >
+                  {t('connectionPage.actions.disconnect')}
+                </Button>
+              </div>
+            </div>
+          ) : (
+            <ConnectionEmptyRow text={t('connectionPage.accounts.empty')} />
+          )}
+        </div>
+      </section>
 
-          <section className="space-y-3">
-            <h3 className="text-base font-semibold">{t('sections.connection')}</h3>
-            <Card>
-              <CardContent className="flex flex-col gap-4 p-4 md:flex-row md:items-center md:justify-between">
-                <div className="flex gap-3">
-                  <div className="flex h-10 w-10 shrink-0 items-center justify-center rounded-lg border border-border-subtle bg-bg-subtle">
-                    <Github className="h-5 w-5" />
-                  </div>
-                  <div>
-                    <div className="font-medium">{t('app.title')}</div>
-                    <p className="mt-1 text-sm leading-6 text-text-muted">
-                      {t('app.descriptionPrefix')}{' '}
-                      <code className="rounded bg-bg-subtle px-1.5 py-0.5 text-xs">MUL-123</code>
-                      {t('app.descriptionSuffix')}
-                    </p>
-                  </div>
-                </div>
-                {installURL && workspaceId.trim() ? (
-                  <Button asChild disabled={!settings.enabled}>
-                    <a
-                      href={installURL}
-                      target="_blank"
-                      rel="noreferrer"
-                      onClick={rememberGitHubRecoveryContext}
-                    >
-                      {t('actions.installApp')}
-                    </a>
-                  </Button>
-                ) : (
-                  <Button
-                    onClick={() => {
-                      setMessage(
-                        workspaceId.trim()
-                          ? t('messages.installEntryRequired')
-                          : t('messages.selectWorkspaceBeforeInstall')
-                      );
-                    }}
-                    disabled={!settings.enabled}
-                  >
-                    {t('actions.installApp')}
-                  </Button>
-                )}
-              </CardContent>
-            </Card>
-          </section>
+      <section className="rounded-[4px] border border-border-subtle bg-bg-surface">
+        <div className="flex flex-col gap-3 border-b border-border-subtle px-5 py-4 md:flex-row md:items-center md:justify-between">
+          <div>
+            <h3 className="text-sm font-semibold text-text-main">
+              {t('connectionPage.repositories.title')}
+            </h3>
+            <p className="mt-1 text-sm leading-6 text-text-muted">
+              {t('connectionPage.repositories.description')}
+            </p>
+          </div>
+          <Button asChild variant="outline" size="sm">
+            <Link href={`${ROUTES.CONSOLE.SETTINGS}?tab=repositories`}>
+              {t('connectionPage.actions.manageRepositories')}
+            </Link>
+          </Button>
+        </div>
+        <div className="divide-y divide-border-subtle">
+          {repositoryAccessesQuery.isLoading ? (
+            <ConnectionEmptyRow text={t('connectionPage.repositories.loading')} />
+          ) : visibleRepositoryAccesses.length > 0 ? (
+            visibleRepositoryAccesses.map(repository => (
+              <RepositoryAccessRow key={repository.id} repository={repository} />
+            ))
+          ) : (
+            <ConnectionEmptyRow text={t('connectionPage.repositories.empty')} />
+          )}
+        </div>
+        {authorizedRepositoryCount > visibleRepositoryAccesses.length ? (
+          <div className="border-t border-border-subtle px-5 py-3 text-xs leading-5 text-text-muted">
+            {t('connectionPage.repositories.showing', {
+              visible: visibleRepositoryAccesses.length,
+              count: authorizedRepositoryCount,
+            })}
+          </div>
+        ) : null}
+      </section>
 
-          <section className="space-y-3">
-            <h3 className="text-base font-semibold">{t('sections.features')}</h3>
-            <Card>
-              <CardContent className="divide-y divide-border-subtle p-0">
+      <section className="rounded-[4px] border border-border-subtle bg-bg-surface">
+        <button
+          type="button"
+          className="flex w-full items-center justify-between gap-3 px-5 py-4 text-left"
+          onClick={() => setAdvancedOpen(open => !open)}
+        >
+          <span>
+            <span className="block text-sm font-semibold text-text-main">
+              {t('connectionPage.advanced.title')}
+            </span>
+            <span className="mt-1 block text-sm leading-6 text-text-muted">
+              {t('connectionPage.advanced.description')}
+            </span>
+          </span>
+          <ChevronDown
+            className={
+              advancedOpen
+                ? 'h-4 w-4 rotate-180 text-text-muted transition-transform'
+                : 'h-4 w-4 text-text-muted transition-transform'
+            }
+          />
+        </button>
+        {advancedOpen ? (
+          <div className="space-y-5 border-t border-border-subtle p-5">
+            <section className="rounded-[4px] border border-border-subtle">
+              <div className="border-b border-border-subtle px-4 py-3 text-sm font-medium text-text-main">
+                {t('connectionPage.advanced.preferences')}
+              </div>
+              <div className="divide-y divide-border-subtle">
                 <FeatureToggle
                   icon={PanelRight}
                   title={t('features.prSidebar.title')}
@@ -737,15 +706,156 @@ export function GitHubConnectionPanel({ mode = 'github' }: GitHubConnectionPanel
                   disabled={!settings.enabled || isSaving}
                   onCheckedChange={checked => updateSetting('issuePrAutoLink', checked)}
                 />
-              </CardContent>
-            </Card>
-          </section>
+              </div>
+            </section>
 
-          {repositoryManagementCard}
-        </>
-      ) : null}
+            <GitHubSetupChecklistPanel
+              summary={setupChecklist}
+              installURL={installURL}
+              enabled={settings.enabled}
+              isSaving={isSaving}
+              repositorySettingsHref={repositorySettingsHref}
+              targetOwner={targetOwner}
+              targetRepo={targetRepo}
+              targetRepositoryURL={targetRepositoryURL}
+              targetRepositoryId={targetRepositoryId}
+              returnTo={returnTo}
+              onBeforeInstall={rememberGitHubRecoveryContext}
+              onMissingInstall={() => {
+                setMessage(
+                  workspaceId.trim()
+                    ? t('messages.installEntryRequired')
+                    : t('messages.selectWorkspaceBeforeInstall')
+                );
+              }}
+            />
+          </div>
+        ) : null}
+      </section>
     </div>
   );
+}
+
+type GitHubConnectionStatus =
+  | 'connected'
+  | 'notConnected'
+  | 'notConfigured'
+  | 'checking'
+  | 'disabled';
+
+function ConnectionMetric({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="px-5 py-4">
+      <div className="text-xs font-medium uppercase tracking-[0.12em] text-text-muted">
+        {label}
+      </div>
+      <div className="mt-2 text-2xl font-semibold tracking-tight text-text-main">{value}</div>
+    </div>
+  );
+}
+
+function ConnectionToggleMetric({
+  label,
+  checked,
+  disabled,
+  onCheckedChange,
+}: {
+  label: string;
+  checked: boolean;
+  disabled?: boolean;
+  onCheckedChange: (checked: boolean) => void;
+}) {
+  return (
+    <div className="flex items-center justify-between gap-4 px-5 py-4">
+      <div>
+        <div className="text-xs font-medium uppercase tracking-[0.12em] text-text-muted">
+          {label}
+        </div>
+        <div className="mt-2 flex items-center gap-2 text-sm font-medium text-text-main">
+          <ShieldCheck className="h-4 w-4 text-success" />
+          GitHub
+        </div>
+      </div>
+      <Switch checked={checked} disabled={disabled} onCheckedChange={onCheckedChange} />
+    </div>
+  );
+}
+
+function ConnectionEmptyRow({ text }: { text: string }) {
+  return <div className="px-5 py-5 text-sm leading-6 text-text-muted">{text}</div>;
+}
+
+function githubConnectionStatusClassName(status: GitHubConnectionStatus) {
+  switch (status) {
+    case 'connected':
+      return 'rounded-full border border-success/30 bg-success-subtle px-2 py-0.5 text-xs font-medium text-success';
+    case 'checking':
+      return 'rounded-full border border-primary/30 bg-primary-subtle px-2 py-0.5 text-xs font-medium text-primary';
+    case 'disabled':
+      return 'rounded-full border border-border-subtle bg-bg-subtle px-2 py-0.5 text-xs font-medium text-text-muted';
+    case 'notConfigured':
+      return 'rounded-full border border-warning/30 bg-warning-subtle px-2 py-0.5 text-xs font-medium text-warning';
+    default:
+      return 'rounded-full border border-warning/30 bg-warning-subtle px-2 py-0.5 text-xs font-medium text-warning';
+  }
+}
+
+function RepositoryAccessRow({ repository }: { repository: GitHubRepositoryAccessDTO }) {
+  return (
+    <div className="flex flex-col gap-3 px-5 py-4 md:flex-row md:items-center md:justify-between">
+      <div className="flex min-w-0 items-center gap-3">
+        <GitPullRequest className="h-5 w-5 shrink-0 text-text-main" />
+        <div className="min-w-0">
+          <div className="truncate text-sm font-medium text-text-main">
+            {repository.full_name}
+          </div>
+          <div className="mt-0.5 text-xs leading-5 text-text-muted">
+            {repository.default_branch} · {repositoryAccessSourceLabel(repository)}
+          </div>
+        </div>
+      </div>
+      <div className="flex shrink-0 flex-wrap gap-2">
+        <span className="rounded-full border border-border-subtle px-2 py-0.5 text-xs text-text-muted">
+          {repository.visibility || (repository.is_private ? 'private' : 'public')}
+        </span>
+        <span
+          className={
+            repositoryAccessWritable(repository)
+              ? 'rounded-full border border-success/30 px-2 py-0.5 text-xs text-success'
+              : 'rounded-full border border-border-subtle px-2 py-0.5 text-xs text-text-muted'
+          }
+        >
+          {repositoryAccessWritable(repository) ? 'write' : 'read'}
+        </span>
+      </div>
+    </div>
+  );
+}
+
+function repositoryAccessSourceLabel(repository: GitHubRepositoryAccessDTO) {
+  if (repository.source_type === 'organization' && repository.organization_login) {
+    return repository.organization_login;
+  }
+  return repository.owner_login || 'personal';
+}
+
+function repositoryAccessWritable(repository: GitHubRepositoryAccessDTO) {
+  return Boolean(
+    repository.permissions?.admin ||
+      repository.permissions?.maintain ||
+      repository.permissions?.push
+  );
+}
+
+function formatDate(value?: string) {
+  if (!value) {
+    return '';
+  }
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return date.toLocaleDateString();
 }
 
 function GitHubRecoveryTargetPanel({
@@ -765,8 +875,8 @@ function GitHubRecoveryTargetPanel({
       <p className="mt-1 text-sm leading-6 text-text-muted">
         {label}
         {repositoryId ? ` · ${repositoryId}` : ''}。{mode === 'github'
-          ? '先安装或同步 GitHub App，确认这个仓库出现在可访问仓库列表。'
-          : '把已同步的仓库保存并绑定到项目后，再回到交付页重新检查。'}
+          ? '先连接 GitHub 并同步授权仓库，确认这个仓库出现在可访问仓库列表。'
+          : '同步授权仓库并绑定到项目后，再回到交付页重新检查。'}
       </p>
       {returnTo ? (
         <div className="mt-2">
@@ -829,7 +939,7 @@ function GitHubSetupChecklistPanel({
     <section className="rounded-lg border border-border-subtle bg-bg-surface p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-medium text-text-main">GitHub App 恢复清单</div>
+          <div className="text-sm font-medium text-text-main">GitHub App 兼容恢复清单</div>
           <p className="mt-1 text-sm leading-6 text-text-muted">
             {summary.headline} {summary.nextAction}
           </p>
@@ -882,7 +992,7 @@ function GitHubSetupChecklistPanel({
         )}
         <Button asChild size="sm">
           <Link href={repositorySettingsHref}>
-            绑定已同步仓库
+            查看授权仓库
           </Link>
         </Button>
       </div>

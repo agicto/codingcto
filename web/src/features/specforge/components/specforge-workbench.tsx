@@ -909,7 +909,7 @@ export function SpecForgeWorkbench({
     } catch {
       if (projectId) {
         setPlanGenerationError(
-          '真实项目计划生成失败。请确认 API 登录态、目标仓库绑定、GitHub App 权限和后端服务均可用。'
+          '真实项目计划生成失败。请确认 API 登录态、目标仓库绑定、GitHub 连接和后端服务均可用。'
         );
         setPlanSource('empty');
         setHasPlan(false);
@@ -3390,7 +3390,7 @@ function RepoWikiPanel({
       });
     } catch (error) {
       setWikiGenerationError(
-        `${dispatchFailureMessage(error)}。生成 Repo Wiki 需要后端能读取仓库文件树；如果是 GitHub 仓库，请先完成 GitHub App 安装和仓库授权。`
+        `${dispatchFailureMessage(error)}。生成 Repo Wiki 需要后端能读取仓库文件树；如果是 GitHub 仓库，请先完成 GitHub 连接、仓库授权和同步。`
       );
     }
   }
@@ -5713,7 +5713,7 @@ function PreDispatchRunGuide({
         <div className="mt-3 rounded-md border border-warning/30 bg-warning-subtle p-3">
           <div className="text-sm font-medium text-warning">GitHub 交付权限未就绪</div>
           <p className="mt-1 text-xs leading-5 text-warning">
-            正式执行会创建 Issue、推送分支并打开 PR；请先修复 GitHub App 安装和仓库权限。
+            正式执行会创建 Issue、推送分支并打开 PR；请先修复 GitHub 连接和仓库权限。
           </p>
           <GitHubGateRecoveryActions actions={githubRecoveryActions} />
         </div>
@@ -6932,7 +6932,7 @@ function PRDag({
       rememberDeliveredNode(prNodeFromDTO(updated));
     } catch {
       setDeliveryError(
-        'GitHub 交付控制需要 CodingCTO 后端和 GitHub App 配置可用。'
+        'GitHub 交付控制需要 CodingCTO 后端、GitHub 连接和仓库权限可用。'
       );
     } finally {
       setDeliveryActionNodeId(undefined);
@@ -7006,7 +7006,7 @@ function PRDag({
       setFailureLog(log);
     } catch {
       setFailureLogError(
-        '失败日志需要失败的 GitHub workflow 运行记录，以及 GitHub App 访问权限。'
+        '失败日志需要失败的 GitHub workflow 运行记录，以及 GitHub 访问权限。'
       );
     }
   }

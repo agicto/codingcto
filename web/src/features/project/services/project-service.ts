@@ -41,6 +41,38 @@ export interface ProjectRepositoryDTO {
   updated_at: string;
 }
 
+export interface ProjectGitHubRepositoryAccessDTO {
+  id: number;
+  workspace_id: string;
+  connection_id: number;
+  github_repo_id: number;
+  owner_login: string;
+  repo_name: string;
+  full_name: string;
+  html_url: string;
+  default_branch: string;
+  visibility: string;
+  is_private: boolean;
+  source_type: 'personal' | 'organization' | string;
+  organization_login: string;
+  permissions: Record<string, boolean>;
+  archived: boolean;
+  disabled: boolean;
+  last_seen_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectRepositoryOptionDTO {
+  repository_id: string;
+  access: ProjectGitHubRepositoryAccessDTO;
+  already_bound: boolean;
+  bound_role?: string;
+  writable: boolean;
+  selectable: boolean;
+  disabled_reason?: string;
+}
+
 export interface ProjectRepoProfileDTO {
   id: number;
   repository_id: string;
@@ -111,6 +143,32 @@ export interface ProjectContextReadinessDTO {
   next_action: string;
 }
 
+export interface ProjectReadinessCheckDTO {
+  key: string;
+  label: string;
+  status: 'blocked' | 'attention' | 'ready' | string;
+  detail?: string;
+  required: boolean;
+}
+
+export interface ProjectReadinessDTO {
+  project_id: number;
+  readiness_status: 'blocked' | 'attention' | 'ready' | string;
+  next_step: string;
+  next_action: string;
+  summary: string;
+  primary_repository_id?: string;
+  has_primary_repository: boolean;
+  active_repository_count: number;
+  read_only_repository_count: number;
+  skill_count: number;
+  warning_count: number;
+  runtime_count: number;
+  checks?: ProjectReadinessCheckDTO[];
+  warnings?: string[];
+  guardrails?: string[];
+}
+
 export interface ProjectRepositoryContextContractFragmentDTO {
   repository_id: string;
   role: string;
@@ -144,10 +202,157 @@ export interface ProjectContextContractDTO {
   repositories?: ProjectRepositoryContextContractFragmentDTO[];
 }
 
+export interface ProjectContextDeepWikiSummaryDTO {
+  source_id: number;
+  index_id: number;
+  source_type?: string;
+  source_status?: string;
+  index_status?: string;
+  repo_url?: string;
+  matched_by?: string;
+  last_indexed_at?: string;
+  file_count: number;
+  chunk_count: number;
+  page_count: number;
+  frameworks?: string[];
+  entrypoints?: string[];
+  routes?: string[];
+  services?: string[];
+  models?: string[];
+  top_pages?: string[];
+  warnings?: string[];
+}
+
+export interface ProjectContextSnapshotRepositoryDTO {
+  repository_id: string;
+  role: string;
+  writable: boolean;
+  profile_summary?: string;
+  profile_source?: string;
+  architecture_summary?: string;
+  architecture_snapshot_commit?: string;
+  architecture_stale: boolean;
+  skill_names?: string[];
+  warnings?: string[];
+  warning_count: number;
+  missing_evidence?: string[];
+  deepwiki?: ProjectContextDeepWikiSummaryDTO;
+}
+
+export interface ProjectContextSnapshotDTO {
+  id: number;
+  workspace_id: string;
+  project_id: number;
+  snapshot_status: 'blocked' | 'attention' | 'ready' | string;
+  summary: string;
+  primary_repository_id?: string;
+  warning_count: number;
+  missing_evidence?: string[];
+  evidence_refs?: string[];
+  repositories?: ProjectContextSnapshotRepositoryDTO[];
+  readiness?: ProjectContextReadinessDTO;
+  context_contract?: ProjectContextContractDTO;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectExpertReviewPolicyDTO {
+  required_approvals: number;
+  allow_author_approval: boolean;
+  block_on_changes_requested: boolean;
+  require_ci_green: boolean;
+}
+
+export interface ProjectExpertMergePolicyDTO {
+  strategy: 'squash' | 'rebase' | 'merge' | string;
+  require_manual_approval: boolean;
+  allow_auto_merge: boolean;
+}
+
+export interface ProjectExpertPolicyDTO {
+  id: number;
+  workspace_id: string;
+  project_id: number;
+  version: number;
+  active: boolean;
+  goal_boundary: string;
+  allowed_paths?: string[];
+  forbidden_paths?: string[];
+  required_test_commands?: string[];
+  review_policy: ProjectExpertReviewPolicyDTO;
+  merge_policy: ProjectExpertMergePolicyDTO;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectRuntimeBindingDTO {
+  id: number;
+  workspace_id: string;
+  project_id: number;
+  repository_id: string;
+  runtime_id: string;
+  executor: string;
+  repo_dir: string;
+  active: boolean;
+  created_by: number;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectRuntimeBindingRuntimeCLIDTO {
+  name: string;
+  command: string;
+  path?: string;
+  version?: string;
+  available: boolean;
+}
+
+export interface ProjectRuntimeBindingRuntimeSandboxDTO {
+  provider?: string;
+  mode?: string;
+  network_access: boolean;
+  writable: boolean;
+  approval_policy?: string;
+  reason?: string;
+}
+
+export interface ProjectRuntimeBindingRuntimeSkillRootDTO {
+  provider: string;
+  path: string;
+  writable: boolean;
+}
+
+export interface ProjectRuntimeBindingRuntimeDTO {
+  id: number;
+  runtime_id: string;
+  executor: string;
+  status: string;
+  hostname?: string;
+  version?: string;
+  available_clis?: ProjectRuntimeBindingRuntimeCLIDTO[];
+  sandbox?: ProjectRuntimeBindingRuntimeSandboxDTO;
+  skill_roots?: ProjectRuntimeBindingRuntimeSkillRootDTO[];
+  local_skill_count?: number;
+  capabilities_hash?: string;
+  last_seen_at: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectRuntimeBindingStatusDTO {
+  binding: ProjectRuntimeBindingDTO;
+  runtime?: ProjectRuntimeBindingRuntimeDTO;
+  eligible: boolean;
+  warnings?: string[];
+}
+
 export interface ProjectContextDTO {
   project: ProjectDTO;
   repositories: ProjectRepositoryDTO[];
   repository_contexts: ProjectRepositoryContextDTO[];
+  latest_snapshot?: ProjectContextSnapshotDTO;
   primary_repository_id?: string;
   execution_repository_id?: string;
   read_only_repository_ids?: string[];
@@ -163,6 +368,13 @@ export interface CreateProjectPayload {
   description?: string;
 }
 
+export interface UpdateProjectPayload {
+  name?: string;
+  slug?: string;
+  description?: string;
+  status?: 'active' | 'archived';
+}
+
 export interface CreateWorkspacePayload {
   workspace_id?: string;
   name: string;
@@ -173,6 +385,22 @@ export interface CreateWorkspacePayload {
 export interface BindRepositoryPayload {
   repository_id: string;
   role: 'primary' | 'dependency' | 'docs' | 'infra';
+}
+
+export interface UpsertProjectExpertPolicyPayload {
+  goal_boundary: string;
+  allowed_paths?: string[];
+  forbidden_paths?: string[];
+  required_test_commands?: string[];
+  review_policy: ProjectExpertReviewPolicyDTO;
+  merge_policy: ProjectExpertMergePolicyDTO;
+}
+
+export interface UpsertProjectRuntimeBindingPayload {
+  repository_id: string;
+  runtime_id: string;
+  executor?: string;
+  repo_dir: string;
 }
 
 export const projectService = {
@@ -195,8 +423,95 @@ export const projectService = {
   createProject: (payload: CreateProjectPayload, config?: RequestConfig) =>
     request.post<{ project: ProjectDTO }, CreateProjectPayload>('/projects', payload, config),
 
+  getProject: (projectId: number, config?: RequestConfig) =>
+    request.get<{ project: ProjectDTO }>(`/projects/${projectId}`, config),
+
+  updateProject: (projectId: number, payload: UpdateProjectPayload, config?: RequestConfig) =>
+    request.patch<{ project: ProjectDTO }, UpdateProjectPayload>(
+      `/projects/${projectId}`,
+      payload,
+      config
+    ),
+
+  deleteProject: (projectId: number, config?: RequestConfig) =>
+    request.delete<void>(`/projects/${projectId}`, config),
+
   getProjectContext: (projectId: number, config?: RequestConfig) =>
     request.get<{ context: ProjectContextDTO }>(`/projects/${projectId}/context`, config),
+
+  listRepositoryOptions: (projectId: number, config?: RequestConfig) =>
+    request.get<{ repositories: ProjectRepositoryOptionDTO[] }>(
+      `/projects/${projectId}/repositories/options`,
+      config
+    ),
+
+  reindexProjectContext: (projectId: number, config?: RequestConfig) =>
+    request.post<{ snapshot: ProjectContextSnapshotDTO }>(
+      `/projects/${projectId}/context/reindex`,
+      undefined,
+      config
+    ),
+
+  getProjectReadiness: (projectId: number, config?: RequestConfig) =>
+    request.get<{ readiness: ProjectReadinessDTO }>(`/projects/${projectId}/readiness`, config),
+
+  getProjectExpertPolicy: (projectId: number, config?: RequestConfig) =>
+    request.get<{ policy: ProjectExpertPolicyDTO | null }>(
+      `/projects/${projectId}/expert-policy`,
+      config
+    ),
+
+  listProjectRuntimeBindings: (projectId: number, config?: RequestConfig) =>
+    request.get<{ bindings: ProjectRuntimeBindingStatusDTO[] }>(
+      `/projects/${projectId}/runtime-bindings`,
+      config
+    ),
+
+  createProjectExpertPolicy: (
+    projectId: number,
+    payload: UpsertProjectExpertPolicyPayload,
+    config?: RequestConfig
+  ) =>
+    request.post<{ policy: ProjectExpertPolicyDTO }, UpsertProjectExpertPolicyPayload>(
+      `/projects/${projectId}/expert-policy`,
+      payload,
+      config
+    ),
+
+  updateProjectExpertPolicy: (
+    projectId: number,
+    policyId: number,
+    payload: UpsertProjectExpertPolicyPayload,
+    config?: RequestConfig
+  ) =>
+    request.patch<{ policy: ProjectExpertPolicyDTO }, UpsertProjectExpertPolicyPayload>(
+      `/projects/${projectId}/expert-policy/${policyId}`,
+      payload,
+      config
+    ),
+
+  createProjectRuntimeBinding: (
+    projectId: number,
+    payload: UpsertProjectRuntimeBindingPayload,
+    config?: RequestConfig
+  ) =>
+    request.post<{ binding: ProjectRuntimeBindingStatusDTO }, UpsertProjectRuntimeBindingPayload>(
+      `/projects/${projectId}/runtime-bindings`,
+      payload,
+      config
+    ),
+
+  updateProjectRuntimeBinding: (
+    projectId: number,
+    bindingId: number,
+    payload: UpsertProjectRuntimeBindingPayload,
+    config?: RequestConfig
+  ) =>
+    request.patch<{ binding: ProjectRuntimeBindingStatusDTO }, UpsertProjectRuntimeBindingPayload>(
+      `/projects/${projectId}/runtime-bindings/${bindingId}`,
+      payload,
+      config
+    ),
 
   bindRepository: (projectId: number, payload: BindRepositoryPayload, config?: RequestConfig) =>
     request.post<{ repository: ProjectRepositoryDTO }, BindRepositoryPayload>(

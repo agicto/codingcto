@@ -16,6 +16,7 @@ type CreateProjectRequest struct {
 
 type UpdateProjectRequest struct {
 	Name        *string `json:"name" binding:"omitempty,min=2,max=120"`
+	Slug        *string `json:"slug" binding:"omitempty,min=2,max=100"`
 	Description *string `json:"description" binding:"omitempty,max=5000"`
 	Status      *string `json:"status" binding:"omitempty,oneof=active archived"`
 }
@@ -23,6 +24,35 @@ type UpdateProjectRequest struct {
 type BindRepositoryRequest struct {
 	RepositoryID string `json:"repository_id" binding:"required,min=1,max=255"`
 	Role         string `json:"role" binding:"required,oneof=primary dependency docs infra"`
+}
+
+type UpsertProjectExpertPolicyRequest struct {
+	GoalBoundary         string                           `json:"goal_boundary" binding:"required,max=5000"`
+	AllowedPaths         []string                         `json:"allowed_paths"`
+	ForbiddenPaths       []string                         `json:"forbidden_paths"`
+	RequiredTestCommands []string                         `json:"required_test_commands"`
+	ReviewPolicy         ProjectExpertReviewPolicyRequest `json:"review_policy"`
+	MergePolicy          ProjectExpertMergePolicyRequest  `json:"merge_policy"`
+}
+
+type ProjectExpertReviewPolicyRequest struct {
+	RequiredApprovals       int  `json:"required_approvals"`
+	AllowAuthorApproval     bool `json:"allow_author_approval"`
+	BlockOnChangesRequested bool `json:"block_on_changes_requested"`
+	RequireCIGreen          bool `json:"require_ci_green"`
+}
+
+type ProjectExpertMergePolicyRequest struct {
+	Strategy              string `json:"strategy" binding:"omitempty,oneof=squash rebase merge"`
+	RequireManualApproval bool   `json:"require_manual_approval"`
+	AllowAutoMerge        bool   `json:"allow_auto_merge"`
+}
+
+type UpsertProjectRuntimeBindingRequest struct {
+	RepositoryID string `json:"repository_id" binding:"required,max=255"`
+	RuntimeID    string `json:"runtime_id" binding:"required,max=100"`
+	Executor     string `json:"executor" binding:"omitempty,max=100"`
+	RepoDir      string `json:"repo_dir" binding:"required,max=1000"`
 }
 
 type ProjectResponse struct {
@@ -41,8 +71,42 @@ type ProjectRepositoryListResponse struct {
 	Repositories []*domain.SpecForgeProjectRepository `json:"repositories"`
 }
 
+type ProjectRepositoryOptionsResponse struct {
+	Repositories []*ProjectRepositoryOption `json:"repositories"`
+}
+
+type ProjectRepositoryOption struct {
+	RepositoryID   string                         `json:"repository_id"`
+	Access         *domain.GitHubRepositoryAccess `json:"access"`
+	AlreadyBound   bool                           `json:"already_bound"`
+	BoundRole      string                         `json:"bound_role,omitempty"`
+	Writable       bool                           `json:"writable"`
+	Selectable     bool                           `json:"selectable"`
+	DisabledReason string                         `json:"disabled_reason,omitempty"`
+}
+
 type ProjectContextResponse struct {
 	Context *domain.SpecForgeProjectContext `json:"context"`
+}
+
+type ProjectReadinessResponse struct {
+	Readiness *domain.SpecForgeProjectReadiness `json:"readiness"`
+}
+
+type ProjectContextSnapshotResponse struct {
+	Snapshot *domain.SpecForgeProjectContextSnapshot `json:"snapshot"`
+}
+
+type ProjectExpertPolicyResponse struct {
+	Policy *domain.SpecForgeProjectExpertPolicy `json:"policy"`
+}
+
+type ProjectRuntimeBindingResponse struct {
+	Binding *domain.SpecForgeProjectRuntimeBindingStatus `json:"binding"`
+}
+
+type ProjectRuntimeBindingListResponse struct {
+	Bindings []*domain.SpecForgeProjectRuntimeBindingStatus `json:"bindings"`
 }
 
 func newProjectPO(project *domain.SpecForgeProject) *ProjectPO {

@@ -102,6 +102,7 @@ export function PlanReview({
         </CardHeader>
         <CardContent className="space-y-5">
           <ListBlock title="Affected areas" items={implementationPlan.affectedAreas} />
+          <PinnedPlanningInputs plan={plan} />
           <ListBlock title="PR DAG review" items={plan.prDagReview} />
           <div className="space-y-2">
             <Label htmlFor="execution-executor">Executor</Label>
@@ -177,6 +178,68 @@ export function PlanReview({
           </Button>
         </CardContent>
       </Card>
+    </div>
+  );
+}
+
+function PinnedPlanningInputs({ plan }: { plan: PlanBundle }) {
+  if (!plan.contextSnapshot && !plan.expertPolicy) {
+    return null;
+  }
+
+  return (
+    <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <h3 className="text-sm font-medium">Pinned planning inputs</h3>
+        {plan.implementationPlan.contextSnapshotId ? (
+          <Badge variant="outline" className="font-mono text-[10px]">
+            snapshot #{plan.implementationPlan.contextSnapshotId}
+          </Badge>
+        ) : null}
+        {plan.expertPolicy ? (
+          <Badge variant="outline" className="font-mono text-[10px]">
+            policy v{plan.expertPolicy.version}
+          </Badge>
+        ) : null}
+      </div>
+      <div className="mt-3 grid gap-3 md:grid-cols-2">
+        <div className="space-y-2 text-xs leading-5 text-text-muted">
+          <div className="font-medium text-text-main">Context snapshot</div>
+          {plan.contextSnapshot ? (
+            <>
+              <div>Status: {plan.contextSnapshot.snapshotStatus}</div>
+              <div>Primary repo: {plan.contextSnapshot.primaryRepositoryId ?? 'Unknown'}</div>
+              <div>{plan.contextSnapshot.summary}</div>
+              {plan.contextSnapshot.missingEvidence.length ? (
+                <div>Missing evidence: {plan.contextSnapshot.missingEvidence.join(', ')}</div>
+              ) : null}
+            </>
+          ) : (
+            <div>No pinned project context snapshot metadata was returned for this plan.</div>
+          )}
+        </div>
+        <div className="space-y-2 text-xs leading-5 text-text-muted">
+          <div className="font-medium text-text-main">Expert policy</div>
+          {plan.expertPolicy ? (
+            <>
+              <div>{plan.expertPolicy.goalBoundary}</div>
+              {plan.expertPolicy.allowedPaths.length ? (
+                <div>Allowed paths: {plan.expertPolicy.allowedPaths.join(', ')}</div>
+              ) : null}
+              {plan.expertPolicy.requiredTestCommands.length ? (
+                <div>Required tests: {plan.expertPolicy.requiredTestCommands.join(', ')}</div>
+              ) : null}
+              <div>
+                Merge policy: {plan.expertPolicy.mergeStrategy ?? 'unspecified'}
+                {plan.expertPolicy.requireManualApproval ? ', manual approval' : ''}
+                {plan.expertPolicy.allowAutoMerge ? ', auto-merge allowed' : ''}
+              </div>
+            </>
+          ) : (
+            <div>No pinned expert policy metadata was returned for this plan.</div>
+          )}
+        </div>
+      </div>
     </div>
   );
 }

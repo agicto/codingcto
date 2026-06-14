@@ -2,9 +2,11 @@
 
 import { useMutation, useQuery, useQueryClient } from '@tanstack/react-query';
 
+import { projectKeys } from '@/features/project/hooks/use-projects';
 import { activeFixAttemptPollMs, hasActiveFixAttempt } from '@/features/specforge/fix-attempts';
 import {
   type ApprovePlanPayload,
+  type ApproveReviewDecisionPayload,
   type CompilePromptPayload,
   type CreateDirectAgentTaskPayload,
   type CreateGitHubIssuePayload,
@@ -16,6 +18,7 @@ import {
   type DispatchRunPayload,
   type ExecuteTaskPayload,
   type GitHubSettingsPayload,
+  type ListGitHubRepositoryAccessesParams,
   type InferRepoProfilePayload,
   type ListGitHubRepositoriesParams,
   type ListGitHubWebhookEventsParams,
@@ -23,7 +26,9 @@ import {
   type ListSpecForgeRuntimesParams,
   type PreparePRNodeBranchPayload,
   type ReadPRNodeFailureLogPayload,
+  type RejectReviewDecisionPayload,
   type ReindexRepoArchitecturePayload,
+  type RequestMergeReviewDecisionPayload,
   type RepoProfilePayload,
   type DeliverPRNodePayload,
   type RefreshPRNodeCIPayload,
@@ -33,6 +38,8 @@ import {
   type RuntimeSweepPayload,
   type StartRunPayload,
   type StaleTaskSweepPayload,
+  type StartGitHubOAuthPayload,
+  type SyncGitHubRepositoriesPayload,
   type SyncGitHubInstallationPayload,
   type SubmitTaskResultPayload,
   type UpsertGitHubInstallationPayload,
@@ -66,6 +73,8 @@ export const specForgeKeys = {
   fixAttempts: (prNodeId: number) => [...specForgeKeys.all, 'fix-attempts', prNodeId] as const,
   escalationSummary: (prNodeId: number) =>
     [...specForgeKeys.all, 'escalation-summary', prNodeId] as const,
+  reviewDecision: (prNodeId: number) =>
+    [...specForgeKeys.all, 'review-decision', prNodeId] as const,
   runtimePendingTasks: (runtimeId: string, executor?: string) =>
     [...specForgeKeys.all, 'runtime-pending-tasks', runtimeId, executor ?? ''] as const,
   directAgentTasks: (params?: ListDirectAgentTasksParams) =>
@@ -97,6 +106,19 @@ export const specForgeKeys = {
     ] as const,
   githubRepositories: (params?: ListGitHubRepositoriesParams) =>
     [...specForgeKeys.all, 'github-repositories', params?.workspace_id ?? ''] as const,
+  githubRepositoryAccesses: (params?: ListGitHubRepositoryAccessesParams) =>
+    [
+      ...specForgeKeys.all,
+      'github-repository-accesses',
+      params?.workspace_id ?? '',
+      params?.source_type ?? '',
+      params?.organization_login ?? '',
+      params?.query ?? '',
+    ] as const,
+  githubConnection: (workspaceId: string) =>
+    [...specForgeKeys.all, 'github-connection', workspaceId] as const,
+  githubInstallationStatus: (workspaceId: string) =>
+    [...specForgeKeys.all, 'github-installation-status', workspaceId] as const,
   githubRepository: (repoId: string) =>
     [...specForgeKeys.all, 'github-repository', repoId] as const,
   githubRepositoryReadiness: (repoId: string) =>
@@ -258,6 +280,15 @@ export function useSpecForgeEscalationSummary(prNodeId?: number, refetchWhileAct
   });
 }
 
+export function useSpecForgeReviewDecision(prNodeId?: number) {
+  return useQuery({
+    queryKey: specForgeKeys.reviewDecision(prNodeId ?? 0),
+    queryFn: () => specForgeService.getReviewDecision(prNodeId ?? 0, silentQueryConfig),
+    enabled: Boolean(prNodeId),
+    meta: silentQueryMeta,
+  });
+}
+
 export function useSpecForgeRuntimePendingTasks(runtimeId?: string, executor?: string) {
   return useQuery({
     queryKey: specForgeKeys.runtimePendingTasks(runtimeId ?? '', executor),
@@ -317,12 +348,103 @@ export function useGitHubRepositories(params?: ListGitHubRepositoriesParams) {
   });
 }
 
+export function useGitHubInstallationStatus(workspaceId?: string) {
+  return useQuery({
+    queryKey: specForgeKeys.githubInstallationStatus(workspaceId ?? ''),
+    queryFn: () =>
+      specForgeService.getGitHubInstallationStatus(workspaceId ?? '', silentQueryConfig),
+    enabled: Boolean(workspaceId),
+    meta: silentQueryMeta,
+  });
+}
+
+export function useGitHubConnection(workspaceId?: string) {
+  return useQuery({
+    queryKey: specForgeKeys.githubConnection(workspaceId ?? ''),
+    queryFn: () => specForgeService.getGitHubConnection(workspaceId ?? '', silentQueryConfig),
+    enabled: Boolean(workspaceId),
+    meta: silentQueryMeta,
+  });
+}
+
+export function useGitHubRepositoryAccesses(params?: ListGitHubRepositoryAccessesParams) {
+  const workspaceId = params?.workspace_id ?? '';
+  return useQuery({
+    queryKey: specForgeKeys.githubRepositoryAccesses({
+      ...params,
+      workspace_id: workspaceId,
+    }),
+    queryFn: () =>
+      specForgeService.listGitHubRepositoryAccesses(
+        {
+          ...params,
+          workspace_id: workspaceId,
+        },
+        silentQueryConfig
+      ),
+    enabled: Boolean(workspaceId),
+    meta: silentQueryMeta,
+  });
+}
+
 export function useGitHubSettings(workspaceId: string) {
   return useQuery({
     queryKey: specForgeKeys.githubSettings(workspaceId),
     queryFn: () => specForgeService.getGitHubSettings(workspaceId, silentQueryConfig),
     enabled: Boolean(workspaceId),
     meta: silentQueryMeta,
+  });
+}
+
+export function useStartGitHubOAuth() {
+  return useMutation({
+    mutationFn: (payload: StartGitHubOAuthPayload) =>
+      specForgeService.startGitHubOAuth(payload),
+  });
+}
+
+export function useDisconnectGitHubConnection() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (workspaceId: string) => specForgeService.disconnectGitHubConnection(workspaceId),
+    onSuccess: (_response, workspaceId) => {
+      queryClient.invalidateQueries({ queryKey: specForgeKeys.githubConnection(workspaceId) });
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubRepositoryAccesses({ workspace_id: workspaceId }),
+      });
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubRepositories({ workspace_id: workspaceId }),
+      });
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubInstallationStatus(workspaceId),
+      });
+    },
+  });
+}
+
+export function useSyncGitHubRepositories() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (payload: SyncGitHubRepositoriesPayload) =>
+      specForgeService.syncGitHubRepositories(payload),
+    onSuccess: result => {
+      const workspaceId = result.connection?.workspace_id ?? '';
+      if (!workspaceId) {
+        return;
+      }
+      queryClient.invalidateQueries({ queryKey: specForgeKeys.githubConnection(workspaceId) });
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubRepositoryAccesses({ workspace_id: workspaceId }),
+      });
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubRepositories({ workspace_id: workspaceId }),
+      });
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubInstallationStatus(workspaceId),
+      });
+    },
   });
 }
 
@@ -348,9 +470,48 @@ export function useUpsertGitHubInstallation() {
 }
 
 export function useSyncGitHubInstallation() {
+  const queryClient = useQueryClient();
+
   return useMutation({
     mutationFn: (payload: SyncGitHubInstallationPayload) =>
       specForgeService.syncGitHubInstallation(payload),
+    onSuccess: result => {
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubRepositories({
+          workspace_id: result.installation.workspace_id,
+        }),
+      });
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubInstallationStatus(result.installation.workspace_id),
+      });
+    },
+  });
+}
+
+export function useSyncGitHubInstallationByID() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      installationId,
+      workspaceId,
+    }: {
+      installationId: number;
+      workspaceId: string;
+    }) =>
+      specForgeService.syncGitHubInstallationByID(installationId, {
+        workspace_id: workspaceId,
+      }),
+    onSuccess: result => {
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubRepositories({
+          workspace_id: result.installation.workspace_id,
+        }),
+      });
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.githubInstallationStatus(result.installation.workspace_id),
+      });
+    },
   });
 }
 
@@ -413,6 +574,8 @@ export function useUpsertSpecForgeProjectSkill(projectId?: number) {
     onSuccess: () => {
       if (projectId) {
         queryClient.invalidateQueries({ queryKey: specForgeKeys.projectSkills(projectId) });
+        queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
+        queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
       }
     },
   });
@@ -522,6 +685,63 @@ export function useVerifySpecForgePRNodeCI() {
       queryClient.invalidateQueries({ queryKey: specForgeKeys.fixAttempts(result.pr_node.id) });
       queryClient.invalidateQueries({
         queryKey: specForgeKeys.escalationSummary(result.pr_node.id),
+      });
+    },
+  });
+}
+
+export function useApproveSpecForgeReviewDecision() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      prNodeId,
+      payload,
+    }: {
+      prNodeId: number;
+      payload?: ApproveReviewDecisionPayload;
+    }) => specForgeService.approveReviewDecision(prNodeId, payload),
+    onSuccess: decision => {
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.reviewDecision(decision.pr_node.id),
+      });
+    },
+  });
+}
+
+export function useRejectSpecForgeReviewDecision() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      prNodeId,
+      payload,
+    }: {
+      prNodeId: number;
+      payload: RejectReviewDecisionPayload;
+    }) => specForgeService.rejectReviewDecision(prNodeId, payload),
+    onSuccess: decision => {
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.reviewDecision(decision.pr_node.id),
+      });
+    },
+  });
+}
+
+export function useRequestSpecForgeReviewMerge() {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: ({
+      prNodeId,
+      payload,
+    }: {
+      prNodeId: number;
+      payload?: RequestMergeReviewDecisionPayload;
+    }) => specForgeService.requestMergeReviewDecision(prNodeId, payload),
+    onSuccess: decision => {
+      queryClient.invalidateQueries({
+        queryKey: specForgeKeys.reviewDecision(decision.pr_node.id),
       });
     },
   });

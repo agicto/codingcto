@@ -1,4 +1,5 @@
 import Link from 'next/link';
+import { redirect } from 'next/navigation';
 import { CheckCircle2, Github } from 'lucide-react';
 
 import { Button } from '@/components/ui/button';
@@ -8,6 +9,8 @@ import { ROUTES } from '@/constants/routes';
 type GitHubAppManifestPageProps = {
   searchParams?: Promise<{
     code?: string;
+    installation_id?: string;
+    setup_action?: string;
     state?: string;
     repo?: string;
     repository_url?: string;
@@ -21,6 +24,9 @@ export default async function GitHubAppManifestPage({
 }: GitHubAppManifestPageProps) {
   const params = await searchParams;
   const code = params?.code?.trim() ?? '';
+  const installationId = params?.installation_id?.trim() ?? '';
+  const setupAction = params?.setup_action?.trim() ?? '';
+  const state = params?.state?.trim() ?? '';
   const repositoryURL = params?.repository_url?.trim() ?? '';
   const repositoryId = params?.repository_id?.trim() ?? '';
   const returnTo = safeConsoleReturnPath(params?.return_to ?? '');
@@ -36,6 +42,25 @@ export default async function GitHubAppManifestPage({
     recoveryParams.set('return_to', returnTo);
   }
   const settingsHref = `${ROUTES.CONSOLE.SETTINGS}?${recoveryParams.toString()}`;
+  if (installationId) {
+    const syncParams = new URLSearchParams({ tab: 'github', installation_id: installationId });
+    if (setupAction) {
+      syncParams.set('setup_action', setupAction);
+    }
+    if (state) {
+      syncParams.set('state', state);
+    }
+    if (repositoryURL) {
+      syncParams.set('repository_url', repositoryURL);
+    }
+    if (repositoryId) {
+      syncParams.set('repository_id', repositoryId);
+    }
+    if (returnTo) {
+      syncParams.set('return_to', returnTo);
+    }
+    redirect(`${ROUTES.CONSOLE.SETTINGS}?${syncParams.toString()}`);
+  }
   const command = code
     ? `node scripts/github-app-config.mjs convert --code ${code}`
     : 'node scripts/github-app-config.mjs convert --code <manifest-code>';

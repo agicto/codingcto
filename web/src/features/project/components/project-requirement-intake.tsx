@@ -18,6 +18,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -36,6 +37,7 @@ import {
 import { projectPlanningStages } from '@/features/project/project-planning-flow';
 import { projectContextHref, projectPlanHref } from '@/features/project/project-utils';
 import type { ProjectContextDTO } from '@/features/project/services/project-service';
+import { useCodingCTOExperts } from '@/features/experts/hooks/use-experts';
 import { useCreateSpecForgeProjectIdea } from '@/features/specforge/hooks/use-specforge';
 
 type RequirementType = 'feature' | 'bugfix' | 'refactor' | 'docs' | 'test';
@@ -143,9 +145,15 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
   const readiness = projectContextReadiness(context);
   const primaryRepository = primaryRepositoryContext(context);
   const createRequirement = useCreateSpecForgeProjectIdea(context.project.id);
+  const expertsQuery = useCodingCTOExperts(true);
+  const activeExperts = expertsQuery.data?.experts ?? [];
   const [input, setInput] = useState('');
   const [requirementType, setRequirementType] = useState<RequirementType>('feature');
   const [constraints, setConstraints] = useState('');
+  const [expertSelection, setExpertSelection] = useState<{ ids: number[]; touched: boolean }>({
+    ids: [],
+    touched: false,
+  });
   const [message, setMessage] = useState('');
   const canSubmit = Boolean(input.trim() && readiness.hasPrimaryRepository);
   const readinessTone = !readiness.hasPrimaryRepository
@@ -168,6 +176,9 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
     () => requirementTypes.find(item => item.value === requirementType) ?? requirementTypes[0],
     [requirementType]
   );
+  const selectedExpertIds = expertSelection.touched
+    ? expertSelection.ids
+    : activeExperts.map(expert => expert.id);
   const planningStages = projectPlanningStages({
     hasPrimaryRepository: readiness.hasPrimaryRepository,
     hasRequirementInput: Boolean(input.trim()),
@@ -205,6 +216,7 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
       const bundle = await createRequirement.mutateAsync({
         input: composedInput,
         type: requirementType,
+        expert_ids: selectedExpertIds,
       });
       const planHref = projectPlanHref(context.project.id, bundle.implementation_plan.id);
       setMessage(
@@ -334,6 +346,52 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
               title="Approval"
               description="Execution waits until a human approves the plan."
             />
+          </div>
+          <div className="grid gap-3 rounded-md border border-border-subtle bg-bg-subtle p-3">
+            <div className="flex flex-wrap items-center justify-between gap-2">
+              <div>
+                <div className="text-sm font-medium text-text-main">Planning experts</div>
+                <p className="mt-1 text-xs leading-5 text-text-muted">
+                  Selected experts run before the plan is finalized; their skill version refs are saved as plan evidence.
+                </p>
+              </div>
+              <Badge variant="outline">
+                {expertsQuery.isLoading ? 'Loading' : `${selectedExpertIds.length}/${activeExperts.length}`}
+              </Badge>
+            </div>
+            {activeExperts.length > 0 ? (
+              <div className="grid gap-2 md:grid-cols-2">
+                {activeExperts.map(expert => (
+                  <label
+                    key={expert.id}
+                    className="flex cursor-pointer items-start gap-2 rounded-md border border-border-subtle bg-bg-surface px-3 py-2"
+                  >
+                    <Checkbox
+                      checked={selectedExpertIds.includes(expert.id)}
+                      onCheckedChange={checked => {
+                        const nextIds =
+                          checked === true
+                            ? Array.from(new Set([...selectedExpertIds, expert.id]))
+                            : selectedExpertIds.filter(id => id !== expert.id);
+                        setExpertSelection({ ids: nextIds, touched: true });
+                      }}
+                    />
+                    <span className="min-w-0">
+                      <span className="block truncate text-xs font-medium text-text-main">
+                        {expert.name}
+                      </span>
+                      <span className="mt-1 line-clamp-2 block text-xs leading-5 text-text-muted">
+                        {expert.description || expert.role}
+                      </span>
+                    </span>
+                  </label>
+                ))}
+              </div>
+            ) : (
+              <p className="text-xs leading-5 text-text-muted">
+                No active experts are available yet. The plan can still be generated without expert runs.
+              </p>
+            )}
           </div>
           {message ? (
             <div className="rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 text-sm leading-5 text-text-muted">

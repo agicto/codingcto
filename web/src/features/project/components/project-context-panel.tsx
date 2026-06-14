@@ -10,6 +10,16 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { Checkbox } from '@/components/ui/checkbox';
+import {
+  Dialog,
+  DialogBody,
+  DialogContent,
+  DialogDescription,
+  DialogFooter,
+  DialogHeader,
+  DialogTitle,
+} from '@/components/ui/dialog';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import {
@@ -19,17 +29,24 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
+import { Textarea } from '@/components/ui/textarea';
 import { ApiError } from '@/http/request';
+import { ProjectRuntimeBindingPanel } from '@/features/project/components/project-runtime-binding-panel';
 import { useProjectContext } from '@/features/project/hooks/use-projects';
 import {
   useBindProjectRepository,
+  useCreateProjectExpertPolicy,
+  useProjectExpertPolicy,
+  useRefreshProjectContextSnapshot,
   useUnbindProjectRepository,
+  useUpdateProjectExpertPolicy,
   projectKeys,
 } from '@/features/project/hooks/use-projects';
 import {
   projectContextContract,
   projectContextMissingEvidence,
   projectContextReadiness,
+  projectContextSnapshotState,
   projectSkillContract,
 } from '@/features/project/project-context';
 import type {
@@ -97,9 +114,532 @@ export function ProjectContextPanel({ context }: { context: ProjectContextDTO })
           item => item.repository.repository_id
         )}
       />
+      <ProjectContextSnapshotPanel context={context} />
+      <ProjectRuntimeBindingPanel context={context} />
+      <ProjectExpertPolicyPanel projectId={context.project.id} />
       <ProjectSkillContractPanel context={context} />
       <ProjectContextReadiness context={context} />
     </div>
+  );
+}
+
+function ProjectContextSnapshotPanel({ context }: { context: ProjectContextDTO }) {
+  const queryClient = useQueryClient();
+  const snapshotState = projectContextSnapshotState(context);
+  const refreshSnapshot = useRefreshProjectContextSnapshot(context.project.id);
+  const snapshot = snapshotState.snapshot;
+  const [message, setMessage] = useState('');
+
+  async function handleRefreshSnapshot() {
+    setMessage('');
+    try {
+      await refreshSnapshot.mutateAsync();
+      await queryClient.invalidateQueries({ queryKey: projectKeys.context(context.project.id) });
+      setMessage('Unified context snapshot refreshed.');
+    } catch (error) {
+      setMessage(
+        error instanceof ApiError
+          ? `Context snapshot refresh failed: ${error.message}`
+          : 'Context snapshot refresh failed.'
+      );
+    }
+  }
+
+  const badgeClass =
+    snapshotState.status === 'ready'
+      ? 'border-success/30 text-success'
+      : snapshotState.status === 'blocked'
+        ? 'border-warning/30 text-warning'
+        : 'border-primary/30 text-primary';
+  const badgeLabel =
+    snapshotState.status === 'missing'
+      ? 'Not generated'
+      : snapshotState.status === 'ready'
+        ? 'Ready'
+        : snapshotState.status === 'blocked'
+          ? 'Blocked'
+          : 'Attention';
+
+  return (
+    <Card id="context-snapshot" className="scroll-mt-20">
+      <CardHeader>
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <CardTitle className="text-base">Unified context snapshot</CardTitle>
+            <CardDescription className="mt-1">
+              Normalize RepoContext and DeepWiki evidence into one stable project-scoped packet
+              before planning.
+            </CardDescription>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge variant="outline" className={badgeClass}>
+              {badgeLabel}
+            </Badge>
+            <Button
+              type="button"
+              variant="outline"
+              size="sm"
+              onClick={handleRefreshSnapshot}
+              disabled={refreshSnapshot.isPending}
+            >
+              {refreshSnapshot.isPending ? 'Refreshing' : 'Refresh snapshot'}
+              <RefreshCw
+                className={
+                  refreshSnapshot.isPending
+                    ? 'ml-1.5 h-3.5 w-3.5 animate-spin'
+                    : 'ml-1.5 h-3.5 w-3.5'
+                }
+              />
+            </Button>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <p className="text-sm leading-6 text-text-muted">
+          {snapshot?.summary ??
+            'No snapshot has been generated yet. Refresh after binding repositories or updating architecture evidence.'}
+        </p>
+        <div className="grid gap-2 text-xs sm:grid-cols-5">
+          <ReadinessMetric label="Repositories" value={snapshotState.repositoryCount} />
+          <ReadinessMetric label="DeepWiki" value={snapshotState.deepWikiCount} />
+          <ReadinessMetric label="Missing evidence" value={snapshotState.missingEvidenceCount} />
+          <ReadinessMetric label="Warnings" value={snapshotState.warningCount} />
+          <div className="rounded-md border border-border-subtle bg-bg-subtle px-3 py-2">
+            <div className="text-sm font-semibold text-text-main">
+              {snapshot?.updated_at ? new Date(snapshot.updated_at).toLocaleString() : 'Pending'}
+            </div>
+            <div className="mt-1 text-text-muted">Updated</div>
+          </div>
+        </div>
+        {snapshot ? (
+          <div className="space-y-3">
+            <div className="rounded-md border border-border-subtle bg-bg-subtle p-3 text-xs">
+              <div className="grid gap-3 md:grid-cols-3">
+                <div>
+                  <div className="font-medium text-text-main">Primary repository</div>
+                  <div className="mt-1 text-text-muted">
+                    {snapshot.primary_repository_id || 'Missing'}
+                  </div>
+                </div>
+                <div>
+                  <div className="font-medium text-text-main">Evidence refs</div>
+                  <div className="mt-1 text-text-muted">{snapshot.evidence_refs?.length ?? 0}</div>
+                </div>
+                <div>
+                  <div className="font-medium text-text-main">Snapshot ID</div>
+                  <div className="mt-1 text-text-muted">{snapshot.id}</div>
+                </div>
+              </div>
+            </div>
+            {snapshot.repositories?.length ? (
+              <div className="grid gap-3 lg:grid-cols-2">
+                {snapshot.repositories.map(repository => (
+                  <div
+                    key={repository.repository_id}
+                    className="rounded-md border border-border-subtle bg-bg-subtle p-3 text-xs"
+                  >
+                    <div className="flex flex-wrap items-start justify-between gap-2">
+                      <div className="min-w-0">
+                        <div className="truncate font-medium text-text-main">
+                          {repository.repository_id}
+                        </div>
+                        <div className="mt-1 text-text-muted">
+                          {repository.profile_summary ||
+                            repository.architecture_summary ||
+                            'No compact summary yet.'}
+                        </div>
+                      </div>
+                      <div className="flex flex-wrap gap-2">
+                        <Badge variant="outline">{repository.role}</Badge>
+                        {repository.deepwiki?.index_id ? (
+                          <Badge variant="outline" className="border-success/30 text-success">
+                            DeepWiki linked
+                          </Badge>
+                        ) : (
+                          <Badge variant="outline" className="border-warning/30 text-warning">
+                            DeepWiki missing
+                          </Badge>
+                        )}
+                      </div>
+                    </div>
+                    <div className="mt-3 grid grid-cols-2 gap-2 text-text-muted">
+                      <div>Skills: {repository.skill_names?.length ?? 0}</div>
+                      <div>Warnings: {repository.warning_count}</div>
+                      <div>
+                        Architecture: {repository.architecture_snapshot_commit || 'Missing'}
+                      </div>
+                      <div>Pages: {repository.deepwiki?.page_count ?? 0}</div>
+                    </div>
+                    {repository.deepwiki ? (
+                      <div className="mt-3 rounded-md border border-border-subtle bg-bg-surface px-3 py-2 text-text-muted">
+                        <div>
+                          Frameworks:{' '}
+                          {(repository.deepwiki.frameworks ?? []).slice(0, 3).join(', ') || 'None'}
+                        </div>
+                        <div className="mt-1">
+                          Top pages:{' '}
+                          {(repository.deepwiki.top_pages ?? []).slice(0, 3).join(', ') || 'None'}
+                        </div>
+                      </div>
+                    ) : null}
+                  </div>
+                ))}
+              </div>
+            ) : null}
+          </div>
+        ) : null}
+        {message ? (
+          <div className="rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 text-xs leading-5 text-text-muted">
+            {message}
+          </div>
+        ) : null}
+      </CardContent>
+    </Card>
+  );
+}
+
+type ExpertPolicyFormState = {
+  goalBoundary: string;
+  allowedPaths: string;
+  forbiddenPaths: string;
+  requiredTestCommands: string;
+  requiredApprovals: string;
+  allowAuthorApproval: boolean;
+  blockOnChangesRequested: boolean;
+  requireCIGreen: boolean;
+  strategy: 'squash' | 'rebase' | 'merge';
+  requireManualApproval: boolean;
+  allowAutoMerge: boolean;
+};
+
+function emptyExpertPolicyForm(): ExpertPolicyFormState {
+  return {
+    goalBoundary: '',
+    allowedPaths: '',
+    forbiddenPaths: '',
+    requiredTestCommands: '',
+    requiredApprovals: '1',
+    allowAuthorApproval: false,
+    blockOnChangesRequested: true,
+    requireCIGreen: true,
+    strategy: 'squash',
+    requireManualApproval: true,
+    allowAutoMerge: false,
+  };
+}
+
+function projectExpertPolicyForm(
+  policy?: {
+    goal_boundary?: string;
+    allowed_paths?: string[];
+    forbidden_paths?: string[];
+    required_test_commands?: string[];
+    review_policy?: {
+      required_approvals?: number;
+      allow_author_approval?: boolean;
+      block_on_changes_requested?: boolean;
+      require_ci_green?: boolean;
+    };
+    merge_policy?: {
+      strategy?: string;
+      require_manual_approval?: boolean;
+      allow_auto_merge?: boolean;
+    };
+  } | null
+): ExpertPolicyFormState {
+  if (!policy) {
+    return emptyExpertPolicyForm();
+  }
+  return {
+    goalBoundary: policy.goal_boundary ?? '',
+    allowedPaths: (policy.allowed_paths ?? []).join('\n'),
+    forbiddenPaths: (policy.forbidden_paths ?? []).join('\n'),
+    requiredTestCommands: (policy.required_test_commands ?? []).join('\n'),
+    requiredApprovals: String(policy.review_policy?.required_approvals ?? 1),
+    allowAuthorApproval: Boolean(policy.review_policy?.allow_author_approval),
+    blockOnChangesRequested: policy.review_policy?.block_on_changes_requested ?? true,
+    requireCIGreen: policy.review_policy?.require_ci_green ?? true,
+    strategy:
+      policy.merge_policy?.strategy === 'merge' || policy.merge_policy?.strategy === 'rebase'
+        ? policy.merge_policy.strategy
+        : 'squash',
+    requireManualApproval: policy.merge_policy?.require_manual_approval ?? true,
+    allowAutoMerge: Boolean(policy.merge_policy?.allow_auto_merge),
+  };
+}
+
+function projectPolicyLines(value: string) {
+  return value
+    .split('\n')
+    .map(entry => entry.trim())
+    .filter(Boolean);
+}
+
+function ProjectExpertPolicyPanel({ projectId }: { projectId: number }) {
+  const policyQuery = useProjectExpertPolicy(projectId);
+  const createPolicy = useCreateProjectExpertPolicy(projectId);
+  const updatePolicy = useUpdateProjectExpertPolicy(projectId);
+  const policy = policyQuery.data?.policy ?? null;
+  const policyKey = policy ? `${policy.id}:${policy.updated_at}` : 'empty';
+
+  return (
+    <ProjectExpertPolicyForm
+      key={policyKey}
+      policy={policy}
+      policyQueryError={policyQuery.isError}
+      createPolicy={createPolicy}
+      updatePolicy={updatePolicy}
+    />
+  );
+}
+
+function ProjectExpertPolicyForm({
+  policy,
+  policyQueryError,
+  createPolicy,
+  updatePolicy,
+}: {
+  policy: NonNullable<ReturnType<typeof useProjectExpertPolicy>['data']>['policy'] | null;
+  policyQueryError: boolean;
+  createPolicy: ReturnType<typeof useCreateProjectExpertPolicy>;
+  updatePolicy: ReturnType<typeof useUpdateProjectExpertPolicy>;
+}) {
+  const [form, setForm] = useState<ExpertPolicyFormState>(() => projectExpertPolicyForm(policy));
+  const [message, setMessage] = useState('');
+
+  async function handleSubmit(event: FormEvent<HTMLFormElement>) {
+    event.preventDefault();
+    setMessage('');
+    const payload = {
+      goal_boundary: form.goalBoundary.trim(),
+      allowed_paths: projectPolicyLines(form.allowedPaths),
+      forbidden_paths: projectPolicyLines(form.forbiddenPaths),
+      required_test_commands: projectPolicyLines(form.requiredTestCommands),
+      review_policy: {
+        required_approvals: Number.parseInt(form.requiredApprovals, 10) || 0,
+        allow_author_approval: form.allowAuthorApproval,
+        block_on_changes_requested: form.blockOnChangesRequested,
+        require_ci_green: form.requireCIGreen,
+      },
+      merge_policy: {
+        strategy: form.strategy,
+        require_manual_approval: form.requireManualApproval,
+        allow_auto_merge: form.allowAutoMerge,
+      },
+    };
+
+    try {
+      const response = policy
+        ? await updatePolicy.mutateAsync({ policyId: policy.id, payload })
+        : await createPolicy.mutateAsync(payload);
+      setForm(projectExpertPolicyForm(response.policy));
+      setMessage(`Expert policy v${response.policy.version} is now active for this project.`);
+    } catch (error) {
+      setMessage(
+        error instanceof ApiError
+          ? `Expert policy save failed: ${error.message}`
+          : 'Expert policy save failed.'
+      );
+    }
+  }
+
+  const saving = createPolicy.isPending || updatePolicy.isPending;
+
+  return (
+    <Card id="expert-policy" className="scroll-mt-20">
+      <CardHeader>
+        <div className="flex flex-col gap-3 md:flex-row md:items-start md:justify-between">
+          <div>
+            <CardTitle className="text-base">Expert policy</CardTitle>
+            <CardDescription className="mt-1">
+              Persist project-level scope, review, and merge rules before later workflow steps
+              consume them.
+            </CardDescription>
+          </div>
+          <div className="flex flex-wrap items-center gap-2">
+            <Badge
+              variant="outline"
+              className={
+                policy ? 'border-success/30 text-success' : 'border-warning/30 text-warning'
+              }
+            >
+              {policy ? `Active v${policy.version}` : 'Missing'}
+            </Badge>
+          </div>
+        </div>
+      </CardHeader>
+      <CardContent>
+        <form className="space-y-4" onSubmit={handleSubmit}>
+          <div className="space-y-2">
+            <Label htmlFor="expert-goal-boundary">Goal boundary</Label>
+            <Textarea
+              id="expert-goal-boundary"
+              value={form.goalBoundary}
+              onChange={event =>
+                setForm(current => ({ ...current, goalBoundary: event.target.value }))
+              }
+              placeholder="Define what the project-level experts may and may not change."
+              rows={4}
+            />
+          </div>
+          <div className="grid gap-4 lg:grid-cols-3">
+            <div className="space-y-2">
+              <Label htmlFor="expert-allowed-paths">Allowed paths</Label>
+              <Textarea
+                id="expert-allowed-paths"
+                value={form.allowedPaths}
+                onChange={event =>
+                  setForm(current => ({ ...current, allowedPaths: event.target.value }))
+                }
+                placeholder="api/internal/modules/project"
+                rows={5}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="expert-forbidden-paths">Forbidden paths</Label>
+              <Textarea
+                id="expert-forbidden-paths"
+                value={form.forbiddenPaths}
+                onChange={event =>
+                  setForm(current => ({ ...current, forbiddenPaths: event.target.value }))
+                }
+                placeholder="api/internal/modules/execution"
+                rows={5}
+              />
+            </div>
+            <div className="space-y-2">
+              <Label htmlFor="expert-required-tests">Required test commands</Label>
+              <Textarea
+                id="expert-required-tests"
+                value={form.requiredTestCommands}
+                onChange={event =>
+                  setForm(current => ({ ...current, requiredTestCommands: event.target.value }))
+                }
+                placeholder="cd api && go test ./..."
+                rows={5}
+              />
+            </div>
+          </div>
+          <div className="grid gap-4 lg:grid-cols-2">
+            <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+              <div className="text-sm font-medium text-text-main">Review policy</div>
+              <div className="mt-3 space-y-3">
+                <div className="space-y-2">
+                  <Label htmlFor="expert-required-approvals">Required approvals</Label>
+                  <Input
+                    id="expert-required-approvals"
+                    type="number"
+                    min={0}
+                    max={10}
+                    value={form.requiredApprovals}
+                    onChange={event =>
+                      setForm(current => ({ ...current, requiredApprovals: event.target.value }))
+                    }
+                  />
+                </div>
+                <label className="flex items-center gap-2 text-sm text-text-muted">
+                  <Checkbox
+                    checked={form.allowAuthorApproval}
+                    onCheckedChange={checked =>
+                      setForm(current => ({ ...current, allowAuthorApproval: Boolean(checked) }))
+                    }
+                  />
+                  Allow author approval
+                </label>
+                <label className="flex items-center gap-2 text-sm text-text-muted">
+                  <Checkbox
+                    checked={form.blockOnChangesRequested}
+                    onCheckedChange={checked =>
+                      setForm(current => ({
+                        ...current,
+                        blockOnChangesRequested: Boolean(checked),
+                      }))
+                    }
+                  />
+                  Block on changes requested
+                </label>
+                <label className="flex items-center gap-2 text-sm text-text-muted">
+                  <Checkbox
+                    checked={form.requireCIGreen}
+                    onCheckedChange={checked =>
+                      setForm(current => ({ ...current, requireCIGreen: Boolean(checked) }))
+                    }
+                  />
+                  Require CI green
+                </label>
+              </div>
+            </div>
+            <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+              <div className="text-sm font-medium text-text-main">Merge policy</div>
+              <div className="mt-3 space-y-3">
+                <div className="space-y-2">
+                  <Label htmlFor="expert-merge-strategy">Strategy</Label>
+                  <Select
+                    value={form.strategy}
+                    onValueChange={value =>
+                      setForm(current => ({
+                        ...current,
+                        strategy: value as 'squash' | 'rebase' | 'merge',
+                      }))
+                    }
+                  >
+                    <SelectTrigger id="expert-merge-strategy">
+                      <SelectValue placeholder="Select strategy" />
+                    </SelectTrigger>
+                    <SelectContent>
+                      <SelectItem value="squash">Squash</SelectItem>
+                      <SelectItem value="rebase">Rebase</SelectItem>
+                      <SelectItem value="merge">Merge commit</SelectItem>
+                    </SelectContent>
+                  </Select>
+                </div>
+                <label className="flex items-center gap-2 text-sm text-text-muted">
+                  <Checkbox
+                    checked={form.requireManualApproval}
+                    onCheckedChange={checked =>
+                      setForm(current => ({
+                        ...current,
+                        requireManualApproval: Boolean(checked),
+                      }))
+                    }
+                  />
+                  Require manual approval before merge
+                </label>
+                <label className="flex items-center gap-2 text-sm text-text-muted">
+                  <Checkbox
+                    checked={form.allowAutoMerge}
+                    onCheckedChange={checked =>
+                      setForm(current => ({ ...current, allowAutoMerge: Boolean(checked) }))
+                    }
+                  />
+                  Allow auto-merge when checks pass
+                </label>
+              </div>
+            </div>
+          </div>
+          <div className="flex flex-wrap items-center gap-3">
+            <Button type="submit" disabled={saving || !form.goalBoundary.trim()}>
+              {saving ? 'Saving' : policy ? 'Create next policy version' : 'Save expert policy'}
+            </Button>
+            {policy ? (
+              <span className="text-xs text-text-muted">
+                Last updated {new Date(policy.updated_at).toLocaleString()}
+              </span>
+            ) : null}
+          </div>
+          {policyQueryError ? (
+            <div className="rounded-md border border-warning/30 bg-warning-subtle px-3 py-2 text-xs leading-5 text-warning">
+              Existing policy could not be loaded. Saving a new version is still available.
+            </div>
+          ) : null}
+          {message ? (
+            <div className="rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 text-xs leading-5 text-text-muted">
+              {message}
+            </div>
+          ) : null}
+        </form>
+      </CardContent>
+    </Card>
   );
 }
 
@@ -270,27 +810,35 @@ export function ProjectRepositoryBindPanel({
   projectId,
   workspaceId,
   boundRepositoryIds = [],
+  variant = 'card',
 }: {
   id?: string;
   projectId: number;
   workspaceId: string;
   boundRepositoryIds?: string[];
+  variant?: 'card' | 'button';
 }) {
   const t = useT('dashboard.projectDelivery.bindPanel');
+  const commonT = useT('common');
   const bindRepository = useBindProjectRepository(projectId);
   const repositoriesQuery = useGitHubRepositories({ workspace_id: workspaceId });
   const repositories = repositoriesQuery.data?.repositories ?? [];
   const availableRepositories = repositories.filter(
     repository => !boundRepositoryIds.includes(repository.repository_id)
   );
+  const hasAuthorizedRepositories = repositories.length > 0;
   const allConnectedRepositoriesBound =
     repositories.length > 0 && availableRepositories.length === 0;
+  const boundRepositoryIdSet = new Set(boundRepositoryIds);
+  const [dialogOpen, setDialogOpen] = useState(false);
   const [repositoryId, setRepositoryId] = useState('');
   const [role, setRole] = useState('primary');
   const [message, setMessage] = useState('');
+  const selectedRepository = availableRepositories.find(
+    repository => repository.repository_id === repositoryId
+  );
 
-  async function bindRepositoryToProject(event: FormEvent<HTMLFormElement>) {
-    event.preventDefault();
+  async function bindRepositoryToProject() {
     const nextRepositoryId = repositoryId.trim();
     if (!nextRepositoryId) {
       setMessage(t('messages.repositoryRequired'));
@@ -304,6 +852,7 @@ export function ProjectRepositoryBindPanel({
       });
       setRepositoryId('');
       setRole('primary');
+      setDialogOpen(false);
       setMessage(
         t('messages.bound', {
           role: t(`roles.${response.repository.role}`),
@@ -315,67 +864,57 @@ export function ProjectRepositoryBindPanel({
     }
   }
 
-  return (
-    <Card id={id} className="scroll-mt-20">
-      <CardHeader>
-        <CardTitle className="text-base">{t('title')}</CardTitle>
-        <CardDescription>{t('description')}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <form
-          className="grid gap-3 md:grid-cols-[minmax(0,1fr)_180px_auto]"
-          onSubmit={bindRepositoryToProject}
-        >
+  const bindDialog = (
+    <Dialog open={dialogOpen} onOpenChange={setDialogOpen}>
+      <DialogContent size="lg" className="gap-0 p-0">
+        <DialogHeader className="border-b border-border-subtle px-6 py-5">
+          <DialogTitle>{t('submit')}</DialogTitle>
+          <DialogDescription>{t('description')}</DialogDescription>
+        </DialogHeader>
+        <DialogBody className="space-y-4 py-5">
           <div className="space-y-2">
             <Label htmlFor="project-repository-id">{t('repositoryId')}</Label>
-            {repositories.length > 0 ? (
-              <Select
-                value={repositoryId}
-                onValueChange={setRepositoryId}
-                disabled={allConnectedRepositoriesBound}
-              >
-                <SelectTrigger id="project-repository-id">
-                  <SelectValue
-                    placeholder={
-                      allConnectedRepositoriesBound
-                        ? t('allRepositoriesBound')
-                        : t('selectRepository')
-                    }
-                  />
-                </SelectTrigger>
-                <SelectContent>
-                  {availableRepositories.map(repository => (
-                    <SelectItem key={repository.repository_id} value={repository.repository_id}>
-                      {repository.github_owner}/{repository.github_repo} (
-                      {repository.default_branch})
-                    </SelectItem>
-                  ))}
-                </SelectContent>
-              </Select>
-            ) : (
-              <Input
-                id="project-repository-id"
-                value={repositoryId}
-                onChange={event => setRepositoryId(event.target.value)}
-                placeholder="github_multica_ai__multica"
-              />
-            )}
-            {repositoriesQuery.isFetching && (
-              <p className="text-xs leading-5 text-text-muted">{t('loadingRepositories')}</p>
-            )}
-            {!repositoriesQuery.isFetching && repositories.length === 0 && (
-              <p className="text-xs leading-5 text-text-muted">
-                {t('emptyRepositories')}{' '}
-                <Link href="/console/settings?tab=github" className="text-primary hover:underline">
-                  {t('connectRepository')}
-                </Link>
-              </p>
-            )}
-            {!repositoriesQuery.isFetching &&
-              repositories.length > 0 &&
-              availableRepositories.length === 0 && (
-                <p className="text-xs leading-5 text-text-muted">{t('allRepositoriesBound')}</p>
-              )}
+            <div
+              id="project-repository-id"
+              className="max-h-72 space-y-2 overflow-y-auto rounded-[4px] border border-border-subtle bg-bg-subtle p-2"
+            >
+              {repositories.map(repository => {
+                const isBound = boundRepositoryIdSet.has(repository.repository_id);
+                const isSelected = repository.repository_id === repositoryId;
+                return (
+                  <button
+                    key={repository.repository_id}
+                    type="button"
+                    disabled={isBound}
+                    onClick={() => setRepositoryId(repository.repository_id)}
+                    className={`flex w-full items-center justify-between gap-3 rounded-[4px] border px-3 py-2 text-left transition ${
+                      isSelected
+                        ? 'border-primary bg-bg-surface'
+                        : 'border-border-subtle bg-bg-surface hover:border-border-strong'
+                    } ${isBound ? 'cursor-not-allowed opacity-60' : ''}`}
+                  >
+                    <span className="min-w-0">
+                      <span className="block truncate text-sm font-medium text-text-main">
+                        {repository.github_owner}/{repository.github_repo}
+                      </span>
+                      <span className="mt-0.5 block truncate text-xs text-text-muted">
+                        {repository.repository_id} · {repository.default_branch}
+                      </span>
+                    </span>
+                    {isBound ? (
+                      <Badge variant="outline" className="shrink-0">
+                        {t('allRepositoriesBound')}
+                      </Badge>
+                    ) : null}
+                  </button>
+                );
+              })}
+            </div>
+            {selectedRepository ? (
+              <div className="rounded-[4px] border border-border-subtle bg-bg-subtle px-3 py-2 text-xs leading-5 text-text-muted">
+                {selectedRepository.repository_id} · {selectedRepository.default_branch}
+              </div>
+            ) : null}
           </div>
           <div className="space-y-2">
             <Label htmlFor="project-repository-role">{t('role')}</Label>
@@ -392,17 +931,94 @@ export function ProjectRepositoryBindPanel({
               </SelectContent>
             </Select>
           </div>
-          <div className="flex items-end">
-            <Button
-              type="submit"
-              disabled={
-                bindRepository.isPending || allConnectedRepositoriesBound || !repositoryId.trim()
-              }
-            >
-              {bindRepository.isPending ? t('binding') : t('submit')}
-            </Button>
+        </DialogBody>
+        <DialogFooter className="border-t border-border-subtle px-6 py-4">
+          <Button type="button" variant="outline" onClick={() => setDialogOpen(false)}>
+            {commonT('cancel')}
+          </Button>
+          <Button
+            type="button"
+            disabled={
+              bindRepository.isPending ||
+              !hasAuthorizedRepositories ||
+              allConnectedRepositoriesBound ||
+              !repositoryId.trim()
+            }
+            onClick={bindRepositoryToProject}
+          >
+            {bindRepository.isPending ? t('binding') : t('submit')}
+          </Button>
+        </DialogFooter>
+      </DialogContent>
+    </Dialog>
+  );
+
+  if (variant === 'button') {
+    return (
+      <div id={id} className="flex flex-wrap items-center gap-2">
+        <Button
+          type="button"
+          size="sm"
+          disabled={repositoriesQuery.isFetching || !hasAuthorizedRepositories}
+          onClick={() => setDialogOpen(true)}
+        >
+          {t('submit')}
+        </Button>
+        {!repositoriesQuery.isFetching && !hasAuthorizedRepositories ? (
+          <Button asChild type="button" variant="outline" size="sm">
+            <Link href="/console/settings?tab=github">{t('connectRepository')}</Link>
+          </Button>
+        ) : null}
+        {bindDialog}
+      </div>
+    );
+  }
+
+  return (
+    <Card id={id} className="scroll-mt-20">
+      <CardHeader>
+        <CardTitle className="text-base">{t('title')}</CardTitle>
+        <CardDescription>{t('description')}</CardDescription>
+      </CardHeader>
+      <CardContent className="space-y-4">
+        <div className="flex flex-col gap-3 rounded-[4px] border border-border-subtle bg-bg-subtle p-3 md:flex-row md:items-center md:justify-between">
+          <div>
+            <div className="text-sm font-medium text-text-main">
+              {hasAuthorizedRepositories
+                ? t('selectRepository')
+                : t('emptyRepositories')}
+            </div>
+            <p className="mt-1 text-xs leading-5 text-text-muted">
+              {repositoriesQuery.isFetching
+                ? t('loadingRepositories')
+                : allConnectedRepositoriesBound
+                  ? t('allRepositoriesBound')
+                  : t('description')}
+            </p>
           </div>
-        </form>
+          <div className="flex flex-wrap gap-2">
+            {!repositoriesQuery.isFetching && !hasAuthorizedRepositories ? (
+              <>
+                <Button asChild type="button" variant="outline" size="sm">
+                  <Link href="/console/settings?tab=github">{t('connectRepository')}</Link>
+                </Button>
+                <Button asChild type="button" variant="ghost" size="sm">
+                  <Link href="/console/settings?tab=repositories">{t('syncRepositories')}</Link>
+                </Button>
+              </>
+            ) : (
+              <Button
+                type="button"
+                size="sm"
+                disabled={repositoriesQuery.isFetching || !hasAuthorizedRepositories}
+                onClick={() => setDialogOpen(true)}
+              >
+                {t('submit')}
+              </Button>
+            )}
+          </div>
+        </div>
+        {bindDialog}
         {message && (
           <div className="mt-3 rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 text-sm leading-5 text-text-muted">
             {message}
@@ -576,6 +1192,7 @@ function ProjectRepositoryCard({
       await reindexArchitecture.mutateAsync({
         default_branch: profile?.default_branch,
       });
+      queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
       setMessage('Architecture analysis refreshed.');
     } catch (error) {

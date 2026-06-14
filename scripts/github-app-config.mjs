@@ -12,7 +12,8 @@ const keyPath = resolve(root, 'api/.local/github-app.private-key.pem');
 
 function usage() {
   console.log(`Usage:
-  node scripts/github-app-config.mjs manifest --owner <user-or-org> [--name "CodingCTO Local"]
+  node scripts/github-app-config.mjs manifest --owner <user-or-org> [--name "CodingCTO Local"] [--web-url <url>] [--api-url <url>]
+    [--webhook-url <public-url>] [--no-webhook]
   node scripts/github-app-config.mjs convert --code <manifest-code>
   node scripts/github-app-config.mjs existing --app-id <id> --private-key-path <path> --slug <app-slug> [--webhook-secret <secret>]
 
@@ -72,9 +73,22 @@ function requireValue(args, key) {
   return value;
 }
 
+function isLocalURL(value) {
+  try {
+    const url = new URL(value);
+    return ['localhost', '127.0.0.1', '::1'].includes(url.hostname);
+  } catch {
+    return false;
+  }
+}
+
 function createManifest(args) {
   const owner = requireValue(args, 'owner');
   const name = args.name || 'CodingCTO Local';
+  const webURL = String(args['web-url'] || 'http://localhost:2020').replace(/\/+$/, '');
+  const apiURL = String(args['api-url'] || 'http://localhost:2010').replace(/\/+$/, '');
+  const requestedWebhookURL = String(args['webhook-url'] || `${apiURL}/v1/webhooks/github`).replace(/\/+$/, '');
+  const includeWebhook = args['no-webhook'] !== 'true' && !isLocalURL(requestedWebhookURL);
   const action =
     owner === 'user'
       ? 'https://github.com/settings/apps/new'
@@ -86,17 +100,13 @@ function createManifest(args) {
     }
   }
   const redirectQuery = redirectParams.toString();
-  const redirectURL = `http://localhost:2020/console/settings/github-app-manifest${redirectQuery ? `?${redirectQuery}` : ''}`;
+  const redirectURL = `${webURL}/console/settings/github-app-manifest${redirectQuery ? `?${redirectQuery}` : ''}`;
   const manifest = {
     name,
-    url: 'http://localhost:2020',
-    hook_attributes: {
-      url: 'http://localhost:2010/v1/github/webhook',
-      active: false,
-    },
+    url: webURL,
     redirect_url: redirectURL,
-    callback_urls: ['http://localhost:2020/console/settings'],
-    setup_url: 'http://localhost:2020/console/settings',
+    callback_urls: [`${webURL}/console/settings`],
+    setup_url: `${webURL}/console/settings`,
     description: 'Local CodingCTO GitHub integration for repository analysis and pull request workflows.',
     public: false,
     default_permissions: {
@@ -107,8 +117,14 @@ function createManifest(args) {
       actions: 'read',
       statuses: 'read',
     },
-    default_events: ['installation', 'installation_repositories', 'push', 'pull_request'],
   };
+  if (includeWebhook) {
+    manifest.hook_attributes = {
+      url: requestedWebhookURL,
+      active: true,
+    };
+    manifest.default_events = ['push', 'pull_request'];
+  }
   const state = `codingcto-${Date.now()}`;
   const htmlPath = resolve(root, '.codex/tmp/github-app-manifest.html');
   mkdirSync(dirname(htmlPath), { recursive: true });
@@ -123,6 +139,10 @@ function createManifest(args) {
 `;
   writeFileSync(htmlPath, html);
   console.log(`Manifest form written: ${htmlPath}`);
+  if (!includeWebhook) {
+    console.log('Webhook omitted because no public webhook URL was provided.');
+    console.log('For webhook testing, rerun with --webhook-url https://<public-url>/v1/webhooks/github.');
+  }
   console.log('Open it in a browser, finish GitHub creation, copy the code from the redirect URL, then run:');
   console.log('  node scripts/github-app-config.mjs convert --code <code>');
 }

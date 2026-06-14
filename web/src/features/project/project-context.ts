@@ -2,6 +2,7 @@ import type {
   ProjectContextContractDTO,
   ProjectContextDTO,
   ProjectRepositoryContextDTO,
+  ProjectContextSnapshotDTO,
 } from './services/project-service';
 
 export interface ProjectContextReadiness {
@@ -48,6 +49,15 @@ export interface ProjectSkillContract {
   summary: string;
 }
 
+export interface ProjectContextSnapshotState {
+  snapshot?: ProjectContextSnapshotDTO;
+  status: 'missing' | 'blocked' | 'attention' | 'ready';
+  repositoryCount: number;
+  deepWikiCount: number;
+  missingEvidenceCount: number;
+  warningCount: number;
+}
+
 export function primaryRepositoryContext(
   context?: ProjectContextDTO
 ): ProjectRepositoryContextDTO | undefined {
@@ -69,7 +79,40 @@ export function projectContextContract(
   return context?.context_contract;
 }
 
-export function projectRepositoryEvidence(context?: ProjectContextDTO): ProjectRepositoryEvidence[] {
+export function projectContextSnapshotState(
+  context?: ProjectContextDTO
+): ProjectContextSnapshotState {
+  const snapshot = context?.latest_snapshot;
+  if (!snapshot) {
+    return {
+      status: 'missing',
+      repositoryCount: 0,
+      deepWikiCount: 0,
+      missingEvidenceCount: 0,
+      warningCount: 0,
+    };
+  }
+
+  return {
+    snapshot,
+    status:
+      snapshot.snapshot_status === 'blocked' ||
+      snapshot.snapshot_status === 'attention' ||
+      snapshot.snapshot_status === 'ready'
+        ? snapshot.snapshot_status
+        : 'attention',
+    repositoryCount: snapshot.repositories?.length ?? 0,
+    deepWikiCount:
+      snapshot.repositories?.filter(repository => Boolean(repository.deepwiki?.index_id)).length ??
+      0,
+    missingEvidenceCount: snapshot.missing_evidence?.length ?? 0,
+    warningCount: snapshot.warning_count ?? 0,
+  };
+}
+
+export function projectRepositoryEvidence(
+  context?: ProjectContextDTO
+): ProjectRepositoryEvidence[] {
   return (context?.repository_contexts ?? []).map(item => {
     const repositoryId = item.repository.repository_id;
     const missingEvidence = [
@@ -147,7 +190,10 @@ export function projectSkillContract(context?: ProjectContextDTO): ProjectSkillC
   };
 }
 
-export function projectContextReadiness(context?: ProjectContextDTO, locale = 'zh-Hans'): ProjectContextReadiness {
+export function projectContextReadiness(
+  context?: ProjectContextDTO,
+  locale = 'zh-Hans'
+): ProjectContextReadiness {
   const localize = (text?: string) => localizeProjectContextText(text, locale);
 
   if (context?.readiness) {
@@ -189,7 +235,9 @@ export function projectContextReadiness(context?: ProjectContextDTO, locale = 'z
     skillCount,
     warningCount,
     guardrails,
-    summary: localize(readinessSummary(activeRepositories.length, primaryRepository?.repository.repository_id)),
+    summary: localize(
+      readinessSummary(activeRepositories.length, primaryRepository?.repository.repository_id)
+    ),
     nextAction: localize(readinessNextAction(Boolean(primaryRepository), warningCount, skillCount)),
   };
 }
@@ -204,7 +252,10 @@ export function localizeProjectContextText(text?: string, locale = 'zh-Hans') {
 
   let next = text;
   const replacements: Array<[RegExp, string]> = [
-    [/^No active repositories are bound to this project yet\.$/, '当前项目还没有绑定启用中的仓库。'],
+    [
+      /^No active repositories are bound to this project yet\.$/,
+      '当前项目还没有绑定启用中的仓库。',
+    ],
     [
       /^(\d+) active repositories are bound, but none is the primary execution repository\.$/,
       '已绑定 $1 个启用中的仓库，但还没有主执行仓库。',
@@ -213,10 +264,22 @@ export function localizeProjectContextText(text?: string, locale = 'zh-Hans') {
       /^Execution will modify (.+); other active repositories are read-only planning context\.$/,
       '执行只会修改 $1；其他启用仓库仅作为只读规划上下文。',
     ],
-    [/^Review repository context warnings before approving execution\.$/, '审批执行前请先查看仓库上下文警告。'],
-    [/^Bind one active primary repository before generating a plan\.$/, '生成计划前请先绑定一个启用的主仓库。'],
-    [/^Add project or repo skills to reduce prompt ambiguity\.$/, '添加项目或仓库技能，减少提示词歧义。'],
-    [/^Generate a requirement plan from this project context\.$/, '基于当前项目上下文生成需求计划。'],
+    [
+      /^Review repository context warnings before approving execution\.$/,
+      '审批执行前请先查看仓库上下文警告。',
+    ],
+    [
+      /^Bind one active primary repository before generating a plan\.$/,
+      '生成计划前请先绑定一个启用的主仓库。',
+    ],
+    [
+      /^Add project or repo skills to reduce prompt ambiguity\.$/,
+      '添加项目或仓库技能，减少提示词歧义。',
+    ],
+    [
+      /^Generate a requirement plan from this project context\.$/,
+      '基于当前项目上下文生成需求计划。',
+    ],
     [/^MVP execution is primary-repository only\.$/, '当前 MVP 仅支持主仓库执行。'],
     [
       /^Planner may read dependency, docs, and infra repositories as context\.$/,
@@ -245,10 +308,10 @@ export function projectOverviewDecision(context?: ProjectContextDTO): ProjectOve
   if (!readiness.hasPrimaryRepository) {
     return {
       step: 'bind_repository',
-      title: 'Bind a primary repository',
+      title: 'Select a primary repository',
       description:
         'CodingCTO needs one writable primary repository before it can generate or execute a plan.',
-      actionLabel: 'Bind repository',
+      actionLabel: 'Select repository',
       actionHref: '#repository-binding',
       tone: 'warning',
     };

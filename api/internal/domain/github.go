@@ -5,6 +5,19 @@ import (
 	"time"
 )
 
+const (
+	GitHubConnectionStatusConnected         = "connected"
+	GitHubConnectionStatusExpired           = "expired"
+	GitHubConnectionStatusRevoked           = "revoked"
+	GitHubConnectionStatusInsufficientScope = "insufficient_scope"
+
+	GitHubRepositoryAccessSourcePersonal     = "personal"
+	GitHubRepositoryAccessSourceOrganization = "organization"
+
+	RepositoryAccessSourceOAuthUser          = "oauth_user"
+	RepositoryAccessSourceLegacyInstallation = "legacy_installation"
+)
+
 // GitHubInstallation stores GitHub App installation metadata for a workspace.
 type GitHubInstallation struct {
 	ID             uint              `json:"id"`
@@ -17,19 +30,64 @@ type GitHubInstallation struct {
 	UpdatedAt      time.Time         `json:"updated_at"`
 }
 
+// GitHubAccountConnection stores the active OAuth account binding for a workspace.
+type GitHubAccountConnection struct {
+	ID                    uint       `json:"id"`
+	WorkspaceID           string     `json:"workspace_id"`
+	UserID                uint       `json:"user_id"`
+	GitHubUserID          int64      `json:"github_user_id"`
+	GitHubLogin           string     `json:"github_login"`
+	GitHubName            string     `json:"github_name"`
+	GitHubAvatarURL       string     `json:"github_avatar_url"`
+	AccessTokenEncrypted  string     `json:"-"`
+	RefreshTokenEncrypted string     `json:"-"`
+	ScopeString           string     `json:"scope_string"`
+	TokenStatus           string     `json:"token_status"`
+	LastVerifiedAt        *time.Time `json:"last_verified_at,omitempty"`
+	LastSyncedAt          *time.Time `json:"last_synced_at,omitempty"`
+	CreatedAt             time.Time  `json:"created_at"`
+	UpdatedAt             time.Time  `json:"updated_at"`
+}
+
+// GitHubRepositoryAccess stores one repository visible to the connected GitHub account.
+type GitHubRepositoryAccess struct {
+	ID                uint            `json:"id"`
+	WorkspaceID       string          `json:"workspace_id"`
+	ConnectionID      uint            `json:"connection_id"`
+	GitHubRepoID      int64           `json:"github_repo_id"`
+	OwnerLogin        string          `json:"owner_login"`
+	RepoName          string          `json:"repo_name"`
+	FullName          string          `json:"full_name"`
+	HTMLURL           string          `json:"html_url"`
+	DefaultBranch     string          `json:"default_branch"`
+	Visibility        string          `json:"visibility"`
+	IsPrivate         bool            `json:"is_private"`
+	SourceType        string          `json:"source_type"`
+	OrganizationLogin string          `json:"organization_login"`
+	Permissions       map[string]bool `json:"permissions"`
+	Archived          bool            `json:"archived"`
+	Disabled          bool            `json:"disabled"`
+	LastSeenAt        time.Time       `json:"last_seen_at"`
+	CreatedAt         time.Time       `json:"created_at"`
+	UpdatedAt         time.Time       `json:"updated_at"`
+}
+
 // Repository stores the GitHub repository metadata SpecForge works against.
 type Repository struct {
-	ID                   uint      `json:"id"`
-	RepositoryID         string    `json:"repository_id"`
-	WorkspaceID          string    `json:"workspace_id"`
-	GitHubInstallationID uint      `json:"github_installation_id"`
-	GitHubOwner          string    `json:"github_owner"`
-	GitHubRepo           string    `json:"github_repo"`
-	DefaultBranch        string    `json:"default_branch"`
-	IsPrivate            bool      `json:"is_private"`
-	CreatedBy            uint      `json:"created_by"`
-	CreatedAt            time.Time `json:"created_at"`
-	UpdatedAt            time.Time `json:"updated_at"`
+	ID                       uint      `json:"id"`
+	RepositoryID             string    `json:"repository_id"`
+	WorkspaceID              string    `json:"workspace_id"`
+	GitHubInstallationID     uint      `json:"github_installation_id"`
+	GitHubConnectionID       uint      `json:"github_connection_id,omitempty"`
+	GitHubRepositoryAccessID uint      `json:"github_repository_access_id,omitempty"`
+	AccessSource             string    `json:"access_source,omitempty"`
+	GitHubOwner              string    `json:"github_owner"`
+	GitHubRepo               string    `json:"github_repo"`
+	DefaultBranch            string    `json:"default_branch"`
+	IsPrivate                bool      `json:"is_private"`
+	CreatedBy                uint      `json:"created_by"`
+	CreatedAt                time.Time `json:"created_at"`
+	UpdatedAt                time.Time `json:"updated_at"`
 }
 
 // GitHubSettings stores workspace-level GitHub integration behavior flags.
@@ -66,6 +124,7 @@ type GitHubIntegrationRepository interface {
 	UpsertInstallation(ctx context.Context, installation *GitHubInstallation) error
 	FindInstallationByID(ctx context.Context, id uint) (*GitHubInstallation, error)
 	FindInstallationByGitHubID(ctx context.Context, installationID int64) (*GitHubInstallation, error)
+	ListInstallationsByWorkspaceID(ctx context.Context, workspaceID string) ([]*GitHubInstallation, error)
 	UpsertRepository(ctx context.Context, repository *Repository) error
 	FindRepositoryByRepositoryID(ctx context.Context, repositoryID string) (*Repository, error)
 	ListRepositoriesByWorkspaceID(ctx context.Context, workspaceID string) ([]*Repository, error)
