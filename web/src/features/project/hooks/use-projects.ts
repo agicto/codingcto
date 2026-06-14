@@ -24,6 +24,7 @@ export const projectKeys = {
     [...projectKeys.all, 'repository-options', projectId] as const,
   readiness: (projectId: number) => [...projectKeys.all, 'readiness', projectId] as const,
   context: (projectId: number) => [...projectKeys.all, 'context', projectId] as const,
+  deepWiki: (projectId: number) => [...projectKeys.all, 'deepwiki', projectId] as const,
   expertPolicy: (projectId: number) => [...projectKeys.all, 'expert-policy', projectId] as const,
   runtimeBindings: (projectId: number) =>
     [...projectKeys.all, 'runtime-bindings', projectId] as const,
@@ -120,6 +121,24 @@ export function useProjectContext(projectId: number) {
   });
 }
 
+export function useProjectDeepWiki(projectId: number) {
+  return useQuery({
+    queryKey: projectKeys.deepWiki(projectId),
+    queryFn: () => projectService.listProjectDeepWiki(projectId, silentQueryConfig),
+    enabled: Boolean(projectId),
+    refetchInterval: query => {
+      const repositories = query.state.data?.repositories ?? [];
+      return repositories.some(item => {
+        const status = item.index?.status || item.source?.status;
+        return status && status !== 'ready' && status !== 'failed';
+      })
+        ? 2000
+        : false;
+    },
+    meta: silentQueryMeta,
+  });
+}
+
 export function useProjectRepositoryOptions(projectId: number) {
   return useQuery({
     queryKey: projectKeys.repositoryOptions(projectId),
@@ -136,6 +155,36 @@ export function useRefreshProjectContextSnapshot(projectId: number) {
     mutationFn: () => projectService.reindexProjectContext(projectId, silentQueryConfig),
     meta: silentQueryMeta,
     onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
+    },
+  });
+}
+
+export function useReindexProjectRepositoryDeepWiki(projectId: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (repositoryId: string) =>
+      projectService.reindexProjectRepositoryDeepWiki(projectId, repositoryId, silentQueryConfig),
+    meta: silentQueryMeta,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.deepWiki(projectId) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
+    },
+  });
+}
+
+export function useDeleteProjectRepositoryDeepWiki(projectId: number) {
+  const queryClient = useQueryClient();
+
+  return useMutation({
+    mutationFn: (repositoryId: string) =>
+      projectService.deleteProjectRepositoryDeepWiki(projectId, repositoryId, silentQueryConfig),
+    meta: silentQueryMeta,
+    onSuccess: () => {
+      queryClient.invalidateQueries({ queryKey: projectKeys.deepWiki(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
     },
@@ -247,6 +296,7 @@ export function useBindProjectRepository(projectId: number) {
       queryClient.invalidateQueries({ queryKey: projectKeys.repositoryOptions(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.deepWiki(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.runtimeBindings(projectId) });
     },
   });
@@ -268,6 +318,7 @@ export function useBindAnyProjectRepository() {
       queryClient.invalidateQueries({ queryKey: projectKeys.repositoryOptions(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.deepWiki(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.runtimeBindings(projectId) });
     },
   });
@@ -284,6 +335,7 @@ export function useUnbindProjectRepository(projectId: number) {
       queryClient.invalidateQueries({ queryKey: projectKeys.repositoryOptions(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.readiness(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.context(projectId) });
+      queryClient.invalidateQueries({ queryKey: projectKeys.deepWiki(projectId) });
       queryClient.invalidateQueries({ queryKey: projectKeys.runtimeBindings(projectId) });
     },
   });

@@ -35,6 +35,34 @@ func (r *repository) UpdateSource(ctx context.Context, source *domain.DeepWikiSo
 	return nil
 }
 
+func (r *repository) DeleteSource(ctx context.Context, sourceID uint) error {
+	return r.db.WithContext(ctx).Transaction(func(tx *gorm.DB) error {
+		var indexIDs []uint
+		if err := tx.Model(&IndexPO{}).Where("source_id = ?", sourceID).Pluck("id", &indexIDs).Error; err != nil {
+			return err
+		}
+		if len(indexIDs) > 0 {
+			if err := tx.Where("index_id IN ?", indexIDs).Delete(&PagePO{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("index_id IN ?", indexIDs).Delete(&ChunkPO{}).Error; err != nil {
+				return err
+			}
+			if err := tx.Where("id IN ?", indexIDs).Delete(&IndexPO{}).Error; err != nil {
+				return err
+			}
+		}
+		result := tx.Delete(&SourcePO{}, sourceID)
+		if result.Error != nil {
+			return result.Error
+		}
+		if result.RowsAffected == 0 {
+			return domain.ErrNotFound
+		}
+		return nil
+	})
+}
+
 func (r *repository) FindSourceByID(ctx context.Context, id uint) (*domain.DeepWikiSource, error) {
 	var po SourcePO
 	if err := r.db.WithContext(ctx).First(&po, id).Error; err != nil {
@@ -52,6 +80,15 @@ func (r *repository) ListSources(ctx context.Context, filter domain.DeepWikiSour
 	query := r.db.WithContext(ctx).Model(&SourcePO{})
 	if filter.CreatedBy > 0 {
 		query = query.Where("created_by = ?", filter.CreatedBy)
+	}
+	if strings.TrimSpace(filter.WorkspaceID) != "" {
+		query = query.Where("workspace_id = ?", strings.TrimSpace(filter.WorkspaceID))
+	}
+	if filter.ProjectID > 0 {
+		query = query.Where("project_id = ?", filter.ProjectID)
+	}
+	if strings.TrimSpace(filter.RepositoryID) != "" {
+		query = query.Where("repository_id = ?", strings.TrimSpace(filter.RepositoryID))
 	}
 	if strings.TrimSpace(filter.SourceType) != "" {
 		query = query.Where("source_type = ?", strings.TrimSpace(filter.SourceType))

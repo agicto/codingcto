@@ -97,6 +97,82 @@ type ProjectContextSnapshotResponse struct {
 	Snapshot *domain.SpecForgeProjectContextSnapshot `json:"snapshot"`
 }
 
+type ProjectDeepWikiResponse struct {
+	Repositories []*ProjectRepositoryDeepWikiResponse `json:"repositories"`
+}
+
+type ProjectRepositoryDeepWikiResultResponse struct {
+	Repository *ProjectRepositoryDeepWikiResponse `json:"repository"`
+}
+
+type ProjectRepositoryDeepWikiResponse struct {
+	ProjectID    uint                           `json:"project_id"`
+	WorkspaceID  string                         `json:"workspace_id"`
+	RepositoryID string                         `json:"repository_id"`
+	Role         string                         `json:"role"`
+	Source       *ProjectDeepWikiSourceResponse `json:"source,omitempty"`
+	Index        *ProjectDeepWikiIndexResponse  `json:"index,omitempty"`
+	Pages        []*ProjectDeepWikiPageSummary  `json:"pages,omitempty"`
+	Error        string                         `json:"error,omitempty"`
+}
+
+type ProjectDeepWikiSourceResponse struct {
+	ID            uint       `json:"id"`
+	CreatedBy     uint       `json:"created_by"`
+	WorkspaceID   string     `json:"workspace_id,omitempty"`
+	ProjectID     uint       `json:"project_id,omitempty"`
+	RepositoryID  string     `json:"repository_id,omitempty"`
+	SourceType    string     `json:"source_type"`
+	RepoURL       string     `json:"repo_url,omitempty"`
+	Branch        string     `json:"branch,omitempty"`
+	GitHubOwner   string     `json:"github_owner,omitempty"`
+	GitHubRepo    string     `json:"github_repo,omitempty"`
+	DefaultBranch string     `json:"default_branch,omitempty"`
+	Status        string     `json:"status"`
+	LastIndexedAt *time.Time `json:"last_indexed_at,omitempty"`
+	LastFailure   string     `json:"last_failure,omitempty"`
+	LastError     string     `json:"last_error,omitempty"`
+	CreatedAt     time.Time  `json:"created_at"`
+	UpdatedAt     time.Time  `json:"updated_at"`
+}
+
+type ProjectDeepWikiIndexResponse struct {
+	ID                uint           `json:"id"`
+	SourceID          uint           `json:"source_id"`
+	CommitSHA         string         `json:"commit_sha,omitempty"`
+	FileCount         int            `json:"file_count"`
+	ChunkCount        int            `json:"chunk_count"`
+	LanguageSummary   map[string]int `json:"language_summary"`
+	FileTree          []string       `json:"file_tree"`
+	Entrypoints       []string       `json:"entrypoints"`
+	Routes            []string       `json:"routes"`
+	Services          []string       `json:"services"`
+	Models            []string       `json:"models"`
+	Configs           []string       `json:"configs"`
+	Frameworks        []string       `json:"frameworks"`
+	PackageManager    string         `json:"package_manager,omitempty"`
+	GenerationMode    string         `json:"generation_mode"`
+	GeneratorProvider string         `json:"generator_provider,omitempty"`
+	GeneratorModel    string         `json:"generator_model,omitempty"`
+	PromptVersion     string         `json:"prompt_version,omitempty"`
+	Status            string         `json:"status"`
+	ErrorMessage      string         `json:"error_message,omitempty"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
+}
+
+type ProjectDeepWikiPageSummary struct {
+	ID         uint      `json:"id"`
+	IndexID    uint      `json:"index_id"`
+	Slug       string    `json:"slug"`
+	Title      string    `json:"title"`
+	PageType   string    `json:"page_type"`
+	OrderIndex int       `json:"order_index"`
+	Status     string    `json:"status"`
+	CreatedAt  time.Time `json:"created_at"`
+	UpdatedAt  time.Time `json:"updated_at"`
+}
+
 type ProjectExpertPolicyResponse struct {
 	Policy *domain.SpecForgeProjectExpertPolicy `json:"policy"`
 }
@@ -167,4 +243,80 @@ func (po *ProjectRepositoryPO) toDomain() *domain.SpecForgeProjectRepository {
 
 func nowUTC() time.Time {
 	return time.Now().UTC()
+}
+
+func projectDeepWikiSourceResponse(source *domain.DeepWikiSource) *ProjectDeepWikiSourceResponse {
+	if source == nil {
+		return nil
+	}
+	return &ProjectDeepWikiSourceResponse{
+		ID:            source.ID,
+		CreatedBy:     source.CreatedBy,
+		WorkspaceID:   source.WorkspaceID,
+		ProjectID:     source.ProjectID,
+		RepositoryID:  source.RepositoryID,
+		SourceType:    source.SourceType,
+		RepoURL:       source.RepoURL,
+		Branch:        source.Branch,
+		GitHubOwner:   source.GitHubOwner,
+		GitHubRepo:    source.GitHubRepo,
+		DefaultBranch: source.DefaultBranch,
+		Status:        source.Status,
+		LastIndexedAt: source.LastIndexedAt,
+		LastFailure:   source.LastFailure,
+		LastError:     source.LastError,
+		CreatedAt:     source.CreatedAt,
+		UpdatedAt:     source.UpdatedAt,
+	}
+}
+
+func projectDeepWikiIndexResponse(index *domain.DeepWikiIndex) *ProjectDeepWikiIndexResponse {
+	if index == nil {
+		return nil
+	}
+	return &ProjectDeepWikiIndexResponse{
+		ID:                index.ID,
+		SourceID:          index.SourceID,
+		CommitSHA:         index.CommitSHA,
+		FileCount:         index.FileCount,
+		ChunkCount:        index.ChunkCount,
+		LanguageSummary:   index.LanguageSummary,
+		FileTree:          index.FileTree,
+		Entrypoints:       index.Entrypoints,
+		Routes:            index.Routes,
+		Services:          index.Services,
+		Models:            index.Models,
+		Configs:           index.Configs,
+		Frameworks:        index.Frameworks,
+		PackageManager:    index.PackageManager,
+		GenerationMode:    domain.NormalizeDeepWikiGenerationMode(index.GenerationMode),
+		GeneratorProvider: index.GeneratorProvider,
+		GeneratorModel:    index.GeneratorModel,
+		PromptVersion:     index.PromptVersion,
+		Status:            index.Status,
+		ErrorMessage:      index.ErrorMessage,
+		CreatedAt:         index.CreatedAt,
+		UpdatedAt:         index.UpdatedAt,
+	}
+}
+
+func projectDeepWikiPageSummaries(pages []*domain.DeepWikiPage) []*ProjectDeepWikiPageSummary {
+	out := make([]*ProjectDeepWikiPageSummary, 0, len(pages))
+	for _, page := range pages {
+		if page == nil {
+			continue
+		}
+		out = append(out, &ProjectDeepWikiPageSummary{
+			ID:         page.ID,
+			IndexID:    page.IndexID,
+			Slug:       page.Slug,
+			Title:      page.Title,
+			PageType:   page.PageType,
+			OrderIndex: page.OrderIndex,
+			Status:     page.Status,
+			CreatedAt:  page.CreatedAt,
+			UpdatedAt:  page.UpdatedAt,
+		})
+	}
+	return out
 }

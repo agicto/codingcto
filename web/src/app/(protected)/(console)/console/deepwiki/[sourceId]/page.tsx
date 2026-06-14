@@ -1,5 +1,5 @@
-import { DeepWikiConsole } from '@/features/deepwiki';
+import { DeepWikiProjectEntryPage } from '@/features/deepwiki';
 
 export default function DeepWikiSourcePage() {
-  return <DeepWikiConsole />;
+  return <DeepWikiProjectEntryPage />;
 }

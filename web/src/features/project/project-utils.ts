@@ -21,6 +21,29 @@ export function projectContextHref(projectId: number): string {
   return buildRoute(ROUTES.CONSOLE.PROJECT_CONTEXT, { projectId });
 }
 
+export function projectDeepWikiHref(projectId: number): string {
+  return buildRoute(ROUTES.CONSOLE.PROJECT_DEEPWIKI, { projectId });
+}
+
+export function projectDeepWikiRepositoryHref(projectId: number, repositoryId: string): string {
+  return buildRoute(ROUTES.CONSOLE.PROJECT_DEEPWIKI_REPOSITORY, {
+    projectId,
+    repositoryId: encodeURIComponent(repositoryId),
+  });
+}
+
+export function projectDeepWikiPageHref(
+  projectId: number,
+  repositoryId: string,
+  slug: string
+): string {
+  return buildRoute(ROUTES.CONSOLE.PROJECT_DEEPWIKI_PAGE, {
+    projectId,
+    repositoryId: encodeURIComponent(repositoryId),
+    slug: encodeURIComponent(slug),
+  });
+}
+
 export function projectRequirementNewHref(projectId: number): string {
   return buildRoute(ROUTES.CONSOLE.PROJECT_REQUIREMENT_NEW, { projectId });
 }

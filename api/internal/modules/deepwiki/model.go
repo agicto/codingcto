@@ -10,10 +10,16 @@ import (
 type SourcePO struct {
 	ID            uint   `gorm:"primaryKey"`
 	CreatedBy     uint   `gorm:"not null;index"`
+	WorkspaceID   string `gorm:"size:255;index"`
+	ProjectID     uint   `gorm:"index"`
+	RepositoryID  string `gorm:"size:255;index:idx_deepwiki_source_repository"`
 	SourceType    string `gorm:"size:30;not null;index"`
 	RepoURL       string `gorm:"size:1000"`
 	LocalPath     string `gorm:"size:1000"`
 	Branch        string `gorm:"size:120"`
+	GitHubOwner   string `gorm:"size:255"`
+	GitHubRepo    string `gorm:"size:255"`
+	DefaultBranch string `gorm:"size:120"`
 	PATSecretRef  string `gorm:"size:255"`
 	EncryptedPAT  string `gorm:"type:text"`
 	Status        string `gorm:"size:50;not null;index"`
@@ -43,6 +49,10 @@ type IndexPO struct {
 	ConfigsJSON         string `gorm:"column:configs_json;type:text"`
 	FrameworksJSON      string `gorm:"column:frameworks_json;type:text"`
 	PackageManager      string `gorm:"size:80"`
+	GenerationMode      string `gorm:"size:40;index"`
+	GeneratorProvider   string `gorm:"size:80"`
+	GeneratorModel      string `gorm:"size:120"`
+	PromptVersion       string `gorm:"size:80"`
 	Status              string `gorm:"size:50;not null;index"`
 	ErrorMessage        string `gorm:"type:text"`
 	CreatedAt           time.Time
@@ -98,10 +108,16 @@ func newSourcePO(source *domain.DeepWikiSource) *SourcePO {
 	return &SourcePO{
 		ID:            source.ID,
 		CreatedBy:     source.CreatedBy,
+		WorkspaceID:   source.WorkspaceID,
+		ProjectID:     source.ProjectID,
+		RepositoryID:  source.RepositoryID,
 		SourceType:    source.SourceType,
 		RepoURL:       source.RepoURL,
 		LocalPath:     source.LocalPath,
 		Branch:        source.Branch,
+		GitHubOwner:   source.GitHubOwner,
+		GitHubRepo:    source.GitHubRepo,
+		DefaultBranch: source.DefaultBranch,
 		PATSecretRef:  source.PATSecretRef,
 		EncryptedPAT:  source.EncryptedPAT,
 		Status:        source.Status,
@@ -117,10 +133,16 @@ func (po *SourcePO) toDomain() *domain.DeepWikiSource {
 	return &domain.DeepWikiSource{
 		ID:            po.ID,
 		CreatedBy:     po.CreatedBy,
+		WorkspaceID:   po.WorkspaceID,
+		ProjectID:     po.ProjectID,
+		RepositoryID:  po.RepositoryID,
 		SourceType:    po.SourceType,
 		RepoURL:       po.RepoURL,
 		LocalPath:     po.LocalPath,
 		Branch:        po.Branch,
+		GitHubOwner:   po.GitHubOwner,
+		GitHubRepo:    po.GitHubRepo,
+		DefaultBranch: po.DefaultBranch,
 		PATSecretRef:  po.PATSecretRef,
 		EncryptedPAT:  po.EncryptedPAT,
 		Status:        po.Status,
@@ -148,6 +170,10 @@ func newIndexPO(index *domain.DeepWikiIndex) *IndexPO {
 		ConfigsJSON:         encodeJSON(index.Configs),
 		FrameworksJSON:      encodeJSON(index.Frameworks),
 		PackageManager:      index.PackageManager,
+		GenerationMode:      index.GenerationMode,
+		GeneratorProvider:   index.GeneratorProvider,
+		GeneratorModel:      index.GeneratorModel,
+		PromptVersion:       index.PromptVersion,
 		Status:              index.Status,
 		ErrorMessage:        index.ErrorMessage,
 		CreatedAt:           index.CreatedAt,
@@ -157,24 +183,28 @@ func newIndexPO(index *domain.DeepWikiIndex) *IndexPO {
 
 func (po *IndexPO) toDomain() *domain.DeepWikiIndex {
 	return &domain.DeepWikiIndex{
-		ID:              po.ID,
-		SourceID:        po.SourceID,
-		CommitSHA:       po.CommitSHA,
-		FileCount:       po.FileCount,
-		ChunkCount:      po.ChunkCount,
-		LanguageSummary: decodeMapInt(po.LanguageSummaryJSON),
-		FileTree:        decodeStrings(po.FileTreeJSON),
-		Entrypoints:     decodeStrings(po.EntrypointsJSON),
-		Routes:          decodeStrings(po.RoutesJSON),
-		Services:        decodeStrings(po.ServicesJSON),
-		Models:          decodeStrings(po.ModelsJSON),
-		Configs:         decodeStrings(po.ConfigsJSON),
-		Frameworks:      decodeStrings(po.FrameworksJSON),
-		PackageManager:  po.PackageManager,
-		Status:          po.Status,
-		ErrorMessage:    po.ErrorMessage,
-		CreatedAt:       po.CreatedAt,
-		UpdatedAt:       po.UpdatedAt,
+		ID:                po.ID,
+		SourceID:          po.SourceID,
+		CommitSHA:         po.CommitSHA,
+		FileCount:         po.FileCount,
+		ChunkCount:        po.ChunkCount,
+		LanguageSummary:   decodeMapInt(po.LanguageSummaryJSON),
+		FileTree:          decodeStrings(po.FileTreeJSON),
+		Entrypoints:       decodeStrings(po.EntrypointsJSON),
+		Routes:            decodeStrings(po.RoutesJSON),
+		Services:          decodeStrings(po.ServicesJSON),
+		Models:            decodeStrings(po.ModelsJSON),
+		Configs:           decodeStrings(po.ConfigsJSON),
+		Frameworks:        decodeStrings(po.FrameworksJSON),
+		PackageManager:    po.PackageManager,
+		GenerationMode:    po.GenerationMode,
+		GeneratorProvider: po.GeneratorProvider,
+		GeneratorModel:    po.GeneratorModel,
+		PromptVersion:     po.PromptVersion,
+		Status:            po.Status,
+		ErrorMessage:      po.ErrorMessage,
+		CreatedAt:         po.CreatedAt,
+		UpdatedAt:         po.UpdatedAt,
 	}
 }
 

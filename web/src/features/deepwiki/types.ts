@@ -1,4 +1,4 @@
-export type DeepWikiSourceType = 'github_url' | 'local_path';
+export type DeepWikiSourceType = 'github_url' | 'local_path' | 'github_repository';
 
 export type DeepWikiStatus =
   | 'queued'
@@ -15,9 +15,15 @@ export interface DeepWikiSourceDTO {
   id: number;
   created_by: number;
   source_type: DeepWikiSourceType;
+  workspace_id?: string;
+  project_id?: number;
+  repository_id?: string;
+  github_owner?: string;
+  github_repo?: string;
   repo_url?: string;
   local_path?: string;
   branch?: string;
+  default_branch?: string;
   status: DeepWikiStatus | string;
   last_indexed_at?: string;
   last_failure?: string;
@@ -41,6 +47,10 @@ export interface DeepWikiIndexDTO {
   configs: string[];
   frameworks: string[];
   package_manager?: string;
+  generation_mode: 'llm' | 'legacy_template' | string;
+  generator_provider?: string;
+  generator_model?: string;
+  prompt_version?: string;
   status: DeepWikiStatus | string;
   error_message?: string;
   created_at: string;
@@ -109,9 +119,15 @@ export interface DeepWikiLocalDirectoryListDTO {
 
 export interface CreateDeepWikiSourcePayload {
   source_type: DeepWikiSourceType;
+  workspace_id?: string;
+  project_id?: number;
+  repository_id?: string;
+  github_owner?: string;
+  github_repo?: string;
   repo_url?: string;
   local_path?: string;
   branch?: string;
+  default_branch?: string;
   pat?: string;
 }
 

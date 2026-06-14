@@ -21,6 +21,24 @@ type RepoReader interface {
 	Read(ctx context.Context, source *domain.DeepWikiSource, pat string) (*RepositorySnapshot, error)
 }
 
+type GitHubRepositoryContentSource interface {
+	ListRepositoryTree(ctx context.Context, repositoryID, ref string, recursive bool) (*GitHubRepositoryTreeSnapshot, error)
+	ReadRepositoryFile(ctx context.Context, repositoryID, path, ref string) (*GitHubRepositoryFileSnapshot, error)
+}
+
+type GitHubRepositoryTreeSnapshot struct {
+	Ref       string
+	Truncated bool
+	Paths     []string
+}
+
+type GitHubRepositoryFileSnapshot struct {
+	Path    string
+	Ref     string
+	SHA     string
+	Content string
+}
+
 type RepositorySnapshot struct {
 	CommitSHA string
 	Branch    string
@@ -35,12 +53,17 @@ type RepositoryFile struct {
 }
 
 type defaultRepoReader struct {
-	filter     fileFilter
-	httpClient *http.Client
+	filter           fileFilter
+	httpClient       *http.Client
+	repositorySource GitHubRepositoryContentSource
 }
 
-func NewDefaultRepoReader() RepoReader {
-	return &defaultRepoReader{filter: newFileFilter(), httpClient: http.DefaultClient}
+func NewDefaultRepoReader(repositorySource GitHubRepositoryContentSource) RepoReader {
+	return &defaultRepoReader{
+		filter:           newFileFilter(),
+		httpClient:       http.DefaultClient,
+		repositorySource: repositorySource,
+	}
 }
 
 func (r *defaultRepoReader) Read(ctx context.Context, source *domain.DeepWikiSource, pat string) (*RepositorySnapshot, error) {
@@ -52,6 +75,8 @@ func (r *defaultRepoReader) Read(ctx context.Context, source *domain.DeepWikiSou
 		return r.readLocal(ctx, source)
 	case domain.DeepWikiSourceTypeGitHubURL:
 		return r.readGitHub(ctx, source, pat)
+	case domain.DeepWikiSourceTypeGitHubRepository:
+		return r.readGitHubRepository(ctx, source)
 	default:
 		return nil, domain.ErrInvalidInput
 	}
@@ -229,6 +254,81 @@ func (r *defaultRepoReader) readGitHub(ctx context.Context, source *domain.DeepW
 	}
 	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
 	return &RepositorySnapshot{CommitSHA: commitSHA, Branch: branch, Files: files}, nil
+}
+
+func (r *defaultRepoReader) readGitHubRepository(ctx context.Context, source *domain.DeepWikiSource) (*RepositorySnapshot, error) {
+	if r.repositorySource == nil {
+		return nil, fmt.Errorf("github repository reader is not configured")
+	}
+	repositoryID := strings.TrimSpace(source.RepositoryID)
+	if repositoryID == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	branch := strings.TrimSpace(source.Branch)
+	if branch == "" {
+		branch = strings.TrimSpace(source.DefaultBranch)
+	}
+	if branch == "" {
+		branch = "main"
+	}
+
+	tree, err := r.repositorySource.ListRepositoryTree(ctx, repositoryID, branch, true)
+	if err != nil {
+		return nil, err
+	}
+	if tree == nil {
+		return nil, domain.ErrNotFound
+	}
+	if tree.Truncated {
+		return nil, fmt.Errorf("github tree response was truncated")
+	}
+	if strings.TrimSpace(tree.Ref) != "" {
+		branch = strings.TrimSpace(tree.Ref)
+	}
+
+	files := []RepositoryFile{}
+	var totalBytes int64
+	paths := append([]string(nil), tree.Paths...)
+	sort.Strings(paths)
+	for _, path := range paths {
+		if ctx.Err() != nil {
+			return nil, ctx.Err()
+		}
+		path = strings.TrimSpace(path)
+		if path == "" || r.filter.shouldSkipPath(path) {
+			continue
+		}
+		file, err := r.repositorySource.ReadRepositoryFile(ctx, repositoryID, path, branch)
+		if err != nil || file == nil {
+			continue
+		}
+		contentBytes := []byte(file.Content)
+		if int64(len(contentBytes)) > maxTextFileBytes {
+			continue
+		}
+		if !r.filter.isText(contentBytes) || r.filter.containsSecret(file.Content) {
+			continue
+		}
+		totalBytes += int64(len(contentBytes))
+		if totalBytes > maxIndexedRepoBytes {
+			return nil, fmt.Errorf("repository exceeds filtered size limit")
+		}
+		files = append(files, RepositoryFile{
+			Path:     file.Path,
+			Language: languageForPath(file.Path),
+			Content:  file.Content,
+			Size:     int64(len(contentBytes)),
+		})
+		if len(files) > maxIndexedFiles {
+			return nil, fmt.Errorf("repository exceeds indexed file limit")
+		}
+	}
+	sort.Slice(files, func(i, j int) bool { return files[i].Path < files[j].Path })
+	return &RepositorySnapshot{
+		CommitSHA: strings.TrimSpace(tree.Ref),
+		Branch:    branch,
+		Files:     files,
+	}, nil
 }
 
 func (r *defaultRepoReader) readGitHubFile(ctx context.Context, owner, repo, path, ref, pat string) (string, error) {

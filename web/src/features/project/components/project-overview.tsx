@@ -36,6 +36,7 @@ import {
 } from '@/features/project/project-context';
 import {
   projectContextHref,
+  projectDeepWikiHref,
   projectRequirementNewHref,
 } from '@/features/project/project-utils';
 import {
@@ -292,6 +293,9 @@ function ProjectRepositoriesSection({ context }: { context: ProjectContextDTO })
         <div className="flex shrink-0 flex-wrap items-center gap-2">
           <Button asChild variant="outline" size="sm">
             <Link href={projectContextHref(context.project.id)}>{t('repositories.openContext')}</Link>
+          </Button>
+          <Button asChild variant="outline" size="sm">
+            <Link href={projectDeepWikiHref(context.project.id)}>Open DeepWiki</Link>
           </Button>
           <Dialog>
             <DialogTrigger asChild>
@@ -632,9 +636,14 @@ function ProjectKnowledgeSection({
         {t('knowledge.ready', { ready: knowledgeReadyCount, total: 4 })}
       </div>
 
-      <Button asChild variant="outline" size="sm" className="mt-4 rounded-[4px]">
-        <Link href={projectContextHref(context.project.id)}>{t('knowledge.manage')}</Link>
-      </Button>
+      <div className="mt-4 flex flex-wrap gap-2">
+        <Button asChild variant="outline" size="sm" className="rounded-[4px]">
+          <Link href={projectContextHref(context.project.id)}>{t('knowledge.manage')}</Link>
+        </Button>
+        <Button asChild variant="outline" size="sm" className="rounded-[4px]">
+          <Link href={projectDeepWikiHref(context.project.id)}>Open DeepWiki</Link>
+        </Button>
+      </div>
     </section>
   );
 }

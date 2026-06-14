@@ -2,12 +2,14 @@ package domain
 
 import (
 	"context"
+	"strings"
 	"time"
 )
 
 const (
-	DeepWikiSourceTypeGitHubURL = "github_url"
-	DeepWikiSourceTypeLocalPath = "local_path"
+	DeepWikiSourceTypeGitHubURL        = "github_url"
+	DeepWikiSourceTypeLocalPath        = "local_path"
+	DeepWikiSourceTypeGitHubRepository = "github_repository"
 
 	DeepWikiStatusQueued     = "queued"
 	DeepWikiStatusReading    = "reading"
@@ -25,16 +27,33 @@ const (
 	DeepWikiFailureIndex    = "failed_index"
 	DeepWikiFailurePlan     = "failed_plan"
 	DeepWikiFailureGenerate = "failed_generate"
+
+	DeepWikiGenerationModeLLM            = "llm"
+	DeepWikiGenerationModeLegacyTemplate = "legacy_template"
 )
+
+func NormalizeDeepWikiGenerationMode(mode string) string {
+	mode = strings.TrimSpace(mode)
+	if mode == "" {
+		return DeepWikiGenerationModeLegacyTemplate
+	}
+	return mode
+}
 
 // DeepWikiSource stores the user supplied repository source.
 type DeepWikiSource struct {
 	ID            uint       `json:"id"`
 	CreatedBy     uint       `json:"created_by"`
+	WorkspaceID   string     `json:"workspace_id,omitempty"`
+	ProjectID     uint       `json:"project_id,omitempty"`
+	RepositoryID  string     `json:"repository_id,omitempty"`
 	SourceType    string     `json:"source_type"`
 	RepoURL       string     `json:"repo_url,omitempty"`
 	LocalPath     string     `json:"local_path,omitempty"`
 	Branch        string     `json:"branch,omitempty"`
+	GitHubOwner   string     `json:"github_owner,omitempty"`
+	GitHubRepo    string     `json:"github_repo,omitempty"`
+	DefaultBranch string     `json:"default_branch,omitempty"`
 	PATSecretRef  string     `json:"pat_secret_ref,omitempty"`
 	EncryptedPAT  string     `json:"-"`
 	Status        string     `json:"status"`
@@ -47,24 +66,28 @@ type DeepWikiSource struct {
 
 // DeepWikiIndex stores one immutable-ish indexing result for a source.
 type DeepWikiIndex struct {
-	ID              uint           `json:"id"`
-	SourceID        uint           `json:"source_id"`
-	CommitSHA       string         `json:"commit_sha,omitempty"`
-	FileCount       int            `json:"file_count"`
-	ChunkCount      int            `json:"chunk_count"`
-	LanguageSummary map[string]int `json:"language_summary"`
-	FileTree        []string       `json:"file_tree"`
-	Entrypoints     []string       `json:"entrypoints"`
-	Routes          []string       `json:"routes"`
-	Services        []string       `json:"services"`
-	Models          []string       `json:"models"`
-	Configs         []string       `json:"configs"`
-	Frameworks      []string       `json:"frameworks"`
-	PackageManager  string         `json:"package_manager,omitempty"`
-	Status          string         `json:"status"`
-	ErrorMessage    string         `json:"error_message,omitempty"`
-	CreatedAt       time.Time      `json:"created_at"`
-	UpdatedAt       time.Time      `json:"updated_at"`
+	ID                uint           `json:"id"`
+	SourceID          uint           `json:"source_id"`
+	CommitSHA         string         `json:"commit_sha,omitempty"`
+	FileCount         int            `json:"file_count"`
+	ChunkCount        int            `json:"chunk_count"`
+	LanguageSummary   map[string]int `json:"language_summary"`
+	FileTree          []string       `json:"file_tree"`
+	Entrypoints       []string       `json:"entrypoints"`
+	Routes            []string       `json:"routes"`
+	Services          []string       `json:"services"`
+	Models            []string       `json:"models"`
+	Configs           []string       `json:"configs"`
+	Frameworks        []string       `json:"frameworks"`
+	PackageManager    string         `json:"package_manager,omitempty"`
+	GenerationMode    string         `json:"generation_mode,omitempty"`
+	GeneratorProvider string         `json:"generator_provider,omitempty"`
+	GeneratorModel    string         `json:"generator_model,omitempty"`
+	PromptVersion     string         `json:"prompt_version,omitempty"`
+	Status            string         `json:"status"`
+	ErrorMessage      string         `json:"error_message,omitempty"`
+	CreatedAt         time.Time      `json:"created_at"`
+	UpdatedAt         time.Time      `json:"updated_at"`
 }
 
 // DeepWikiChunk stores a searchable code or document chunk.
@@ -110,9 +133,12 @@ type DeepWikiSourceRef struct {
 }
 
 type DeepWikiSourceFilter struct {
-	CreatedBy  uint
-	SourceType string
-	Status     string
+	CreatedBy    uint
+	WorkspaceID  string
+	ProjectID    uint
+	RepositoryID string
+	SourceType   string
+	Status       string
 }
 
 type DeepWikiSearchResult struct {
@@ -131,6 +157,7 @@ type DeepWikiSearchResult struct {
 type DeepWikiRepository interface {
 	CreateSource(ctx context.Context, source *DeepWikiSource) error
 	UpdateSource(ctx context.Context, source *DeepWikiSource) error
+	DeleteSource(ctx context.Context, sourceID uint) error
 	FindSourceByID(ctx context.Context, id uint) (*DeepWikiSource, error)
 	ListSources(ctx context.Context, filter DeepWikiSourceFilter, page, pageSize int) ([]*DeepWikiSource, int64, error)
 

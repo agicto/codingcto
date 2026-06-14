@@ -23,6 +23,9 @@ type Service interface {
 	GetProjectContext(ctx context.Context, projectID uint) (*domain.SpecForgeProjectContext, error)
 	GetProjectReadiness(ctx context.Context, projectID uint) (*domain.SpecForgeProjectReadiness, error)
 	RefreshProjectContext(ctx context.Context, userID, projectID uint) (*domain.SpecForgeProjectContextSnapshot, error)
+	ListProjectDeepWiki(ctx context.Context, userID, projectID uint) ([]*ProjectRepositoryDeepWikiResponse, error)
+	ReindexProjectRepositoryDeepWiki(ctx context.Context, userID, projectID uint, repositoryID string) (*ProjectRepositoryDeepWikiResponse, error)
+	DeleteProjectRepositoryDeepWiki(ctx context.Context, userID, projectID uint, repositoryID string) error
 	GetProjectExpertPolicy(ctx context.Context, projectID uint) (*domain.SpecForgeProjectExpertPolicy, error)
 	CreateProjectExpertPolicy(ctx context.Context, userID, projectID uint, req *UpsertProjectExpertPolicyRequest) (*domain.SpecForgeProjectExpertPolicy, error)
 	UpdateProjectExpertPolicy(ctx context.Context, userID, projectID, policyID uint, req *UpsertProjectExpertPolicyRequest) (*domain.SpecForgeProjectExpertPolicy, error)
@@ -42,6 +45,7 @@ type service struct {
 	githubReadiness  githubReadinessChecker
 	runtimeReadiness runtimeReadinessStore
 	deepwikiStore    projectDeepWikiStore
+	deepwikiIndexer  projectDeepWikiIndexer
 }
 
 type repoArchitectureStore interface {
@@ -76,6 +80,12 @@ type projectDeepWikiStore interface {
 	ListPagesByIndexID(ctx context.Context, indexID uint) ([]*domain.DeepWikiPage, error)
 }
 
+type projectDeepWikiIndexer interface {
+	EnsureRepositoryWiki(ctx context.Context, userID, projectID uint, repository *domain.Repository) (*domain.DeepWikiSource, *domain.DeepWikiIndex, error)
+	ReindexRepositoryWiki(ctx context.Context, userID, projectID uint, repository *domain.Repository) (*domain.DeepWikiSource, *domain.DeepWikiIndex, error)
+	DeleteRepositoryWiki(ctx context.Context, userID, projectID uint, repository *domain.Repository) error
+}
+
 func NewService(
 	repo domain.SpecForgeProjectRepositoryStore,
 	workspaceRepo domain.WorkspaceRepository,
@@ -86,6 +96,36 @@ func NewService(
 	githubReadiness githubReadinessChecker,
 	runtimeReadiness runtimeReadinessStore,
 	deepwikiStore projectDeepWikiStore,
+) *service {
+	return newService(repo, workspaceRepo, githubRepo, profileRepo, skillRepo, projectSkillRepo, githubReadiness, runtimeReadiness, deepwikiStore, nil)
+}
+
+func NewServiceWithDeepWikiIndexer(
+	repo domain.SpecForgeProjectRepositoryStore,
+	workspaceRepo domain.WorkspaceRepository,
+	githubRepo domain.GitHubIntegrationRepository,
+	profileRepo domain.SpecForgeRepoProfileRepository,
+	skillRepo domain.SpecForgeSkillRepository,
+	projectSkillRepo projectSkillStore,
+	githubReadiness githubReadinessChecker,
+	runtimeReadiness runtimeReadinessStore,
+	deepwikiStore projectDeepWikiStore,
+	deepwikiIndexer projectDeepWikiIndexer,
+) *service {
+	return newService(repo, workspaceRepo, githubRepo, profileRepo, skillRepo, projectSkillRepo, githubReadiness, runtimeReadiness, deepwikiStore, deepwikiIndexer)
+}
+
+func newService(
+	repo domain.SpecForgeProjectRepositoryStore,
+	workspaceRepo domain.WorkspaceRepository,
+	githubRepo domain.GitHubIntegrationRepository,
+	profileRepo domain.SpecForgeRepoProfileRepository,
+	skillRepo domain.SpecForgeSkillRepository,
+	projectSkillRepo projectSkillStore,
+	githubReadiness githubReadinessChecker,
+	runtimeReadiness runtimeReadinessStore,
+	deepwikiStore projectDeepWikiStore,
+	deepwikiIndexer projectDeepWikiIndexer,
 ) *service {
 	var architectureRepo repoArchitectureStore
 	if repo, ok := profileRepo.(repoArchitectureStore); ok {
@@ -102,6 +142,7 @@ func NewService(
 		githubReadiness:  githubReadiness,
 		runtimeReadiness: runtimeReadiness,
 		deepwikiStore:    deepwikiStore,
+		deepwikiIndexer:  deepwikiIndexer,
 	}
 }
 
@@ -257,6 +298,7 @@ func (s *service) BindRepository(ctx context.Context, userID, projectID uint, re
 	if err := s.repo.CreateProjectRepository(ctx, binding); err != nil {
 		return nil, err
 	}
+	s.ensureRepositoryDeepWikiAfterBind(ctx, userID, project, binding, repository)
 	return binding, nil
 }
 
@@ -281,6 +323,38 @@ func (s *service) UnbindRepository(ctx context.Context, projectID uint, reposito
 		}
 	}
 	return s.repo.DeleteProjectRepository(ctx, projectID, binding.RepositoryID)
+}
+
+func (s *service) ensureRepositoryDeepWikiAfterBind(ctx context.Context, userID uint, project *domain.SpecForgeProject, binding *domain.SpecForgeProjectRepository, repository *domain.Repository) {
+	if s.deepwikiIndexer == nil || project == nil || binding == nil || repository == nil || !binding.Active {
+		return
+	}
+	if _, _, err := s.deepwikiIndexer.EnsureRepositoryWiki(ctx, userID, project.ID, repository); err != nil {
+		return
+	}
+	_, _ = s.RefreshProjectContext(ctx, userID, project.ID)
+}
+
+func (s *service) projectRepositoryDeepWikiTarget(ctx context.Context, projectID uint, repositoryID string) (*domain.SpecForgeProject, *domain.SpecForgeProjectRepository, *domain.Repository, error) {
+	project, err := s.repo.FindProjectByID(ctx, projectID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	binding, err := s.repo.FindProjectRepository(ctx, projectID, strings.TrimSpace(repositoryID))
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if !binding.Active {
+		return nil, nil, nil, domain.ErrInvalidInput
+	}
+	repository, err := s.githubRepo.FindRepositoryByRepositoryID(ctx, binding.RepositoryID)
+	if err != nil {
+		return nil, nil, nil, err
+	}
+	if repository.WorkspaceID != project.WorkspaceID {
+		return nil, nil, nil, domain.ErrPermissionDenied
+	}
+	return project, binding, repository, nil
 }
 
 func (s *service) ListRepositories(ctx context.Context, projectID uint) ([]*domain.SpecForgeProjectRepository, error) {
@@ -574,6 +648,137 @@ func (s *service) RefreshProjectContext(ctx context.Context, userID, projectID u
 		return nil, fmt.Errorf("create project context snapshot: %w", err)
 	}
 	return snapshot, nil
+}
+
+func (s *service) ListProjectDeepWiki(ctx context.Context, userID, projectID uint) ([]*ProjectRepositoryDeepWikiResponse, error) {
+	if userID == 0 {
+		return nil, domain.ErrInvalidInput
+	}
+	project, err := s.repo.FindProjectByID(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	bindings, err := s.repo.ListProjectRepositories(ctx, projectID)
+	if err != nil {
+		return nil, err
+	}
+	out := make([]*ProjectRepositoryDeepWikiResponse, 0, len(bindings))
+	for _, binding := range bindings {
+		if binding == nil || !binding.Active {
+			continue
+		}
+		item := &ProjectRepositoryDeepWikiResponse{
+			ProjectID:    project.ID,
+			WorkspaceID:  project.WorkspaceID,
+			RepositoryID: binding.RepositoryID,
+			Role:         binding.Role,
+		}
+		repository, err := s.githubRepo.FindRepositoryByRepositoryID(ctx, binding.RepositoryID)
+		if err != nil {
+			item.Error = err.Error()
+			out = append(out, item)
+			continue
+		}
+		if repository.WorkspaceID != project.WorkspaceID {
+			item.Error = domain.ErrPermissionDenied.Error()
+			out = append(out, item)
+			continue
+		}
+		source, index, err := s.projectRepositoryDeepWikiState(ctx, project, repository)
+		item.Source = projectDeepWikiSourceResponse(source)
+		item.Index = projectDeepWikiIndexResponse(index)
+		if err != nil {
+			item.Error = err.Error()
+		}
+		if index != nil && s.deepwikiStore != nil {
+			pages, err := s.deepwikiStore.ListPagesByIndexID(ctx, index.ID)
+			if err == nil {
+				item.Pages = projectDeepWikiPageSummaries(pages)
+			} else if item.Error == "" {
+				item.Error = err.Error()
+			}
+		}
+		out = append(out, item)
+	}
+	return out, nil
+}
+
+func (s *service) projectRepositoryDeepWikiState(ctx context.Context, project *domain.SpecForgeProject, repository *domain.Repository) (*domain.DeepWikiSource, *domain.DeepWikiIndex, error) {
+	if s.deepwikiStore == nil || project == nil || repository == nil {
+		return nil, nil, nil
+	}
+	sources, _, err := s.deepwikiStore.ListSources(ctx, domain.DeepWikiSourceFilter{
+		WorkspaceID:  strings.TrimSpace(project.WorkspaceID),
+		RepositoryID: strings.TrimSpace(repository.RepositoryID),
+		SourceType:   domain.DeepWikiSourceTypeGitHubRepository,
+	}, 1, 1)
+	if err != nil {
+		return nil, nil, err
+	}
+	if len(sources) == 0 {
+		return nil, nil, nil
+	}
+	source := sources[0]
+	index, err := s.deepwikiStore.FindLatestIndexBySourceID(ctx, source.ID)
+	if errors.Is(err, domain.ErrNotFound) {
+		return source, nil, nil
+	}
+	if err != nil {
+		return source, nil, err
+	}
+	return source, index, nil
+}
+
+func (s *service) ReindexProjectRepositoryDeepWiki(ctx context.Context, userID, projectID uint, repositoryID string) (*ProjectRepositoryDeepWikiResponse, error) {
+	project, binding, repository, err := s.projectRepositoryDeepWikiTarget(ctx, projectID, repositoryID)
+	if err != nil {
+		return nil, err
+	}
+	if s.deepwikiIndexer == nil {
+		return nil, domain.ErrInvalidInput
+	}
+	source, index, indexErr := s.deepwikiIndexer.ReindexRepositoryWiki(ctx, userID, project.ID, repository)
+	item := &ProjectRepositoryDeepWikiResponse{
+		ProjectID:    project.ID,
+		WorkspaceID:  project.WorkspaceID,
+		RepositoryID: binding.RepositoryID,
+		Role:         binding.Role,
+		Source:       projectDeepWikiSourceResponse(source),
+		Index:        projectDeepWikiIndexResponse(index),
+	}
+	if index != nil && s.deepwikiStore != nil {
+		pages, err := s.deepwikiStore.ListPagesByIndexID(ctx, index.ID)
+		if err == nil {
+			item.Pages = projectDeepWikiPageSummaries(pages)
+		} else {
+			item.Error = err.Error()
+		}
+	}
+	if indexErr != nil {
+		item.Error = indexErr.Error()
+		return item, nil
+	}
+	if _, err := s.RefreshProjectContext(ctx, userID, project.ID); err != nil && item.Error == "" {
+		item.Error = err.Error()
+	}
+	return item, nil
+}
+
+func (s *service) DeleteProjectRepositoryDeepWiki(ctx context.Context, userID, projectID uint, repositoryID string) error {
+	project, _, repository, err := s.projectRepositoryDeepWikiTarget(ctx, projectID, repositoryID)
+	if err != nil {
+		return err
+	}
+	if s.deepwikiIndexer == nil {
+		return domain.ErrInvalidInput
+	}
+	if err := s.deepwikiIndexer.DeleteRepositoryWiki(ctx, userID, project.ID, repository); err != nil {
+		return err
+	}
+	if _, err := s.RefreshProjectContext(ctx, userID, project.ID); err != nil && !errors.Is(err, domain.ErrNotFound) {
+		return err
+	}
+	return nil
 }
 
 func (s *service) GetProjectExpertPolicy(ctx context.Context, projectID uint) (*domain.SpecForgeProjectExpertPolicy, error) {

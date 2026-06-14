@@ -14,6 +14,7 @@ export interface WikiLayoutProps {
   pages: DeepWikiPageDTO[];
   selectedSlug?: string;
   isIndexing?: boolean;
+  reindexLabel?: string;
   onSelectPage: (slug: string) => void;
   onReindex: () => void;
   children: React.ReactNode;
@@ -34,6 +35,7 @@ export function WikiLayout({
   pages,
   selectedSlug,
   isIndexing = false,
+  reindexLabel,
   onSelectPage,
   onReindex,
   children,
@@ -86,7 +88,7 @@ export function WikiLayout({
               onClick={onReindex}
               disabled={!source}
             >
-              {t('reindex')}
+              {reindexLabel || t('reindex')}
             </Button>
           </div>
           <div className="mt-3">

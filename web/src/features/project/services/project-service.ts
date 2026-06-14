@@ -1,4 +1,5 @@
 import { env } from '@/config/env';
+import type { DeepWikiIndexDTO, DeepWikiSourceDTO } from '@/features/deepwiki/types';
 import { createRequest, type RequestConfig } from '@/http';
 
 const request = createRequest({
@@ -214,6 +215,10 @@ export interface ProjectContextDeepWikiSummaryDTO {
   file_count: number;
   chunk_count: number;
   page_count: number;
+  generation_mode?: 'llm' | 'legacy_template' | string;
+  generator_provider?: string;
+  generator_model?: string;
+  prompt_version?: string;
   frameworks?: string[];
   entrypoints?: string[];
   routes?: string[];
@@ -361,6 +366,37 @@ export interface ProjectContextDTO {
   context_contract?: ProjectContextContractDTO;
 }
 
+export type ProjectDeepWikiSourceDTO = DeepWikiSourceDTO;
+
+export type ProjectDeepWikiIndexDTO = DeepWikiIndexDTO;
+
+export interface ProjectDeepWikiPageSummaryDTO {
+  id: number;
+  index_id: number;
+  slug: string;
+  title: string;
+  page_type: string;
+  order_index: number;
+  status: string;
+  created_at: string;
+  updated_at: string;
+}
+
+export interface ProjectRepositoryDeepWikiDTO {
+  project_id: number;
+  workspace_id: string;
+  repository_id: string;
+  role: string;
+  source?: ProjectDeepWikiSourceDTO;
+  index?: ProjectDeepWikiIndexDTO;
+  pages?: ProjectDeepWikiPageSummaryDTO[];
+  error?: string;
+}
+
+export interface ProjectDeepWikiDTO {
+  repositories: ProjectRepositoryDeepWikiDTO[];
+}
+
 export interface CreateProjectPayload {
   workspace_id: string;
   name: string;
@@ -439,6 +475,9 @@ export const projectService = {
   getProjectContext: (projectId: number, config?: RequestConfig) =>
     request.get<{ context: ProjectContextDTO }>(`/projects/${projectId}/context`, config),
 
+  listProjectDeepWiki: (projectId: number, config?: RequestConfig) =>
+    request.get<ProjectDeepWikiDTO>(`/projects/${projectId}/deepwiki`, config),
+
   listRepositoryOptions: (projectId: number, config?: RequestConfig) =>
     request.get<{ repositories: ProjectRepositoryOptionDTO[] }>(
       `/projects/${projectId}/repositories/options`,
@@ -449,6 +488,27 @@ export const projectService = {
     request.post<{ snapshot: ProjectContextSnapshotDTO }>(
       `/projects/${projectId}/context/reindex`,
       undefined,
+      config
+    ),
+
+  reindexProjectRepositoryDeepWiki: (
+    projectId: number,
+    repositoryId: string,
+    config?: RequestConfig
+  ) =>
+    request.post<{ repository: ProjectRepositoryDeepWikiDTO }>(
+      `/projects/${projectId}/repositories/${encodeURIComponent(repositoryId)}/deepwiki/reindex`,
+      undefined,
+      config
+    ),
+
+  deleteProjectRepositoryDeepWiki: (
+    projectId: number,
+    repositoryId: string,
+    config?: RequestConfig
+  ) =>
+    request.delete<void>(
+      `/projects/${projectId}/repositories/${encodeURIComponent(repositoryId)}/deepwiki`,
       config
     ),
 

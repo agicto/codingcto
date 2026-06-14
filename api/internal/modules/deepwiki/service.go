@@ -10,6 +10,7 @@ import (
 	"strings"
 	"time"
 
+	"github.com/zgiai/luas/api/internal/capabilities/ai"
 	"github.com/zgiai/luas/api/internal/capabilities/crypto"
 	"github.com/zgiai/luas/api/internal/domain"
 )
@@ -19,6 +20,9 @@ type Service interface {
 	ListSources(ctx context.Context, userID uint, filter domain.DeepWikiSourceFilter, page, pageSize int) ([]*domain.DeepWikiSource, int64, error)
 	GetSource(ctx context.Context, userID, sourceID uint) (*domain.DeepWikiSource, error)
 	IndexSource(ctx context.Context, userID, sourceID uint, req *IndexSourceRequest) (*domain.DeepWikiIndex, error)
+	EnsureRepositoryWiki(ctx context.Context, userID, projectID uint, repository *domain.Repository) (*domain.DeepWikiSource, *domain.DeepWikiIndex, error)
+	ReindexRepositoryWiki(ctx context.Context, userID, projectID uint, repository *domain.Repository) (*domain.DeepWikiSource, *domain.DeepWikiIndex, error)
+	DeleteRepositoryWiki(ctx context.Context, userID, projectID uint, repository *domain.Repository) error
 	GetLatestIndex(ctx context.Context, userID, sourceID uint) (*domain.DeepWikiIndex, error)
 	ListPages(ctx context.Context, userID, indexID uint) ([]*domain.DeepWikiPage, error)
 	GetPage(ctx context.Context, userID, pageID uint) (*domain.DeepWikiPage, error)
@@ -37,19 +41,21 @@ type service struct {
 	reader    RepoReader
 	analyzer  repositoryAnalyzer
 	chunker   chunker
-	planner   wikiPlanner
-	generator wikiGenerator
+	generator llmWikiEngine
 	now       func() time.Time
 }
 
-func NewService(repo domain.DeepWikiRepository, reader RepoReader) *service {
+func NewService(repo domain.DeepWikiRepository, reader RepoReader, aiManager *ai.Manager) *service {
+	var generator deepWikiTextGenerator
+	if aiManager != nil {
+		generator = aiManager
+	}
 	return &service{
 		repo:      repo,
 		reader:    reader,
 		analyzer:  newRepositoryAnalyzer(),
 		chunker:   newChunker(),
-		planner:   newWikiPlanner(),
-		generator: newWikiGenerator(),
+		generator: newLLMWikiEngine(generator),
 		now:       time.Now,
 	}
 }
@@ -67,19 +73,28 @@ func (s *service) CreateSource(ctx context.Context, userID uint, req *CreateSour
 	if sourceType == domain.DeepWikiSourceTypeLocalPath && localPath == "" {
 		return nil, domain.ErrInvalidInput
 	}
+	if sourceType == domain.DeepWikiSourceTypeGitHubRepository && strings.TrimSpace(req.RepositoryID) == "" {
+		return nil, domain.ErrInvalidInput
+	}
 	encryptedPAT, patSecretRef, err := encryptPAT(strings.TrimSpace(req.PAT))
 	if err != nil {
 		return nil, err
 	}
 	source := &domain.DeepWikiSource{
-		CreatedBy:    userID,
-		SourceType:   sourceType,
-		RepoURL:      repoURL,
-		LocalPath:    localPath,
-		Branch:       strings.TrimSpace(req.Branch),
-		PATSecretRef: patSecretRef,
-		EncryptedPAT: encryptedPAT,
-		Status:       domain.DeepWikiStatusQueued,
+		CreatedBy:     userID,
+		WorkspaceID:   strings.TrimSpace(req.WorkspaceID),
+		ProjectID:     req.ProjectID,
+		RepositoryID:  strings.TrimSpace(req.RepositoryID),
+		SourceType:    sourceType,
+		RepoURL:       repoURL,
+		LocalPath:     localPath,
+		Branch:        strings.TrimSpace(req.Branch),
+		GitHubOwner:   strings.TrimSpace(req.GitHubOwner),
+		GitHubRepo:    strings.TrimSpace(req.GitHubRepo),
+		DefaultBranch: strings.TrimSpace(req.DefaultBranch),
+		PATSecretRef:  patSecretRef,
+		EncryptedPAT:  encryptedPAT,
+		Status:        domain.DeepWikiStatusQueued,
 	}
 	if err := s.repo.CreateSource(ctx, source); err != nil {
 		return nil, fmt.Errorf("create deepwiki source: %w", err)
@@ -121,7 +136,65 @@ func (s *service) IndexSource(ctx context.Context, userID, sourceID uint, req *I
 			return nil, err
 		}
 	}
+	return s.indexSource(ctx, source, pat)
+}
 
+func (s *service) EnsureRepositoryWiki(ctx context.Context, userID, projectID uint, repository *domain.Repository) (*domain.DeepWikiSource, *domain.DeepWikiIndex, error) {
+	source, err := s.ensureRepositorySource(ctx, userID, projectID, repository)
+	if err != nil {
+		return nil, nil, err
+	}
+	index, err := s.repo.FindLatestIndexBySourceID(ctx, source.ID)
+	if err == nil {
+		if index.Status == domain.DeepWikiStatusReady {
+			return source, index, nil
+		}
+		if index.Status != domain.DeepWikiStatusFailed {
+			return source, index, nil
+		}
+	} else if !errors.Is(err, domain.ErrNotFound) {
+		return nil, nil, err
+	}
+	index, err = s.indexSource(ctx, source, "")
+	return source, index, err
+}
+
+func (s *service) ReindexRepositoryWiki(ctx context.Context, userID, projectID uint, repository *domain.Repository) (*domain.DeepWikiSource, *domain.DeepWikiIndex, error) {
+	source, err := s.ensureRepositorySource(ctx, userID, projectID, repository)
+	if err != nil {
+		return nil, nil, err
+	}
+	index, err := s.indexSource(ctx, source, "")
+	return source, index, err
+}
+
+func (s *service) DeleteRepositoryWiki(ctx context.Context, userID, projectID uint, repository *domain.Repository) error {
+	if userID == 0 || projectID == 0 || repository == nil || strings.TrimSpace(repository.RepositoryID) == "" || strings.TrimSpace(repository.WorkspaceID) == "" {
+		return domain.ErrInvalidInput
+	}
+	sources, _, err := s.repo.ListSources(ctx, domain.DeepWikiSourceFilter{
+		WorkspaceID:  strings.TrimSpace(repository.WorkspaceID),
+		RepositoryID: strings.TrimSpace(repository.RepositoryID),
+		SourceType:   domain.DeepWikiSourceTypeGitHubRepository,
+	}, 1, 100)
+	if err != nil {
+		return err
+	}
+	for _, source := range sources {
+		if source == nil {
+			continue
+		}
+		if err := s.repo.DeleteSource(ctx, source.ID); err != nil && !errors.Is(err, domain.ErrNotFound) {
+			return fmt.Errorf("delete repository deepwiki source: %w", err)
+		}
+	}
+	return nil
+}
+
+func (s *service) indexSource(ctx context.Context, source *domain.DeepWikiSource, pat string) (*domain.DeepWikiIndex, error) {
+	if source == nil {
+		return nil, domain.ErrInvalidInput
+	}
 	if err := s.setSourceStatus(ctx, source, domain.DeepWikiStatusReading, "", ""); err != nil {
 		return nil, err
 	}
@@ -148,6 +221,8 @@ func (s *service) IndexSource(ctx context.Context, userID, sourceID uint, req *I
 		Configs:         profile.Configs,
 		Frameworks:      profile.Frameworks,
 		PackageManager:  profile.PackageManager,
+		GenerationMode:  domain.DeepWikiGenerationModeLLM,
+		PromptVersion:   deepWikiLLMPromptVersion,
 		Status:          domain.DeepWikiStatusIndexing,
 	}
 	if err := s.repo.CreateIndex(ctx, index); err != nil {
@@ -168,7 +243,6 @@ func (s *service) IndexSource(ctx context.Context, userID, sourceID uint, req *I
 	if err := s.setSourceStatus(ctx, source, domain.DeepWikiStatusPlanning, "", ""); err != nil {
 		return nil, err
 	}
-	plans := s.planner.Plan(profile)
 	index.Status = domain.DeepWikiStatusGenerating
 	if err := s.repo.UpdateIndex(ctx, index); err != nil {
 		return nil, s.failIndex(ctx, source, index, domain.DeepWikiFailurePlan, err)
@@ -177,7 +251,14 @@ func (s *service) IndexSource(ctx context.Context, userID, sourceID uint, req *I
 	if err := s.setSourceStatus(ctx, source, domain.DeepWikiStatusGenerating, "", ""); err != nil {
 		return nil, err
 	}
-	pages := s.generator.Generate(index.ID, profile, plans, chunks)
+	pages, generation, err := s.generator.Generate(ctx, index.ID, profile, chunks)
+	if err != nil {
+		return nil, s.failIndex(ctx, source, index, domain.DeepWikiFailureGenerate, err)
+	}
+	index.GenerationMode = generation.Mode
+	index.GeneratorProvider = generation.Provider
+	index.GeneratorModel = generation.Model
+	index.PromptVersion = generation.PromptVersion
 	if err := s.repo.CreatePages(ctx, pages); err != nil {
 		return nil, s.failIndex(ctx, source, index, domain.DeepWikiFailureGenerate, err)
 	}
@@ -193,6 +274,96 @@ func (s *service) IndexSource(ctx context.Context, userID, sourceID uint, req *I
 		return nil, err
 	}
 	return index, nil
+}
+
+func (s *service) ensureRepositorySource(ctx context.Context, userID, projectID uint, repository *domain.Repository) (*domain.DeepWikiSource, error) {
+	if userID == 0 || repository == nil || strings.TrimSpace(repository.RepositoryID) == "" || strings.TrimSpace(repository.WorkspaceID) == "" {
+		return nil, domain.ErrInvalidInput
+	}
+	source, err := s.findLatestRepositorySource(ctx, repository.WorkspaceID, repository.RepositoryID)
+	if err != nil {
+		return nil, err
+	}
+	defaultBranch := strings.TrimSpace(repository.DefaultBranch)
+	if defaultBranch == "" {
+		defaultBranch = "main"
+	}
+	if source == nil {
+		source = &domain.DeepWikiSource{
+			CreatedBy:     userID,
+			WorkspaceID:   strings.TrimSpace(repository.WorkspaceID),
+			ProjectID:     projectID,
+			RepositoryID:  strings.TrimSpace(repository.RepositoryID),
+			SourceType:    domain.DeepWikiSourceTypeGitHubRepository,
+			RepoURL:       repositoryGitHubURL(repository),
+			Branch:        defaultBranch,
+			GitHubOwner:   strings.TrimSpace(repository.GitHubOwner),
+			GitHubRepo:    strings.TrimSpace(repository.GitHubRepo),
+			DefaultBranch: defaultBranch,
+			Status:        domain.DeepWikiStatusQueued,
+		}
+		if err := s.repo.CreateSource(ctx, source); err != nil {
+			return nil, fmt.Errorf("create repository deepwiki source: %w", err)
+		}
+		return source, nil
+	}
+
+	changed := false
+	changed = assignString(&source.WorkspaceID, strings.TrimSpace(repository.WorkspaceID)) || changed
+	changed = assignUint(&source.ProjectID, projectID) || changed
+	changed = assignString(&source.RepositoryID, strings.TrimSpace(repository.RepositoryID)) || changed
+	changed = assignString(&source.SourceType, domain.DeepWikiSourceTypeGitHubRepository) || changed
+	changed = assignString(&source.RepoURL, repositoryGitHubURL(repository)) || changed
+	changed = assignString(&source.GitHubOwner, strings.TrimSpace(repository.GitHubOwner)) || changed
+	changed = assignString(&source.GitHubRepo, strings.TrimSpace(repository.GitHubRepo)) || changed
+	changed = assignString(&source.DefaultBranch, defaultBranch) || changed
+	if strings.TrimSpace(source.Branch) == "" {
+		changed = assignString(&source.Branch, defaultBranch) || changed
+	}
+	if changed {
+		if err := s.repo.UpdateSource(ctx, source); err != nil {
+			return nil, fmt.Errorf("update repository deepwiki source: %w", err)
+		}
+	}
+	return source, nil
+}
+
+func (s *service) findLatestRepositorySource(ctx context.Context, workspaceID, repositoryID string) (*domain.DeepWikiSource, error) {
+	sources, _, err := s.repo.ListSources(ctx, domain.DeepWikiSourceFilter{
+		WorkspaceID:  strings.TrimSpace(workspaceID),
+		RepositoryID: strings.TrimSpace(repositoryID),
+		SourceType:   domain.DeepWikiSourceTypeGitHubRepository,
+	}, 1, 1)
+	if err != nil {
+		return nil, err
+	}
+	if len(sources) == 0 {
+		return nil, nil
+	}
+	return sources[0], nil
+}
+
+func repositoryGitHubURL(repository *domain.Repository) string {
+	if repository == nil || strings.TrimSpace(repository.GitHubOwner) == "" || strings.TrimSpace(repository.GitHubRepo) == "" {
+		return ""
+	}
+	return "https://github.com/" + strings.Trim(strings.TrimSpace(repository.GitHubOwner), "/") + "/" + strings.Trim(strings.TrimSpace(repository.GitHubRepo), "/")
+}
+
+func assignString(target *string, value string) bool {
+	if strings.TrimSpace(*target) == value {
+		return false
+	}
+	*target = value
+	return true
+}
+
+func assignUint(target *uint, value uint) bool {
+	if *target == value {
+		return false
+	}
+	*target = value
+	return true
 }
 
 func (s *service) GetLatestIndex(ctx context.Context, userID, sourceID uint) (*domain.DeepWikiIndex, error) {
