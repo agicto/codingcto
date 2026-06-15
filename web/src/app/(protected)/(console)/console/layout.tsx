@@ -16,7 +16,6 @@ import {
   ListChecks,
   ChevronDown,
   Plus,
-  BookOpen,
   PanelLeftClose,
   PanelLeftOpen,
 } from 'lucide-react';
@@ -61,7 +60,6 @@ interface WorkspaceNavItem {
     | 'home'
     | 'projects'
     | 'codingcto'
-    | 'deepwiki'
     | 'experts'
     | 'agents'
     | 'skills'
@@ -101,7 +99,6 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const boardHref = currentProjectId
     ? projectSpecForgeHref(currentProjectId)
     : ROUTES.CONSOLE.SPECFORGE;
-  const deepWikiHref = ROUTES.CONSOLE.DEEPWIKI;
   const agentsHref = `${ROUTES.CONSOLE.AGENTS}?return_to=${encodeURIComponent(boardHref)}`;
   const newRequirementHref = currentProjectId
     ? projectDeliveryIntakeHref(currentProjectId)
@@ -125,13 +122,6 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
       icon: ListChecks,
       description: sidebarT('items.delivery.description'),
       activeOn: 'codingcto',
-    },
-    {
-      title: sidebarT('items.deepwiki.title'),
-      href: deepWikiHref,
-      icon: BookOpen,
-      description: sidebarT('items.deepwiki.description'),
-      activeOn: 'deepwiki',
     },
     {
       title: sidebarT('items.experts.title'),
@@ -606,12 +596,6 @@ function isSidebarItemActive(
   }
   if (item.activeOn === 'codingcto') {
     return pathname.includes('/codingcto');
-  }
-  if (item.activeOn === 'deepwiki') {
-    return (
-      pathname === ROUTES.CONSOLE.DEEPWIKI ||
-      pathname.startsWith(`${ROUTES.CONSOLE.DEEPWIKI}/`)
-    );
   }
   if (item.activeOn === 'experts') {
     return pathname === ROUTES.CONSOLE.EXPERTS || pathname.startsWith(`${ROUTES.CONSOLE.EXPERTS}/`);

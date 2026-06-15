@@ -43,8 +43,6 @@ import {
   projectKeys,
 } from '@/features/project/hooks/use-projects';
 import {
-  projectContextContract,
-  projectContextMissingEvidence,
   projectContextReadiness,
   projectContextSnapshotState,
   projectSkillContract,
@@ -791,8 +789,8 @@ function ProjectContextHeader({ context }: { context: ProjectContextDTO }) {
           {context.project.name}
         </h1>
         <p className="mt-2 max-w-3xl text-sm leading-6 text-text-muted">
-          Verify repositories, architecture snapshots, skills, warnings, and prompt guardrails
-          before planning or execution.
+          Verify repositories, architecture snapshots, skills, and warnings before planning or
+          execution.
         </p>
       </div>
       <div className="flex flex-wrap gap-2">
@@ -1063,8 +1061,6 @@ export function ProjectRepositoryBindPanel({
 function ProjectContextReadiness({ context }: { context?: ProjectContextDTO }) {
   const t = useT('dashboard.projectDelivery.readiness');
   const readiness = projectContextReadiness(context);
-  const contract = projectContextContract(context);
-  const missingEvidence = projectContextMissingEvidence(context);
   const repositories = context?.repository_contexts ?? [];
   const unbindRepository = useUnbindProjectRepository(context?.project.id ?? 0);
   const [message, setMessage] = useState('');
@@ -1122,39 +1118,6 @@ function ProjectContextReadiness({ context }: { context?: ProjectContextDTO }) {
           <div className="font-medium text-text-main">{t('nextAction')}</div>
           <div className="mt-1 text-text-muted">{readiness.nextAction}</div>
         </div>
-        {contract && (
-          <div className="mt-3 grid gap-3 rounded-md border border-border-subtle bg-bg-subtle p-3 text-xs md:grid-cols-[220px_minmax(0,1fr)]">
-            <div>
-              <div className="font-medium text-text-main">{t('contract.title')}</div>
-              <div className="mt-1 text-text-muted">{contract.version}</div>
-            </div>
-            <div className="grid gap-2 sm:grid-cols-3">
-              <div>
-                <div className="font-medium text-text-main">{t('contract.execution')}</div>
-                <div className="mt-1 text-text-muted">
-                  {contract.primary_repository_id || t('repository.missing')}
-                </div>
-              </div>
-              <div>
-                <div className="font-medium text-text-main">{t('contract.skills')}</div>
-                <div className="mt-1 text-text-muted">{contract.skill_names?.length ?? 0}</div>
-              </div>
-              <div>
-                <div className="font-medium text-text-main">{t('contract.missingEvidence')}</div>
-                <div className="mt-1 text-text-muted">{missingEvidence.length}</div>
-              </div>
-            </div>
-          </div>
-        )}
-        {readiness.guardrails.length > 0 && (
-          <div className="mt-3 flex flex-wrap gap-2">
-            {readiness.guardrails.map(guardrail => (
-              <Badge key={guardrail} variant="outline" className="text-text-muted">
-                {guardrail}
-              </Badge>
-            ))}
-          </div>
-        )}
         {repositories.length > 0 && (
           <div className="mt-4 grid gap-3 md:grid-cols-2 xl:grid-cols-3">
             {repositories.map(repositoryContext => (
