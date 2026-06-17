@@ -129,6 +129,7 @@ export interface RuntimeHeartbeatPayload {
   available_clis?: SpecForgeRuntimeCLIDTO[];
   sandbox?: SpecForgeRuntimeSandboxDTO;
   skill_roots?: SpecForgeRuntimeSkillRootDTO[];
+  repositories?: SpecForgeRuntimeRepositoryDTO[];
   local_skill_count?: number;
   max_concurrency?: number;
 }
@@ -762,6 +763,7 @@ export interface SpecForgeRuntimeDTO {
   available_clis?: SpecForgeRuntimeCLIDTO[];
   sandbox?: SpecForgeRuntimeSandboxDTO;
   skill_roots?: SpecForgeRuntimeSkillRootDTO[];
+  repositories?: SpecForgeRuntimeRepositoryDTO[];
   local_skill_count?: number;
   max_concurrency?: number;
   running_count?: number;
@@ -792,6 +794,14 @@ export interface SpecForgeRuntimeSkillRootDTO {
   provider: string;
   path: string;
   writable: boolean;
+}
+
+export interface SpecForgeRuntimeRepositoryDTO {
+  repository_id: string;
+  repo_dir: string;
+  remote_url?: string;
+  branch?: string;
+  dirty: boolean;
 }
 
 export interface SpecForgeClaimedTaskDTO {

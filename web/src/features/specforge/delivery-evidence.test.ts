@@ -110,7 +110,7 @@ describe('deliveryEvidenceLedger', () => {
     });
 
     expect(ledger.items.find(item => item.id === 'formal-dispatch')?.state).toBe('partial');
-    expect(ledger.nextGap).toContain('平台能调度本地 Codex');
+    expect(ledger.nextGap).toContain('平台能调度本地 CLI');
   });
 
   it('marks PR delivery proven when a GitHub PR URL is present', () => {

@@ -38,7 +38,7 @@ describe('ciReviewActionFromResponse', () => {
     const action = ciReviewActionFromResponse(
       response({
         verification_state: 'fix_attempt_queued',
-        next_action: 'Dispatch the queued fix attempt to the Codex runtime.',
+        next_action: 'Dispatch the queued fix attempt to the selected local runtime.',
         fix_attempt: {
           id: 7,
           pr_node_id: 1,

@@ -173,8 +173,8 @@ function ProjectRuntimeBindingForm({
           <div>
             <CardTitle className="text-base">Runtime binding</CardTitle>
             <CardDescription className="mt-1">
-              Explicitly bind a local runtime and working directory to the primary repository before
-              execution dispatch.
+              Run ccto up locally. CodingCTO can auto-detect matching GitHub repositories; this
+              manual binding remains available for advanced overrides.
             </CardDescription>
           </div>
           <div className="flex flex-wrap items-center gap-2">
@@ -211,7 +211,17 @@ function ProjectRuntimeBindingForm({
               <Label htmlFor="runtime-binding-runtime">Runtime</Label>
               <Select
                 value={form.runtimeId}
-                onValueChange={value => setForm(current => ({ ...current, runtimeId: value }))}
+                onValueChange={value => {
+                  const runtime = runtimeOptions.find(option => option.runtimeId === value);
+                  const matchedRepository = runtime?.repositories?.find(
+                    repository => repository.repositoryId === primaryRepositoryId
+                  );
+                  setForm(current => ({
+                    ...current,
+                    runtimeId: value,
+                    repoDir: matchedRepository?.repoDir || current.repoDir,
+                  }));
+                }}
               >
                 <SelectTrigger id="runtime-binding-runtime">
                   <SelectValue placeholder="Select runtime" />
@@ -274,6 +284,38 @@ function ProjectRuntimeBindingForm({
               </div>
             </div>
           </div>
+
+          {selectedRuntime ? (
+            <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+              <div className="text-xs font-medium uppercase text-text-muted">
+                Detected repositories
+              </div>
+              <div className="mt-2 grid gap-2 md:grid-cols-2">
+                {(selectedRuntime.repositories ?? []).length > 0 ? (
+                  selectedRuntime.repositories?.slice(0, 4).map(repository => (
+                    <div
+                      key={`${repository.repositoryId}:${repository.repoDir}`}
+                      className="rounded border border-border-subtle bg-bg-surface px-3 py-2"
+                    >
+                      <div className="truncate text-sm font-medium text-text-main">
+                        {repository.repositoryId}
+                      </div>
+                      <div className="mt-1 truncate text-xs text-text-muted">
+                        {repository.repoDir}
+                      </div>
+                      <div className="mt-1 text-xs text-text-muted">
+                        {repository.branch || 'detached'} - {repository.dirty ? 'dirty' : 'clean'}
+                      </div>
+                    </div>
+                  ))
+                ) : (
+                  <div className="text-sm text-text-muted">
+                    No GitHub repositories reported yet. Run ccto up from the local repository root.
+                  </div>
+                )}
+              </div>
+            </div>
+          ) : null}
 
           {binding?.warnings?.length ? (
             <div className="rounded-md border border-warning/30 bg-warning-subtle px-3 py-2 text-xs leading-5 text-warning">

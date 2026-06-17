@@ -527,9 +527,9 @@ const messages = {
       ready: '{ready} / {total} 个 PR 节点已就绪或已合并',
     },
     readiness: {
-      online: '已有可写的 Codex CLI 运行时在线。',
+      online: '已有匹配所选 CLI 的可写本地 agent 在线。',
       demo: '演示模式可以在没有实时运行时的情况下模拟执行。',
-      startRuntime: '请先启动带 Codex CLI 的 CodingCTO 运行时，再派发这个计划。',
+      startRuntime: '请先运行 ccto up，并确认所选 CLI 可用，再派发这个计划。',
     },
     status: {
       readyForPlanning: '可进入计划',
@@ -1068,10 +1068,10 @@ const messages = {
     },
     e2e: {
       title: '端到端试跑',
-      description: '用当前仓库跑一遍真实交付链路：创建 Issue、生成计划、调用本地 Codex，并打开 PR。',
+      description: '用当前仓库跑一遍真实交付链路：创建 Issue、生成计划、调用本地 CLI，并打开 PR。',
       defaultIssueTitle: 'CodingCTO 端到端试跑：记录一次自动化交付',
       defaultIssueBody:
-        '请添加一个 .codingcto/e2e-smoke.md 文件，用中文记录本次试跑已完成：创建 GitHub Issue、生成计划、调用本地 Codex CLI、提交代码并创建 PR。请保持改动很小，只提交这个说明文件。',
+        '请添加一个 .codingcto/e2e-smoke.md 文件，用中文记录本次试跑已完成：创建 GitHub Issue、生成计划、调用本地 CLI、提交代码并创建 PR。请保持改动很小，只提交这个说明文件。',
       issueTitleLabel: '试跑 Issue 标题',
       issueBodyLabel: '试跑 Issue 内容',
       readiness: {
@@ -1118,7 +1118,7 @@ const messages = {
         },
         codexWaiting: {
           title: '等待 Codex 执行',
-          detail: '任务已派发，等待本地运行器认领后调用 Codex CLI。',
+          detail: '任务已派发，等待本地 agent 认领后调用所选 CLI。',
         },
         codexDone: {
           title: 'Codex 执行完成',

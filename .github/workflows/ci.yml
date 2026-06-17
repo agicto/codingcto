@@ -26,6 +26,9 @@ jobs:
       - name: Test
         run: go test ./...
 
+      - name: Build ccto local agent
+        run: make build-ccto
+
   web:
     name: Web
     runs-on: ubuntu-latest

@@ -3,7 +3,7 @@ import { describe, expect, it } from 'vitest';
 import { buildRuntimeSetupCommand, runtimeSetupChecklist } from '@/features/specforge/runtime-setup';
 
 describe('runtime setup', () => {
-  it('builds a local Codex runtime command for one execution cycle', () => {
+  it('builds a local ccto agent command for one execution cycle', () => {
     const command = buildRuntimeSetupCommand({
       apiBaseUrl: 'http://localhost:2010/v1',
       runtimeId: 'local-codex-plan-42',
@@ -12,13 +12,11 @@ describe('runtime setup', () => {
       once: true,
     });
 
-    expect(command).toContain('cd api');
+    expect(command).toContain('cd /Users/example/codingcto');
     expect(command).toContain('export CODINGCTO_RUNTIME_TOKEN="paste-runtime-token-here"');
-    expect(command).toContain('go run ./cmd/ccto daemon');
+    expect(command).toContain('ccto configure --api-base-url http://localhost:2010/v1');
+    expect(command).toContain('ccto up --once');
     expect(command).toContain('--api-base-url http://localhost:2010/v1');
-    expect(command).toContain('--runtime-id local-codex-plan-42');
-    expect(command).toContain('--repo-dir /Users/example/codingcto');
-    expect(command).toContain('--repository-id repo_123');
     expect(command).toContain('--once');
   });
 
@@ -30,17 +28,17 @@ describe('runtime setup', () => {
       repoDir: '/Users/example/My Project',
     });
 
-    expect(command).toContain("--runtime-id 'local codex'");
-    expect(command).toContain("--repo-dir '/Users/example/My Project'");
+    expect(command).toContain("cd '/Users/example/My Project'");
+    expect(command).toContain("--repo-root '/Users/example/My Project'");
     expect(command).not.toContain('--once');
   });
 
   it('summarizes runtime setup before and after readiness', () => {
     expect(
       runtimeSetupChecklist({ repositoryId: 'repo_123', readyRuntimeCount: 0 })
-    ).toContain('确认运行器所在终端已安装并登录 Codex CLI。');
+    ).toContain('确认终端已安装并登录你要使用的 CLI，例如 Codex、Claude 或 Kimi。');
     expect(
       runtimeSetupChecklist({ repositoryId: 'repo_123', readyRuntimeCount: 2 })
-    ).toContain('2 个可写的 Codex 运行器在线。');
+    ).toContain('2 个可写的本地 agent 在线。');
   });
 });

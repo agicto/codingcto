@@ -146,7 +146,7 @@ func nextActionForFixAttempt(attempt *domain.SpecForgeFixAttempt) string {
 		return "Review the escalation summary and choose the next action."
 	}
 	if attempt.CanAutoFix && attempt.Status == domain.FixAttemptStatusQueued {
-		return "Dispatch the queued fix attempt to the Codex runtime."
+		return "Dispatch the queued fix attempt to the selected local runtime."
 	}
 	return strings.TrimSpace(attempt.RecommendedAction)
 }

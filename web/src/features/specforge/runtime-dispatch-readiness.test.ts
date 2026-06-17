@@ -1,6 +1,9 @@
 import { describe, expect, it } from 'vitest';
 
-import { hasFreshCodexDispatchRuntime } from '@/features/specforge/runtime-dispatch-readiness';
+import {
+  hasFreshCodexDispatchRuntime,
+  hasFreshDispatchRuntime,
+} from '@/features/specforge/runtime-dispatch-readiness';
 import type { SpecForgeRuntimeDTO } from '@/features/specforge/services/specforge-service';
 
 const now = Date.parse('2026-06-03T10:00:00.000Z');
@@ -51,6 +54,38 @@ describe('hasFreshCodexDispatchRuntime', () => {
           runtime({ available_clis: [{ name: 'Claude', command: 'claude', available: true }] }),
         ],
         now
+      )
+    ).toBe(false);
+  });
+
+  it('accepts executor-specific runtimes with matching discovered repository', () => {
+    expect(
+      hasFreshDispatchRuntime(
+        [
+          runtime({
+            executor: 'kimi_cli',
+            available_clis: [{ name: 'Kimi CLI', command: 'kimi', available: true }],
+            repositories: [{ repository_id: 'agicto__codingcto', repo_dir: '/repo', dirty: false }],
+          }),
+        ],
+        now,
+        'kimi_cli',
+        'agicto__codingcto'
+      )
+    ).toBe(true);
+  });
+
+  it('rejects executor-specific runtimes with mismatched discovered repository', () => {
+    expect(
+      hasFreshDispatchRuntime(
+        [
+          runtime({
+            repositories: [{ repository_id: 'other__repo', repo_dir: '/repo', dirty: false }],
+          }),
+        ],
+        now,
+        'codex_cli',
+        'agicto__codingcto'
       )
     ).toBe(false);
   });

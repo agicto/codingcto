@@ -26,6 +26,7 @@ type RuntimeWorkerConfig struct {
 	AvailableCLIs   []domain.SpecForgeRuntimeCLI
 	Sandbox         *domain.SpecForgeRuntimeSandbox
 	SkillRoots      []domain.SpecForgeRuntimeSkillRoot
+	Repositories    []domain.SpecForgeRuntimeRepository
 	LocalSkillCount int
 	MaxConcurrency  int
 }
@@ -109,6 +110,7 @@ func (w *RuntimeWorker) RunOnce(ctx context.Context) (*RuntimeWorkerResult, erro
 		AvailableCLIs:   w.cfg.AvailableCLIs,
 		Sandbox:         w.cfg.Sandbox,
 		SkillRoots:      w.cfg.SkillRoots,
+		Repositories:    w.cfg.Repositories,
 		LocalSkillCount: w.cfg.LocalSkillCount,
 		MaxConcurrency:  normalizeRuntimeMaxConcurrency(w.cfg.MaxConcurrency),
 	})
@@ -119,25 +121,56 @@ func (w *RuntimeWorker) RunOnce(ctx context.Context) (*RuntimeWorkerResult, erro
 		return &RuntimeWorkerResult{}, nil
 	}
 
-	claim, err := w.client.ClaimTask(ctx, w.cfg.RuntimeID, &ClaimAgentTaskRequest{
-		Executor:     w.cfg.Executor,
-		RepositoryID: w.cfg.RepositoryID,
-		SessionID:    w.cfg.SessionID,
-		Workdir:      w.cfg.RepoDir,
-	})
-	if err != nil {
-		return nil, err
-	}
-	if claim == nil || (claim.Task == nil && claim.DirectTask == nil) {
-		return &RuntimeWorkerResult{}, nil
-	}
-	if claim.DirectTask != nil {
-		result, err := w.executeDirectClaim(ctx, claim)
-		return &RuntimeWorkerResult{Claimed: true, TaskID: claim.DirectTask.ID, ExecutionResult: result}, err
-	}
+	for _, req := range w.claimRequests() {
+		claim, err := w.client.ClaimTask(ctx, w.cfg.RuntimeID, req)
+		if err != nil {
+			return nil, err
+		}
+		if claim == nil || (claim.Task == nil && claim.DirectTask == nil) {
+			continue
+		}
+		if claim.DirectTask != nil {
+			result, err := w.executeDirectClaim(ctx, claim)
+			return &RuntimeWorkerResult{Claimed: true, TaskID: claim.DirectTask.ID, ExecutionResult: result}, err
+		}
 
-	result, err := w.executeClaim(ctx, claim)
-	return &RuntimeWorkerResult{Claimed: true, TaskID: claim.Task.ID, ExecutionResult: result}, err
+		result, err := w.executeClaim(ctx, claim)
+		return &RuntimeWorkerResult{Claimed: true, TaskID: claim.Task.ID, ExecutionResult: result}, err
+	}
+	return &RuntimeWorkerResult{}, nil
+}
+
+func (w *RuntimeWorker) claimRequests() []*ClaimAgentTaskRequest {
+	base := &ClaimAgentTaskRequest{
+		Executor:     w.cfg.Executor,
+		RepositoryID: strings.TrimSpace(w.cfg.RepositoryID),
+		SessionID:    w.cfg.SessionID,
+		Workdir:      strings.TrimSpace(w.cfg.RepoDir),
+	}
+	if len(w.cfg.Repositories) == 0 {
+		if base.RepositoryID == "" && base.Workdir == "" {
+			return nil
+		}
+		return []*ClaimAgentTaskRequest{base}
+	}
+	requests := make([]*ClaimAgentTaskRequest, 0, len(w.cfg.Repositories))
+	for _, repository := range w.cfg.Repositories {
+		repositoryID := strings.TrimSpace(repository.RepositoryID)
+		repoDir := strings.TrimSpace(repository.RepoDir)
+		if repositoryID == "" || repoDir == "" {
+			continue
+		}
+		requests = append(requests, &ClaimAgentTaskRequest{
+			Executor:     w.cfg.Executor,
+			RepositoryID: repositoryID,
+			SessionID:    w.cfg.SessionID,
+			Workdir:      repoDir,
+		})
+	}
+	if len(requests) == 0 {
+		return []*ClaimAgentTaskRequest{base}
+	}
+	return requests
 }
 
 func (w *RuntimeWorker) Run(ctx context.Context) error {
@@ -170,6 +203,9 @@ func (w *RuntimeWorker) executeClaim(ctx context.Context, claim *ClaimAgentTaskR
 	workdir := strings.TrimSpace(w.cfg.RepoDir)
 	if workdir == "" {
 		workdir = strings.TrimSpace(claim.Task.Workdir)
+	}
+	if workdir == "" && claim.ExecutionContext != nil {
+		workdir = w.repoDirForRepository(claim.ExecutionContext.RepositoryID)
 	}
 	if workdir == "" {
 		return w.submitRejectedClaim(ctx, claim, "runtime_workdir_missing", "runtime repo directory is required")
@@ -238,6 +274,9 @@ func (w *RuntimeWorker) executeDirectClaim(ctx context.Context, claim *ClaimAgen
 	if workdir == "" {
 		workdir = strings.TrimSpace(claim.DirectTask.Workdir)
 	}
+	if workdir == "" && claim.ExecutionContext != nil {
+		workdir = w.repoDirForRepository(claim.ExecutionContext.RepositoryID)
+	}
 	if workdir == "" {
 		return w.submitRejectedDirectClaim(ctx, claim, "runtime_workdir_missing", "runtime repo directory is required")
 	}
@@ -301,6 +340,19 @@ func (w *RuntimeWorker) executeDirectClaim(ctx context.Context, claim *ClaimAgen
 		return result, submitErr
 	}
 	return result, nil
+}
+
+func (w *RuntimeWorker) repoDirForRepository(repositoryID string) string {
+	repositoryID = strings.TrimSpace(repositoryID)
+	if repositoryID == "" {
+		return ""
+	}
+	for _, repository := range w.cfg.Repositories {
+		if strings.TrimSpace(repository.RepositoryID) == repositoryID {
+			return strings.TrimSpace(repository.RepoDir)
+		}
+	}
+	return ""
 }
 
 func (w *RuntimeWorker) submitRejectedClaim(ctx context.Context, claim *ClaimAgentTaskResponse, reason, detail string) (*ExecutionResult, error) {

@@ -18,6 +18,7 @@ import (
 
 type RuntimeCapabilityProbeConfig struct {
 	CodexPath      string
+	ClaudePath     string
 	KimiPath       string
 	RepoDir        string
 	SandboxMode    string
@@ -28,15 +29,17 @@ type RuntimeCapabilityReport struct {
 	AvailableCLIs   []domain.SpecForgeRuntimeCLI
 	Sandbox         *domain.SpecForgeRuntimeSandbox
 	SkillRoots      []domain.SpecForgeRuntimeSkillRoot
+	Repositories    []domain.SpecForgeRuntimeRepository
 	LocalSkillCount int
 }
 
 func DetectRuntimeCapabilities(cfg RuntimeCapabilityProbeConfig) RuntimeCapabilityReport {
 	roots := detectRuntimeSkillRoots(cfg.RepoDir)
 	return RuntimeCapabilityReport{
-		AvailableCLIs:   detectRuntimeCLIs(cfg.CodexPath, cfg.KimiPath),
+		AvailableCLIs:   detectRuntimeCLIs(cfg.CodexPath, cfg.ClaudePath, cfg.KimiPath),
 		Sandbox:         detectRuntimeSandbox(cfg.SandboxMode, cfg.ApprovalPolicy, cfg.RepoDir),
 		SkillRoots:      roots,
+		Repositories:    nil,
 		LocalSkillCount: countRuntimeSkills(roots),
 	}
 }
@@ -118,11 +121,46 @@ func normalizeRuntimeSkillRoots(roots []domain.SpecForgeRuntimeSkillRoot) []doma
 	return out
 }
 
-func runtimeCapabilitiesHash(clis []domain.SpecForgeRuntimeCLI, sandbox *domain.SpecForgeRuntimeSandbox, roots []domain.SpecForgeRuntimeSkillRoot, localSkillCount int) string {
+func normalizeRuntimeRepositories(repositories []domain.SpecForgeRuntimeRepository) []domain.SpecForgeRuntimeRepository {
+	out := make([]domain.SpecForgeRuntimeRepository, 0, len(repositories))
+	seen := map[string]struct{}{}
+	for _, repository := range repositories {
+		repositoryID := limitRuntimeCapabilityString(repository.RepositoryID, 255)
+		repoDir := limitRuntimeCapabilityString(repository.RepoDir, 500)
+		if repositoryID == "" || repoDir == "" {
+			continue
+		}
+		key := repositoryID + "|" + repoDir
+		if _, ok := seen[key]; ok {
+			continue
+		}
+		seen[key] = struct{}{}
+		out = append(out, domain.SpecForgeRuntimeRepository{
+			RepositoryID: repositoryID,
+			RepoDir:      repoDir,
+			RemoteURL:    limitRuntimeCapabilityString(repository.RemoteURL, 500),
+			Branch:       limitRuntimeCapabilityString(repository.Branch, 120),
+			Dirty:        repository.Dirty,
+		})
+		if len(out) >= 50 {
+			break
+		}
+	}
+	sort.SliceStable(out, func(i, j int) bool {
+		if out[i].RepositoryID != out[j].RepositoryID {
+			return out[i].RepositoryID < out[j].RepositoryID
+		}
+		return out[i].RepoDir < out[j].RepoDir
+	})
+	return out
+}
+
+func runtimeCapabilitiesHash(clis []domain.SpecForgeRuntimeCLI, sandbox *domain.SpecForgeRuntimeSandbox, roots []domain.SpecForgeRuntimeSkillRoot, repositories []domain.SpecForgeRuntimeRepository, localSkillCount int) string {
 	payload := RuntimeCapabilityReport{
 		AvailableCLIs:   normalizeRuntimeCLIs(clis),
 		Sandbox:         normalizeRuntimeSandbox(sandbox),
 		SkillRoots:      normalizeRuntimeSkillRoots(roots),
+		Repositories:    normalizeRuntimeRepositories(repositories),
 		LocalSkillCount: localSkillCount,
 	}
 	data, err := json.Marshal(payload)
@@ -133,14 +171,14 @@ func runtimeCapabilitiesHash(clis []domain.SpecForgeRuntimeCLI, sandbox *domain.
 	return hex.EncodeToString(sum[:])
 }
 
-func detectRuntimeCLIs(codexPath, kimiPath string) []domain.SpecForgeRuntimeCLI {
+func detectRuntimeCLIs(codexPath, claudePath, kimiPath string) []domain.SpecForgeRuntimeCLI {
 	candidates := []struct {
 		name     string
 		command  string
 		override string
 	}{
 		{name: "Codex CLI", command: "codex", override: strings.TrimSpace(codexPath)},
-		{name: "Claude Code", command: "claude"},
+		{name: "Claude Code", command: "claude", override: strings.TrimSpace(claudePath)},
 		{name: "GitHub Copilot CLI", command: "copilot"},
 		{name: "Gemini CLI", command: "gemini"},
 		{name: "OpenCode", command: "opencode"},

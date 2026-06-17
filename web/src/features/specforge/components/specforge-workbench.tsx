@@ -148,6 +148,7 @@ import {
 } from '@/features/specforge/execution-range';
 import {
   executionReadinessForExecutor,
+  runtimeCanDispatch,
   type ExecutionReadiness,
 } from '@/features/specforge/execution-readiness';
 import {
@@ -637,8 +638,14 @@ export function SpecForgeWorkbench({
     [runtimes, runtimeNow]
   );
   const executionAgentOptions = useMemo(
-    () => executionAgentOptionsFromRuntimes(runtimes, runtimeNow, useRuntimeFallback),
-    [runtimeNow, runtimes, useRuntimeFallback]
+    () =>
+      executionAgentOptionsFromRuntimes(
+        runtimes,
+        runtimeNow,
+        useRuntimeFallback,
+        effectiveRepoId.trim()
+      ),
+    [effectiveRepoId, runtimeNow, runtimes, useRuntimeFallback]
   );
   const defaultExecutionAgent =
     executionAgentOptions.find(option => option.canDispatch) ?? executionAgentOptions[0];
@@ -656,8 +663,9 @@ export function SpecForgeWorkbench({
         executor: effectiveSelectedExecutor,
         now: runtimeNow,
         allowFallback: useRuntimeFallback,
+        repositoryId: effectiveRepoId.trim(),
       }),
-    [effectiveSelectedExecutor, runtimeNow, runtimes, useRuntimeFallback]
+    [effectiveRepoId, effectiveSelectedExecutor, runtimeNow, runtimes, useRuntimeFallback]
   );
   const readinessReason = useMemo(() => {
     if (executionReadiness.healthyRuntimeCount > 0) {
@@ -670,20 +678,10 @@ export function SpecForgeWorkbench({
   }, [executionReadiness.healthyRuntimeCount, t, useRuntimeFallback]);
   const projectDispatchProofRuntime = useMemo(
     () =>
-      runtimes.find(runtime => {
-        if (
-          runtime.executor !== effectiveSelectedExecutor ||
-          deriveRuntimeHealth(runtime, runtimeNow) !== 'online' ||
-          !runtime.sandbox?.writable
-        ) {
-          return false;
-        }
-        if (effectiveSelectedExecutor === 'codex_cli') {
-          return runtime.availableClis.some(cli => cli.command === 'codex' && cli.available);
-        }
-        return true;
-      }),
-    [effectiveSelectedExecutor, runtimeNow, runtimes]
+      runtimes.find(runtime =>
+        runtimeCanDispatch(runtime, effectiveSelectedExecutor, runtimeNow, effectiveRepoId.trim())
+      ),
+    [effectiveRepoId, effectiveSelectedExecutor, runtimeNow, runtimes]
   );
   const projectDispatchProofTasksQuery = useDirectAgentTasks(
     effectiveRepoId.trim()
@@ -962,7 +960,7 @@ export function SpecForgeWorkbench({
           `Project: ${projectLabel || 'CodingCTO project workspace'}`,
           `Idea: ${idea.trim() || activePlan.idea || 'No current idea text'}`,
           `Plan nodes: ${hasPlan ? activePlan.prNodes.map(node => `${node.nodeKey}: ${node.title}`).join('; ') : 'No plan yet'}`,
-          'Inspect only enough to prove that the platform can dispatch this project to the local Codex runtime.',
+          'Inspect only enough to prove that the platform can dispatch this project to the selected local CLI runtime.',
           'Return a concise JSON-like report with: status, runtime_check, repository_check, project_context_check, blocker.',
         ].join('\n'),
       });
@@ -2286,10 +2284,10 @@ function DeliveryBoardOverview({
           ? executionReadiness.reason
           : blockedGates.length > 0
             ? `${blockedGates.length} 个质量门需要处理后才能调度。`
-            : '审批计划后才能启动本地 Codex。'
+            : '审批计划后才能启动本地 CLI。'
         : runStarted
           ? summary.headline
-          : '可以从计划页审批并启动 Codex CLI。',
+          : '可以从计划页审批并启动所选 CLI。',
       action: runStarted
         ? '看执行'
         : !executionReadiness.canDispatch
@@ -2830,13 +2828,13 @@ function FormalDispatchUnlockChecklist({
       id: 'approval',
       label: '专家计划审批',
       state: !hasPlan ? 'waiting' : approved ? 'ready' : 'blocked',
-      detail: approved ? 'PR DAG、范围、风险和任务顺序已确认。' : '需要人工确认专家输出，再允许正式启动 Codex。',
+      detail: approved ? 'PR DAG、范围、风险和任务顺序已确认。' : '需要人工确认专家输出，再允许正式启动本地 CLI。',
       action: approved ? '查看计划' : '评审计划',
       onClick: onReviewPlan,
     },
     {
       id: 'runtime',
-      label: 'Codex CLI 运行器',
+      label: '本地 CLI 运行器',
       state: executionReadiness.canDispatch ? 'ready' : 'blocked',
       detail: executionReadiness.canDispatch
         ? `${executionReadiness.healthyRuntimeCount} 个可写 runtime 可领取任务。`
@@ -2881,7 +2879,7 @@ function FormalDispatchUnlockChecklist({
         <div>
           <div className="text-sm font-medium text-text-main">正式派发解锁清单</div>
           <p className="mt-1 text-sm leading-6 text-text-muted">
-            只有这些条件都通过，平台才应该把 PR 节点正式交给本地 Codex CLI 执行并回收 PR 证据。
+            只有这些条件都通过，平台才应该把 PR 节点正式交给选中的本地 CLI 执行并回收 PR 证据。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -4908,7 +4906,8 @@ function runtimeCLILabel(name: string, version?: string): string {
 function executionAgentOptionsFromRuntimes(
   runtimes: readonly ExecutorRuntime[],
   now: number,
-  allowFallback: boolean
+  allowFallback: boolean,
+  repositoryId?: string
 ): ExecutionAgentOption[] {
   const grouped = new Map<
     string,
@@ -4961,6 +4960,7 @@ function executionAgentOptionsFromRuntimes(
         executor: group.executor,
         now,
         allowFallback,
+        repositoryId,
       }).canDispatch;
       const hostnames = [...group.hostnames].slice(0, 2);
       const extraHostCount = group.hostnames.size - hostnames.length;
@@ -4988,8 +4988,11 @@ function executorDisplayName(executor: string) {
   switch (executor) {
     case 'codex_cli':
       return 'Codex CLI';
+    case 'claude_code_cli':
     case 'claude_cli':
       return 'Claude Code';
+    case 'kimi_cli':
+      return 'Kimi CLI';
     default:
       return executor
         .replace(/[_-]+/g, ' ')
@@ -5651,7 +5654,7 @@ function PreDispatchRunGuide({
       id: 'claim',
       label: '2. Runtime Claim',
       detail: executionReadiness.canDispatch
-        ? '在线 runtime 会领取任务，并在本地仓库启动 Codex CLI。'
+        ? '在线 runtime 会领取任务，并在本地仓库启动所选 CLI。'
         : executionReadiness.reason,
       state: executionReadiness.canDispatch ? 'ready' : 'blocked',
     },
@@ -5752,9 +5755,9 @@ function ProjectDispatchProofPanel({
     <div className="rounded-lg border border-border-subtle bg-bg-surface p-4">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <div className="text-sm font-medium text-text-main">项目级 Codex 调度验证</div>
+          <div className="text-sm font-medium text-text-main">项目级本地 CLI 调度验证</div>
           <p className="mt-1 text-sm leading-6 text-text-muted">
-            用当前项目、仓库和 runtime 创建一个只读任务，证明平台能命令本地 Codex。正式交付仍从计划审批启动。
+            用当前项目、仓库和 runtime 创建一个只读任务，证明平台能命令所选本地 CLI。正式交付仍从计划审批启动。
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-2">
@@ -6140,7 +6143,7 @@ function PlanReview({
             <div className="rounded-md border border-warning/30 bg-warning-subtle px-3 py-2 text-sm text-warning">
               <div className="flex flex-col gap-3 md:flex-row md:items-center md:justify-between">
                 <span>
-                  当前有 {blockedQualityGates.length} 个质量门阻塞。请先处理风险、测试或恢复决策，再启动 Codex。
+                  当前有 {blockedQualityGates.length} 个质量门阻塞。请先处理风险、测试或恢复决策，再启动本地 CLI。
                 </span>
                 <Button type="button" variant="outline" size="sm" onClick={onReviewQualityGates}>
                   查看检查项
@@ -6307,7 +6310,7 @@ function RuntimeBlockerPanel({
           <div className="mt-3 grid gap-2 text-xs leading-5 text-text-muted sm:grid-cols-3">
             <div className="rounded-md bg-bg-surface px-3 py-2">
               <div className="font-medium text-text-main">1. 打开智能体</div>
-              <div className="mt-1">查看 runtime 是否在线、可写，并检测到 Codex CLI。</div>
+              <div className="mt-1">查看 runtime 是否在线、可写，并检测到所选 CLI。</div>
             </div>
             <div className="rounded-md bg-bg-surface px-3 py-2">
               <div className="font-medium text-text-main">2. 启动 ccto</div>
@@ -6354,7 +6357,7 @@ function DispatchFailurePanel({
           <p className="mt-2 text-xs leading-5 text-text-muted">
             {runtimeReady
               ? 'Runtime 已在线，请确认仓库权限、任务状态和后端派发接口后重试。'
-              : '先检查智能体页的 runtime、Codex CLI、仓库绑定和 Skill 状态，再回到计划页启动。'}
+              : '先检查智能体页的 runtime、所选 CLI、仓库绑定和 Skill 状态，再回到计划页启动。'}
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -6407,8 +6410,8 @@ function DispatchConfirmDialog({
         <DialogHeader>
           <DialogTitle>确认启动 Coding Agent</DialogTitle>
           <DialogDescription>
-            审批后会创建执行运行，并把选中的 PR 节点派发给在线 runtime。这个动作会让 Codex
-            在目标仓库中开始工作。
+            审批后会创建执行运行，并把选中的 PR 节点派发给在线 runtime。这个动作会让选中的
+            本地 CLI 在目标仓库中开始工作。
           </DialogDescription>
         </DialogHeader>
         <div className="space-y-4">
@@ -6423,7 +6426,7 @@ function DispatchConfirmDialog({
               <div className="min-w-0">
                 <div className="text-sm font-medium text-warning">正式执行影响</div>
                 <p className="mt-1 text-sm leading-6 text-warning">
-                  这不是只读验证。正式执行会让本地 Codex 在目标仓库工作；成功后会提交变更、推送分支，并进入创建 GitHub PR、CI 和评审流程。
+                  这不是只读验证。正式执行会让选中的本地 CLI 在目标仓库工作；成功后会提交变更、推送分支，并进入创建 GitHub PR、CI 和评审流程。
                 </p>
               </div>
             </div>
@@ -7452,7 +7455,7 @@ function PromptAssemblyKanban({
     },
     {
       id: 'handoff',
-      title: '下发给 Codex',
+      title: '下发给本地 CLI',
       detail: executionReadiness.canDispatch
         ? `${executorDisplayName(selectedExecutor)} 可接收编译后的 Prompt。`
         : executionReadiness.reason,

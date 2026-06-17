@@ -94,7 +94,7 @@ export function deliveryEvidenceLedger({
     },
     {
       id: 'runtime-proof',
-      label: '平台能调度本地 Codex',
+      label: '平台能调度本地 CLI',
       state: proofSummary.hasRuntimeClaim && proofSummary.hasExecutorResult
         ? 'proven'
         : executionReadiness.canDispatch || projectProofTaskStatus

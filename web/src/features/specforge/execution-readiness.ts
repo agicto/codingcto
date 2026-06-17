@@ -12,15 +12,17 @@ export function executionReadinessForExecutor({
   executor,
   now,
   allowFallback,
+  repositoryId,
 }: {
   runtimes: readonly ExecutorRuntime[];
   executor: string;
   now: number;
   allowFallback: boolean;
+  repositoryId?: string;
 }): ExecutionReadiness {
   const targetExecutor = executor.trim() || 'codex_cli';
   const healthyRuntimes = runtimes.filter(runtime =>
-    runtimeCanDispatch(runtime, targetExecutor, now)
+    runtimeCanDispatch(runtime, targetExecutor, now, repositoryId)
   );
 
   if (healthyRuntimes.length > 0) {
@@ -46,7 +48,12 @@ export function executionReadinessForExecutor({
   };
 }
 
-function runtimeCanDispatch(runtime: ExecutorRuntime, executor: string, now: number) {
+export function runtimeCanDispatch(
+  runtime: ExecutorRuntime,
+  executor: string,
+  now: number,
+  repositoryId?: string
+) {
   if (
     runtime.executor !== executor ||
     deriveRuntimeHealth(runtime, now) !== 'online' ||
@@ -57,7 +64,16 @@ function runtimeCanDispatch(runtime: ExecutorRuntime, executor: string, now: num
 
   const requiredCommand = executorCommand(executor);
   if (requiredCommand) {
-    return runtime.availableClis.some(cli => cli.command === requiredCommand && cli.available);
+    if (!runtime.availableClis.some(cli => cli.command === requiredCommand && cli.available)) {
+      return false;
+    }
+  }
+
+  const targetRepositoryId = repositoryId?.trim();
+  if (targetRepositoryId && (runtime.repositories?.length ?? 0) > 0) {
+    return runtime.repositories?.some(
+      repository => repository.repositoryId === targetRepositoryId && Boolean(repository.repoDir)
+    );
   }
 
   return true;
@@ -67,6 +83,7 @@ function executorCommand(executor: string) {
   const commands: Record<string, string> = {
     codex_cli: 'codex',
     kimi_cli: 'kimi',
+    claude_code_cli: 'claude',
   };
   return commands[executor] ?? '';
 }
@@ -75,7 +92,7 @@ function executorLabel(executor: string) {
   const labels: Record<string, string> = {
     codex_cli: 'Codex CLI',
     kimi_cli: 'Kimi CLI',
-    claude_code_cli: 'Claude Code',
+    claude_code_cli: 'Claude Code CLI',
   };
   return labels[executor] ?? executor;
 }

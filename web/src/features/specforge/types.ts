@@ -135,6 +135,7 @@ export interface ExecutorRuntime {
   availableClis: ExecutorRuntimeCLI[];
   sandbox?: ExecutorRuntimeSandbox;
   skillRoots: ExecutorRuntimeSkillRoot[];
+  repositories?: ExecutorRuntimeRepository[];
   localSkillCount: number;
   capabilitiesHash?: string;
   lastSeenAt?: string;
@@ -161,4 +162,12 @@ export interface ExecutorRuntimeSkillRoot {
   provider: string;
   path: string;
   writable: boolean;
+}
+
+export interface ExecutorRuntimeRepository {
+  repositoryId: string;
+  repoDir: string;
+  remoteUrl?: string;
+  branch?: string;
+  dirty: boolean;
 }

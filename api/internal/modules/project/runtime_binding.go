@@ -96,3 +96,54 @@ func buildProjectRuntimeBindingStatus(now time.Time, primaryRepositoryID string,
 	}
 	return status
 }
+
+func runtimeMatchesDiscoveredRepository(now time.Time, primaryRepositoryID string, runtime *domain.SpecForgeRuntime) bool {
+	primaryRepositoryID = strings.TrimSpace(primaryRepositoryID)
+	if primaryRepositoryID == "" || runtime == nil {
+		return false
+	}
+	if runtime.Status != domain.RuntimeStatusOnline {
+		return false
+	}
+	if runtime.LastSeenAt.IsZero() || now.UTC().Sub(runtime.LastSeenAt.UTC()) > runtimeBindingFreshness {
+		return false
+	}
+	if runtime.Sandbox != nil && !runtime.Sandbox.Writable {
+		return false
+	}
+	if requiredCommand := runtimeRequiredCLICommand(runtime.Executor); requiredCommand != "" && !runtimeHasAvailableCommand(runtime, requiredCommand) {
+		return false
+	}
+	for _, repository := range runtime.Repositories {
+		if strings.TrimSpace(repository.RepositoryID) == primaryRepositoryID && strings.TrimSpace(repository.RepoDir) != "" {
+			return true
+		}
+	}
+	return false
+}
+
+func runtimeRequiredCLICommand(executor string) string {
+	switch strings.TrimSpace(executor) {
+	case "codex_cli":
+		return "codex"
+	case "kimi_cli":
+		return "kimi"
+	case "claude_code_cli":
+		return "claude"
+	default:
+		return ""
+	}
+}
+
+func runtimeHasAvailableCommand(runtime *domain.SpecForgeRuntime, command string) bool {
+	command = strings.TrimSpace(command)
+	if runtime == nil || command == "" {
+		return false
+	}
+	for _, cli := range runtime.AvailableCLIs {
+		if cli.Available && strings.TrimSpace(cli.Command) == command {
+			return true
+		}
+	}
+	return false
+}

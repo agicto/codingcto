@@ -13,25 +13,20 @@ export async function GET(request: NextRequest) {
   const apiTarget = process.env.LUAS_API_PROXY_TARGET ?? 'http://localhost:2010';
   const apiBaseURL = new URL('/v1', apiTarget).toString().replace(/\/$/, '');
   const workspaceRoot = process.cwd().replace(/\/web$/, '');
-  const apiDir = `${workspaceRoot}/api`;
   const repoDir = process.env.CODINGCTO_RUNTIME_REPO_DIR ?? `${workspaceRoot}`;
   const runtimeToken =
     process.env.NODE_ENV === 'production' ? '<runtime-token>' : 'local-runtime-token';
   const runtimeId = `local-${repositoryId.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'codingcto'}`;
   const command = [
-    `cd ${shellQuote(apiDir)}`,
+    `cd ${shellQuote(repoDir)}`,
     `export CODINGCTO_RUNTIME_TOKEN=${shellQuote(runtimeToken)}`,
-    'go run ./cmd/ccto daemon \\',
-    `  --api-base-url ${shellQuote(apiBaseURL)} \\`,
-    '  --token "$CODINGCTO_RUNTIME_TOKEN" \\',
-    `  --runtime-id ${shellQuote(runtimeId)} \\`,
-    `  --repo-dir ${shellQuote(repoDir)} \\`,
-    `  --repository-id ${shellQuote(repositoryId)}`,
+    `ccto configure --api-base-url ${shellQuote(apiBaseURL)} --repo-root ${shellQuote(repoDir)}`,
+    'ccto up',
   ].join('\n');
 
   return Response.json({
     api_base_url: apiBaseURL,
-    api_dir: apiDir,
+    api_dir: `${workspaceRoot}/api`,
     repo_dir: repoDir,
     runtime_id: runtimeId,
     repository_id: repositoryId,

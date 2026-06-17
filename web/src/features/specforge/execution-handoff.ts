@@ -70,7 +70,7 @@ export function executionHandoffSummary(run: ExecutionRun): ExecutionHandoffSumm
       claimedTaskCount,
       processProblemCount,
       headline: `${backendTaskCount}/${totalTasks} 个任务已派发，等待 runtime 领取。`,
-      nextAction: '保持 ccto daemon 运行；领取后会出现 runtime id、attempt 和事件日志。',
+      nextAction: '保持 ccto up 运行；领取后会出现 runtime id、attempt 和事件日志。',
     };
   }
 
@@ -82,7 +82,7 @@ export function executionHandoffSummary(run: ExecutionRun): ExecutionHandoffSumm
       claimedTaskCount,
       processProblemCount,
       headline: `${claimedTaskCount}/${totalTasks} 个任务已被 runtime 领取。`,
-      nextAction: '查看任务事件和进程状态，等待 Codex 输出测试与 PR 信息。',
+      nextAction: '查看任务事件和进程状态，等待本地 CLI 输出测试与 PR 信息。',
     };
   }
 

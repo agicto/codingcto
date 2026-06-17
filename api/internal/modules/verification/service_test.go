@@ -416,7 +416,7 @@ func TestVerifyPRNodeCIQueuesFixAttemptWhenRefreshFindsFailure(t *testing.T) {
 	require.NotNil(t, result.FixAttempt)
 	require.NotNil(t, result.EscalationSummary)
 	require.Equal(t, "fix_attempt_queued", result.VerificationState)
-	require.Equal(t, "Dispatch the queued fix attempt to the Codex runtime.", result.NextAction)
+	require.Equal(t, "Dispatch the queued fix attempt to the selected local runtime.", result.NextAction)
 	require.Equal(t, "type_error", result.FixAttempt.FailureType)
 	require.Equal(t, int64(654), result.FixAttempt.WorkflowRunID)
 	require.Equal(t, 1, result.EscalationSummary.AttemptsUsed)

@@ -10,20 +10,54 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/zgiai/luas/api/internal/domain"
 	"github.com/zgiai/luas/api/internal/modules/execution"
 )
 
 func Run(commandName, version string) int {
 	args := os.Args[1:]
-	if len(args) > 0 {
-		switch args[0] {
-		case "daemon":
-			args = args[1:]
-		case "help", "--help", "-h":
-			args = append([]string{"--help"}, args[1:]...)
-		}
+	if len(args) == 0 {
+		printUsage(commandName)
+		return 0
 	}
+	switch args[0] {
+	case "up":
+		return runUp(commandName, version, args[1:])
+	case "status":
+		return runStatus(commandName, args[1:])
+	case "doctor":
+		return runDoctor(commandName, args[1:])
+	case "configure":
+		return runConfigure(commandName, args[1:])
+	case "daemon":
+		return runDaemon(commandName, version, args[1:])
+	case "help", "--help", "-h":
+		printUsage(commandName)
+		return 0
+	default:
+		if strings.HasPrefix(args[0], "-") {
+			return runDaemon(commandName, version, args)
+		}
+		fmt.Fprintf(os.Stderr, "%s: unknown command %q\n", commandName, args[0])
+		printUsage(commandName)
+		return 2
+	}
+}
 
+func printUsage(commandName string) {
+	fmt.Printf(`%s local agent
+
+Usage:
+  %s up [--once]
+  %s status
+  %s doctor
+  %s configure [--api-base-url URL] [--token TOKEN] [--repo-root PATH]
+  %s daemon [advanced flags]
+
+`, commandName, commandName, commandName, commandName, commandName, commandName)
+}
+
+func runDaemon(commandName, version string, args []string) int {
 	flags := flag.NewFlagSet(commandName, flag.ContinueOnError)
 	apiBaseURL := flags.String("api-base-url", envOrDefault("CODINGCTO_API_BASE_URL", envOrDefault("SPECFORGE_API_BASE_URL", "http://localhost:2010/v1")), "CodingCTO API base URL, including /v1")
 	token := flags.String("token", envOrDefault("CODINGCTO_RUNTIME_TOKEN", envOrDefault("SPECFORGE_RUNTIME_TOKEN", execution.LocalRuntimeToken())), "Bearer token for runtime API access")
@@ -66,6 +100,7 @@ func Run(commandName, version string) int {
 	executor := executorFactory.MustCreate(*executorName)
 	capabilities := execution.DetectRuntimeCapabilities(execution.RuntimeCapabilityProbeConfig{
 		CodexPath:      *codexPath,
+		ClaudePath:     *claudePath,
 		KimiPath:       *kimiPath,
 		RepoDir:        *repoDir,
 		SandboxMode:    *sandbox,
@@ -83,6 +118,7 @@ func Run(commandName, version string) int {
 		AvailableCLIs:   capabilities.AvailableCLIs,
 		Sandbox:         capabilities.Sandbox,
 		SkillRoots:      capabilities.SkillRoots,
+		Repositories:    daemonRepositories(*repositoryID, *repoDir),
 		LocalSkillCount: capabilities.LocalSkillCount,
 		MaxConcurrency:  *maxConcurrency,
 	}, client, executor)
@@ -111,6 +147,15 @@ func Run(commandName, version string) int {
 		return 1
 	}
 	return 0
+}
+
+func daemonRepositories(repositoryID, repoDir string) []domain.SpecForgeRuntimeRepository {
+	repositoryID = strings.TrimSpace(repositoryID)
+	repoDir = strings.TrimSpace(repoDir)
+	if repositoryID == "" || repoDir == "" {
+		return nil
+	}
+	return []domain.SpecForgeRuntimeRepository{{RepositoryID: repositoryID, RepoDir: repoDir}}
 }
 
 func envOrDefault(key, fallback string) string {

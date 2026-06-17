@@ -88,6 +88,50 @@ describe('executionReadinessForExecutor', () => {
     expect(result.reason).toContain('Kimi CLI');
   });
 
+  it('requires a matching discovered repository when runtime reports repositories', () => {
+    const result = executionReadinessForExecutor({
+      runtimes: [
+        runtime({
+          repositories: [
+            {
+              repositoryId: 'agicto__codingcto',
+              repoDir: '/Users/example/codingcto',
+              dirty: false,
+            },
+          ],
+        }),
+      ],
+      executor: 'codex_cli',
+      now,
+      allowFallback: false,
+      repositoryId: 'agicto__codingcto',
+    });
+
+    expect(result.canDispatch).toBe(true);
+  });
+
+  it('blocks dispatch when discovered repositories do not match the plan repo', () => {
+    const result = executionReadinessForExecutor({
+      runtimes: [
+        runtime({
+          repositories: [
+            {
+              repositoryId: 'other__repo',
+              repoDir: '/Users/example/other',
+              dirty: false,
+            },
+          ],
+        }),
+      ],
+      executor: 'codex_cli',
+      now,
+      allowFallback: false,
+      repositoryId: 'agicto__codingcto',
+    });
+
+    expect(result.canDispatch).toBe(false);
+  });
+
   it('rejects kimi runtimes without kimi cli capability', () => {
     const result = executionReadinessForExecutor({
       runtimes: [
@@ -114,21 +158,21 @@ describe('executionReadinessForExecutor', () => {
 
     expect(result.canDispatch).toBe(true);
   });
-  it('allows a non-codex executor when its runtime is online and writable', () => {
+  it('allows Claude Code when its runtime is online and writable', () => {
     const result = executionReadinessForExecutor({
       runtimes: [
         runtime({
-          executor: 'claude_cli',
+          executor: 'claude_code_cli',
           availableClis: [{ name: 'Claude Code', command: 'claude', available: true }],
           sandbox: {
-            provider: 'claude_cli',
+            provider: 'claude_code_cli',
             mode: 'workspace-write',
             networkAccess: true,
             writable: true,
           },
         }),
       ],
-      executor: 'claude_cli',
+      executor: 'claude_code_cli',
       now,
       allowFallback: false,
     });

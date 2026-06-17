@@ -66,6 +66,7 @@ type RuntimePO struct {
 	AvailableCLIsJSON string `gorm:"column:available_clis;type:jsonb;not null;default:'[]'"`
 	SandboxJSON       string `gorm:"column:sandbox;type:jsonb;not null;default:'{}'"`
 	SkillRootsJSON    string `gorm:"column:skill_roots;type:jsonb;not null;default:'[]'"`
+	RepositoriesJSON  string `gorm:"column:repositories;type:jsonb;not null;default:'[]'"`
 	LocalSkillCount   int    `gorm:"not null;default:0"`
 	MaxConcurrency    int    `gorm:"not null;default:1"`
 	CapabilitiesHash  string `gorm:"size:64;index"`
@@ -255,6 +256,7 @@ func newRuntimePO(runtime *domain.SpecForgeRuntime) *RuntimePO {
 		AvailableCLIsJSON: mustMarshalRuntimeJSON(runtime.AvailableCLIs, "[]"),
 		SandboxJSON:       mustMarshalRuntimeJSON(runtime.Sandbox, "{}"),
 		SkillRootsJSON:    mustMarshalRuntimeJSON(runtime.SkillRoots, "[]"),
+		RepositoriesJSON:  mustMarshalRuntimeJSON(runtime.Repositories, "[]"),
 		LocalSkillCount:   runtime.LocalSkillCount,
 		MaxConcurrency:    normalizeRuntimeMaxConcurrency(runtime.MaxConcurrency),
 		CapabilitiesHash:  runtime.CapabilitiesHash,
@@ -267,9 +269,11 @@ func newRuntimePO(runtime *domain.SpecForgeRuntime) *RuntimePO {
 func (po *RuntimePO) toDomain() *domain.SpecForgeRuntime {
 	var clis []domain.SpecForgeRuntimeCLI
 	var skillRoots []domain.SpecForgeRuntimeSkillRoot
+	var repositories []domain.SpecForgeRuntimeRepository
 	var sandbox *domain.SpecForgeRuntimeSandbox
 	unmarshalRuntimeJSON(po.AvailableCLIsJSON, &clis)
 	unmarshalRuntimeJSON(po.SkillRootsJSON, &skillRoots)
+	unmarshalRuntimeJSON(po.RepositoriesJSON, &repositories)
 	if po.SandboxJSON != "" && po.SandboxJSON != "{}" {
 		var value domain.SpecForgeRuntimeSandbox
 		if unmarshalRuntimeJSON(po.SandboxJSON, &value) {
@@ -286,6 +290,7 @@ func (po *RuntimePO) toDomain() *domain.SpecForgeRuntime {
 		AvailableCLIs:    clis,
 		Sandbox:          sandbox,
 		SkillRoots:       skillRoots,
+		Repositories:     repositories,
 		LocalSkillCount:  po.LocalSkillCount,
 		MaxConcurrency:   normalizeRuntimeMaxConcurrency(po.MaxConcurrency),
 		CapabilitiesHash: po.CapabilitiesHash,

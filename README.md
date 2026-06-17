@@ -31,7 +31,7 @@ CodingCTO is an AI engineering planner and executor:
 3. Convert a feature idea into a lightweight product spec and technical implementation plan.
 4. Split the plan into reviewable PR nodes with explicit dependencies.
 5. Compile each PR node into a scoped coding prompt.
-6. Dispatch execution to a Codex CLI-compatible runner.
+6. Dispatch execution to a selected local CLI runner through `ccto up`.
 7. Track task state, CI failures, auto-fix attempts, and final PR delivery.
 
 The product principle is simple: users manage delivery artifacts, not AI workers.
@@ -57,31 +57,26 @@ See [api/README.md](api/README.md) for the full Go backend guide. Some internal 
 
 ### Local AI CLI Runtime
 
-After the API has an approved plan and dispatched execution task, a local runtime can claim and execute work with Codex CLI or Kimi CLI:
+Start a local agent with one command. It detects installed coding CLIs, discovers GitHub repositories from the current directory and configured repo roots, heartbeats each executable runtime, and claims matching tasks after plan approval.
 
 ```bash
 cd api
-go run ./cmd/ccto daemon \
-  --api-base-url http://localhost:2010/v1 \
-  --token "${CODINGCTO_RUNTIME_TOKEN:-local-runtime-token}" \
-  --repo-dir /path/to/local/repo \
-  --repository-id github_owner__repo \
-  --executor codex_cli
+make install-ccto
+cd /path/to/local/repo
+ccto up
 ```
+
+For local development without installing the binary:
 
 ```bash
 cd api
-go run ./cmd/ccto daemon \
-  --api-base-url http://localhost:2010/v1 \
-  --token "${CODINGCTO_RUNTIME_TOKEN:-local-runtime-token}" \
-  --runtime-id local-kimi-runtime \
-  --repo-dir /path/to/local/repo \
-  --repository-id github_owner__repo \
-  --executor kimi_cli \
-  --kimi-path kimi
+go run ./cmd/ccto status
+go run ./cmd/ccto doctor
+go run ./cmd/ccto configure --api-base-url http://localhost:2010/v1 --repo-root /path/to/local/repo
+go run ./cmd/ccto up
 ```
 
-The runtime sends heartbeat events, claims matching executor tasks, checks out the PR node branch in the local repo, runs the selected AI CLI adapter, streams task events back to the API, and submits the task result. Use `--once` for a single claim/execute cycle during local testing.
+The web console shows detected local agents, CLI choices, matched repositories, and blockers. After expert review, choose the executor CLI in Web; CodingCTO dispatches the selected executor through the local agent. `ccto daemon` remains available for advanced/manual debugging when a fixed runtime id, repository id, or executor flag is required.
 
 ### Web (`web/`)
 

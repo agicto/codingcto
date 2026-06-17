@@ -77,23 +77,38 @@ backend options, not as its task protocol.
 
 ## Runtime CLI
 
-Run a local Codex-backed worker:
+Run the foreground local agent:
 
 ```bash
 cd api
+go run ./cmd/ccto configure --api-base-url http://localhost:2010/v1 --repo-root /path/to/local/repo
+go run ./cmd/ccto up
+```
+
+`ccto up` detects installed CLIs, discovers GitHub repositories from the current
+directory and configured repo roots, heartbeats one runtime per executable
+backend, and claims tasks only when the executor and repository match.
+
+Useful commands:
+
+- `status`: print config, detected CLIs, and discovered repositories.
+- `doctor`: check API, CLI, repository, and token readiness.
+- `configure`: persist `~/.codingcto/config.json`.
+- `up --once`: heartbeat, claim at most one task, execute it, then exit.
+
+Advanced/debug mode remains available:
+
+```bash
 go run ./cmd/ccto daemon \
   --api-base-url http://localhost:2010/v1 \
   --token "$CODINGCTO_RUNTIME_TOKEN" \
   --repo-dir /path/to/local/repo \
   --repository-id github_owner__repo \
-  --executor codex_cli \
-  --codex-path codex \
-  --sandbox workspace-write
+  --executor codex_cli
 ```
 
-Useful modes:
+Useful advanced flags:
 
-- `--once`: heartbeat, claim at most one task, execute it, then exit.
 - `--executor claude_code_cli`: use the Claude Code CLI connector backend.
 - `--extra-arg`: pass an agent-specific CLI flag.
 - `CODEX_CLI_PATH`: override the Codex executable.
