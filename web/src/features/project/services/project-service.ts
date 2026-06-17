@@ -331,6 +331,14 @@ export interface ProjectRuntimeBindingRuntimeSkillRootDTO {
   writable: boolean;
 }
 
+export interface ProjectRuntimeBindingRuntimeRepositoryDTO {
+  repository_id: string;
+  repo_dir: string;
+  remote_url?: string;
+  branch?: string;
+  dirty: boolean;
+}
+
 export interface ProjectRuntimeBindingRuntimeDTO {
   id: number;
   runtime_id: string;
@@ -341,6 +349,7 @@ export interface ProjectRuntimeBindingRuntimeDTO {
   available_clis?: ProjectRuntimeBindingRuntimeCLIDTO[];
   sandbox?: ProjectRuntimeBindingRuntimeSandboxDTO;
   skill_roots?: ProjectRuntimeBindingRuntimeSkillRootDTO[];
+  repositories?: ProjectRuntimeBindingRuntimeRepositoryDTO[];
   local_skill_count?: number;
   capabilities_hash?: string;
   last_seen_at: string;

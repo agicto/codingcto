@@ -51,3 +51,35 @@ func TestHasDispatchReadyRuntimeRequiresExecutorCLI(t *testing.T) {
 		})
 	}
 }
+
+func TestHasDispatchReadyRuntimeRequiresMatchingRepositoryWhenReported(t *testing.T) {
+	now := time.Now()
+	runtime := &domain.SpecForgeRuntime{
+		RuntimeID:     "runtime_1",
+		Executor:      ExecutorNameCodexCLI,
+		Status:        domain.RuntimeStatusOnline,
+		LastSeenAt:    now,
+		AvailableCLIs: []domain.SpecForgeRuntimeCLI{{Command: "codex", Available: true}},
+		Sandbox:       &domain.SpecForgeRuntimeSandbox{Writable: true},
+		Repositories: []domain.SpecForgeRuntimeRepository{
+			{RepositoryID: "repo_1", RepoDir: "/workspace/repo-1"},
+		},
+	}
+
+	require.True(t, hasDispatchReadyRuntimeForRepository(ExecutorNameCodexCLI, "repo_1", []*domain.SpecForgeRuntime{runtime}))
+	require.False(t, hasDispatchReadyRuntimeForRepository(ExecutorNameCodexCLI, "repo_2", []*domain.SpecForgeRuntime{runtime}))
+}
+
+func TestHasDispatchReadyRuntimeKeepsLegacyRuntimeWithoutRepositories(t *testing.T) {
+	now := time.Now()
+	runtime := &domain.SpecForgeRuntime{
+		RuntimeID:     "runtime_1",
+		Executor:      ExecutorNameCodexCLI,
+		Status:        domain.RuntimeStatusOnline,
+		LastSeenAt:    now,
+		AvailableCLIs: []domain.SpecForgeRuntimeCLI{{Command: "codex", Available: true}},
+		Sandbox:       &domain.SpecForgeRuntimeSandbox{Writable: true},
+	}
+
+	require.True(t, hasDispatchReadyRuntimeForRepository(ExecutorNameCodexCLI, "repo_1", []*domain.SpecForgeRuntime{runtime}))
+}

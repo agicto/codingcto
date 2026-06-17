@@ -42,6 +42,14 @@ export function summarizeRuntimeHealth(
 }
 
 export function runtimeFromDTO(runtime: SpecForgeRuntimeDTO): ExecutorRuntime {
+  const repositories = (runtime.repositories ?? []).map(repository => ({
+    repositoryId: repository.repository_id,
+    repoDir: repository.repo_dir,
+    ...(repository.remote_url ? { remoteUrl: repository.remote_url } : {}),
+    ...(repository.branch ? { branch: repository.branch } : {}),
+    dirty: repository.dirty,
+  }));
+
   return {
     runtimeId: runtime.runtime_id,
     executor: runtime.executor,
@@ -51,7 +59,7 @@ export function runtimeFromDTO(runtime: SpecForgeRuntimeDTO): ExecutorRuntime {
     availableClis: (runtime.available_clis ?? []).map(cli => ({
       name: cli.name,
       command: cli.command,
-      path: cli.path,
+      ...(cli.path ? { path: cli.path } : {}),
       version: cli.version,
       available: cli.available,
     })),
@@ -62,7 +70,7 @@ export function runtimeFromDTO(runtime: SpecForgeRuntimeDTO): ExecutorRuntime {
           networkAccess: runtime.sandbox.network_access,
           writable: runtime.sandbox.writable,
           approvalPolicy: runtime.sandbox.approval_policy,
-          reason: runtime.sandbox.reason,
+          ...(runtime.sandbox.reason ? { reason: runtime.sandbox.reason } : {}),
         }
       : undefined,
     skillRoots: (runtime.skill_roots ?? []).map(root => ({
@@ -70,6 +78,7 @@ export function runtimeFromDTO(runtime: SpecForgeRuntimeDTO): ExecutorRuntime {
       path: root.path,
       writable: root.writable,
     })),
+    ...(repositories.length > 0 ? { repositories } : {}),
     localSkillCount: runtime.local_skill_count ?? 0,
     capabilitiesHash: runtime.capabilities_hash,
     lastSeenAt: runtime.last_seen_at,

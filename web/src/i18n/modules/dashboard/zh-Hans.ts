@@ -345,7 +345,7 @@ const messages = {
       title: '启动本地 Runtime',
       description: '注册后需要在自己的电脑上启动一个 CodingCTO runtime。它会检测本机的 Codex、Claude Code、Cursor 等 CLI，持续心跳到平台，并在 issue 派发后领取任务执行。',
       commandTitle: '本地启动命令',
-      commandDescription: '在你的代码仓库所在机器上执行；默认使用当前项目路径，也可以把 --repo-dir 改成目标仓库路径。',
+      commandDescription: '在目标仓库 checkout 里执行；ccto 默认使用当前 Git 仓库。',
       copy: '复制命令',
       copied: '已复制',
       commandLoading: '正在生成启动命令...',
@@ -397,7 +397,7 @@ const messages = {
       targetRepository: '目标仓库',
       noRepository: '未选择仓库',
       promptPlaceholder: '例如：在 README 增加一行说明，标记这是 CodingCTO direct task smoke test。',
-      promptHint: '建议先派发很小、可回滚的任务。运行时会在 --repo-dir 指向的本地仓库里执行。',
+      promptHint: '建议先派发很小、可回滚的任务。运行时会在选中的本地仓库里执行。',
       blocked: {
         noRepository: '请先选择一个目标仓库。',
         notDispatchable: '这个智能体目前只是被 runtime 检测到，还没有接入平台调度。',
@@ -527,9 +527,9 @@ const messages = {
       ready: '{ready} / {total} 个 PR 节点已就绪或已合并',
     },
     readiness: {
-      online: '已有可写的 Codex CLI 运行时在线。',
+      online: '已有匹配所选 CLI 的可写本地 agent 在线。',
       demo: '演示模式可以在没有实时运行时的情况下模拟执行。',
-      startRuntime: '请先启动带 Codex CLI 的 CodingCTO 运行时，再派发这个计划。',
+      startRuntime: '请先运行 ccto up，并确认所选 CLI 可用，再派发这个计划。',
     },
     status: {
       readyForPlanning: '可进入计划',
@@ -1068,10 +1068,10 @@ const messages = {
     },
     e2e: {
       title: '端到端试跑',
-      description: '用当前仓库跑一遍真实交付链路：创建 Issue、生成计划、调用本地 Codex，并打开 PR。',
+      description: '用当前仓库跑一遍真实交付链路：创建 Issue、生成计划、调用本地 CLI，并打开 PR。',
       defaultIssueTitle: 'CodingCTO 端到端试跑：记录一次自动化交付',
       defaultIssueBody:
-        '请添加一个 .codingcto/e2e-smoke.md 文件，用中文记录本次试跑已完成：创建 GitHub Issue、生成计划、调用本地 Codex CLI、提交代码并创建 PR。请保持改动很小，只提交这个说明文件。',
+        '请添加一个 .codingcto/e2e-smoke.md 文件，用中文记录本次试跑已完成：创建 GitHub Issue、生成计划、调用本地 CLI、提交代码并创建 PR。请保持改动很小，只提交这个说明文件。',
       issueTitleLabel: '试跑 Issue 标题',
       issueBodyLabel: '试跑 Issue 内容',
       readiness: {
@@ -1118,7 +1118,7 @@ const messages = {
         },
         codexWaiting: {
           title: '等待 Codex 执行',
-          detail: '任务已派发，等待本地运行器认领后调用 Codex CLI。',
+          detail: '任务已派发，等待本地 agent 认领后调用所选 CLI。',
         },
         codexDone: {
           title: 'Codex 执行完成',

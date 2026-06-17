@@ -533,26 +533,42 @@ func (s *service) ensureRuntimeReadyForDispatch(ctx context.Context, bundle *dom
 	if bundle == nil {
 		return domain.ErrInvalidInput
 	}
-	executors := queuedTaskExecutors(bundle.Tasks)
-	if len(executors) == 0 {
+	requirements := queuedTaskRuntimeRequirements(bundle)
+	if len(requirements) == 0 {
 		return nil
 	}
-	for _, executor := range executors {
-		runtimes, err := s.repo.ListRuntimes(ctx, executor, domain.RuntimeStatusOnline, 20)
+	for _, requirement := range requirements {
+		runtimes, err := s.repo.ListRuntimes(ctx, requirement.Executor, domain.RuntimeStatusOnline, 20)
 		if err != nil {
 			return fmt.Errorf("list online runtimes for dispatch: %w", err)
 		}
-		if !hasDispatchReadyRuntime(executor, runtimes) {
+		if !hasDispatchReadyRuntimeForRepository(requirement.Executor, requirement.RepositoryID, runtimes) {
 			return domain.ErrConflict
 		}
 	}
 	return nil
 }
 
-func queuedTaskExecutors(tasks []*domain.SpecForgeAgentTask) []string {
+type runtimeDispatchRequirement struct {
+	Executor     string
+	RepositoryID string
+}
+
+func queuedTaskRuntimeRequirements(bundle *domain.SpecForgeExecutionBundle) []runtimeDispatchRequirement {
+	if bundle == nil {
+		return nil
+	}
+	nodesByID := map[uint]*domain.SpecForgePRNode{}
+	if bundle.Plan != nil {
+		for _, node := range bundle.Plan.PRNodes {
+			if node != nil && node.ID != 0 {
+				nodesByID[node.ID] = node
+			}
+		}
+	}
 	seen := map[string]struct{}{}
-	out := []string{}
-	for _, task := range tasks {
+	out := []runtimeDispatchRequirement{}
+	for _, task := range bundle.Tasks {
 		if task == nil || task.Status != domain.AgentTaskStatusQueued {
 			continue
 		}
@@ -560,16 +576,25 @@ func queuedTaskExecutors(tasks []*domain.SpecForgeAgentTask) []string {
 		if executor == "" {
 			executor = ExecutorNameCodexCLI
 		}
-		if _, ok := seen[executor]; ok {
+		repositoryID := ""
+		if node := nodesByID[task.PRNodeID]; node != nil {
+			repositoryID = strings.TrimSpace(node.RepositoryID)
+		}
+		key := executor + "|" + repositoryID
+		if _, ok := seen[key]; ok {
 			continue
 		}
-		seen[executor] = struct{}{}
-		out = append(out, executor)
+		seen[key] = struct{}{}
+		out = append(out, runtimeDispatchRequirement{Executor: executor, RepositoryID: repositoryID})
 	}
 	return out
 }
 
 func hasDispatchReadyRuntime(executor string, runtimes []*domain.SpecForgeRuntime) bool {
+	return hasDispatchReadyRuntimeForRepository(executor, "", runtimes)
+}
+
+func hasDispatchReadyRuntimeForRepository(executor, repositoryID string, runtimes []*domain.SpecForgeRuntime) bool {
 	staleBefore := time.Now().Add(-runtimeDispatchFreshness)
 	for _, runtime := range runtimes {
 		if runtime == nil || runtime.Status != domain.RuntimeStatusOnline {
@@ -585,6 +610,9 @@ func hasDispatchReadyRuntime(executor string, runtimes []*domain.SpecForgeRuntim
 			continue
 		}
 		if requiredCommand := executorCLICommand(executor); requiredCommand != "" && !runtimeHasAvailableCLI(runtime, requiredCommand) {
+			continue
+		}
+		if repositoryID != "" && !runtimeCanServeRepository(runtime, repositoryID) {
 			continue
 		}
 		return true
@@ -612,6 +640,22 @@ func runtimeHasAvailableCLI(runtime *domain.SpecForgeRuntime, command string) bo
 	}
 	for _, cli := range runtime.AvailableCLIs {
 		if cli.Available && strings.TrimSpace(cli.Command) == command {
+			return true
+		}
+	}
+	return false
+}
+
+func runtimeCanServeRepository(runtime *domain.SpecForgeRuntime, repositoryID string) bool {
+	repositoryID = strings.TrimSpace(repositoryID)
+	if runtime == nil || repositoryID == "" {
+		return true
+	}
+	if len(runtime.Repositories) == 0 {
+		return true
+	}
+	for _, repository := range runtime.Repositories {
+		if strings.TrimSpace(repository.RepositoryID) == repositoryID && strings.TrimSpace(repository.RepoDir) != "" {
 			return true
 		}
 	}
@@ -669,11 +713,12 @@ func (s *service) HeartbeatRuntime(ctx context.Context, req *RuntimeHeartbeatReq
 		AvailableCLIs:   normalizeRuntimeCLIs(req.AvailableCLIs),
 		Sandbox:         normalizeRuntimeSandbox(req.Sandbox),
 		SkillRoots:      normalizeRuntimeSkillRoots(req.SkillRoots),
+		Repositories:    normalizeRuntimeRepositories(req.Repositories),
 		LocalSkillCount: req.LocalSkillCount,
 		MaxConcurrency:  normalizeRuntimeMaxConcurrency(req.MaxConcurrency),
 		LastSeenAt:      time.Now(),
 	}
-	runtime.CapabilitiesHash = runtimeCapabilitiesHash(runtime.AvailableCLIs, runtime.Sandbox, runtime.SkillRoots, runtime.LocalSkillCount)
+	runtime.CapabilitiesHash = runtimeCapabilitiesHash(runtime.AvailableCLIs, runtime.Sandbox, runtime.SkillRoots, runtime.Repositories, runtime.LocalSkillCount)
 	if err := s.repo.UpsertRuntime(ctx, runtime); err != nil {
 		return nil, fmt.Errorf("upsert runtime heartbeat: %w", err)
 	}
@@ -856,6 +901,21 @@ func (s *service) ClaimTask(ctx context.Context, runtimeID string, req *ClaimAge
 		}
 		return nil, fmt.Errorf("claim agent task: %w", err)
 	}
+	if requestedRepositoryID := strings.TrimSpace(req.RepositoryID); requestedRepositoryID != "" {
+		repositoryID, err := s.claimedTaskRepositoryID(ctx, task)
+		if err != nil {
+			if revertErr := s.revertClaimedTask(ctx, task); revertErr != nil {
+				return nil, revertErr
+			}
+			return nil, err
+		}
+		if strings.TrimSpace(repositoryID) != requestedRepositoryID {
+			if err := s.revertClaimedTask(ctx, task); err != nil {
+				return nil, err
+			}
+			return &ClaimAgentTaskResponse{}, nil
+		}
+	}
 	if _, err := s.prepareTaskBranch(ctx, task); err != nil {
 		_, _ = s.failTaskBeforeExecutor(ctx, task, "branch_preparation_failed", err.Error())
 		return nil, fmt.Errorf("prepare claimed task branch: %w", err)
@@ -873,6 +933,37 @@ func (s *service) ClaimTask(ctx context.Context, runtimeID string, req *ClaimAge
 		return nil, err
 	}
 	return claim, nil
+}
+
+func (s *service) claimedTaskRepositoryID(ctx context.Context, task *domain.SpecForgeAgentTask) (string, error) {
+	if task == nil || task.RunID == 0 || task.PRNodeID == 0 {
+		return "", domain.ErrInvalidInput
+	}
+	bundle, err := s.GetRun(ctx, task.RunID)
+	if err != nil {
+		return "", err
+	}
+	if bundle.Plan == nil {
+		return "", domain.ErrInvalidInput
+	}
+	node := nodeByID(bundle.Plan.PRNodes)[task.PRNodeID]
+	if node == nil {
+		return "", domain.ErrNotFound
+	}
+	return targetRepositoryIDForNode(bundle.Plan, node)
+}
+
+func (s *service) revertClaimedTask(ctx context.Context, task *domain.SpecForgeAgentTask) error {
+	if task == nil || task.ID == 0 {
+		return domain.ErrInvalidInput
+	}
+	task.Status = domain.AgentTaskStatusDispatched
+	task.ProcessStatus = domain.AgentProcessStatusPending
+	task.RuntimeID = ""
+	task.SessionID = ""
+	task.Workdir = ""
+	task.StartedAt = nil
+	return s.repo.UpdateAgentTask(ctx, task)
 }
 
 func (s *service) CreateDirectAgentTask(ctx context.Context, userID uint, req *CreateDirectAgentTaskRequest) (*domain.CodingCTODirectAgentTask, error) {

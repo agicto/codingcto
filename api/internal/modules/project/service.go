@@ -528,6 +528,13 @@ func (s *service) GetProjectReadiness(ctx context.Context, projectID uint) (*dom
 		} else {
 			runtimeCount = len(runtimes)
 		}
+		discoveredRuntimeCount := 0
+		now := nowUTC()
+		for _, runtime := range runtimes {
+			if runtimeMatchesDiscoveredRepository(now, contextBundle.PrimaryRepositoryID, runtime) {
+				discoveredRuntimeCount++
+			}
+		}
 		bindingStatuses, err := s.listProjectRuntimeBindingStatuses(ctx, projectID, contextBundle.PrimaryRepositoryID)
 		if err != nil {
 			return nil, fmt.Errorf("load project runtime bindings: %w", err)
@@ -544,14 +551,16 @@ func (s *service) GetProjectReadiness(ctx context.Context, projectID uint) (*dom
 				warnings = appendCompactProjectStrings(warnings, warning)
 			}
 		}
-		runtimeReady = eligibleCount > 0
+		runtimeReady = eligibleCount > 0 || discoveredRuntimeCount > 0
 		switch {
 		case !hasPrimary:
 			runtimeDetail = "Primary repository must be bound before a runtime can be attached."
-		case len(bindingStatuses) == 0 && runtimeCount > 0:
-			runtimeDetail = "Online runtimes exist, but this project still needs an explicit runtime binding."
+		case discoveredRuntimeCount > 0 && eligibleCount > 0:
+			runtimeDetail = fmt.Sprintf("%d runtime binding(s) and %d discovered local runtime(s) are eligible for local execution.", eligibleCount, discoveredRuntimeCount)
+		case discoveredRuntimeCount > 0:
+			runtimeDetail = fmt.Sprintf("%d discovered local runtime(s) can execute the primary repository.", discoveredRuntimeCount)
 		case len(bindingStatuses) == 0:
-			runtimeDetail = "No project runtime binding targets the primary repository yet."
+			runtimeDetail = "No local runtime has discovered the primary repository yet."
 		case runtimeReady:
 			runtimeDetail = fmt.Sprintf("%d runtime binding(s) are eligible for local execution.", eligibleCount)
 		case len(bindingStatuses[0].Warnings) > 0:
@@ -560,8 +569,6 @@ func (s *service) GetProjectReadiness(ctx context.Context, projectID uint) (*dom
 			runtimeDetail = "Configured runtime bindings are not eligible for local execution yet."
 		}
 		if runtimeReady && runtimeCount > 0 {
-			runtimeDetail = fmt.Sprintf("%s (%d online runtime(s) detected).", runtimeDetail, runtimeCount)
-		} else if runtimeCount > 0 && len(bindingStatuses) == 0 {
 			runtimeDetail = fmt.Sprintf("%s (%d online runtime(s) detected).", runtimeDetail, runtimeCount)
 		} else if runtimeCount == 0 && len(bindingStatuses) == 0 {
 			runtimeDetail = "No online runtimes detected yet."

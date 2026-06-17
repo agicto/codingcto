@@ -166,6 +166,46 @@ func TestRuntimeWorkerClaimsExecutesAndSubmitsDirectTask(t *testing.T) {
 	require.Contains(t, eventTypes(client.directEvents), "executor_git_summary")
 }
 
+func TestRuntimeWorkerClaimsDiscoveredRepositoryWorkdir(t *testing.T) {
+	client := &fakeRuntimeClient{
+		heartbeat: &RuntimeHeartbeatResponse{ClaimPending: true},
+		claimByRepository: map[string]*ClaimAgentTaskResponse{
+			"repo_2": {
+				Task: &ClaimedAgentTask{ID: 7, RunID: 9, PRNodeID: 42, RuntimeID: "runtime_123"},
+				Prompt: &ClaimedTaskPrompt{
+					ID:         3,
+					Type:       domain.PromptTypeImplementation,
+					Version:    "prompt_v1",
+					PromptText: "Implement PR-001",
+					PromptHash: "hash",
+				},
+				ExecutionContext: &ClaimedTaskExecutionContext{RepositoryID: "repo_2"},
+			},
+		},
+	}
+	executor := &fakeRuntimeExecutor{result: &ExecutionResult{Status: "completed", Output: "ok", ExitCode: 0}}
+	worker := NewRuntimeWorker(RuntimeWorkerConfig{
+		RuntimeID: "runtime_123",
+		Executor:  ExecutorNameCodexCLI,
+		Repositories: []domain.SpecForgeRuntimeRepository{
+			{RepositoryID: "repo_1", RepoDir: "/workspace/repo-1"},
+			{RepositoryID: "repo_2", RepoDir: "/workspace/repo-2"},
+		},
+	}, client, executor)
+
+	result, err := worker.RunOnce(context.Background())
+
+	require.NoError(t, err)
+	require.True(t, result.Claimed)
+	require.Len(t, client.heartbeatReq.Repositories, 2)
+	require.Len(t, client.claimReqs, 2)
+	require.Equal(t, "repo_1", client.claimReqs[0].RepositoryID)
+	require.Equal(t, "/workspace/repo-1", client.claimReqs[0].Workdir)
+	require.Equal(t, "repo_2", client.claimReqs[1].RepositoryID)
+	require.Equal(t, "/workspace/repo-2", client.claimReqs[1].Workdir)
+	require.Equal(t, "/workspace/repo-2", executor.context.Workdir)
+}
+
 func TestRuntimeWorkerSubmitsCancelledWhenDirectTaskIsCancelledByPlatform(t *testing.T) {
 	client := &fakeRuntimeClient{
 		heartbeat:        &RuntimeHeartbeatResponse{ClaimPending: true},
@@ -227,16 +267,18 @@ func TestDirectRuntimeProgressReporterSuppressesKnownCodexNoise(t *testing.T) {
 }
 
 type fakeRuntimeClient struct {
-	heartbeat        *RuntimeHeartbeatResponse
-	heartbeatReq     *RuntimeHeartbeatRequest
-	claim            *ClaimAgentTaskResponse
-	claimRuntimeID   string
-	claimReq         *ClaimAgentTaskRequest
-	events           []*CreateTaskEventRequest
-	submitReq        *SubmitTaskResultRequest
-	directEvents     []*CreateTaskEventRequest
-	directSubmitReq  *SubmitTaskResultRequest
-	directTaskStatus string
+	heartbeat         *RuntimeHeartbeatResponse
+	heartbeatReq      *RuntimeHeartbeatRequest
+	claim             *ClaimAgentTaskResponse
+	claimByRepository map[string]*ClaimAgentTaskResponse
+	claimRuntimeID    string
+	claimReq          *ClaimAgentTaskRequest
+	claimReqs         []*ClaimAgentTaskRequest
+	events            []*CreateTaskEventRequest
+	submitReq         *SubmitTaskResultRequest
+	directEvents      []*CreateTaskEventRequest
+	directSubmitReq   *SubmitTaskResultRequest
+	directTaskStatus  string
 }
 
 func (c *fakeRuntimeClient) Heartbeat(ctx context.Context, req *RuntimeHeartbeatRequest) (*RuntimeHeartbeatResponse, error) {
@@ -250,6 +292,10 @@ func (c *fakeRuntimeClient) Heartbeat(ctx context.Context, req *RuntimeHeartbeat
 func (c *fakeRuntimeClient) ClaimTask(ctx context.Context, runtimeID string, req *ClaimAgentTaskRequest) (*ClaimAgentTaskResponse, error) {
 	c.claimRuntimeID = runtimeID
 	c.claimReq = req
+	c.claimReqs = append(c.claimReqs, req)
+	if c.claimByRepository != nil {
+		return c.claimByRepository[req.RepositoryID], nil
+	}
 	return c.claim, nil
 }
 

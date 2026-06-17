@@ -90,14 +90,14 @@ export function deliveryWorkflowSummary({
     },
     {
       id: 'runtime',
-      label: 'Codex runtime',
+      label: 'Local agent',
       state: executionReadiness.canDispatch ? 'ready' : 'blocked',
       owner: 'Agents',
       evidence: executionReadiness.canDispatch
         ? `${executionReadiness.healthyRuntimeCount} 个可调度 runtime`
         : '无可调度 runtime',
       nextAction: executionReadiness.canDispatch
-        ? '可以由计划页启动 Codex。'
+        ? '可以由计划页启动选中的本地 CLI。'
         : executionReadiness.reason,
     },
     {
@@ -108,7 +108,7 @@ export function deliveryWorkflowSummary({
       evidence: blockedGates.length > 0 ? `${blockedGates.length} 个阻塞` : `${qualityGates.length} 个质量门`,
       nextAction:
         blockedGates.length > 0
-          ? '先处理阻塞质量门，再调度 Codex。'
+          ? '先处理阻塞质量门，再调度本地 CLI。'
           : '执行后继续收集 PR、CI、审查和恢复证据。',
     },
     {

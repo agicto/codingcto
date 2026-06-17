@@ -74,11 +74,14 @@ import {
 } from '@/features/specforge/components/workbench-utils';
 import type { PlanBundle, PRNode } from '@/features/specforge/types';
 
-const executorOptions = [
-  { value: 'codex_cli', label: 'Codex CLI' },
-  { value: 'kimi_cli', label: 'Kimi CLI' },
-  { value: 'claude_code_cli', label: 'Claude Code CLI' },
-] as const;
+const supportedExecutors = ['codex_cli', 'kimi_cli', 'claude_code_cli'] as const;
+type SupportedExecutor = (typeof supportedExecutors)[number];
+
+const executorLabels: Record<SupportedExecutor, string> = {
+  codex_cli: 'Codex CLI',
+  kimi_cli: 'Kimi CLI',
+  claude_code_cli: 'Claude Code CLI',
+};
 
 export function ProjectPlanReviewPage() {
   const params = useParams<{ projectId: string; planId: string }>();
@@ -143,9 +146,7 @@ function ProjectPlanReview({
     () => initialPlan.prNodes[0]?.id ?? ''
   );
   const [promptMode, setPromptMode] = useState<PromptMode>('implementation');
-  const [selectedExecutor, setSelectedExecutor] = useState<'codex_cli' | 'kimi_cli' | 'claude_code_cli'>(
-    'codex_cli'
-  );
+  const [selectedExecutor, setSelectedExecutor] = useState<SupportedExecutor>('codex_cli');
   const [compiledPrompt, setCompiledPrompt] = useState<SpecForgeCompiledPromptDTO>();
   const [promptMessage, setPromptMessage] = useState('');
   const [message, setMessage] = useState('');
@@ -162,8 +163,30 @@ function ProjectPlanReview({
         executor: selectedExecutor,
         now: runtimeNow,
         allowFallback: false,
+        repositoryId: plan.repoProfile.repositoryId,
       }),
-    [runtimeNow, runtimes, selectedExecutor]
+    [plan.repoProfile.repositoryId, runtimeNow, runtimes, selectedExecutor]
+  );
+  const executorOptions = useMemo(
+    () =>
+      supportedExecutors.map(executor => {
+        const readiness = executionReadinessForExecutor({
+          runtimes,
+          executor,
+          now: runtimeNow,
+          allowFallback: false,
+          repositoryId: plan.repoProfile.repositoryId,
+        });
+        const suffix =
+          readiness.healthyRuntimeCount > 0
+            ? ` (${readiness.healthyRuntimeCount} online)`
+            : ' (not ready)';
+        return {
+          value: executor,
+          label: `${executorLabels[executor]}${suffix}`,
+        };
+      }),
+    [plan.repoProfile.repositoryId, runtimeNow, runtimes]
   );
   const approvePlan = useApproveSpecForgePlan();
   const compilePrompt = useCompileSpecForgePrompt();
@@ -778,11 +801,7 @@ function RuntimeSetupCard({
   readinessReason: string;
 }) {
   const [copyMessage, setCopyMessage] = useState('');
-  const runtimeId = `local-codex-plan-${plan.planId ?? 'draft'}`;
   const command = buildRuntimeSetupCommand({
-    apiBaseUrl: 'http://localhost:2010/v1',
-    runtimeId,
-    repositoryId: plan.repoProfile.repositoryId,
     repoDir: '/path/to/local/repo',
     once: true,
   });
@@ -795,7 +814,7 @@ function RuntimeSetupCard({
     setCopyMessage('');
     try {
       await navigator.clipboard.writeText(command);
-      setCopyMessage('Copied runtime command.');
+      setCopyMessage('Copied local agent command.');
     } catch {
       setCopyMessage('Copy unavailable. Select the command manually.');
     }
@@ -811,8 +830,8 @@ function RuntimeSetupCard({
               Runtime setup
             </CardTitle>
             <CardDescription className="mt-1 leading-6">
-              {readinessReason} Use this one-cycle command to connect a local Codex runtime before
-              approving execution.
+              {readinessReason} Run the local ccto agent in the target repository before approving
+              execution.
             </CardDescription>
           </div>
           <Badge
@@ -841,7 +860,7 @@ function RuntimeSetupCard({
         </div>
         <div className="min-w-0">
           <div className="flex items-center justify-between gap-2">
-            <div className="text-sm font-medium text-text-main">Local runtime command</div>
+            <div className="text-sm font-medium text-text-main">Local agent command</div>
             <Button type="button" variant="outline" size="sm" onClick={copyCommand}>
               <Copy className="mr-1.5 h-3.5 w-3.5" />
               Copy

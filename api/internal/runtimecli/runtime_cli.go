@@ -10,20 +10,54 @@ import (
 	"syscall"
 	"time"
 
+	"github.com/zgiai/luas/api/internal/domain"
 	"github.com/zgiai/luas/api/internal/modules/execution"
 )
 
 func Run(commandName, version string) int {
 	args := os.Args[1:]
-	if len(args) > 0 {
-		switch args[0] {
-		case "daemon":
-			args = args[1:]
-		case "help", "--help", "-h":
-			args = append([]string{"--help"}, args[1:]...)
-		}
+	if len(args) == 0 {
+		printUsage(commandName)
+		return 0
 	}
+	switch args[0] {
+	case "up":
+		return runUp(commandName, version, args[1:])
+	case "status":
+		return runStatus(commandName, args[1:])
+	case "doctor":
+		return runDoctor(commandName, args[1:])
+	case "configure":
+		return runConfigure(commandName, args[1:])
+	case "daemon":
+		return runDaemon(commandName, version, args[1:])
+	case "help", "--help", "-h":
+		printUsage(commandName)
+		return 0
+	default:
+		if strings.HasPrefix(args[0], "-") {
+			return runDaemon(commandName, version, args)
+		}
+		fmt.Fprintf(os.Stderr, "%s: unknown command %q\n", commandName, args[0])
+		printUsage(commandName)
+		return 2
+	}
+}
 
+func printUsage(commandName string) {
+	fmt.Printf(`%s local agent
+
+Usage:
+  %s up [--once]
+  %s status
+  %s doctor
+  %s configure [--api-base-url URL] [--token TOKEN] [--repo-root PATH]
+  %s daemon [advanced flags]
+
+`, commandName, commandName, commandName, commandName, commandName, commandName)
+}
+
+func runDaemon(commandName, version string, args []string) int {
 	flags := flag.NewFlagSet(commandName, flag.ContinueOnError)
 	apiBaseURL := flags.String("api-base-url", envOrDefault("CODINGCTO_API_BASE_URL", envOrDefault("SPECFORGE_API_BASE_URL", "http://localhost:2010/v1")), "CodingCTO API base URL, including /v1")
 	token := flags.String("token", envOrDefault("CODINGCTO_RUNTIME_TOKEN", envOrDefault("SPECFORGE_RUNTIME_TOKEN", execution.LocalRuntimeToken())), "Bearer token for runtime API access")
@@ -47,8 +81,9 @@ func Run(commandName, version string) int {
 		return 2
 	}
 
-	if strings.TrimSpace(*repoDir) == "" {
-		fmt.Fprintf(os.Stderr, "%s: --repo-dir, CODINGCTO_RUNTIME_REPO_DIR, or SPECFORGE_RUNTIME_REPO_DIR is required\n", commandName)
+	resolvedRepoDir, resolvedRepositoryID, err := daemonRepositoryDefaults(*repoDir, *repositoryID)
+	if err != nil {
+		fmt.Fprintf(os.Stderr, "%s: %v\n", commandName, err)
 		return 2
 	}
 	client := execution.NewRuntimeHTTPClient(execution.RuntimeHTTPClientConfig{
@@ -66,8 +101,9 @@ func Run(commandName, version string) int {
 	executor := executorFactory.MustCreate(*executorName)
 	capabilities := execution.DetectRuntimeCapabilities(execution.RuntimeCapabilityProbeConfig{
 		CodexPath:      *codexPath,
+		ClaudePath:     *claudePath,
 		KimiPath:       *kimiPath,
-		RepoDir:        *repoDir,
+		RepoDir:        resolvedRepoDir,
 		SandboxMode:    *sandbox,
 		ApprovalPolicy: *approval,
 	})
@@ -75,14 +111,15 @@ func Run(commandName, version string) int {
 		RuntimeID:       *runtimeID,
 		Executor:        *executorName,
 		Version:         version,
-		RepositoryID:    *repositoryID,
-		RepoDir:         *repoDir,
+		RepositoryID:    resolvedRepositoryID,
+		RepoDir:         resolvedRepoDir,
 		SessionID:       *runtimeID,
 		PollInterval:    *pollInterval,
 		Env:             runtimeEnv(),
 		AvailableCLIs:   capabilities.AvailableCLIs,
 		Sandbox:         capabilities.Sandbox,
 		SkillRoots:      capabilities.SkillRoots,
+		Repositories:    daemonRepositories(resolvedRepositoryID, resolvedRepoDir),
 		LocalSkillCount: capabilities.LocalSkillCount,
 		MaxConcurrency:  *maxConcurrency,
 	}, client, executor)
@@ -111,6 +148,34 @@ func Run(commandName, version string) int {
 		return 1
 	}
 	return 0
+}
+
+func daemonRepositories(repositoryID, repoDir string) []domain.SpecForgeRuntimeRepository {
+	repositoryID = strings.TrimSpace(repositoryID)
+	repoDir = strings.TrimSpace(repoDir)
+	if repositoryID == "" || repoDir == "" {
+		return nil
+	}
+	return []domain.SpecForgeRuntimeRepository{{RepositoryID: repositoryID, RepoDir: repoDir}}
+}
+
+func daemonRepositoryDefaults(repoDir, repositoryID string) (string, string, error) {
+	repoDir = strings.TrimSpace(repoDir)
+	repositoryID = strings.TrimSpace(repositoryID)
+	if repoDir == "" {
+		cwd, err := os.Getwd()
+		if err != nil || strings.TrimSpace(cwd) == "" {
+			return "", "", fmt.Errorf("find current directory: %w", err)
+		}
+		repoDir = gitWorktreeRoot(cwd)
+		if repoDir == "" {
+			return "", "", fmt.Errorf("run ccto from a Git repository, or pass --repo-dir for advanced daemon mode")
+		}
+	}
+	if repositoryID == "" {
+		repositoryID = inspectRuntimeRepository(repoDir).RepositoryID
+	}
+	return repoDir, repositoryID, nil
 }
 
 func envOrDefault(key, fallback string) string {

@@ -169,22 +169,23 @@ type SpecForgeCompiledPrompt struct {
 
 // SpecForgeRuntime tracks a local or hosted executor that can claim agent tasks.
 type SpecForgeRuntime struct {
-	ID               uint                        `json:"id"`
-	RuntimeID        string                      `json:"runtime_id"`
-	Executor         string                      `json:"executor"`
-	Status           string                      `json:"status"`
-	Hostname         string                      `json:"hostname,omitempty"`
-	Version          string                      `json:"version,omitempty"`
-	AvailableCLIs    []SpecForgeRuntimeCLI       `json:"available_clis,omitempty"`
-	Sandbox          *SpecForgeRuntimeSandbox    `json:"sandbox,omitempty"`
-	SkillRoots       []SpecForgeRuntimeSkillRoot `json:"skill_roots,omitempty"`
-	LocalSkillCount  int                         `json:"local_skill_count"`
-	MaxConcurrency   int                         `json:"max_concurrency,omitempty"`
-	RunningCount     int                         `json:"running_count,omitempty"`
-	CapabilitiesHash string                      `json:"capabilities_hash,omitempty"`
-	LastSeenAt       time.Time                   `json:"last_seen_at"`
-	CreatedAt        time.Time                   `json:"created_at"`
-	UpdatedAt        time.Time                   `json:"updated_at"`
+	ID               uint                         `json:"id"`
+	RuntimeID        string                       `json:"runtime_id"`
+	Executor         string                       `json:"executor"`
+	Status           string                       `json:"status"`
+	Hostname         string                       `json:"hostname,omitempty"`
+	Version          string                       `json:"version,omitempty"`
+	AvailableCLIs    []SpecForgeRuntimeCLI        `json:"available_clis,omitempty"`
+	Sandbox          *SpecForgeRuntimeSandbox     `json:"sandbox,omitempty"`
+	SkillRoots       []SpecForgeRuntimeSkillRoot  `json:"skill_roots,omitempty"`
+	Repositories     []SpecForgeRuntimeRepository `json:"repositories,omitempty"`
+	LocalSkillCount  int                          `json:"local_skill_count"`
+	MaxConcurrency   int                          `json:"max_concurrency,omitempty"`
+	RunningCount     int                          `json:"running_count,omitempty"`
+	CapabilitiesHash string                       `json:"capabilities_hash,omitempty"`
+	LastSeenAt       time.Time                    `json:"last_seen_at"`
+	CreatedAt        time.Time                    `json:"created_at"`
+	UpdatedAt        time.Time                    `json:"updated_at"`
 }
 
 type SpecForgeRuntimeCLI struct {
@@ -208,6 +209,14 @@ type SpecForgeRuntimeSkillRoot struct {
 	Provider string `json:"provider"`
 	Path     string `json:"path"`
 	Writable bool   `json:"writable"`
+}
+
+type SpecForgeRuntimeRepository struct {
+	RepositoryID string `json:"repository_id"`
+	RepoDir      string `json:"repo_dir"`
+	RemoteURL    string `json:"remote_url,omitempty"`
+	Branch       string `json:"branch,omitempty"`
+	Dirty        bool   `json:"dirty"`
 }
 
 // SpecForgeSkill is a reusable repository instruction injected into compiled prompts.

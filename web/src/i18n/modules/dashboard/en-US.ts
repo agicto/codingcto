@@ -347,7 +347,7 @@ const messages: DashboardMessages = {
       title: 'Start a local runtime',
       description: 'After registration, run a CodingCTO runtime on your machine. It detects local CLIs such as Codex, Claude Code, and Cursor, sends heartbeats to the platform, and claims work after an issue is dispatched.',
       commandTitle: 'Local start command',
-      commandDescription: 'Run this on the machine with your checkout. It defaults to the current project path; change --repo-dir when targeting another repository.',
+      commandDescription: 'Run this from the target repository checkout. ccto uses the current Git repository by default.',
       copy: 'Copy command',
       copied: 'Copied',
       commandLoading: 'Generating start command...',
@@ -399,7 +399,7 @@ const messages: DashboardMessages = {
       targetRepository: 'Target repository',
       noRepository: 'No repository selected',
       promptPlaceholder: 'For example: add one README line marking this as a CodingCTO direct task smoke test.',
-      promptHint: 'Start with a small, reversible task. The runtime executes inside the local repository passed through --repo-dir.',
+      promptHint: 'Start with a small, reversible task. The runtime executes inside the selected local repository.',
       blocked: {
         noRepository: 'Select a target repository first.',
         notDispatchable: 'This agent is detected by the runtime, but is not wired for platform dispatch yet.',
@@ -529,9 +529,9 @@ const messages: DashboardMessages = {
       ready: '{ready} / {total} PR nodes ready or merged',
     },
     readiness: {
-      online: 'A writable runtime with Codex CLI is online.',
+      online: 'A writable local agent is online for the selected CLI.',
       demo: 'Demo mode can simulate execution without a live runtime.',
-      startRuntime: 'Start a CodingCTO runtime with Codex CLI before dispatching this plan.',
+      startRuntime: 'Start ccto up with the selected CLI before dispatching this plan.',
     },
     status: {
       readyForPlanning: 'Ready for planning',
@@ -1080,7 +1080,7 @@ const messages: DashboardMessages = {
         'Run the real delivery path for this repository: create an Issue, generate a plan, call local Codex, and open a PR.',
       defaultIssueTitle: 'CodingCTO end-to-end trial: record one automated delivery',
       defaultIssueBody:
-        'Please add a .codingcto/e2e-smoke.md file that records this trial run completed GitHub Issue creation, plan generation, local Codex CLI execution, code commit, and PR creation. Keep the change very small and only submit this note file.',
+        'Please add a .codingcto/e2e-smoke.md file that records this trial run completed GitHub Issue creation, plan generation, local CLI execution, code commit, and PR creation. Keep the change very small and only submit this note file.',
       issueTitleLabel: 'Trial Issue title',
       issueBodyLabel: 'Trial Issue body',
       readiness: {
@@ -1129,7 +1129,7 @@ const messages: DashboardMessages = {
         },
         codexWaiting: {
           title: 'Waiting for Codex',
-          detail: 'Task dispatched. Waiting for the local runner to claim it and call Codex CLI.',
+          detail: 'Task dispatched. Waiting for the local agent to claim it and call the selected CLI.',
         },
         codexDone: {
           title: 'Codex completed',

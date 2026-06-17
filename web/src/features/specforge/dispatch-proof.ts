@@ -56,14 +56,14 @@ export function dispatchProofSeparationSummary({
       state: directProofState,
       evidence:
         directProofState === 'proven'
-          ? `${directSummary.outputEventCount} 个输出事件，已证明平台能命令本地 Codex。`
+          ? `${directSummary.outputEventCount} 个输出事件，已证明平台能命令本地 CLI。`
           : directProofState === 'partial'
             ? `${directTaskStatus ?? directSummary.proofLabel}，尚未形成完整执行结果。`
             : '尚未运行项目级只读验证。',
       nextAction:
         directProofState === 'proven'
           ? '继续用正式计划审批来创建 PR 节点任务。'
-          : '运行项目级只读验证，确认 runtime token、仓库路径和 Codex CLI 可用。',
+          : '运行项目级只读验证，确认 runtime token、仓库路径和所选 CLI 可用。',
     },
     {
       id: 'formal-dispatch',
@@ -79,7 +79,7 @@ export function dispatchProofSeparationSummary({
         formalDispatchState === 'proven'
           ? '查看任务事件、测试输出、PR 链接和 CI 状态。'
           : backendTaskCount > 0
-            ? '保持 ccto daemon 运行，等待 runtime claim。'
+            ? '保持 ccto up 运行，等待 runtime claim。'
             : hasFormalBlockers
               ? '先处理阻塞质量门，再回到计划页审批并启动选中的 PR 节点。'
             : '回到计划页审批并启动选中的 PR 节点。',
@@ -89,9 +89,9 @@ export function dispatchProofSeparationSummary({
   return {
     headline:
       formalDispatchState === 'proven'
-        ? '正式 PR 节点已经进入本地 Codex 执行链路。'
+        ? '正式 PR 节点已经进入本地 CLI 执行链路。'
         : hasFormalBlockers
-          ? '只读调度可以证明本地 Codex 链路；正式 PR 派发仍被质量门阻塞。'
+          ? '只读调度可以证明本地 CLI 链路；正式 PR 派发仍被质量门阻塞。'
         : directProofState === 'proven'
           ? '只读调度已证明，但正式 PR 节点还没有完成派发。'
           : '调度证明尚未完整。',

@@ -1,4 +1,5 @@
 BINARY_NAME=luas
+CCTO_BINARY=ccto
 SERVER_BINARY=server
 OUTPUT_DIR=bin
 GOBIN ?= $(shell go env GOPATH)/bin
@@ -51,7 +52,7 @@ else
 	PATH_SEP=/
 endif
 
-.PHONY: all build build-server build-all clean test test-kest cover lint lint-fix generate wire docs mock dev dev-pg run air server db-up db-down db-logs db-bootstrap-pg db-check migrate migrate-pg seed tidy update vuln setup install build-windows build-linux build-darwin build-all-platforms build-prod help
+.PHONY: all build build-ccto build-server build-all clean test test-kest cover lint lint-fix generate wire docs mock dev dev-pg run air server db-up db-down db-logs db-bootstrap-pg db-check migrate migrate-pg seed tidy update vuln setup install install-ccto build-windows build-linux build-darwin build-all-platforms build-prod help
 
 # Default target
 all: lint test build
@@ -65,13 +66,18 @@ build: wire $(OUTPUT_DIR)
 	@echo "Building $(BINARY_NAME)..."
 	go build $(LDFLAGS) -o $(OUTPUT_DIR)$(PATH_SEP)$(BINARY_NAME)$(BINARY_EXT) cmd/luas/main.go
 
+# Build local agent CLI binary for current platform
+build-ccto: $(OUTPUT_DIR)
+	@echo "Building $(CCTO_BINARY)..."
+	go build $(LDFLAGS) -o $(OUTPUT_DIR)$(PATH_SEP)$(CCTO_BINARY)$(BINARY_EXT) cmd/ccto/main.go
+
 # Build server binary for current platform
 build-server: $(OUTPUT_DIR)
 	@echo "Building $(SERVER_BINARY)..."
 	go build $(LDFLAGS) -o $(OUTPUT_DIR)$(PATH_SEP)$(SERVER_BINARY)$(BINARY_EXT) cmd/server/main.go
 
 # Build both binaries
-build-all: build build-server
+build-all: build build-ccto build-server
 	@echo "Build completed for current platform"
 
 # Build Windows binaries
@@ -117,6 +123,11 @@ else
 	go install $(LDFLAGS) ./cmd/luas
 endif
 	@echo "✅ $(BINARY_NAME) installed successfully"
+
+install-ccto:
+	@echo "Installing $(CCTO_BINARY)..."
+	go install $(LDFLAGS) ./cmd/ccto
+	@echo "✅ $(CCTO_BINARY) installed successfully"
 
 # Clean build artifacts
 clean:
@@ -297,6 +308,7 @@ else
 endif
 	@echo "✅ Dependencies downloaded"
 	@echo "Run 'make install' to install luas CLI globally"
+	@echo "Run 'make install-ccto' to install the ccto local agent globally"
 
 # Show help
 help:
@@ -304,8 +316,9 @@ help:
 	@echo ""
 	@echo "Build Commands:"
 	@echo "  make build              - Build CLI binary for current platform"
+	@echo "  make build-ccto         - Build ccto local agent binary for current platform"
 	@echo "  make build-server       - Build server binary for current platform"
-	@echo "  make build-all          - Build both CLI and server binaries"
+	@echo "  make build-all          - Build CLI, ccto local agent, and server binaries"
 	@echo "  make build-windows      - Build Windows binaries (.exe)"
 	@echo "  make build-linux        - Build Linux binaries"
 	@echo "  make build-darwin       - Build macOS binaries (amd64 + arm64)"
@@ -344,6 +357,7 @@ help:
 	@echo ""
 	@echo "Maintenance:"
 	@echo "  make install            - Install CLI to system PATH"
+	@echo "  make install-ccto       - Install ccto local agent to system PATH"
 	@echo "  make clean              - Clean build artifacts"
 	@echo "  make tidy               - Tidy dependencies"
 	@echo "  make update             - Update dependencies"

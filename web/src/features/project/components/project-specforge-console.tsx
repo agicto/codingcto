@@ -75,7 +75,7 @@ import {
   specForgeService,
   type GitHubRepositoryReadinessCheckDTO,
 } from '@/features/specforge/services/specforge-service';
-import { hasFreshCodexDispatchRuntime } from '@/features/specforge/runtime-dispatch-readiness';
+import { hasFreshDispatchRuntime } from '@/features/specforge/runtime-dispatch-readiness';
 import { cn } from '@/utils';
 
 export function ProjectSpecForgeConsole() {
@@ -205,7 +205,9 @@ function ProjectMvpBoard({
   const runtimesQuery = useSpecForgeRuntimes({ status: 'online', limit: 20 });
   const architectureQuery = useRepoArchitectureStatus(repoId);
   const readinessQuery = useGitHubRepositoryReadiness(repoId || undefined);
-  const codexReady = hasFreshCodexDispatchRuntime(runtimesQuery.data?.runtimes, runtimeNow);
+  const localAgentReady = ['codex_cli', 'kimi_cli', 'claude_code_cli'].some(executor =>
+    hasFreshDispatchRuntime(runtimesQuery.data?.runtimes, runtimeNow, executor, repoId)
+  );
   const readiness = readinessQuery.data;
   const githubReady = Boolean(readiness?.ready);
   const snapshot = architectureQuery.data?.snapshot ?? repository?.architecture_snapshot;
@@ -221,13 +223,15 @@ function ProjectMvpBoard({
       column: 'setup',
       title: '项目准备',
       summary: repoReady ? '主仓库已绑定，可以生成计划。' : '先绑定一个 primary repository。',
-      status: repoReady && codexReady ? '可交付' : '需检查',
-      tone: repoReady && codexReady ? 'ready' : 'blocked',
+      status: repoReady && localAgentReady ? '可交付' : '需检查',
+      tone: repoReady && localAgentReady ? 'ready' : 'blocked',
       details: [
         `项目：${projectName}`,
         repoReady ? `目标仓库：${repoId}` : '还没有选择主仓库',
         wikiReady ? '仓库上下文已可用，可用于计划生成。' : '仓库上下文还不完整，建议先生成或更新。',
-        codexReady ? 'Codex runtime 已在线。' : 'Codex runtime 未在线；可以先生成计划，执行前再处理。',
+        localAgentReady
+          ? '本地 ccto agent 已在线并匹配目标仓库。'
+          : '本地 ccto agent 未就绪；可以先生成计划，执行前再处理。',
         githubReady ? 'GitHub readiness 检查通过。' : 'GitHub readiness 还需要检查。',
       ],
       actionLabel: repoReady ? '新建需求' : '检查项目',
@@ -310,7 +314,7 @@ function ProjectMvpBoard({
         <div className="mt-4 grid gap-2 md:grid-cols-4">
           <MvpStatusMetric label="主仓库" value={repoId || '未绑定'} state={repoReady ? 'ready' : 'blocked'} />
           <MvpStatusMetric label="仓库上下文" value={wikiReady ? '可用' : '待生成'} state={wikiReady ? 'ready' : 'waiting'} />
-          <MvpStatusMetric label="运行器" value={codexReady ? '在线' : '未在线'} state={codexReady ? 'ready' : 'blocked'} />
+          <MvpStatusMetric label="运行器" value={localAgentReady ? '在线' : '未在线'} state={localAgentReady ? 'ready' : 'blocked'} />
           <MvpStatusMetric label="GitHub" value={githubReady ? 'Ready' : '需检查'} state={githubReady ? 'ready' : 'waiting'} />
         </div>
         <div className="mt-3 rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 text-sm leading-6 text-text-muted">

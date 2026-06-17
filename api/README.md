@@ -103,40 +103,47 @@ The CLI binary path remains `cmd/luas` until a dedicated compatibility migration
 
 ### Run a Local AI CLI Runtime
 
-The CodingCTO execution module can be driven by a local runtime process. The runtime talks to the API over `/v1`, claims dispatched tasks for its executor, runs the selected AI CLI in a local repository directory, records task events, and submits the final result. Initial executor targets include `codex_cli` and `kimi_cli`.
+The normal local path is `ccto up`. It detects installed coding CLIs, discovers GitHub repositories from the current directory and configured roots, heartbeats the available executor runtimes, and claims tasks that match the selected executor and repository after plan approval.
 
 ```bash
-go run ./cmd/ccto daemon \
-  --api-base-url http://localhost:2010/v1 \
-  --token "${CODINGCTO_RUNTIME_TOKEN:-local-runtime-token}" \
-  --runtime-id local-codex-1 \
-  --repo-dir /path/to/local/repo \
-  --repository-id github_owner__repo \
+make install-ccto
+cd /path/to/local/repo
+ccto up
+```
+
+For development without installing the binary:
+
+```bash
+cd api
+make build-ccto
+cd /path/to/local/repo
+/path/to/codingcto/api/bin/ccto status
+/path/to/codingcto/api/bin/ccto doctor
+/path/to/codingcto/api/bin/ccto up
+```
+
+Local defaults:
+
+- Config file: `~/.codingcto/config.json`.
+- API URL: `http://localhost:2010/v1`.
+- Runtime token: `local-runtime-token`, unless `CODINGCTO_RUNTIME_TOKEN` or config overrides it.
+- Supported executor CLIs include Codex, Claude Code, and Kimi when installed on the machine.
+
+Advanced/debug mode is still available:
+
+```bash
+ccto daemon \
   --executor codex_cli
 ```
 
-```bash
-go run ./cmd/ccto daemon \
-  --api-base-url http://localhost:2010/v1 \
-  --token "${CODINGCTO_RUNTIME_TOKEN:-local-runtime-token}" \
-  --runtime-id local-kimi-1 \
-  --repo-dir /path/to/local/repo \
-  --repository-id github_owner__repo \
-  --executor kimi_cli \
-  --kimi-path kimi
-```
+`daemon` also defaults to the current Git repository. Useful advanced flags include `--once`, `--poll-interval`, `--executor`, `--repo-dir` for running outside the target checkout, `--repository-id` for an explicit guard, `--codex-path`, `--claude-path`, `--kimi-path`, `--sandbox`, and `--approval-policy`. Environment equivalents are available with `CODINGCTO_API_BASE_URL`, `CODINGCTO_RUNTIME_TOKEN`, `CODINGCTO_RUNTIME_ID`, `CODINGCTO_RUNTIME_REPO_DIR`, `CODINGCTO_RUNTIME_REPOSITORY_ID`, `CODINGCTO_RUNTIME_EXECUTOR`, `CODEX_CLI_PATH`, `CLAUDE_CODE_CLI_PATH`, `KIMI_CLI_PATH`, `CODINGCTO_CODEX_SANDBOX`, `CODINGCTO_CODEX_APPROVAL_POLICY`, and `CODINGCTO_CODEX_TIMEOUT`. Legacy `SPECFORGE_*` runtime environment variables are still accepted for local compatibility.
 
-Useful flags:
+Local operator checklist:
 
-- `--once`: perform one heartbeat/claim/execute cycle and exit.
-- `--poll-interval 10s`: set daemon polling cadence.
-- `--executor codex_cli`: select the executor target (`codex_cli`, `kimi_cli`, or `claude_code_cli`).
-- `--codex-path codex`: select the Codex CLI binary.
-- `--kimi-path kimi`: select the Kimi CLI binary.
-- `--sandbox workspace-write`: pass the Codex sandbox mode.
-- `--approval-policy never`: keep execution non-interactive for automation.
-
-Environment equivalents are available with `CODINGCTO_API_BASE_URL`, `CODINGCTO_RUNTIME_TOKEN`, `CODINGCTO_RUNTIME_ID`, `CODINGCTO_RUNTIME_REPO_DIR`, `CODINGCTO_RUNTIME_REPOSITORY_ID`, `CODINGCTO_RUNTIME_EXECUTOR`, `CODEX_CLI_PATH`, `KIMI_CLI_PATH`, `CODINGCTO_CODEX_SANDBOX`, `CODINGCTO_CODEX_APPROVAL_POLICY`, and `CODINGCTO_CODEX_TIMEOUT`. Legacy `SPECFORGE_*` runtime environment variables are still accepted for local compatibility.
+1. Start the API on `http://localhost:2010`.
+2. Start the web console on `http://localhost:2020`.
+3. Run `ccto up` from the target repository.
+4. Generate and review the Web plan, choose the detected executor CLI, then start execution.
 
 ### Configure Expert Planning
 
