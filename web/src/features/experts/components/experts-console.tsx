@@ -1,6 +1,7 @@
 'use client';
 
 import { useMemo, useState, type ReactNode } from 'react';
+import { useQueries } from '@tanstack/react-query';
 import {
   BookOpen,
   Brain,
@@ -24,7 +25,7 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { useCodingCTOExperts } from '@/features/experts/hooks/use-experts';
+import { expertKeys, useCodingCTOExperts } from '@/features/experts/hooks/use-experts';
 import type {
   ExpertSkillInput,
   ExpertImplementationPlanResponse,
@@ -69,7 +70,8 @@ const recommendedExpertSkills: ExpertSkillOption[] = [
     id: 'recommended-architecture-impact',
     source: 'recommended',
     name: 'Architecture Impact Expert',
-    description: 'Constrains module boundaries, API contracts, data flow, compatibility, and risks.',
+    description:
+      'Constrains module boundaries, API contracts, data flow, compatibility, and risks.',
     content: [
       'Use this exact skill name in expert_skills: Architecture Impact Expert.',
       'Identify affected frontend features, API modules, data contracts, persistence changes, and integration boundaries.',
@@ -93,7 +95,8 @@ const recommendedExpertSkills: ExpertSkillOption[] = [
     id: 'recommended-agent-handoff',
     source: 'recommended',
     name: 'Coding Agent Handoff Expert',
-    description: 'Makes the plan executable by a coding agent with files, commands, and review gates.',
+    description:
+      'Makes the plan executable by a coding agent with files, commands, and review gates.',
     content: [
       'Use this exact skill name in expert_skills: Coding Agent Handoff Expert.',
       'For each milestone, name likely files, expected edits, validation commands, and the review checklist a coding agent should follow.',
@@ -116,14 +119,50 @@ export function ExpertsConsole() {
   const effectiveRepoId =
     selectedRepoId && repositories.some(repository => repository.repository_id === selectedRepoId)
       ? selectedRepoId
-      : repositories[0]?.repository_id ?? '';
+      : (repositories[0]?.repository_id ?? '');
   const selectedRepository = repositories.find(
     repository => repository.repository_id === effectiveRepoId
   );
   const codingExpertsQuery = useCodingCTOExperts(true);
-  const codingExpertSkills = useMemo<ExpertSkillOption[]>(
+  const codingExperts = useMemo(
+    () => codingExpertsQuery.data?.experts ?? [],
+    [codingExpertsQuery.data?.experts]
+  );
+  const codingExpertSkillQueries = useQueries({
+    queries: codingExperts.map(expert => ({
+      queryKey: expertKeys.skills(expert.id),
+      queryFn: () => expertsService.listExpertSkills(expert.id),
+      enabled: Boolean(expert.id),
+    })),
+  });
+  const codingExpertDefaultSkills = useMemo<ExpertSkillOption[]>(() => {
+    const options: ExpertSkillOption[] = [];
+    codingExpertSkillQueries.forEach((query, index) => {
+      const expert = codingExperts[index];
+      if (!expert || !query.data?.skills) {
+        return;
+      }
+      for (const skill of query.data.skills) {
+        const content = skill.current_version?.content?.trim();
+        if (!skill.active || !content || !skillTargets(skill, 'planning')) {
+          continue;
+        }
+        options.push({
+          id: `expert-skill-${skill.id}`,
+          source: 'codingcto',
+          expert_id: expert.id,
+          name: skill.name,
+          description: skill.description || expert.description,
+          content,
+          target_agents: skill.target_agents?.length ? skill.target_agents : ['planning'],
+        });
+      }
+    });
+    return options;
+  }, [codingExperts, codingExpertSkillQueries]);
+  const codingExpertProfileSkills = useMemo<ExpertSkillOption[]>(
     () =>
-      (codingExpertsQuery.data?.experts ?? []).map(expert => ({
+      codingExperts.map(expert => ({
         id: `expert-${expert.id}`,
         source: 'codingcto',
         expert_id: expert.id,
@@ -138,7 +177,7 @@ export function ExpertsConsole() {
           .join('\n'),
         target_agents: ['planning'],
       })),
-    [codingExpertsQuery.data?.experts]
+    [codingExperts]
   );
   const skillsQuery = useSpecForgeSkills(effectiveRepoId);
   const skills = useMemo(() => skillsQuery.data?.skills ?? [], [skillsQuery.data?.skills]);
@@ -157,25 +196,55 @@ export function ExpertsConsole() {
         })),
     [skills]
   );
-  const usingCodingCTOExperts = !codingExpertsQuery.isLoading && codingExpertSkills.length > 0;
+  const loadingCodingExpertSkills =
+    codingExperts.length > 0 &&
+    codingExpertSkillQueries.some(query => query.isLoading || query.isFetching);
+  const usingCodingCTOExpertSkills =
+    !codingExpertsQuery.isLoading &&
+    !loadingCodingExpertSkills &&
+    codingExpertDefaultSkills.length > 0;
+  const usingCodingCTOExpertProfiles =
+    !codingExpertsQuery.isLoading &&
+    !loadingCodingExpertSkills &&
+    !usingCodingCTOExpertSkills &&
+    codingExpertProfileSkills.length > 0;
   const usingRecommendedSkills =
-    !usingCodingCTOExperts && !skillsQuery.isLoading && projectPlanningSkills.length === 0;
+    !usingCodingCTOExpertSkills &&
+    !usingCodingCTOExpertProfiles &&
+    !skillsQuery.isLoading &&
+    projectPlanningSkills.length === 0;
   const availableSkills = useMemo(() => {
-    if (codingExpertsQuery.isLoading || skillsQuery.isLoading) {
+    if (codingExpertsQuery.isLoading || loadingCodingExpertSkills) {
       return [];
     }
-    if (usingCodingCTOExperts) {
-      return codingExpertSkills;
+    if (usingCodingCTOExpertSkills) {
+      return codingExpertDefaultSkills;
+    }
+    if (usingCodingCTOExpertProfiles) {
+      return codingExpertProfileSkills;
+    }
+    if (skillsQuery.isLoading) {
+      return [];
     }
     return usingRecommendedSkills ? recommendedExpertSkills : projectPlanningSkills;
   }, [
-    codingExpertSkills,
+    codingExpertDefaultSkills,
+    codingExpertProfileSkills,
     codingExpertsQuery.isLoading,
+    loadingCodingExpertSkills,
     projectPlanningSkills,
     skillsQuery.isLoading,
-    usingCodingCTOExperts,
+    usingCodingCTOExpertProfiles,
+    usingCodingCTOExpertSkills,
     usingRecommendedSkills,
   ]);
+  const skillSourceLabel = usingCodingCTOExpertSkills
+    ? 'expert skills'
+    : usingCodingCTOExpertProfiles
+      ? 'expert profiles'
+      : usingRecommendedSkills
+        ? 'recommended'
+        : 'planning';
   const defaultSelectedSkillIds = useMemo(
     () => availableSkills.map(skill => String(skill.id)).slice(0, 8),
     [availableSkills]
@@ -204,7 +273,8 @@ export function ExpertsConsole() {
   );
   const selectedExpertIds = selectedSkills
     .map(skill => skill.expert_id)
-    .filter((id): id is number => typeof id === 'number');
+    .filter((id): id is number => typeof id === 'number')
+    .filter((id, index, values) => values.indexOf(id) === index);
 
   async function runExpertPlan() {
     const trimmedIdea = idea.trim();
@@ -376,26 +446,37 @@ export function ExpertsConsole() {
                 <div className="min-w-0">
                   <h2 className="text-sm font-semibold text-text-main">Expert skills</h2>
                   <p className="mt-1 text-xs text-text-muted">
-                    {skillsQuery.isLoading
+                    {codingExpertsQuery.isLoading ||
+                    loadingCodingExpertSkills ||
+                    skillsQuery.isLoading
                       ? '加载中...'
                       : `${selectedSkills.length}/${availableSkills.length} 已选`}
                   </p>
                 </div>
                 <Badge variant="outline" className="text-text-muted">
-                  {usingRecommendedSkills ? 'recommended' : 'planning'}
+                  {skillSourceLabel}
                 </Badge>
               </div>
 
               <div className="mt-3 grid gap-2">
-                {skillsQuery.isLoading ? (
+                {codingExpertsQuery.isLoading ||
+                loadingCodingExpertSkills ||
+                skillsQuery.isLoading ? (
                   <div className="flex items-center gap-2 text-xs text-text-muted">
                     <Loader2 className="h-3.5 w-3.5 animate-spin" />
                     检查 skill...
                   </div>
                 ) : null}
+                {usingCodingCTOExpertProfiles ? (
+                  <div className="rounded-md bg-bg-subtle p-3 text-xs leading-5 text-text-muted">
+                    默认专家 skill 暂不可用，先使用专家 profile 生成方案；后端补齐默认 skill
+                    后会自动优先使用。
+                  </div>
+                ) : null}
                 {usingRecommendedSkills ? (
                   <div className="rounded-md bg-bg-subtle p-3 text-xs leading-5 text-text-muted">
-                    当前仓库没有 active planning skill，先使用推荐专家 skill；项目 skill 保存后会优先使用项目规则。
+                    当前仓库没有 active planning skill，先使用推荐专家 skill；项目 skill
+                    保存后会优先使用项目规则。
                   </div>
                 ) : null}
                 {availableSkills.map(skill => (
@@ -529,10 +610,7 @@ function MarkdownDocument({ markdown }: { markdown: string }) {
               {block.items.map((item, itemIndex) => (
                 <li
                   key={`${item.text}-${itemIndex}`}
-                  className={cn(
-                    'flex items-start gap-2 text-text-muted',
-                    item.depth > 0 && 'ml-5'
-                  )}
+                  className={cn('flex items-start gap-2 text-text-muted', item.depth > 0 && 'ml-5')}
                 >
                   <span className="mt-3 h-1 w-1 shrink-0 rounded-full bg-text-muted" />
                   <span className="min-w-0">{renderInlineMarkdown(item.text)}</span>
@@ -615,7 +693,10 @@ function PlanSummary({ result }: { result: ExpertImplementationPlanResponse }) {
       </div>
       <div className="grid grid-cols-4 gap-2 lg:grid-cols-2">
         {metrics.map(metric => (
-          <div key={metric.label} className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+          <div
+            key={metric.label}
+            className="rounded-md border border-border-subtle bg-bg-subtle p-3"
+          >
             <div className="text-xs text-text-muted">{metric.label}</div>
             <div className="mt-1 text-lg font-semibold text-text-main">{metric.value}</div>
           </div>
@@ -642,9 +723,7 @@ function StreamingPlanState({ status, bytes }: { status: string; bytes: number }
             style={{ width: `${Math.min(96, Math.max(12, bytes / 80))}%` }}
           />
         </div>
-        <div className="mt-2 text-xs text-text-muted">
-          已接收 {bytes.toLocaleString()} bytes
-        </div>
+        <div className="mt-2 text-xs text-text-muted">已接收 {bytes.toLocaleString()} bytes</div>
       </div>
     </div>
   );
