@@ -314,25 +314,432 @@ func (s *service) ensureDefaultExperts(ctx context.Context) error {
 	if err != nil {
 		return err
 	}
-	if len(experts) > 0 {
-		return nil
+
+	expertsByKey := map[string]*domain.CodingCTOExpert{}
+	for _, expert := range experts {
+		if expert == nil {
+			continue
+		}
+		expertsByKey[expert.Key] = expert
 	}
-	for _, seed := range defaultExperts() {
-		expert := seed
-		if err := s.repo.UpsertExpert(ctx, &expert); err != nil {
+
+	for _, seed := range defaultExpertSeeds() {
+		expert := expertsByKey[seed.Expert.Key]
+		if expert == nil {
+			expert = &domain.CodingCTOExpert{}
+		}
+		if expert.ID == 0 || shouldUpgradeDefaultExpert(expert, seed) {
+			next := seed.Expert
+			if err := s.repo.UpsertExpert(ctx, &next); err != nil {
+				return err
+			}
+			expert = &next
+		}
+		if err := s.ensureDefaultExpertSkills(ctx, expert, seed.Skills); err != nil {
 			return err
 		}
 	}
 	return nil
 }
 
-func defaultExperts() []domain.CodingCTOExpert {
-	return []domain.CodingCTOExpert{
-		{Key: "product-requirements", Name: "Product Requirements Expert", Role: "product", Description: "Clarifies users, scope, acceptance criteria, non-goals, and open questions.", SystemPrompt: "Turn product ideas into concrete PRD constraints for reviewable implementation plans.", DefaultProvider: "internal", Active: true, SortOrder: 10},
-		{Key: "architecture-impact", Name: "Architecture Impact Expert", Role: "architecture", Description: "Constrain module boundaries, API contracts, data flow, compatibility, and risks.", SystemPrompt: "Identify affected modules, API boundaries, data flow, risks, and migration constraints.", DefaultProvider: "internal", Active: true, SortOrder: 20},
-		{Key: "qa-verification", Name: "QA Verification Expert", Role: "qa", Description: "Defines tests, quality gates, acceptance checks, and failure modes.", SystemPrompt: "Attach verification, test commands, and failure recovery to each implementation milestone.", DefaultProvider: "internal", Active: true, SortOrder: 30},
-		{Key: "coding-agent-handoff", Name: "Coding Agent Handoff Expert", Role: "handoff", Description: "Makes the plan executable by a coding agent.", SystemPrompt: "Convert expert conclusions into PR-sized tasks with files, commands, non-goals, and review gates.", DefaultProvider: "internal", Active: true, SortOrder: 40},
+func (s *service) ensureDefaultExpertSkills(ctx context.Context, expert *domain.CodingCTOExpert, seeds []defaultExpertSkillSeed) error {
+	if expert == nil || expert.ID == 0 {
+		return domain.ErrInvalidInput
 	}
+	skills, err := s.repo.ListSkillsByExpertID(ctx, expert.ID)
+	if err != nil {
+		return fmt.Errorf("list default expert skills: %w", err)
+	}
+	skillsByKey := map[string]*domain.CodingCTOExpertSkill{}
+	for _, skill := range skills {
+		if skill == nil {
+			continue
+		}
+		skillsByKey[defaultExpertSkillKey(skill.Name, skill.RepositoryID)] = skill
+	}
+	for _, seed := range seeds {
+		existing := skillsByKey[defaultExpertSkillKey(seed.Name, "")]
+		if existing != nil && !isSystemDefaultSkill(existing) {
+			continue
+		}
+		content := strings.TrimSpace(seed.Content)
+		if existing != nil && existing.CurrentVersion != nil && existing.CurrentVersion.ContentHash == contentHash(content) {
+			continue
+		}
+		skill := &domain.CodingCTOExpertSkill{
+			ExpertID:     expert.ID,
+			Name:         strings.TrimSpace(seed.Name),
+			Description:  strings.TrimSpace(seed.Description),
+			Active:       true,
+			TargetAgents: normalizeTargets(seed.TargetAgents),
+			CreatedBy:    0,
+		}
+		version := &domain.CodingCTOExpertSkillVersion{
+			Content:       content,
+			ContentHash:   contentHash(content),
+			ChangeSummary: defaultString(seed.ChangeSummary, "Initial default expert skill."),
+			Source:        defaultExpertSkillSource,
+			CreatedBy:     0,
+		}
+		if err := s.repo.UpsertSkillWithVersion(ctx, skill, version, true); err != nil {
+			return fmt.Errorf("upsert default expert skill %q: %w", seed.Name, err)
+		}
+	}
+	return nil
+}
+
+func shouldUpgradeDefaultExpert(expert *domain.CodingCTOExpert, seed defaultExpertSeed) bool {
+	if expert == nil || expert.CreatedBy != 0 {
+		return false
+	}
+	return strings.TrimSpace(expert.Description) == seed.LegacyDescription &&
+		strings.TrimSpace(expert.SystemPrompt) == seed.LegacySystemPrompt
+}
+
+func isSystemDefaultSkill(skill *domain.CodingCTOExpertSkill) bool {
+	if skill == nil || skill.CreatedBy != 0 {
+		return false
+	}
+	return skill.CurrentVersion == nil || skill.CurrentVersion.Source == defaultExpertSkillSource
+}
+
+func defaultExpertSkillKey(name, repositoryID string) string {
+	return strings.ToLower(strings.TrimSpace(name)) + ":" + strings.TrimSpace(repositoryID)
+}
+
+type defaultExpertSeed struct {
+	Expert             domain.CodingCTOExpert
+	LegacyDescription  string
+	LegacySystemPrompt string
+	Skills             []defaultExpertSkillSeed
+}
+
+type defaultExpertSkillSeed struct {
+	Name          string
+	Description   string
+	Content       string
+	ChangeSummary string
+	TargetAgents  []string
+}
+
+const defaultExpertSkillSource = "system"
+
+var defaultExpertPlanningTargets = []string{"planning"}
+
+func defaultExpertSeeds() []defaultExpertSeed {
+	return []defaultExpertSeed{
+		{
+			Expert: domain.CodingCTOExpert{
+				Key:             "product-requirements",
+				Name:            "Product Requirements Expert",
+				Role:            "product",
+				Description:     "Turns product ideas into bounded requirements, acceptance criteria, non-goals, and reviewable product slices.",
+				SystemPrompt:    defaultProductRequirementsPrompt(),
+				DefaultProvider: "internal",
+				Active:          true,
+				SortOrder:       10,
+			},
+			LegacyDescription:  "Clarifies users, scope, acceptance criteria, non-goals, and open questions.",
+			LegacySystemPrompt: "Turn product ideas into concrete PRD constraints for reviewable implementation plans.",
+			Skills: []defaultExpertSkillSeed{
+				{
+					Name:          "Requirement Boundary Contract",
+					Description:   "Defines users, jobs, goals, in-scope behavior, out-of-scope behavior, and unresolved product questions before implementation planning.",
+					Content:       defaultRequirementBoundarySkill(),
+					TargetAgents:  defaultExpertPlanningTargets,
+					ChangeSummary: "Seed default requirement boundary skill.",
+				},
+				{
+					Name:          "Acceptance Criteria Matrix",
+					Description:   "Converts requirements into observable acceptance criteria with user-visible outcomes, data expectations, and review signals.",
+					Content:       defaultAcceptanceCriteriaSkill(),
+					TargetAgents:  defaultExpertPlanningTargets,
+					ChangeSummary: "Seed default acceptance criteria skill.",
+				},
+				{
+					Name:          "Reviewable Product Slicing",
+					Description:   "Splits product scope into PR-sized milestones that preserve user value without mixing unrelated behavior.",
+					Content:       defaultProductSlicingSkill(),
+					TargetAgents:  defaultExpertPlanningTargets,
+					ChangeSummary: "Seed default product slicing skill.",
+				},
+			},
+		},
+		{
+			Expert: domain.CodingCTOExpert{
+				Key:             "architecture-impact",
+				Name:            "Architecture Impact Expert",
+				Role:            "architecture",
+				Description:     "Maps the technical change surface across modules, API contracts, data flow, integration boundaries, and rollout risks.",
+				SystemPrompt:    defaultArchitectureImpactPrompt(),
+				DefaultProvider: "internal",
+				Active:          true,
+				SortOrder:       20,
+			},
+			LegacyDescription:  "Constrain module boundaries, API contracts, data flow, compatibility, and risks.",
+			LegacySystemPrompt: "Identify affected modules, API boundaries, data flow, risks, and migration constraints.",
+			Skills: []defaultExpertSkillSeed{
+				{
+					Name:          "Change Surface Mapping",
+					Description:   "Identifies affected modules, ownership boundaries, dependencies, entrypoints, and files that need evidence before edits.",
+					Content:       defaultChangeSurfaceSkill(),
+					TargetAgents:  defaultExpertPlanningTargets,
+					ChangeSummary: "Seed default change surface skill.",
+				},
+				{
+					Name:          "API And Data Contract Review",
+					Description:   "Reviews request and response contracts, domain entities, persistence changes, migrations, compatibility, and client impact.",
+					Content:       defaultAPIDataContractSkill(),
+					TargetAgents:  defaultExpertPlanningTargets,
+					ChangeSummary: "Seed default API and data contract skill.",
+				},
+				{
+					Name:          "Migration And Rollout Risk",
+					Description:   "Calls out rollout, migration, backfill, fallback, and compatibility risks before PR work starts.",
+					Content:       defaultMigrationRolloutSkill(),
+					TargetAgents:  defaultExpertPlanningTargets,
+					ChangeSummary: "Seed default migration and rollout risk skill.",
+				},
+			},
+		},
+		{
+			Expert: domain.CodingCTOExpert{
+				Key:             "qa-verification",
+				Name:            "QA Verification Expert",
+				Role:            "qa",
+				Description:     "Builds verification strategy with automated tests, manual checks, CI gates, failure modes, and acceptance evidence.",
+				SystemPrompt:    defaultQAVerificationPrompt(),
+				DefaultProvider: "internal",
+				Active:          true,
+				SortOrder:       30,
+			},
+			LegacyDescription:  "Defines tests, quality gates, acceptance checks, and failure modes.",
+			LegacySystemPrompt: "Attach verification, test commands, and failure recovery to each implementation milestone.",
+			Skills: []defaultExpertSkillSeed{
+				{
+					Name:          "Verification Matrix",
+					Description:   "Maps every behavior change to test type, command, expected signal, and acceptance evidence.",
+					Content:       defaultVerificationMatrixSkill(),
+					TargetAgents:  defaultExpertPlanningTargets,
+					ChangeSummary: "Seed default verification matrix skill.",
+				},
+				{
+					Name:          "Failure Mode Coverage",
+					Description:   "Identifies likely failure modes and requires explicit handling, regression tests, or escalation notes.",
+					Content:       defaultFailureModeSkill(),
+					TargetAgents:  defaultExpertPlanningTargets,
+					ChangeSummary: "Seed default failure mode coverage skill.",
+				},
+				{
+					Name:          "CI And Manual Acceptance Gate",
+					Description:   "Defines the smallest reliable CI, lint, type-check, browser, and manual checks needed before review.",
+					Content:       defaultCIGateSkill(),
+					TargetAgents:  defaultExpertPlanningTargets,
+					ChangeSummary: "Seed default CI and manual acceptance gate skill.",
+				},
+			},
+		},
+		{
+			Expert: domain.CodingCTOExpert{
+				Key:             "coding-agent-handoff",
+				Name:            "Coding Agent Handoff Expert",
+				Role:            "handoff",
+				Description:     "Converts approved planning decisions into implementation-ready PR tasks with file scope, order, commands, and review package expectations.",
+				SystemPrompt:    defaultCodingAgentHandoffPrompt(),
+				DefaultProvider: "internal",
+				Active:          true,
+				SortOrder:       40,
+			},
+			LegacyDescription:  "Makes the plan executable by a coding agent.",
+			LegacySystemPrompt: "Convert expert conclusions into PR-sized tasks with files, commands, non-goals, and review gates.",
+			Skills: []defaultExpertSkillSeed{
+				{
+					Name:          "Implementation Handoff Contract",
+					Description:   "Turns plan decisions into concrete implementation instructions with inputs, outputs, invariants, and stop conditions.",
+					Content:       defaultImplementationHandoffSkill(),
+					TargetAgents:  defaultExpertPlanningTargets,
+					ChangeSummary: "Seed default implementation handoff skill.",
+				},
+				{
+					Name:          "File Scope And Sequencing",
+					Description:   "Constrains likely file edits, PR order, dependencies, and boundaries so agents avoid broad unrelated refactors.",
+					Content:       defaultFileScopeSequencingSkill(),
+					TargetAgents:  defaultExpertPlanningTargets,
+					ChangeSummary: "Seed default file scope and sequencing skill.",
+				},
+				{
+					Name:          "PR Review Package",
+					Description:   "Requires implementation summaries, evidence refs, tests run, risks, and reviewer-facing notes for each PR.",
+					Content:       defaultPRReviewPackageSkill(),
+					TargetAgents:  defaultExpertPlanningTargets,
+					ChangeSummary: "Seed default PR review package skill.",
+				},
+			},
+		},
+	}
+}
+
+func defaultProductRequirementsPrompt() string {
+	return defaultExpertText(
+		"You are the Product Requirements Expert for CodingCTO planning.",
+		"Your job is to turn a rough product idea into clear product intent before engineering work is planned.",
+		"Focus on users, jobs to be done, business outcome, in-scope behavior, explicit non-goals, acceptance criteria, and unresolved questions.",
+		"Prefer small reviewable product slices over broad phases. A good slice should be understandable in one PR and testable by a reviewer.",
+		"Do not invent market facts, user research, API behavior, or hidden requirements. If evidence is missing, mark it as an open question or assumption.",
+		"Output product constraints that architecture, QA, and coding-agent handoff can consume without reinterpreting the original idea.",
+	)
+}
+
+func defaultArchitectureImpactPrompt() string {
+	return defaultExpertText(
+		"You are the Architecture Impact Expert for CodingCTO planning.",
+		"Your job is to identify the technical change surface before implementation begins.",
+		"Map affected frontend features, backend modules, APIs, domain entities, persistence changes, data flow, integrations, migrations, and compatibility boundaries.",
+		"Prefer narrow module-local changes and explicit contracts. Highlight cross-boundary edits, shared abstractions, security-sensitive paths, and migration risk.",
+		"Do not prescribe broad rewrites unless the requirement cannot be met safely without them. Escalate unclear ownership or missing repository evidence.",
+		"Output architecture constraints that can be attached to reviewable PR nodes and prompt guardrails.",
+	)
+}
+
+func defaultQAVerificationPrompt() string {
+	return defaultExpertText(
+		"You are the QA Verification Expert for CodingCTO planning.",
+		"Your job is to make every planned change provable before code is dispatched or reviewed.",
+		"Define the smallest reliable verification set: unit tests, integration tests, type checks, lint, browser checks, CI checks, and manual acceptance checks.",
+		"Connect tests to user-visible behavior, data contract behavior, failure modes, regressions, and edge cases.",
+		"Do not accept vague guidance such as 'add tests' or 'verify manually'. Name the command, signal, or reviewer observation whenever possible.",
+		"Output verification constraints that can become PR node test commands and merge readiness gates.",
+	)
+}
+
+func defaultCodingAgentHandoffPrompt() string {
+	return defaultExpertText(
+		"You are the Coding Agent Handoff Expert for CodingCTO planning.",
+		"Your job is to convert approved product, architecture, and QA decisions into implementation-ready work for a coding agent.",
+		"Each handoff must include likely files or folders, expected edits, sequencing, dependencies, non-goals, validation commands, and review notes.",
+		"Optimize for small PRs that a coding agent can complete without guessing product intent or crossing unapproved boundaries.",
+		"Stop and escalate when scope, evidence, repository readiness, or required tests are missing.",
+		"Output concise execution constraints that help the agent implement exactly the planned PR node and no unrelated work.",
+	)
+}
+
+func defaultRequirementBoundarySkill() string {
+	return defaultExpertText(
+		"Use this exact skill name in expert_skills: Requirement Boundary Contract.",
+		"Before planning implementation, produce a requirement boundary with these fields: target user, user goal, current pain, desired behavior, in-scope items, out-of-scope items, assumptions, and open questions.",
+		"Translate broad wording into observable behavior. If the idea says 'improve', 'support', or 'make better', define the concrete state or interaction that changes.",
+		"Separate product decisions from engineering decisions. Do not turn implementation guesses into requirements.",
+		"Flag anything that would change authentication, billing, permissions, data retention, destructive actions, or external integrations as requiring explicit approval.",
+	)
+}
+
+func defaultAcceptanceCriteriaSkill() string {
+	return defaultExpertText(
+		"Use this exact skill name in expert_skills: Acceptance Criteria Matrix.",
+		"For each in-scope behavior, define acceptance criteria in observable terms: trigger, user action or system event, expected result, data state, and negative case.",
+		"Criteria must be testable by a reviewer without reading model reasoning. Avoid subjective phrasing such as 'works well' or 'is intuitive'.",
+		"Include at least one failure or empty-state criterion when the feature touches input, loading, permissions, external services, or generated output.",
+		"Attach criteria to milestones so every PR has reviewable product value.",
+	)
+}
+
+func defaultProductSlicingSkill() string {
+	return defaultExpertText(
+		"Use this exact skill name in expert_skills: Reviewable Product Slicing.",
+		"Split work into the smallest PR-sized product milestones that preserve user value and reviewer confidence.",
+		"Each slice must have a clear user-facing or operator-facing outcome, explicit non-goals, and a reason it can be reviewed independently.",
+		"Do not combine unrelated UI, API, migration, settings, and execution behavior in one slice unless the dependency is unavoidable.",
+		"When a slice depends on earlier work, name the dependency and the evidence that proves it is complete.",
+	)
+}
+
+func defaultChangeSurfaceSkill() string {
+	return defaultExpertText(
+		"Use this exact skill name in expert_skills: Change Surface Mapping.",
+		"Map the likely change surface before implementation: routes, components, services, handlers, domain entities, repositories, migrations, config, background jobs, and integration boundaries.",
+		"For each affected area, state whether it is read-only context, write scope, or review-only evidence.",
+		"Prefer existing module boundaries and local patterns. Mark broad shared abstractions, generated code, dependency locks, and global styling as high-friction areas unless explicitly required.",
+		"Escalate when repository evidence is missing, stale, or contradictory.",
+	)
+}
+
+func defaultAPIDataContractSkill() string {
+	return defaultExpertText(
+		"Use this exact skill name in expert_skills: API And Data Contract Review.",
+		"Identify any API, DTO, domain, database, event, or frontend contract that could change.",
+		"For each contract, define the compatibility expectation: unchanged, additive, breaking, migration required, backfill required, or unknown.",
+		"Require explicit request and response fields for new API behavior. Require validation and error behavior for user input, permissions, and external failures.",
+		"Do not allow frontend-only state to invent backend business states when a backend source of truth exists.",
+	)
+}
+
+func defaultMigrationRolloutSkill() string {
+	return defaultExpertText(
+		"Use this exact skill name in expert_skills: Migration And Rollout Risk.",
+		"Call out migrations, backfills, data defaults, versioning, feature flags, rollout sequencing, rollback behavior, and compatibility risks.",
+		"If a database or persisted contract changes, require a migration order and a validation signal.",
+		"If a change touches user-generated content, execution state, GitHub integration, runtime dispatch, or secrets, require an explicit failure and recovery path.",
+		"Prefer reversible, additive rollout steps when feasible.",
+	)
+}
+
+func defaultVerificationMatrixSkill() string {
+	return defaultExpertText(
+		"Use this exact skill name in expert_skills: Verification Matrix.",
+		"Build a verification matrix that maps each behavior or contract change to a test type, command, expected signal, and evidence owner.",
+		"Cover unit-level behavior, integration behavior, UI behavior, API validation, and prompt or generated-output contracts when relevant.",
+		"Use repository-known commands when available. If commands are unknown, require the implementer to inspect local package scripts or Makefile before selecting the smallest relevant check.",
+		"Every PR milestone must include at least one concrete validation signal or an explicit blocker.",
+	)
+}
+
+func defaultFailureModeSkill() string {
+	return defaultExpertText(
+		"Use this exact skill name in expert_skills: Failure Mode Coverage.",
+		"List likely failure modes before implementation: invalid input, empty data, permission denial, stale context, provider failure, network failure, race conditions, migration mismatch, and partial completion.",
+		"For each relevant failure mode, require either a test, UI/API error handling, retry path, fallback, or documented escalation.",
+		"Pay special attention to generated plans, prompt compilation, GitHub actions, runtime execution, and merge readiness because failures there can create unsafe PR output.",
+	)
+}
+
+func defaultCIGateSkill() string {
+	return defaultExpertText(
+		"Use this exact skill name in expert_skills: CI And Manual Acceptance Gate.",
+		"Define the minimum checks before review: format or lint, type check or compile, unit tests, integration tests, browser verification, and manual acceptance where applicable.",
+		"Name exact commands when repository evidence provides them. Otherwise, name the file or manifest the agent must inspect to discover the command.",
+		"Require test output or an explicit blocker in the PR summary. Do not mark a PR ready when required commands are skipped without explanation.",
+	)
+}
+
+func defaultImplementationHandoffSkill() string {
+	return defaultExpertText(
+		"Use this exact skill name in expert_skills: Implementation Handoff Contract.",
+		"Convert planning decisions into a handoff with goal, inputs, expected outputs, likely files, allowed scope, forbidden scope, sequencing, validation, and stop conditions.",
+		"The coding agent should be able to start without asking what product decision to make. Any remaining product or architecture decision must become an explicit blocker.",
+		"Keep instructions scoped to one PR node. Do not include downstream work except as dependencies or follow-up notes.",
+	)
+}
+
+func defaultFileScopeSequencingSkill() string {
+	return defaultExpertText(
+		"Use this exact skill name in expert_skills: File Scope And Sequencing.",
+		"Name likely files or folders to inspect and edit, then classify them as primary edit scope, supporting read scope, or avoid unless escalated.",
+		"Sequence work so the agent can validate each step: contract first, domain or service behavior next, UI or integration next, tests and review package last.",
+		"Prevent broad refactors. If a diff would cross more modules than planned, require the agent to stop and request a narrower plan or a new PR node.",
+	)
+}
+
+func defaultPRReviewPackageSkill() string {
+	return defaultExpertText(
+		"Use this exact skill name in expert_skills: PR Review Package.",
+		"Require each PR output to include a concise summary, scope, non-goals, evidence refs used, files changed, tests run, skipped checks with blockers, and remaining risk.",
+		"Require reviewer notes for behavior that is hard to infer from the diff, such as generated prompt changes, compatibility assumptions, migrations, or UI state changes.",
+		"The PR package must make it clear why the work is reviewable and what has deliberately not been changed.",
+	)
+}
+
+func defaultExpertText(lines ...string) string {
+	return strings.Join(lines, "\n")
 }
 
 var slugPattern = regexp.MustCompile(`[^a-z0-9_-]+`)

@@ -2,6 +2,7 @@ package expert
 
 import (
 	"context"
+	"strings"
 	"testing"
 
 	"github.com/stretchr/testify/require"
@@ -10,6 +11,138 @@ import (
 	"gorm.io/driver/sqlite"
 	"gorm.io/gorm"
 )
+
+func TestListExpertsSeedsDefaultProfilesAndSkills(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+
+	experts, err := svc.ListExperts(ctx, true)
+	require.NoError(t, err)
+	require.Len(t, experts, 4)
+
+	expertsByKey := map[string]*domain.CodingCTOExpert{}
+	for _, expert := range experts {
+		expertsByKey[expert.Key] = expert
+		require.NotEmpty(t, expert.SystemPrompt)
+		require.Contains(t, expert.SystemPrompt, "CodingCTO")
+	}
+
+	for _, seed := range defaultExpertSeeds() {
+		expert := expertsByKey[seed.Expert.Key]
+		require.NotNil(t, expert, seed.Expert.Key)
+		require.Equal(t, seed.Expert.SystemPrompt, expert.SystemPrompt)
+
+		skills, err := svc.ListExpertSkills(ctx, expert.ID)
+		require.NoError(t, err)
+		require.Len(t, skills, len(seed.Skills))
+		skillsByName := map[string]*domain.CodingCTOExpertSkill{}
+		for _, skill := range skills {
+			skillsByName[skill.Name] = skill
+		}
+		for _, skillSeed := range seed.Skills {
+			skill := skillsByName[skillSeed.Name]
+			require.NotNil(t, skill, skillSeed.Name)
+			require.True(t, skill.Active)
+			require.Contains(t, skill.TargetAgents, "planning")
+			require.NotNil(t, skill.CurrentVersion)
+			require.Equal(t, 1, skill.CurrentVersion.Version)
+			require.Equal(t, defaultExpertSkillSource, skill.CurrentVersion.Source)
+			require.Equal(t, strings.TrimSpace(skillSeed.Content), skill.CurrentVersion.Content)
+		}
+	}
+
+	_, err = svc.ListExperts(ctx, true)
+	require.NoError(t, err)
+	for _, expert := range experts {
+		skills, err := svc.ListExpertSkills(ctx, expert.ID)
+		require.NoError(t, err)
+		require.Len(t, skills, 3)
+		for _, skill := range skills {
+			versions, err := svc.ListSkillVersions(ctx, skill.ID)
+			require.NoError(t, err)
+			require.Len(t, versions, 1)
+		}
+	}
+}
+
+func TestDefaultExpertSeedDoesNotOverwriteUserContent(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+
+	customExpert, err := svc.UpsertExpert(ctx, 42, &UpsertExpertRequest{
+		Key:          "product-requirements",
+		Name:         "Product Requirements Expert",
+		Role:         "product",
+		Description:  "Custom product expert.",
+		SystemPrompt: "Use the team's custom product planning policy.",
+		Active:       boolPtr(true),
+	})
+	require.NoError(t, err)
+	customSkill, err := svc.UpsertExpertSkill(ctx, 42, customExpert.ID, &UpsertExpertSkillRequest{
+		Name:         "Requirement Boundary Contract",
+		Description:  "Custom requirement boundary.",
+		Content:      "Always use the user's custom product boundary template.",
+		TargetAgents: []string{"planning"},
+	})
+	require.NoError(t, err)
+
+	experts, err := svc.ListExperts(ctx, true)
+	require.NoError(t, err)
+	var productExpert *domain.CodingCTOExpert
+	for _, expert := range experts {
+		if expert.Key == "product-requirements" {
+			productExpert = expert
+			break
+		}
+	}
+	require.NotNil(t, productExpert)
+	require.Equal(t, "Custom product expert.", productExpert.Description)
+	require.Equal(t, "Use the team's custom product planning policy.", productExpert.SystemPrompt)
+
+	skills, err := svc.ListExpertSkills(ctx, productExpert.ID)
+	require.NoError(t, err)
+	var boundarySkill *domain.CodingCTOExpertSkill
+	for _, skill := range skills {
+		if skill.Name == "Requirement Boundary Contract" {
+			boundarySkill = skill
+			break
+		}
+	}
+	require.NotNil(t, boundarySkill)
+	require.Equal(t, customSkill.ID, boundarySkill.ID)
+	require.NotNil(t, boundarySkill.CurrentVersion)
+	require.Equal(t, "manual", boundarySkill.CurrentVersion.Source)
+	require.Equal(t, "Always use the user's custom product boundary template.", boundarySkill.CurrentVersion.Content)
+	versions, err := svc.ListSkillVersions(ctx, customSkill.ID)
+	require.NoError(t, err)
+	require.Len(t, versions, 1)
+}
+
+func TestRunPlanningExpertsUsesDefaultSkillVersionRefs(t *testing.T) {
+	svc := newTestService(t)
+	ctx := context.Background()
+
+	experts, err := svc.ListExperts(ctx, true)
+	require.NoError(t, err)
+	var qaExpert *domain.CodingCTOExpert
+	for _, expert := range experts {
+		if expert.Key == "qa-verification" {
+			qaExpert = expert
+			break
+		}
+	}
+	require.NotNil(t, qaExpert)
+
+	bundle, err := svc.RunPlanningExperts(ctx, 42, &domain.SpecForgeExpertPlanningRequest{
+		ExpertIDs:    []uint{qaExpert.ID},
+		RepositoryID: "repo_api",
+		Idea:         "Add default expert skills",
+	})
+	require.NoError(t, err)
+	require.Len(t, bundle.Runs, 1)
+	require.Len(t, bundle.Runs[0].SkillVersionRefs, 3)
+	require.Len(t, bundle.SkillVersionRefs, 3)
+}
 
 func TestExpertSkillVersionsAndEvolutionProposalFlow(t *testing.T) {
 	svc := newTestService(t)
@@ -88,7 +221,8 @@ func TestRunPlanningExpertsRecordsSkillVersionRefs(t *testing.T) {
 
 func newTestService(t *testing.T) *service {
 	t.Helper()
-	db, err := gorm.Open(sqlite.Open("file::memory:?cache=shared"), &gorm.Config{})
+	dbName := strings.NewReplacer("/", "_", " ", "_").Replace(t.Name())
+	db, err := gorm.Open(sqlite.Open("file:"+dbName+"?mode=memory&cache=shared"), &gorm.Config{})
 	require.NoError(t, err)
 	require.NoError(t, db.AutoMigrate(
 		&ExpertPO{},
@@ -98,4 +232,8 @@ func newTestService(t *testing.T) *service {
 		&SkillEvolutionProposalPO{},
 	))
 	return NewService(NewRepository(db))
+}
+
+func boolPtr(value bool) *bool {
+	return &value
 }
