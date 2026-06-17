@@ -347,7 +347,7 @@ const messages: DashboardMessages = {
       title: 'Start a local runtime',
       description: 'After registration, run a CodingCTO runtime on your machine. It detects local CLIs such as Codex, Claude Code, and Cursor, sends heartbeats to the platform, and claims work after an issue is dispatched.',
       commandTitle: 'Local start command',
-      commandDescription: 'Run this on the machine with your checkout. It defaults to the current project path; change --repo-dir when targeting another repository.',
+      commandDescription: 'Run this from the target repository checkout. ccto uses the current Git repository by default.',
       copy: 'Copy command',
       copied: 'Copied',
       commandLoading: 'Generating start command...',
@@ -399,7 +399,7 @@ const messages: DashboardMessages = {
       targetRepository: 'Target repository',
       noRepository: 'No repository selected',
       promptPlaceholder: 'For example: add one README line marking this as a CodingCTO direct task smoke test.',
-      promptHint: 'Start with a small, reversible task. The runtime executes inside the local repository passed through --repo-dir.',
+      promptHint: 'Start with a small, reversible task. The runtime executes inside the selected local repository.',
       blocked: {
         noRepository: 'Select a target repository first.',
         notDispatchable: 'This agent is detected by the runtime, but is not wired for platform dispatch yet.',

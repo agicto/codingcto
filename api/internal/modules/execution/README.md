@@ -99,17 +99,15 @@ Useful commands:
 Advanced/debug mode remains available:
 
 ```bash
-go run ./cmd/ccto daemon \
-  --api-base-url http://localhost:2010/v1 \
-  --token "$CODINGCTO_RUNTIME_TOKEN" \
-  --repo-dir /path/to/local/repo \
-  --repository-id github_owner__repo \
+ccto daemon \
   --executor codex_cli
 ```
 
 Useful advanced flags:
 
 - `--executor claude_code_cli`: use the Claude Code CLI connector backend.
+- `--repo-dir /path/to/repo`: run from outside the target checkout.
+- `--repository-id github_owner__repo`: add an explicit repository guard.
 - `--extra-arg`: pass an agent-specific CLI flag.
 - `CODEX_CLI_PATH`: override the Codex executable.
 - `CODINGCTO_RUNTIME_TOKEN`: bearer token for the runtime API.

@@ -132,16 +132,11 @@ Local defaults:
 Advanced/debug mode is still available:
 
 ```bash
-go run ./cmd/ccto daemon \
-  --api-base-url http://localhost:2010/v1 \
-  --token "${CODINGCTO_RUNTIME_TOKEN:-local-runtime-token}" \
-  --runtime-id local-codex-1 \
-  --repo-dir /path/to/local/repo \
-  --repository-id github_owner__repo \
+ccto daemon \
   --executor codex_cli
 ```
 
-Useful advanced flags include `--once`, `--poll-interval`, `--executor`, `--codex-path`, `--claude-path`, `--kimi-path`, `--sandbox`, and `--approval-policy`. Environment equivalents are available with `CODINGCTO_API_BASE_URL`, `CODINGCTO_RUNTIME_TOKEN`, `CODINGCTO_RUNTIME_ID`, `CODINGCTO_RUNTIME_REPO_DIR`, `CODINGCTO_RUNTIME_REPOSITORY_ID`, `CODINGCTO_RUNTIME_EXECUTOR`, `CODEX_CLI_PATH`, `CLAUDE_CODE_CLI_PATH`, `KIMI_CLI_PATH`, `CODINGCTO_CODEX_SANDBOX`, `CODINGCTO_CODEX_APPROVAL_POLICY`, and `CODINGCTO_CODEX_TIMEOUT`. Legacy `SPECFORGE_*` runtime environment variables are still accepted for local compatibility.
+`daemon` also defaults to the current Git repository. Useful advanced flags include `--once`, `--poll-interval`, `--executor`, `--repo-dir` for running outside the target checkout, `--repository-id` for an explicit guard, `--codex-path`, `--claude-path`, `--kimi-path`, `--sandbox`, and `--approval-policy`. Environment equivalents are available with `CODINGCTO_API_BASE_URL`, `CODINGCTO_RUNTIME_TOKEN`, `CODINGCTO_RUNTIME_ID`, `CODINGCTO_RUNTIME_REPO_DIR`, `CODINGCTO_RUNTIME_REPOSITORY_ID`, `CODINGCTO_RUNTIME_EXECUTOR`, `CODEX_CLI_PATH`, `CLAUDE_CODE_CLI_PATH`, `KIMI_CLI_PATH`, `CODINGCTO_CODEX_SANDBOX`, `CODINGCTO_CODEX_APPROVAL_POLICY`, and `CODINGCTO_CODEX_TIMEOUT`. Legacy `SPECFORGE_*` runtime environment variables are still accepted for local compatibility.
 
 Local operator checklist:
 

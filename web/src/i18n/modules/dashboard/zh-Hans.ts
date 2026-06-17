@@ -345,7 +345,7 @@ const messages = {
       title: '启动本地 Runtime',
       description: '注册后需要在自己的电脑上启动一个 CodingCTO runtime。它会检测本机的 Codex、Claude Code、Cursor 等 CLI，持续心跳到平台，并在 issue 派发后领取任务执行。',
       commandTitle: '本地启动命令',
-      commandDescription: '在你的代码仓库所在机器上执行；默认使用当前项目路径，也可以把 --repo-dir 改成目标仓库路径。',
+      commandDescription: '在目标仓库 checkout 里执行；ccto 默认使用当前 Git 仓库。',
       copy: '复制命令',
       copied: '已复制',
       commandLoading: '正在生成启动命令...',
@@ -397,7 +397,7 @@ const messages = {
       targetRepository: '目标仓库',
       noRepository: '未选择仓库',
       promptPlaceholder: '例如：在 README 增加一行说明，标记这是 CodingCTO direct task smoke test。',
-      promptHint: '建议先派发很小、可回滚的任务。运行时会在 --repo-dir 指向的本地仓库里执行。',
+      promptHint: '建议先派发很小、可回滚的任务。运行时会在选中的本地仓库里执行。',
       blocked: {
         noRepository: '请先选择一个目标仓库。',
         notDispatchable: '这个智能体目前只是被 runtime 检测到，还没有接入平台调度。',
