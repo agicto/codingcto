@@ -60,13 +60,12 @@ See [api/README.md](api/README.md) for the full Go backend guide. Some internal 
 Start a local agent with one command. It detects installed coding CLIs, discovers GitHub repositories from the current directory and configured repo roots, heartbeats each executable runtime, and claims matching tasks after plan approval.
 
 ```bash
-cd api
-make install-ccto
+curl -fsSL https://github.com/agicto/codingcto/releases/latest/download/install.sh | sh
 cd /path/to/local/repo
 ccto up
 ```
 
-For local development without installing the binary:
+For local development from source:
 
 ```bash
 cd api

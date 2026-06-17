@@ -106,12 +106,12 @@ The CLI binary path remains `cmd/luas` until a dedicated compatibility migration
 The normal local path is `ccto up`. It detects installed coding CLIs, discovers GitHub repositories from the current directory and configured roots, heartbeats the available executor runtimes, and claims tasks that match the selected executor and repository after plan approval.
 
 ```bash
-make install-ccto
+curl -fsSL https://github.com/agicto/codingcto/releases/latest/download/install.sh | sh
 cd /path/to/local/repo
 ccto up
 ```
 
-For development without installing the binary:
+For development from source:
 
 ```bash
 cd api
