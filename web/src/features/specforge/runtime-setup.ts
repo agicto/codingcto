@@ -1,14 +1,9 @@
 export interface RuntimeSetupCommandInput {
-  apiBaseUrl: string;
-  runtimeTokenEnv?: string;
-  runtimeId: string;
-  repositoryId: string;
   repoDir: string;
   once?: boolean;
 }
 
 export function buildRuntimeSetupCommand(input: RuntimeSetupCommandInput): string {
-  const runtimeTokenEnv = input.runtimeTokenEnv?.trim() || 'CODINGCTO_RUNTIME_TOKEN';
   const args = ['ccto up'];
   if (input.once) {
     args.push('--once');
@@ -16,8 +11,6 @@ export function buildRuntimeSetupCommand(input: RuntimeSetupCommandInput): strin
 
   return [
     `cd ${shellQuote(input.repoDir)}`,
-    `export ${runtimeTokenEnv}="paste-runtime-token-here"`,
-    `ccto configure --api-base-url ${shellQuote(input.apiBaseUrl)} --repo-root ${shellQuote(input.repoDir)}`,
     args.join(' '),
   ].join('\n');
 }

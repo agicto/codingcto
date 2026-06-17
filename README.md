@@ -70,10 +70,11 @@ For local development without installing the binary:
 
 ```bash
 cd api
-go run ./cmd/ccto status
-go run ./cmd/ccto doctor
-go run ./cmd/ccto configure --api-base-url http://localhost:2010/v1 --repo-root /path/to/local/repo
-go run ./cmd/ccto up
+make build-ccto
+cd /path/to/local/repo
+/path/to/codingcto/api/bin/ccto status
+/path/to/codingcto/api/bin/ccto doctor
+/path/to/codingcto/api/bin/ccto up
 ```
 
 The web console shows detected local agents, CLI choices, matched repositories, and blockers. After expert review, choose the executor CLI in Web; CodingCTO dispatches the selected executor through the local agent. `ccto daemon` remains available for advanced/manual debugging when a fixed runtime id, repository id, or executor flag is required.

@@ -80,9 +80,9 @@ backend options, not as its task protocol.
 Run the foreground local agent:
 
 ```bash
-cd api
-go run ./cmd/ccto configure --api-base-url http://localhost:2010/v1 --repo-root /path/to/local/repo
-go run ./cmd/ccto up
+make install-ccto
+cd /path/to/local/repo
+ccto up
 ```
 
 `ccto up` detects installed CLIs, discovers GitHub repositories from the current
@@ -93,7 +93,7 @@ Useful commands:
 
 - `status`: print config, detected CLIs, and discovered repositories.
 - `doctor`: check API, CLI, repository, and token readiness.
-- `configure`: persist `~/.codingcto/config.json`.
+- `configure`: persist `~/.codingcto/config.json` for non-default API URLs or repo roots.
 - `up --once`: heartbeat, claim at most one task, execute it, then exit.
 
 Advanced/debug mode remains available:

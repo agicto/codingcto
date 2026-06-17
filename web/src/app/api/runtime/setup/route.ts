@@ -14,13 +14,9 @@ export async function GET(request: NextRequest) {
   const apiBaseURL = new URL('/v1', apiTarget).toString().replace(/\/$/, '');
   const workspaceRoot = process.cwd().replace(/\/web$/, '');
   const repoDir = process.env.CODINGCTO_RUNTIME_REPO_DIR ?? `${workspaceRoot}`;
-  const runtimeToken =
-    process.env.NODE_ENV === 'production' ? '<runtime-token>' : 'local-runtime-token';
   const runtimeId = `local-${repositoryId.replace(/[^a-zA-Z0-9_-]+/g, '-').replace(/^-+|-+$/g, '') || 'codingcto'}`;
   const command = [
     `cd ${shellQuote(repoDir)}`,
-    `export CODINGCTO_RUNTIME_TOKEN=${shellQuote(runtimeToken)}`,
-    `ccto configure --api-base-url ${shellQuote(apiBaseURL)} --repo-root ${shellQuote(repoDir)}`,
     'ccto up',
   ].join('\n');
 

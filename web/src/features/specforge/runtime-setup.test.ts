@@ -5,31 +5,25 @@ import { buildRuntimeSetupCommand, runtimeSetupChecklist } from '@/features/spec
 describe('runtime setup', () => {
   it('builds a local ccto agent command for one execution cycle', () => {
     const command = buildRuntimeSetupCommand({
-      apiBaseUrl: 'http://localhost:2010/v1',
-      runtimeId: 'local-codex-plan-42',
-      repositoryId: 'repo_123',
       repoDir: '/Users/example/codingcto',
       once: true,
     });
 
     expect(command).toContain('cd /Users/example/codingcto');
-    expect(command).toContain('export CODINGCTO_RUNTIME_TOKEN="paste-runtime-token-here"');
-    expect(command).toContain('ccto configure --api-base-url http://localhost:2010/v1');
     expect(command).toContain('ccto up --once');
-    expect(command).toContain('--api-base-url http://localhost:2010/v1');
+    expect(command).not.toContain('--api-base-url');
+    expect(command).not.toContain('ccto configure');
     expect(command).toContain('--once');
   });
 
   it('quotes shell values with spaces', () => {
     const command = buildRuntimeSetupCommand({
-      apiBaseUrl: 'https://api.example.com/v1',
-      runtimeId: 'local codex',
-      repositoryId: 'owner/repo',
       repoDir: '/Users/example/My Project',
     });
 
     expect(command).toContain("cd '/Users/example/My Project'");
-    expect(command).toContain("--repo-root '/Users/example/My Project'");
+    expect(command).toContain('ccto up');
+    expect(command).not.toContain('--repo-root');
     expect(command).not.toContain('--once');
   });
 
