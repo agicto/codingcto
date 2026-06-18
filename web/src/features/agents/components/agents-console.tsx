@@ -2,6 +2,7 @@
 
 import { useEffect, useMemo, useState } from 'react';
 import Link from 'next/link';
+import { useSearchParams } from 'next/navigation';
 import {
   Activity,
   BookOpen,
@@ -11,6 +12,7 @@ import {
   ClipboardList,
   Copy,
   ExternalLink,
+  GitPullRequest,
   KeyRound,
   Play,
   RefreshCw,
@@ -35,6 +37,7 @@ import { Switch } from '@/components/ui/switch';
 import { Tabs, TabsContent, TabsList, TabsTrigger } from '@/components/ui/tabs';
 import { Textarea } from '@/components/ui/textarea';
 import { ROUTES, buildRoute } from '@/constants/routes';
+import { useLocale } from '@/hooks/use-locale';
 import {
   useCodingCTODirectAgentTask,
   useCodingCTODirectAgentTasks,
@@ -49,13 +52,18 @@ import type {
   CodingCTORuntimeDTO,
 } from '@/features/codingcto/services/codingcto-service';
 import { primaryRepositoryContext } from '@/features/project/project-context';
-import { useProjectContext, useProjects } from '@/features/project/hooks/use-projects';
+import { useProject, useProjectContext, useProjects } from '@/features/project/hooks/use-projects';
 import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
+import { projectPlanHref, projectPRReviewHref } from '@/features/project/project-utils';
 import {
+  useLatestPlanRun,
+  useLatestProjectPlan,
   useSpecForgeProjectSkills,
   useUpsertSpecForgeProjectSkill,
 } from '@/features/specforge/hooks/use-specforge';
+import { executionRunFromDTO, planBundleFromDTO } from '@/features/specforge/plan-adapter';
 import type { SpecForgeSkillDTO } from '@/features/specforge/services/specforge-service';
+import type { ExecutionRun, PlanBundle, PRNode } from '@/features/specforge/types';
 import { useT } from '@/i18n';
 import { cn } from '@/utils';
 
@@ -94,12 +102,18 @@ type AgentLogoKey = 'codex' | 'kimi' | 'claude' | 'cursor' | 'opencode' | 'termi
 type TaskEventLogEntry = CodingCTODirectTaskEventDTO & {
   displayId: string;
 };
+type AgentRuntimeCopy = ReturnType<typeof agentRuntimeCopy>;
 
 const ALL_AGENT_TARGETS = new Set(['*', 'all']);
 const ONLINE_RUNTIME_STALE_MS = 5 * 60 * 1000;
 
 export function AgentsConsole({ selectedAgentId }: AgentsConsoleProps) {
   const t = useT('dashboard.agents');
+  const searchParams = useSearchParams();
+  const projectIdFromSearch = useMemo(() => {
+    const parsed = Number(searchParams.get('projectId') ?? '');
+    return Number.isFinite(parsed) && parsed > 0 ? parsed : undefined;
+  }, [searchParams]);
   const { selectedWorkspaceId } = useSelectedWorkspace();
   const runtimesQuery = useCodingCTORuntimes({ status: 'online', limit: 50 });
   const runtimes = useMemo(
@@ -128,13 +142,19 @@ export function AgentsConsole({ selectedAgentId }: AgentsConsoleProps) {
     () => projectsQuery.data?.projects ?? [],
     [projectsQuery.data?.projects]
   );
+  const projectFromSearchQuery = useProject(projectIdFromSearch ?? 0);
   const [selectedProjectId, setSelectedProjectId] = useState('');
+  const effectiveSelectedProjectId = projectIdFromSearch
+    ? String(projectIdFromSearch)
+    : selectedProjectId;
   const selectedProject = useMemo(
     () =>
-      projects.find(project => String(project.id) === selectedProjectId) ??
+      projects.find(project => String(project.id) === effectiveSelectedProjectId) ??
+      projects.find(project => project.id === projectIdFromSearch) ??
+      projectFromSearchQuery.data?.project ??
       projects.find(project => project.status === 'active') ??
       projects[0],
-    [projects, selectedProjectId]
+    [effectiveSelectedProjectId, projectFromSearchQuery.data?.project, projectIdFromSearch, projects]
   );
   const projectContextQuery = useProjectContext(selectedProject?.id ?? 0);
   const projectContext = projectContextQuery.data?.context;
@@ -194,7 +214,10 @@ export function AgentsConsole({ selectedAgentId }: AgentsConsoleProps) {
     ? skills.filter(skill => skillAssignedToAgent(skill, selectedAgent.skillTarget))
     : [];
   const isLoading =
-    runtimesQuery.isLoading || projectsQuery.isLoading || projectContextQuery.isLoading;
+    runtimesQuery.isLoading ||
+    projectsQuery.isLoading ||
+    projectFromSearchQuery.isLoading ||
+    projectContextQuery.isLoading;
 
   async function setSkillAssigned(skill: SpecForgeSkillDTO, assigned: boolean) {
     if (!selectedAgent || !selectedProject?.id || !executionRepositoryId) {
@@ -453,8 +476,33 @@ function AgentDetail({
   onSetSkillAssigned: (skill: SpecForgeSkillDTO, assigned: boolean) => void;
   t: ReturnType<typeof useT<'dashboard.agents'>>;
 }) {
+  const { locale } = useLocale();
+  const copy = useMemo(() => agentRuntimeCopy(locale), [locale]);
   const [directPrompt, setDirectPrompt] = useState('');
   const [selectedDirectTaskId, setSelectedDirectTaskId] = useState<number | undefined>();
+  const selectedProjectNumber = Number(selectedProjectId);
+  const selectedProjectIdNumber = Number.isFinite(selectedProjectNumber) && selectedProjectNumber > 0
+    ? selectedProjectNumber
+    : undefined;
+  const latestPlanQuery = useLatestProjectPlan(selectedProjectIdNumber);
+  const latestPlan = useMemo<PlanBundle | undefined>(
+    () => (latestPlanQuery.data ? planBundleFromDTO(latestPlanQuery.data) : undefined),
+    [latestPlanQuery.data]
+  );
+  const latestPlanRunQuery = useLatestPlanRun(latestPlan?.planId, {
+    enabled: Boolean(latestPlan?.planId),
+    refetchInterval: latestPlan?.implementationPlan.status === 'approved' ? 3000 : false,
+  });
+  const latestExecutionRun = useMemo<ExecutionRun | undefined>(() => {
+    if (!latestPlanRunQuery.data) {
+      return undefined;
+    }
+    return executionRunFromDTO(latestPlanRunQuery.data, latestPlan).run;
+  }, [latestPlan, latestPlanRunQuery.data]);
+  const runtimeExecutionTasks = useMemo(
+    () => executionTasksForRuntime(latestExecutionRun, runtime),
+    [latestExecutionRun, runtime]
+  );
   const directTasksQuery = useCodingCTODirectAgentTasks({
     limit: 8,
     repository_id: selectedRepository?.repository_id,
@@ -471,6 +519,9 @@ function AgentDetail({
   const directTaskEventsQuery = useCodingCTODirectTaskEvents(liveDirectTask?.id);
   const directEvents = directTaskEventsQuery.data?.events ?? [];
   const cancelDirectTask = useCancelCodingCTODirectAgentTask();
+  const activeDirectTask = recentDirectTasks.find(task => !isDirectTaskTerminal(task.status));
+  const activityLoading =
+    latestPlanQuery.isLoading || latestPlanRunQuery.isLoading || directTasksQuery.isLoading;
 
   async function submitDirectTask() {
     const prompt = directPrompt.trim();
@@ -597,27 +648,49 @@ function AgentDetail({
         </div>
 
         <TabsContent value="activity" className="m-0 p-5">
-          <EmptyPanel title={t('activity.title')} description={t('activity.description')} />
-        </TabsContent>
-        <TabsContent value="tasks" className="m-0 p-5">
-          <DirectTaskPanel
-            prompt={directPrompt}
-            onPromptChange={setDirectPrompt}
-            selectedRepository={selectedRepository}
+          <AgentActivityPanel
             runtime={runtime}
-            tasks={recentDirectTasks}
-            selectedTask={liveDirectTask}
-            selectedTaskId={selectedDirectTaskId}
-            events={directEvents}
-            isCreating={createDirectTask.isPending}
-            isLoading={directTasksQuery.isLoading}
-            isRefreshing={liveDirectTaskQuery.isFetching || directTaskEventsQuery.isFetching}
-            isCancelling={cancelDirectTask.isPending}
-            onSubmit={submitDirectTask}
-            onCancel={cancelSelectedDirectTask}
-            onSelectTask={setSelectedDirectTaskId}
+            latestPlan={latestPlan}
+            latestRun={latestExecutionRun}
+            executionTasks={runtimeExecutionTasks}
+            activeDirectTask={activeDirectTask}
+            isLoading={activityLoading}
+            projectId={selectedProjectIdNumber}
+            copy={copy}
             t={t}
           />
+        </TabsContent>
+        <TabsContent value="tasks" className="m-0 p-5">
+          <div className="grid gap-4">
+            <PlanExecutionTaskPanel
+              latestPlan={latestPlan}
+              latestRun={latestExecutionRun}
+              tasks={runtimeExecutionTasks}
+              runtime={runtime}
+              isLoading={latestPlanQuery.isLoading || latestPlanRunQuery.isLoading}
+              projectId={selectedProjectIdNumber}
+              copy={copy}
+              t={t}
+            />
+            <DirectTaskPanel
+              prompt={directPrompt}
+              onPromptChange={setDirectPrompt}
+              selectedRepository={selectedRepository}
+              runtime={runtime}
+              tasks={recentDirectTasks}
+              selectedTask={liveDirectTask}
+              selectedTaskId={selectedDirectTaskId}
+              events={directEvents}
+              isCreating={createDirectTask.isPending}
+              isLoading={directTasksQuery.isLoading}
+              isRefreshing={liveDirectTaskQuery.isFetching || directTaskEventsQuery.isFetching}
+              isCancelling={cancelDirectTask.isPending}
+              onSubmit={submitDirectTask}
+              onCancel={cancelSelectedDirectTask}
+              onSelectTask={setSelectedDirectTaskId}
+              t={t}
+            />
+          </div>
         </TabsContent>
         <TabsContent value="skills" className="m-0 min-h-0 p-5">
           <div className="flex flex-wrap items-center justify-between gap-3">
@@ -702,6 +775,308 @@ function AgentDetail({
         </TabsContent>
       </Tabs>
     </div>
+  );
+}
+
+function AgentActivityPanel({
+  runtime,
+  latestPlan,
+  latestRun,
+  executionTasks,
+  activeDirectTask,
+  isLoading,
+  projectId,
+  copy,
+  t,
+}: {
+  runtime: LocalRuntime;
+  latestPlan?: PlanBundle;
+  latestRun?: ExecutionRun;
+  executionTasks: PRNode[];
+  activeDirectTask?: CodingCTODirectAgentTaskDTO;
+  isLoading: boolean;
+  projectId?: number;
+  copy: AgentRuntimeCopy;
+  t: ReturnType<typeof useT<'dashboard.agents'>>;
+}) {
+  const activeExecutionTask = executionTasks.find(isExecutionTaskActive);
+  const latestExecutionTask = executionTasks[0];
+  const displayedExecutionTask = activeExecutionTask ?? latestExecutionTask;
+  const hasVisibleActivity = Boolean(activeExecutionTask || activeDirectTask || latestExecutionTask);
+  const planHref =
+    projectId && latestPlan?.planId ? projectPlanHref(projectId, latestPlan.planId) : undefined;
+
+  if (isLoading && !hasVisibleActivity) {
+    return <EmptyPanel title={t('states.loading')} description={copy.activityLoading} />;
+  }
+
+  if (!hasVisibleActivity) {
+    return (
+      <EmptyPanel
+        title={copy.noCurrentTitle}
+        description={
+          latestRun
+            ? copy.noRuntimeTasks(runtime.runtimeId)
+            : copy.noRunDescription
+        }
+      />
+    );
+  }
+
+  const headline = activeExecutionTask
+    ? copy.currentDeliveryTitle
+    : activeDirectTask
+      ? copy.currentDirectTitle
+      : copy.recentDeliveryTitle;
+  const description = activeExecutionTask
+    ? copy.currentDeliveryDescription(taskDisplayName(activeExecutionTask))
+    : activeDirectTask
+      ? copy.currentDirectDescription(activeDirectTask.title)
+      : copy.recentDeliveryDescription(
+          latestExecutionTask ? taskDisplayName(latestExecutionTask) : ''
+        );
+
+  return (
+    <div className="grid gap-4">
+      <section className="rounded-lg border border-border-subtle bg-bg-surface p-4">
+        <div className="flex flex-wrap items-start justify-between gap-3">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <h3 className="text-sm font-medium text-text-main">{headline}</h3>
+              {latestRun?.runId ? (
+                <Badge variant="outline" className="text-info">
+                  Run #{latestRun.runId}
+                </Badge>
+              ) : null}
+              {latestPlan?.planId ? (
+                <Badge variant="outline" className="text-text-muted">
+                  Plan #{latestPlan.planId}
+                </Badge>
+              ) : null}
+            </div>
+            <p className="mt-1 text-sm leading-6 text-text-muted">{description}</p>
+          </div>
+          {planHref ? (
+            <Link
+              href={planHref}
+              className="focus-ring inline-flex h-8 shrink-0 items-center gap-2 rounded-[4px] border border-border-subtle bg-bg-surface px-3 text-xs font-medium text-text-main shadow-xs transition-colors hover:bg-bg-subtle"
+            >
+              <GitPullRequest className="h-4 w-4" />
+              {copy.openPlan}
+            </Link>
+          ) : null}
+        </div>
+
+        <div className="mt-4 grid gap-3 sm:grid-cols-3">
+          <InfoBlock
+            label={copy.deliveryTasks}
+            value={String(executionTasks.length)}
+          />
+          <InfoBlock
+            label={copy.claimedTasks}
+            value={String(executionTasks.filter(task => task.runtimeId === runtime.runtimeId).length)}
+          />
+          <InfoBlock
+            label={copy.currentSlot}
+            value={t('tasks.slotUsage', {
+              running: runtime.runningCount,
+              max: runtime.maxConcurrency,
+            })}
+          />
+        </div>
+      </section>
+
+      {displayedExecutionTask ? (
+        <ExecutionTaskCard
+          task={displayedExecutionTask}
+          projectId={projectId}
+          copy={copy}
+          t={t}
+        />
+      ) : null}
+
+      {activeDirectTask ? (
+        <section className="rounded-lg border border-border-subtle bg-bg-surface p-4">
+          <div className="flex flex-wrap items-center justify-between gap-2">
+            <div className="min-w-0">
+              <div className="text-sm font-medium text-text-main">{activeDirectTask.title}</div>
+              <p className="mt-1 truncate text-xs text-text-muted">
+                #{activeDirectTask.id} · {activeDirectTask.executor} · {activeDirectTask.runtime_id}
+              </p>
+            </div>
+            <TaskStatusBadge status={activeDirectTask.status} t={t} />
+          </div>
+        </section>
+      ) : null}
+    </div>
+  );
+}
+
+function PlanExecutionTaskPanel({
+  latestPlan,
+  latestRun,
+  tasks,
+  runtime,
+  isLoading,
+  projectId,
+  copy,
+  t,
+}: {
+  latestPlan?: PlanBundle;
+  latestRun?: ExecutionRun;
+  tasks: PRNode[];
+  runtime: LocalRuntime;
+  isLoading: boolean;
+  projectId?: number;
+  copy: AgentRuntimeCopy;
+  t: ReturnType<typeof useT<'dashboard.agents'>>;
+}) {
+  const planHref =
+    projectId && latestPlan?.planId ? projectPlanHref(projectId, latestPlan.planId) : undefined;
+
+  return (
+    <section className="overflow-hidden rounded-lg border border-border-subtle bg-bg-surface">
+      <div className="flex flex-wrap items-start justify-between gap-3 border-b border-border-subtle bg-bg-subtle px-4 py-3">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="text-sm font-medium text-text-main">{copy.deliveryTitle}</h3>
+            {latestRun?.runId ? (
+              <Badge variant="outline" className="text-info">
+                Run #{latestRun.runId}
+              </Badge>
+            ) : null}
+          </div>
+          <p className="mt-1 text-xs leading-5 text-text-muted">
+            {copy.deliveryDescription(runtime.runtimeId)}
+          </p>
+        </div>
+        {planHref ? (
+          <Link
+            href={planHref}
+            className="focus-ring inline-flex h-8 shrink-0 items-center gap-2 rounded-[4px] border border-border-subtle bg-bg-surface px-3 text-xs font-medium text-text-main shadow-xs transition-colors hover:bg-bg-subtle"
+          >
+            <GitPullRequest className="h-4 w-4" />
+            {copy.openPlan}
+          </Link>
+        ) : null}
+      </div>
+
+      {isLoading && tasks.length === 0 ? (
+        <div className="px-4 py-8 text-sm text-text-muted">{t('states.loading')}</div>
+      ) : tasks.length > 0 ? (
+        <div className="grid gap-3 p-4">
+          {tasks.map(task => (
+            <ExecutionTaskCard
+              key={`${task.id}-${task.taskId ?? 'node'}`}
+              task={task}
+              projectId={projectId}
+              copy={copy}
+              t={t}
+            />
+          ))}
+        </div>
+      ) : (
+        <div className="px-4 py-8 text-sm leading-6 text-text-muted">
+          {latestRun
+            ? copy.deliveryNoRuntimeTasks(runtime.runtimeId)
+            : copy.deliveryEmpty}
+        </div>
+      )}
+    </section>
+  );
+}
+
+function ExecutionTaskCard({
+  task,
+  projectId,
+  copy,
+  t,
+}: {
+  task: PRNode;
+  projectId?: number;
+  copy: AgentRuntimeCopy;
+  t: ReturnType<typeof useT<'dashboard.agents'>>;
+}) {
+  const reviewHref =
+    projectId && Number.isFinite(Number(task.id))
+      ? projectPRReviewHref(projectId, Number(task.id))
+      : undefined;
+  const planHref = projectId && task.planId ? projectPlanHref(projectId, task.planId) : undefined;
+  const output = task.failureReason || task.outputLog || task.errorLog;
+
+  return (
+    <section className="rounded-lg border border-border-subtle bg-bg-surface p-4">
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div className="min-w-0">
+          <div className="flex min-w-0 items-center gap-2">
+            <GitPullRequest className="h-4 w-4 shrink-0 text-text-muted" />
+            <span className="shrink-0 text-xs font-medium uppercase text-text-muted">
+              {task.nodeKey}
+            </span>
+            <h4 className="truncate text-sm font-medium text-text-main">{task.title}</h4>
+          </div>
+          <p className="mt-1 text-xs leading-5 text-text-muted">
+            {task.taskId ? `task #${task.taskId} · ` : ''}
+            {task.executor ?? t('states.unknown')}
+            {task.runtimeId ? ` · ${task.runtimeId}` : ` · ${copy.awaitingRuntime}`}
+          </p>
+        </div>
+        <ExecutionTaskStatusBadge status={task.status} copy={copy} />
+      </div>
+
+      <div className="mt-3 grid gap-2 text-xs text-text-muted sm:grid-cols-2">
+        <InfoBlock
+          label={copy.phase}
+          value={task.currentPhase || task.processStatus || task.status}
+        />
+        <InfoBlock
+          label={copy.lastProgressShort}
+          value={formatRelativeTime(task.lastProgressAt, t)}
+        />
+        {task.workdir ? <InfoBlock label={copy.workdir} value={task.workdir} /> : null}
+        {task.branchName ? (
+          <InfoBlock label={copy.branch} value={task.branchName} />
+        ) : null}
+      </div>
+
+      {output ? (
+        <pre className="mt-3 max-h-28 overflow-y-auto whitespace-pre-wrap break-words rounded-md border border-border-subtle bg-bg-subtle p-3 text-xs leading-5 text-text-main">
+          {output}
+        </pre>
+      ) : null}
+
+      {planHref || reviewHref || task.githubPrUrl ? (
+        <div className="mt-3 flex flex-wrap gap-2">
+          {planHref ? (
+            <Link
+              href={planHref}
+              className="focus-ring inline-flex h-8 items-center gap-2 rounded-[4px] border border-border-subtle px-3 text-xs font-medium text-text-main hover:bg-bg-subtle"
+            >
+              {copy.openPlan}
+            </Link>
+          ) : null}
+          {reviewHref ? (
+            <Link
+              href={reviewHref}
+              className="focus-ring inline-flex h-8 items-center gap-2 rounded-[4px] border border-border-subtle px-3 text-xs font-medium text-text-main hover:bg-bg-subtle"
+            >
+              {copy.openReview}
+            </Link>
+          ) : null}
+          {task.githubPrUrl ? (
+            <a
+              href={task.githubPrUrl}
+              target="_blank"
+              rel="noreferrer"
+              className="focus-ring inline-flex h-8 items-center gap-2 rounded-[4px] border border-border-subtle px-3 text-xs font-medium text-text-main hover:bg-bg-subtle"
+            >
+              GitHub PR
+              <ExternalLink className="h-3.5 w-3.5 text-text-muted" />
+            </a>
+          ) : null}
+        </div>
+      ) : null}
+    </section>
   );
 }
 
@@ -957,6 +1332,40 @@ function TaskStatusBadge({
   );
 }
 
+function ExecutionTaskStatusBadge({
+  status,
+  copy,
+}: {
+  status: PRNode['status'];
+  copy: AgentRuntimeCopy;
+}) {
+  return (
+    <Badge variant="outline" className={executionTaskStatusClassName(status)}>
+      {executionTaskStatusLabel(status, copy)}
+    </Badge>
+  );
+}
+
+function executionTaskStatusClassName(status: PRNode['status']) {
+  if (['completed', 'pr_opened', 'ready_for_review', 'merged'].includes(status)) {
+    return 'text-success';
+  }
+  if (['failed', 'cancelled', 'blocked'].includes(status)) {
+    return 'text-error';
+  }
+  if (['running', 'ci_running'].includes(status)) {
+    return 'text-info';
+  }
+  return 'text-text-muted';
+}
+
+function executionTaskStatusLabel(
+  status: PRNode['status'],
+  copy: AgentRuntimeCopy
+) {
+  return copy.executionStatus[status] ?? copy.unknown;
+}
+
 function directTaskStatusLabel(
   status: string,
   t: ReturnType<typeof useT<'dashboard.agents'>>
@@ -1172,6 +1581,101 @@ function agentLogoSource(logo: AgentLogoKey) {
   }
 }
 
+function agentRuntimeCopy(locale: string) {
+  if (locale === 'zh-Hans') {
+    return {
+      unknown: '未知',
+      activityLoading: '正在读取计划执行和 direct task 状态。',
+      noCurrentTitle: '当前没有进行中的工作',
+      noRunDescription: '这个智能体还没有关联到最近一次计划执行。',
+      noRuntimeTasks: (runtime: string) => `最近的计划执行里没有分配给 ${runtime} 的任务。`,
+      currentDeliveryTitle: '正在执行计划任务',
+      currentDirectTitle: '正在执行 direct task',
+      recentDeliveryTitle: '最近的计划任务',
+      currentDeliveryDescription: (task: string) => `${task} 正在由这个智能体处理。`,
+      currentDirectDescription: (task: string) => `${task} 正在由这个智能体直接执行。`,
+      recentDeliveryDescription: (task: string) => `${task} 已经记录到这个智能体的执行历史。`,
+      openPlan: '打开计划',
+      openReview: '打开评审',
+      deliveryTasks: '计划任务',
+      claimedTasks: '已认领',
+      currentSlot: '当前槽位',
+      deliveryTitle: '计划交付任务',
+      deliveryDescription: (runtime: string) =>
+        `显示最近一次审批计划中由 ${runtime} 已认领或可认领的 PR 节点任务。`,
+      deliveryEmpty: '最近还没有计划执行 run。审批计划后，runtime 领取的任务会出现在这里。',
+      deliveryNoRuntimeTasks: (runtime: string) =>
+        `最近的计划执行里暂时没有分配给 ${runtime} 的任务。`,
+      awaitingRuntime: '等待 runtime 认领',
+      phase: '阶段',
+      lastProgressShort: '最近进度',
+      workdir: '工作目录',
+      branch: '分支',
+      executionStatus: {
+        planned: '已计划',
+        queued: '排队中',
+        running: '执行中',
+        waiting_on_dependencies: '等待依赖',
+        pr_opened: 'PR 已打开',
+        ci_running: 'CI 运行中',
+        ready_for_review: '可评审',
+        blocked: '已阻塞',
+        merged: '已合并',
+        closed: '已关闭',
+        completed: '已完成',
+        failed: '失败',
+        cancelled: '已取消',
+      },
+    };
+  }
+
+  return {
+    unknown: 'unknown',
+    activityLoading: 'Reading plan execution and direct task status.',
+    noCurrentTitle: 'No current work',
+    noRunDescription: 'This agent is not attached to the latest plan execution yet.',
+    noRuntimeTasks: (runtime: string) => `The latest plan execution has no task assigned to ${runtime}.`,
+    currentDeliveryTitle: 'Running plan task',
+    currentDirectTitle: 'Running direct task',
+    recentDeliveryTitle: 'Recent plan task',
+    currentDeliveryDescription: (task: string) => `${task} is being handled by this agent.`,
+    currentDirectDescription: (task: string) => `${task} is being executed directly by this agent.`,
+    recentDeliveryDescription: (task: string) =>
+      `${task} is recorded in this agent execution history.`,
+    openPlan: 'Open plan',
+    openReview: 'Open review',
+    deliveryTasks: 'Plan tasks',
+    claimedTasks: 'Claimed',
+    currentSlot: 'Current slots',
+    deliveryTitle: 'Plan delivery tasks',
+    deliveryDescription: (runtime: string) =>
+      `Shows PR node tasks from the latest approved plan that ${runtime} claimed or can claim.`,
+    deliveryEmpty: 'No plan execution run yet. After plan approval, runtime-claimed work appears here.',
+    deliveryNoRuntimeTasks: (runtime: string) =>
+      `The latest plan execution has no task assigned to ${runtime} yet.`,
+    awaitingRuntime: 'awaiting runtime claim',
+    phase: 'Phase',
+    lastProgressShort: 'Last progress',
+    workdir: 'Workdir',
+    branch: 'Branch',
+    executionStatus: {
+      planned: 'planned',
+      queued: 'queued',
+      running: 'running',
+      waiting_on_dependencies: 'waiting on dependencies',
+      pr_opened: 'PR opened',
+      ci_running: 'CI running',
+      ready_for_review: 'ready for review',
+      blocked: 'blocked',
+      merged: 'merged',
+      closed: 'closed',
+      completed: 'completed',
+      failed: 'failed',
+      cancelled: 'cancelled',
+    },
+  };
+}
+
 function skillAssignedToAgent(skill: SpecForgeSkillDTO, agentId: string) {
   const targets = skill.target_agents ?? [];
   return targets.some(target => {
@@ -1340,6 +1844,54 @@ function agentLogoForExecutor(value: string): AgentLogoKey {
 
 function isDirectTaskTerminal(status: string) {
   return ['completed', 'failed', 'cancelled'].includes(status);
+}
+
+function executionTasksForRuntime(run: ExecutionRun | undefined, runtime: LocalRuntime) {
+  if (!run) {
+    return [];
+  }
+  const normalizedRuntimeExecutor = normalizeAgentId(runtime.executor);
+  return [...run.tasks]
+    .filter(task => {
+      if (task.runtimeId === runtime.runtimeId) {
+        return true;
+      }
+      if (task.runtimeId) {
+        return false;
+      }
+      return normalizeAgentId(task.executor ?? '') === normalizedRuntimeExecutor;
+    })
+    .sort((a, b) => executionTaskSortScore(a) - executionTaskSortScore(b));
+}
+
+function executionTaskSortScore(task: PRNode) {
+  if (isExecutionTaskActive(task)) {
+    return 0;
+  }
+  if (task.runtimeId && !isExecutionTaskTerminal(task)) {
+    return 1;
+  }
+  if (!task.runtimeId) {
+    return 2;
+  }
+  return 3;
+}
+
+function isExecutionTaskActive(task: PRNode) {
+  return (
+    task.status === 'running' ||
+    task.status === 'ci_running' ||
+    task.processStatus === 'running' ||
+    task.processStatus === 'started'
+  );
+}
+
+function isExecutionTaskTerminal(task: PRNode) {
+  return ['completed', 'failed', 'cancelled', 'merged', 'closed'].includes(task.status);
+}
+
+function taskDisplayName(task: PRNode) {
+  return `${task.nodeKey} ${task.title}`;
 }
 
 function formatElapsedTime(value: string | undefined) {

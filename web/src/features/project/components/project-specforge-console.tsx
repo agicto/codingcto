@@ -1,6 +1,6 @@
 'use client';
 
-import { useState } from 'react';
+import { useMemo, useState } from 'react';
 import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
@@ -8,6 +8,7 @@ import {
   CheckCircle2,
   Circle,
   CircleAlert,
+  GitPullRequest,
   Sparkles,
 } from 'lucide-react';
 
@@ -15,6 +16,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
+import { ROUTES, buildRoute } from '@/constants/routes';
 import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
 import { Switch } from '@/components/ui/switch';
@@ -43,7 +45,12 @@ import {
   useProjectRepositoryOptions,
 } from '@/features/project/hooks/use-projects';
 import { primaryRepositoryContext } from '@/features/project/project-context';
-import { projectRequirementNewHref, projectSpecForgeHref } from '@/features/project/project-utils';
+import {
+  projectPlanHref,
+  projectPRReviewHref,
+  projectRequirementNewHref,
+  projectSpecForgeHref,
+} from '@/features/project/project-utils';
 import {
   projectDeliverySetupChecklist,
   type ProjectDeliverySetupItem,
@@ -67,10 +74,15 @@ import {
   useCreateSpecForgeProjectIdea,
   useDispatchExecutionRun,
   useGitHubRepositoryReadiness,
+  useLatestPlanRun,
+  useLatestProjectPlan,
   useRepoArchitectureStatus,
   useSpecForgeRuntimes,
   useStartExecutionRun,
 } from '@/features/specforge/hooks/use-specforge';
+import { executionRunFromDTO, planBundleFromDTO } from '@/features/specforge/plan-adapter';
+import { summarizeDeliveryRun } from '@/features/specforge/delivery-status';
+import type { ExecutionRun, PlanBundle, PRNode } from '@/features/specforge/types';
 import {
   specForgeService,
   type GitHubRepositoryReadinessCheckDTO,
@@ -205,6 +217,23 @@ function ProjectMvpBoard({
   const runtimesQuery = useSpecForgeRuntimes({ status: 'online', limit: 20 });
   const architectureQuery = useRepoArchitectureStatus(repoId);
   const readinessQuery = useGitHubRepositoryReadiness(repoId || undefined);
+  const latestPlanQuery = useLatestProjectPlan(projectId);
+  const latestPlan = useMemo(
+    () => (latestPlanQuery.data ? planBundleFromDTO(latestPlanQuery.data) : undefined),
+    [latestPlanQuery.data]
+  );
+  const latestPlanRunQuery = useLatestPlanRun(latestPlan?.planId, {
+    enabled: Boolean(latestPlan?.planId),
+    refetchInterval: latestPlan?.implementationPlan.status === 'approved' ? 3000 : false,
+  });
+  const latestRun = useMemo<ExecutionRun | undefined>(() => {
+    if (!latestPlanRunQuery.data) {
+      return undefined;
+    }
+    return executionRunFromDTO(latestPlanRunQuery.data, latestPlan).run;
+  }, [latestPlan, latestPlanRunQuery.data]);
+  const deliverySummary = latestRun ? summarizeDeliveryRun(latestRun) : undefined;
+  const deliveryTasks = latestRun?.tasks.length ? latestRun.tasks : (latestPlan?.prNodes ?? []);
   const localAgentReady = ['codex_cli', 'kimi_cli', 'claude_code_cli'].some(executor =>
     hasFreshDispatchRuntime(runtimesQuery.data?.runtimes, runtimeNow, executor, repoId)
   );
@@ -216,6 +245,14 @@ function ProjectMvpBoard({
   const wikiReady = Boolean(snapshot || profile);
   const projectName = context.project.name || `Project ${projectId}`;
   const newRequirementHref = projectRequirementNewHref(projectId);
+  const latestPlanHref = latestPlan?.planId ? projectPlanHref(projectId, latestPlan.planId) : undefined;
+  const runningTask = deliveryTasks.find(task => task.status === 'running');
+  const reviewableTask = deliveryTasks.find(task =>
+    ['pr_opened', 'ready_for_review'].includes(task.status)
+  );
+  const blockedTask = deliveryTasks.find(task =>
+    ['blocked', 'failed', 'cancelled'].includes(task.status)
+  );
 
   const cards: MvpBoardCard[] = [
     {
@@ -241,49 +278,90 @@ function ProjectMvpBoard({
     {
       id: 'requirement',
       column: 'intake',
-      title: '新建需求',
-      summary: '描述一个功能、bugfix、重构或测试目标。',
-      status: '等待输入',
-      tone: repoReady ? 'waiting' : 'blocked',
+      title: latestPlan ? `需求 #${latestPlan.ideaId ?? latestPlan.planId}` : '新建需求',
+      summary: latestPlan?.idea || '描述一个功能、bugfix、重构或测试目标。',
+      status: latestPlan ? '已生成计划' : '等待输入',
+      tone: latestPlan ? 'ready' : repoReady ? 'waiting' : 'blocked',
       details: [
-        '只需要输入产品目标、约束和非目标。',
-        'CodingCTO 会生成产品计划、技术计划和 1-5 个 PR 节点。',
-        '不会在计划审批前执行代码。',
+        latestPlan ? `计划：#${latestPlan.planId}` : '只需要输入产品目标、约束和非目标。',
+        latestPlan
+          ? `PR 节点：${latestPlan.prNodes.length} 个`
+          : 'CodingCTO 会生成产品计划、技术计划和 1-5 个 PR 节点。',
+        latestPlan
+          ? `审批状态：${latestPlan.implementationPlan.status === 'approved' ? '已审批' : '待审批'}`
+          : '不会在计划审批前执行代码。',
       ],
-      actionLabel: '新建需求',
-      actionHref: repoReady ? newRequirementHref : undefined,
+      actionLabel: latestPlan ? '查看计划' : '新建需求',
+      actionHref: latestPlanHref ?? (repoReady ? newRequirementHref : undefined),
       actionDisabled: !repoReady,
     },
     {
       id: 'approval',
       column: 'approve',
       title: '计划审批',
-      summary: '检查 PR 边界、依赖、风险和测试命令。',
-      status: '等待计划',
-      tone: 'waiting',
+      summary: latestPlan
+        ? latestPlan.implementationPlan.technicalSummary
+        : '检查 PR 边界、依赖、风险和测试命令。',
+      status: latestPlan
+        ? latestPlan.implementationPlan.status === 'approved'
+          ? '已审批'
+          : '待审批'
+        : '等待计划',
+      tone: latestPlan
+        ? latestPlan.implementationPlan.status === 'approved'
+          ? 'ready'
+          : 'waiting'
+        : 'waiting',
       details: [
-        '这是用户必须做的一次决策。',
-        '审批后系统按 PR 依赖顺序执行。',
-        'Prompt、Skill 和运行日志只作为高级详情展示。',
+        latestPlan ? `计划 #${latestPlan.planId}` : '这是用户必须做的一次决策。',
+        latestPlan
+          ? `PR DAG：${latestPlan.prNodes.map(node => node.nodeKey).join(' -> ')}`
+          : '审批后系统按 PR 依赖顺序执行。',
+        latestRun ? `Run #${latestRun.runId}：${latestRun.status}` : 'Prompt、Skill 和运行日志只作为高级详情展示。',
       ],
-      actionLabel: '先生成计划',
-      actionHref: repoReady ? newRequirementHref : undefined,
+      actionLabel: latestPlan ? '查看计划' : '先生成计划',
+      actionHref: latestPlanHref ?? (repoReady ? newRequirementHref : undefined),
       actionDisabled: !repoReady,
     },
     {
       id: 'delivery',
       column: 'delivery',
-      title: 'PR 交付',
-      summary: '跟踪 PR、CI、自动修复和需要人工判断的阻塞项。',
-      status: '等待审批',
-      tone: 'waiting',
+      title: runningTask
+        ? `${runningTask.nodeKey} 执行中`
+        : reviewableTask
+          ? `${reviewableTask.nodeKey} 可评审`
+          : blockedTask
+            ? `${blockedTask.nodeKey} 已阻塞`
+            : 'PR 交付',
+      summary:
+        deliverySummary?.headline ??
+        (latestPlan?.implementationPlan.status === 'approved'
+          ? '等待 runtime 认领或回传执行结果。'
+          : '跟踪 PR、CI、自动修复和需要人工判断的阻塞项。'),
+      status: latestRun
+        ? latestRun.status
+        : latestPlan?.implementationPlan.status === 'approved'
+          ? '等待派发'
+          : '等待审批',
+      tone: blockedTask
+        ? 'blocked'
+        : runningTask
+          ? 'running'
+          : reviewableTask || deliverySummary?.ready
+            ? 'ready'
+            : 'waiting',
       details: [
-        '交付单位是 GitHub PR，不是 agent 任务。',
-        'CI 失败会先自动分类和尝试修复。',
-        '无法安全继续时，只显示需要用户判断的阻塞项。',
+        deliverySummary?.nextAction ?? '交付单位是 GitHub PR，不是 agent 任务。',
+        latestRun ? `Run #${latestRun.runId}，任务数：${latestRun.tasks.length}` : '还没有执行 run。',
+        runningTask
+          ? `当前阶段：${runningTask.currentPhase ?? runningTask.processStatus ?? 'running'}`
+          : 'CI 失败会先自动分类和尝试修复。',
       ],
-      actionLabel: '等待审批',
-      actionDisabled: true,
+      actionLabel: reviewableTask?.taskId ? '查看 PR' : latestPlan ? '查看计划' : '等待审批',
+      actionHref: reviewableTask?.taskId
+        ? projectPRReviewHref(projectId, Number(reviewableTask.id))
+        : latestPlanHref,
+      actionDisabled: !reviewableTask?.taskId && !latestPlanHref,
     },
   ];
 
@@ -318,9 +396,17 @@ function ProjectMvpBoard({
           <MvpStatusMetric label="GitHub" value={githubReady ? 'Ready' : '需检查'} state={githubReady ? 'ready' : 'waiting'} />
         </div>
         <div className="mt-3 rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 text-sm leading-6 text-text-muted">
-          主流程只保留准备、需求、审批、交付。Coding Agent 作为独立左侧菜单入口，不放在看板里。
+          交付状态以 PR 节点为单位显示。运行器和 agent 是执行证据，不再藏在单独入口里。
         </div>
       </section>
+
+      <DeliveryMonitorPanel
+        projectId={projectId}
+        latestPlan={latestPlan}
+        latestRun={latestRun}
+        tasks={deliveryTasks}
+        isLoading={latestPlanQuery.isFetching || latestPlanRunQuery.isFetching}
+      />
 
       <section className="grid gap-3 xl:grid-cols-4">
         {mvpBoardColumns.map(column => {
@@ -440,6 +526,160 @@ function ProjectMvpBoard({
   );
 }
 
+function DeliveryMonitorPanel({
+  projectId,
+  latestPlan,
+  latestRun,
+  tasks,
+  isLoading,
+}: {
+  projectId: number;
+  latestPlan?: PlanBundle;
+  latestRun?: ExecutionRun;
+  tasks: PRNode[];
+  isLoading: boolean;
+}) {
+  const summary = latestRun ? summarizeDeliveryRun(latestRun) : undefined;
+  const planHref = latestPlan?.planId ? projectPlanHref(projectId, latestPlan.planId) : undefined;
+  const total = summary?.total ?? tasks.length;
+  const ready = summary?.ready ?? tasks.filter(task => ['completed', 'pr_opened', 'ready_for_review', 'merged'].includes(task.status)).length;
+  const progressPercent = summary?.progressPercent ?? (total ? Math.round((ready / total) * 100) : 0);
+  const activeTask = tasks.find(task => task.status === 'running' || task.status === 'ci_running');
+
+  return (
+    <section className="rounded-lg border border-border-subtle bg-bg-surface p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h2 className="text-base font-semibold text-text-main">当前交付</h2>
+            <Badge variant="outline" className={latestRun ? mvpToneClassName(activeTask ? 'running' : 'ready') : 'text-text-muted'}>
+              {latestRun ? `Run #${latestRun.runId}` : latestPlan ? `Plan #${latestPlan.planId}` : '暂无计划'}
+            </Badge>
+            {isLoading ? (
+              <Badge variant="outline" className="border-info/30 text-info">
+                刷新中
+              </Badge>
+            ) : null}
+          </div>
+          <p className="mt-2 max-w-4xl text-sm leading-6 text-text-muted">
+            {summary?.headline ??
+              (latestPlan
+                ? latestPlan.implementationPlan.status === 'approved'
+                  ? '计划已审批，等待执行任务创建或 runtime 回传结果。'
+                  : '计划已生成，先进入计划页审批后才会启动执行。'
+                : '还没有项目计划。先创建一个需求并生成计划。')}
+          </p>
+          {summary?.nextAction ? (
+            <p className="mt-1 text-sm leading-6 text-text-main">{summary.nextAction}</p>
+          ) : null}
+        </div>
+        <div className="flex flex-wrap gap-2">
+          {planHref ? (
+            <Button asChild variant="outline" size="sm">
+              <Link href={planHref}>打开计划</Link>
+            </Button>
+          ) : null}
+          <Button asChild size="sm">
+            <Link href={projectRequirementNewHref(projectId)}>新建需求</Link>
+          </Button>
+        </div>
+      </div>
+
+      <div className="mt-4 grid gap-3 lg:grid-cols-[260px_minmax(0,1fr)]">
+        <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+          <div className="flex items-baseline justify-between gap-3">
+            <div>
+              <div className="text-xs text-text-muted">PR 节点进度</div>
+              <div className="mt-1 text-2xl font-semibold text-text-main">
+                {ready}/{total}
+              </div>
+            </div>
+            <Badge variant="outline" className="text-text-muted">
+              {progressPercent}%
+            </Badge>
+          </div>
+          <div className="mt-3 h-2 overflow-hidden rounded-full bg-bg-surface">
+            <div
+              className="h-full rounded-full bg-primary transition-all"
+              style={{ width: `${progressPercent}%` }}
+            />
+          </div>
+          <div className="mt-3 grid grid-cols-2 gap-2 text-xs text-text-muted">
+            <div>运行中：{summary?.active ?? 0}</div>
+            <div>等待：{summary?.waiting ?? 0}</div>
+            <div>阻塞：{summary?.blocked ?? 0}</div>
+            <div>失败：{summary?.failed ?? 0}</div>
+          </div>
+        </div>
+
+        <div className="min-w-0 rounded-md border border-border-subtle bg-bg-subtle">
+          {tasks.length ? (
+            <div className="divide-y divide-border-subtle">
+              {tasks.map(task => (
+                <div key={`${task.id}-${task.taskId ?? 'planned'}`} className="grid gap-3 p-3 lg:grid-cols-[minmax(0,1fr)_220px] lg:items-center">
+                  <div className="min-w-0">
+                    <div className="flex flex-wrap items-center gap-2">
+                      <Badge variant="outline" className="font-mono text-[10px]">
+                        {task.nodeKey}
+                      </Badge>
+                      <Badge variant="outline" className={deliveryTaskStatusClassName(task.status)}>
+                        {deliveryTaskStatusLabel(task.status)}
+                      </Badge>
+                      {task.taskId ? (
+                        <Badge variant="outline" className="text-text-muted">
+                          task #{task.taskId}
+                        </Badge>
+                      ) : null}
+                    </div>
+                    <div className="mt-2 truncate text-sm font-medium text-text-main">
+                      {task.title}
+                    </div>
+                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs leading-5 text-text-muted">
+                      <span>phase: {task.currentPhase ?? task.processStatus ?? 'not started'}</span>
+                      {task.runtimeId ? (
+                        <Link
+                          href={`${buildRoute(ROUTES.CONSOLE.AGENT, {
+                            agentId: encodeURIComponent(task.runtimeId),
+                          })}?projectId=${projectId}`}
+                          className="text-primary hover:underline"
+                        >
+                          runtime: {task.runtimeId}
+                        </Link>
+                      ) : null}
+                      {task.lastProgressAt ? <span>last: {formatDeliveryTime(task.lastProgressAt)}</span> : null}
+                      {task.workdir ? <span className="truncate">dir: {task.workdir}</span> : null}
+                    </div>
+                  </div>
+                  <div className="flex flex-wrap justify-start gap-2 lg:justify-end">
+                    {task.githubPrUrl ? (
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={task.githubPrUrl} target="_blank" rel="noreferrer">
+                          GitHub PR
+                        </Link>
+                      </Button>
+                    ) : null}
+                    {task.taskId && ['pr_opened', 'ready_for_review', 'completed', 'failed', 'blocked'].includes(task.status) ? (
+                      <Button asChild variant="outline" size="sm">
+                        <Link href={projectPRReviewHref(projectId, Number(task.id))}>
+                          评审
+                        </Link>
+                      </Button>
+                    ) : null}
+                  </div>
+                </div>
+              ))}
+            </div>
+          ) : (
+            <div className="p-4 text-sm leading-6 text-text-muted">
+              当前没有 PR 节点。先创建需求并生成计划。
+            </div>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
 function MvpStatusMetric({
   label,
   value,
@@ -508,6 +748,75 @@ function mvpToneClassName(tone: MvpBoardCard['tone']) {
     default:
       return 'border-border-subtle text-text-muted';
   }
+}
+
+function deliveryTaskStatusLabel(status: PRNode['status']) {
+  switch (status) {
+    case 'planned':
+      return '已计划';
+    case 'queued':
+      return '已排队';
+    case 'running':
+      return '执行中';
+    case 'waiting_on_dependencies':
+      return '等待依赖';
+    case 'pr_opened':
+      return 'PR 已打开';
+    case 'ci_running':
+      return 'CI 中';
+    case 'ready_for_review':
+      return '可评审';
+    case 'blocked':
+      return '阻塞';
+    case 'merged':
+      return '已合并';
+    case 'closed':
+      return '已关闭';
+    case 'completed':
+      return '已完成';
+    case 'failed':
+      return '失败';
+    case 'cancelled':
+      return '已取消';
+    default:
+      return status;
+  }
+}
+
+function deliveryTaskStatusClassName(status: PRNode['status']) {
+  switch (status) {
+    case 'running':
+    case 'ci_running':
+      return 'border-primary/30 text-primary';
+    case 'pr_opened':
+    case 'ready_for_review':
+    case 'completed':
+    case 'merged':
+      return 'border-success/30 text-success';
+    case 'blocked':
+    case 'failed':
+    case 'cancelled':
+      return 'border-error/30 text-error';
+    case 'queued':
+    case 'waiting_on_dependencies':
+      return 'border-warning/30 text-warning';
+    default:
+      return 'border-border-subtle text-text-muted';
+  }
+}
+
+function formatDeliveryTime(value: string) {
+  const date = new Date(value);
+  if (Number.isNaN(date.getTime())) {
+    return value;
+  }
+  return new Intl.DateTimeFormat('zh-Hans', {
+    month: '2-digit',
+    day: '2-digit',
+    hour: '2-digit',
+    minute: '2-digit',
+    second: '2-digit',
+  }).format(date);
 }
 
 function ProjectScopedState({
