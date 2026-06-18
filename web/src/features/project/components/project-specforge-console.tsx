@@ -214,7 +214,9 @@ function ProjectMvpBoard({
   const repoId = repository?.repository.repository_id ?? '';
   const [runtimeNow] = useState(() => Date.now());
   const [selectedCardId, setSelectedCardId] = useState<string | undefined>();
+  const [deliveryActionMessage, setDeliveryActionMessage] = useState('');
   const runtimesQuery = useSpecForgeRuntimes({ status: 'online', limit: 20 });
+  const dispatchRun = useDispatchExecutionRun();
   const architectureQuery = useRepoArchitectureStatus(repoId);
   const readinessQuery = useGitHubRepositoryReadiness(repoId || undefined);
   const latestPlanQuery = useLatestProjectPlan(projectId);
@@ -253,6 +255,26 @@ function ProjectMvpBoard({
   const blockedTask = deliveryTasks.find(task =>
     ['blocked', 'failed', 'cancelled'].includes(task.status)
   );
+  const queuedTask = deliveryTasks.find(task => task.status === 'queued');
+
+  async function dispatchQueuedTask() {
+    if (!latestRun?.runId || !queuedTask) {
+      return;
+    }
+    setDeliveryActionMessage('');
+    try {
+      await dispatchRun.mutateAsync({
+        runId: latestRun.runId,
+        payload: {
+          max_tasks: 1,
+          require_runtime_ready: true,
+        },
+      });
+      setDeliveryActionMessage(`${queuedTask.nodeKey} 已派发给可用 runtime。`);
+    } catch {
+      setDeliveryActionMessage('派发失败。请确认本地 runtime 在线并匹配目标仓库。');
+    }
+  }
 
   const cards: MvpBoardCard[] = [
     {
@@ -406,6 +428,9 @@ function ProjectMvpBoard({
         latestRun={latestRun}
         tasks={deliveryTasks}
         isLoading={latestPlanQuery.isFetching || latestPlanRunQuery.isFetching}
+        isDispatching={dispatchRun.isPending}
+        actionMessage={deliveryActionMessage}
+        onDispatchQueuedTask={dispatchQueuedTask}
       />
 
       <section className="grid gap-3 xl:grid-cols-4">
@@ -532,12 +557,18 @@ function DeliveryMonitorPanel({
   latestRun,
   tasks,
   isLoading,
+  isDispatching,
+  actionMessage,
+  onDispatchQueuedTask,
 }: {
   projectId: number;
   latestPlan?: PlanBundle;
   latestRun?: ExecutionRun;
   tasks: PRNode[];
   isLoading: boolean;
+  isDispatching: boolean;
+  actionMessage: string;
+  onDispatchQueuedTask: () => void;
 }) {
   const summary = latestRun ? summarizeDeliveryRun(latestRun) : undefined;
   const planHref = latestPlan?.planId ? projectPlanHref(projectId, latestPlan.planId) : undefined;
@@ -545,6 +576,7 @@ function DeliveryMonitorPanel({
   const ready = summary?.ready ?? tasks.filter(task => ['completed', 'pr_opened', 'ready_for_review', 'merged'].includes(task.status)).length;
   const progressPercent = summary?.progressPercent ?? (total ? Math.round((ready / total) * 100) : 0);
   const activeTask = tasks.find(task => task.status === 'running' || task.status === 'ci_running');
+  const queuedTask = tasks.find(task => task.status === 'queued');
 
   return (
     <section className="rounded-lg border border-border-subtle bg-bg-surface p-4">
@@ -574,6 +606,11 @@ function DeliveryMonitorPanel({
           ) : null}
         </div>
         <div className="flex flex-wrap gap-2">
+          {queuedTask && !activeTask ? (
+            <Button type="button" size="sm" disabled={isDispatching} onClick={onDispatchQueuedTask}>
+              {isDispatching ? '派发中' : `继续执行 ${queuedTask.nodeKey}`}
+            </Button>
+          ) : null}
           {planHref ? (
             <Button asChild variant="outline" size="sm">
               <Link href={planHref}>打开计划</Link>
@@ -584,6 +621,11 @@ function DeliveryMonitorPanel({
           </Button>
         </div>
       </div>
+      {actionMessage ? (
+        <div className="mt-3 rounded-md border border-info/20 bg-info-subtle px-3 py-2 text-sm leading-6 text-info">
+          {actionMessage}
+        </div>
+      ) : null}
 
       <div className="mt-4 grid gap-3 lg:grid-cols-[260px_minmax(0,1fr)]">
         <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
@@ -651,6 +693,17 @@ function DeliveryMonitorPanel({
                     </div>
                   </div>
                   <div className="flex flex-wrap justify-start gap-2 lg:justify-end">
+                    {task.status === 'queued' && !activeTask ? (
+                      <Button
+                        type="button"
+                        variant="outline"
+                        size="sm"
+                        disabled={isDispatching}
+                        onClick={onDispatchQueuedTask}
+                      >
+                        {isDispatching ? '派发中' : '继续执行'}
+                      </Button>
+                    ) : null}
                     {task.githubPrUrl ? (
                       <Button asChild variant="outline" size="sm">
                         <Link href={task.githubPrUrl} target="_blank" rel="noreferrer">
