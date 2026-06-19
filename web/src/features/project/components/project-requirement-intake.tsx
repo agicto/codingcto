@@ -3,21 +3,10 @@
 import Link from 'next/link';
 import { useParams, useRouter } from 'next/navigation';
 import { FormEvent, useMemo, useState, type ReactNode } from 'react';
-import {
-  ArrowRight,
-  GitBranch,
-  Lightbulb,
-  ListChecks,
-  ScrollText,
-  ShieldCheck,
-  Sparkles,
-  Workflow,
-} from 'lucide-react';
+import { ArrowRight, GitBranch, Lightbulb, ListChecks, ScrollText, Sparkles, Workflow } from 'lucide-react';
 
 import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
-import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
-import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
 import { Label } from '@/components/ui/label';
 import {
   Select,
@@ -27,13 +16,19 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { Textarea } from '@/components/ui/textarea';
-import { ProjectPlanningFlowCard } from '@/features/project/components/project-planning-flow-card';
+import {
+  ProjectAdvancedDetails,
+  ProjectCommandHeader,
+  ProjectReadinessStrip,
+  ProjectWorkflowStepper,
+  type ProjectReadinessStripItem,
+  type ProjectWorkflowStep,
+} from '@/features/project/components/project-flow-primitives';
 import { useProjectContext } from '@/features/project/hooks/use-projects';
 import {
   primaryRepositoryContext,
   projectContextReadiness,
 } from '@/features/project/project-context';
-import { projectPlanningStages } from '@/features/project/project-planning-flow';
 import { projectContextHref, projectPlanHref } from '@/features/project/project-utils';
 import type { ProjectContextDTO } from '@/features/project/services/project-service';
 import { useCreateSpecForgeProjectIdea } from '@/features/specforge/hooks/use-specforge';
@@ -149,14 +144,14 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
   const [message, setMessage] = useState('');
   const canSubmit = Boolean(input.trim() && readiness.hasPrimaryRepository);
   const readinessTone = !readiness.hasPrimaryRepository
-    ? 'warning'
+    ? 'blocked'
     : readiness.warningCount > 0 || readiness.skillCount === 0
-      ? 'caution'
+      ? 'waiting'
       : 'ready';
   const readinessLabel =
     readinessTone === 'ready'
       ? 'Planning ready'
-      : readinessTone === 'caution'
+      : readinessTone === 'waiting'
         ? 'Ready with warnings'
         : 'Primary repo required';
   const submitHelper = !readiness.hasPrimaryRepository
@@ -168,13 +163,58 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
     () => requirementTypes.find(item => item.value === requirementType) ?? requirementTypes[0],
     [requirementType]
   );
-  const planningStages = projectPlanningStages({
-    hasPrimaryRepository: readiness.hasPrimaryRepository,
-    hasRequirementInput: Boolean(input.trim()),
-    hasPlan: false,
-    prNodeCount: 0,
-    hasCompiledPrompt: false,
-  });
+  const readinessStrip: ProjectReadinessStripItem[] = [
+    {
+      label: 'Project',
+      value: context.project.name,
+      helper: context.project.description || 'No project description yet.',
+      tone: 'ready',
+    },
+    {
+      label: 'Primary repository',
+      value: primaryRepository?.repository.repository_id ?? 'Missing',
+      helper: readiness.summary,
+      tone: readiness.hasPrimaryRepository ? 'ready' : 'blocked',
+    },
+    {
+      label: 'Context readiness',
+      value: readiness.nextAction,
+      helper: `${readiness.activeRepositoryCount} repos · ${readiness.skillCount} skills`,
+      tone: readinessTone,
+    },
+    {
+      label: 'Plan safety',
+      value: 'Approval required',
+      helper: 'No code runs before plan approval.',
+      tone: 'waiting',
+    },
+  ];
+  const workflowSteps: ProjectWorkflowStep[] = [
+    {
+      id: 'context',
+      label: 'Context',
+      description: readiness.hasPrimaryRepository ? 'Primary repository selected' : 'Repository required',
+      status: readiness.hasPrimaryRepository ? 'complete' : 'blocked',
+    },
+    {
+      id: 'requirement',
+      label: 'Requirement',
+      description: 'Capture one product outcome',
+      status: readiness.hasPrimaryRepository ? 'current' : 'blocked',
+    },
+    {
+      id: 'plan',
+      label: 'Plan',
+      description: 'Generate product and technical plan',
+      status: 'waiting',
+    },
+    {
+      id: 'approve',
+      label: 'Approve',
+      description: 'Review PR DAG before execution',
+      status: 'waiting',
+    },
+  ];
 
   function applyExample(example: (typeof requirementExamples)[number]) {
     setInput(example.input);
@@ -217,42 +257,28 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
   }
 
   return (
-    <main className="mx-auto grid h-full min-h-0 w-full max-w-7xl gap-5 overflow-y-auto px-4 py-6 md:px-8 xl:grid-cols-[minmax(0,1fr)_360px]">
-      <section className="min-w-0">
-        <div className="border-b border-border-subtle pb-5">
-          <div className="flex flex-wrap items-center gap-2">
-            <Badge variant="outline">Requirement intake</Badge>
-            <Badge
-              variant="outline"
-              className={
-                readinessTone === 'ready'
-                  ? 'border-success/30 text-success'
-                  : readinessTone === 'caution'
-                    ? 'border-warning/30 text-warning'
-                  : 'border-warning/30 text-warning'
-              }
-            >
-              {readinessLabel}
-            </Badge>
-          </div>
-          <h1 className="mt-3 text-2xl font-semibold tracking-tight text-text-main">
-            Create a product requirement
-          </h1>
-          <p className="mt-2 max-w-3xl text-sm leading-6 text-text-muted">
-            Describe the product outcome once. CodingCTO will use the project context to generate a
-            product plan, technical plan, PR DAG, and scoped implementation prompts.
-          </p>
-        </div>
+    <main className="mx-auto flex h-full min-h-0 w-full max-w-5xl flex-col gap-5 overflow-y-auto px-4 py-6 md:px-8">
+      <ProjectCommandHeader
+        title="Create a product requirement"
+        description="Describe the product outcome once. CodingCTO will generate a product plan, technical plan, PR DAG, and scoped implementation prompts."
+        badges={[
+          { label: 'Requirement intake' },
+          { label: readinessLabel, tone: readinessTone },
+        ]}
+        secondaryActions={[
+          {
+            label: 'Review context',
+            href: projectContextHref(context.project.id),
+            variant: 'outline',
+          },
+        ]}
+      />
 
-        <div className="mt-5">
-          <ProjectPlanningFlowCard
-            stages={planningStages}
-            title="Requirement planning path"
-            description="This is the first complete CodingCTO loop: project context, requirement, generated plan, PR DAG, and prompt preview."
-          />
-        </div>
+      <ProjectReadinessStrip items={readinessStrip} />
+      <ProjectWorkflowStepper steps={workflowSteps} />
 
-        <form className="mt-5 space-y-4" onSubmit={submitRequirement}>
+      <section className="rounded-[4px] border border-border-subtle bg-bg-surface p-5">
+        <form className="space-y-4" onSubmit={submitRequirement}>
           <div className="space-y-2">
             <div className="flex flex-wrap items-end justify-between gap-2">
               <div>
@@ -318,23 +344,6 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
               />
             </div>
           </div>
-          <div className="grid gap-2 rounded-md border border-border-subtle bg-bg-subtle p-3 text-sm md:grid-cols-3">
-            <NextStep
-              icon={<ScrollText className="h-4 w-4" />}
-              title="Plan"
-              description="Product plan, technical plan, and assumptions."
-            />
-            <NextStep
-              icon={<Workflow className="h-4 w-4" />}
-              title="PR DAG"
-              description="Large but reviewable implementation slices."
-            />
-            <NextStep
-              icon={<ShieldCheck className="h-4 w-4" />}
-              title="Approval"
-              description="Execution waits until a human approves the plan."
-            />
-          </div>
           {message ? (
             <div className="rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 text-sm leading-5 text-text-muted">
               {message}
@@ -342,7 +351,7 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
           ) : null}
           <div className="flex flex-wrap gap-2">
             <Button type="submit" disabled={!canSubmit || createRequirement.isPending}>
-              {createRequirement.isPending ? 'Generating plan' : 'Generate plan for review'}
+              {createRequirement.isPending ? 'Generating plan' : 'Generate plan'}
               <ArrowRight className="ml-1.5 h-4 w-4" />
             </Button>
             <Button asChild type="button" variant="outline">
@@ -353,71 +362,56 @@ function RequirementIntake({ context }: { context: ProjectContextDTO }) {
         </form>
       </section>
 
-      <aside className="space-y-3">
-        <ContextCard
-          icon={<Sparkles className="h-4 w-4" />}
-          title="Project"
-          value={context.project.name}
-          caption={context.project.description || 'No project description yet.'}
-        />
-        <ContextCard
-          icon={<GitBranch className="h-4 w-4" />}
-          title="Primary repository"
-          value={primaryRepository?.repository.repository_id ?? 'Missing'}
-          caption={readiness.summary}
-        />
-        <ContextCard
-          icon={<ListChecks className="h-4 w-4" />}
-          title="Context readiness"
-          value={readiness.nextAction}
-          caption={`${readiness.activeRepositoryCount} repos · ${readiness.skillCount} skills · ${readiness.warningCount} warnings`}
-        />
-        <ContextCard
-          icon={<Workflow className="h-4 w-4" />}
-          title="Plan inputs"
-          value="Context drives every generated artifact"
-          caption="Repo profiles, architecture snapshots, skills, and guardrails will be used for the product plan, technical plan, PR DAG, and prompts."
-        />
-        <ContextCard
-          icon={<ScrollText className="h-4 w-4" />}
-          title="Human checkpoint"
-          value="Plan approval remains required"
-          caption="This page creates a recommended plan. Execution still waits for explicit approval."
-        />
+      <ProjectAdvancedDetails
+        title="Advanced planning context"
+        description="Project context still informs the generated plan, but it does not need to dominate the intake form."
+      >
+        <div className="grid gap-3 md:grid-cols-2">
+          <ContextBlock
+            icon={<Sparkles className="h-4 w-4" />}
+            title="Project"
+            value={context.project.name}
+            caption={context.project.description || 'No project description yet.'}
+          />
+          <ContextBlock
+            icon={<GitBranch className="h-4 w-4" />}
+            title="Primary repository"
+            value={primaryRepository?.repository.repository_id ?? 'Missing'}
+            caption={readiness.summary}
+          />
+          <ContextBlock
+            icon={<ListChecks className="h-4 w-4" />}
+            title="Context readiness"
+            value={readiness.nextAction}
+            caption={`${readiness.activeRepositoryCount} repos · ${readiness.skillCount} skills · ${readiness.warningCount} warnings`}
+          />
+          <ContextBlock
+            icon={<Workflow className="h-4 w-4" />}
+            title="Plan inputs"
+            value="Context drives every generated artifact"
+            caption="Repo profiles, architecture snapshots, skills, and guardrails will be used for the plan, PR DAG, and prompts."
+          />
+          <ContextBlock
+            icon={<ScrollText className="h-4 w-4" />}
+            title="Human checkpoint"
+            value="Plan approval remains required"
+            caption="This page creates a recommended plan. Execution waits for explicit approval."
+          />
+        </div>
         {!readiness.hasPrimaryRepository ? (
-          <Alert>
+          <Alert className="mt-4">
             <AlertTitle>Primary repository required</AlertTitle>
             <AlertDescription>
               Requirement generation needs one writable primary repository.
             </AlertDescription>
           </Alert>
         ) : null}
-      </aside>
+      </ProjectAdvancedDetails>
     </main>
   );
 }
 
-function NextStep({
-  icon,
-  title,
-  description,
-}: {
-  icon: ReactNode;
-  title: string;
-  description: string;
-}) {
-  return (
-    <div className="flex min-w-0 items-start gap-2">
-      <div className="mt-0.5 text-text-muted">{icon}</div>
-      <div className="min-w-0">
-        <div className="font-medium text-text-main">{title}</div>
-        <p className="mt-0.5 text-xs leading-5 text-text-muted">{description}</p>
-      </div>
-    </div>
-  );
-}
-
-function ContextCard({
+function ContextBlock({
   icon,
   title,
   value,
@@ -429,18 +423,14 @@ function ContextCard({
   caption: string;
 }) {
   return (
-    <Card className="border-border-subtle shadow-xs">
-      <CardHeader className="space-y-1">
-        <CardTitle className="flex items-center gap-2 text-sm">
-          {icon}
-          {title}
-        </CardTitle>
-        <CardDescription className="text-xs leading-5">{caption}</CardDescription>
-      </CardHeader>
-      <CardContent>
-        <div className="text-sm font-medium leading-5 text-text-main">{value}</div>
-      </CardContent>
-    </Card>
+    <div className="rounded-[4px] border border-border-subtle bg-bg-subtle p-3">
+      <div className="flex items-center gap-2 text-sm font-medium text-text-main">
+        <span className="text-text-muted">{icon}</span>
+        {title}
+      </div>
+      <div className="mt-2 text-sm font-medium leading-5 text-text-main">{value}</div>
+      <p className="mt-1 text-xs leading-5 text-text-muted">{caption}</p>
+    </div>
   );
 }
 
