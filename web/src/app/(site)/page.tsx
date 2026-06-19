@@ -11,18 +11,8 @@ import {
   Sparkles, 
   Palette,
   Atom,
-  Bot,
-  CheckCircle2,
-  ClipboardCheck,
-  Code2,
   Database,
-  FileCode2,
-  MessageSquareText,
-  Rocket,
-  ShieldCheck,
-  Target,
-  TestTube2,
-  UsersRound
+  ShieldCheck
 } from 'lucide-react';
 
 /**
@@ -72,15 +62,13 @@ export default async function HomePage() {
                 <Button variant="outline" size="lg" className="h-12 px-8">
                   {t('hero.viewDemo')}
                 </Button>
-              </Link>
+              </div>
             </div>
 
             <div className="rounded-[28px] border border-blue-100/80 bg-white/72 p-3 shadow-[0_30px_90px_rgba(17,99,255,0.14)] backdrop-blur-xl dark:border-white/10 dark:bg-white/5 dark:shadow-[0_30px_90px_rgba(0,0,0,0.35)]">
               <WorkflowDiagram />
             </div>
           </div>
-        </div>
-      </section>
 
       {/* Features Section */}
       <section className="py-20 md:py-28 bg-bg-subtle/30">
@@ -208,65 +196,6 @@ const featuresData = (t: SiteTranslator) => [
     icon: Palette,
   },
 ];
-
-const techStackData = [
-  {
-    name: 'Next.js',
-    icon: <Atom className="h-5 w-5 text-[#1163ff]" />,
-  },
-  {
-    name: 'Go API',
-    icon: <Terminal className="h-5 w-5 text-[#20a35a]" />,
-  },
-  {
-    name: 'PostgreSQL',
-    icon: <Database className="h-5 w-5 text-[#6d4cff]" />,
-  },
-  {
-    name: 'GitHub',
-    icon: <Code2 className="h-5 w-5 text-[#ff7a22]" />,
-  },
-];
-
-const teamRoles = [
-  { name: 'PM', detail: '需求澄清' },
-  { name: 'Engineer', detail: '技术方案' },
-  { name: 'Designer', detail: '体验边界' },
-  { name: 'QA', detail: '验证策略' },
-];
-
-const knowledgeItems = ['产品目标', '风险边界', '代码结构', '验收标准'];
-const agents = ['Cursor', 'Codex', 'Claude Code', 'Gemini CLI', '更多执行器'];
-const qualityItems = ['单元测试', '集成检查', '代码审查', '自动修复'];
-const deliveryItems = ['分支与提交', 'PR 描述', 'CI 信号', '人工可审'];
-
-const benefits = [
-  { title: '需求到计划', detail: '快速生成 PR DAG', icon: MessageSquareText, tone: 'blue' },
-  { title: '多专家', detail: '减少上下文遗漏', icon: UsersRound, tone: 'purple' },
-  { title: '自动执行', detail: '运行器接管实现', icon: Bot, tone: 'blue' },
-  { title: '质量闭环', detail: '测试和修复联动', icon: ShieldCheck, tone: 'green' },
-  { title: 'PR 交付', detail: '最终仍由人审', icon: Rocket, tone: 'orange' },
-];
-
-function WorkflowDiagram() {
-  return (
-    <div className="space-y-5">
-      <div className="grid items-stretch gap-4 xl:grid-cols-[1fr_auto_1.35fr_auto_1fr_auto_1fr]">
-        <InputStage />
-        <FlowArrow tone="blue" />
-        <TeamStage />
-        <FlowArrow tone="purple" />
-        <AgentStage />
-        <FlowArrow tone="green" />
-        <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-1">
-          <QualityStage />
-          <DeliveryStage />
-        </div>
-      </div>
-      <BenefitStrip />
-    </div>
-  );
-}
 
 function InputStage() {
   return (

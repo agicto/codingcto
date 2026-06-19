@@ -499,6 +499,7 @@ function SidebarLink({
 }) {
   const text = label ?? title ?? '';
   const active = !disabled && isSidebarItemActive({ href, activeOn }, pathname, settingsTab);
+  const showDescription = Boolean(active && description);
   const content = (
     <>
       <span className="flex min-w-0 items-center gap-2">
