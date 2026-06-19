@@ -207,6 +207,7 @@ function ProjectDeliveryBoard({
 }) {
   const repoId = repository?.repository.repository_id ?? '';
   const projectName = context.project.name || `Project ${projectId}`;
+  const [runtimeNow] = useState(() => Date.now());
   const [deliveryActionMessage, setDeliveryActionMessage] = useState('');
   const runtimesQuery = useSpecForgeRuntimes({ status: 'online', limit: 20 });
   const dispatchRun = useDispatchExecutionRun();
