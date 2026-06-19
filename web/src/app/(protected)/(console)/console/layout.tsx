@@ -98,11 +98,11 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
   const currentProjectId = projectIdFromConsolePathname(pathname);
   const boardHref = currentProjectId
     ? projectSpecForgeHref(currentProjectId)
-    : ROUTES.CONSOLE.SPECFORGE;
+    : ROUTES.CONSOLE.PROJECTS;
   const agentsHref = `${ROUTES.CONSOLE.AGENTS}?return_to=${encodeURIComponent(boardHref)}`;
   const newRequirementHref = currentProjectId
     ? projectDeliveryIntakeHref(currentProjectId)
-    : `${ROUTES.CONSOLE.SPECFORGE}?board=intake&new=requirement`;
+    : ROUTES.CONSOLE.PROJECTS;
 
   function toggleSidebarCollapsed() {
     setSidebarCollapsed(current => !current);

@@ -30,9 +30,7 @@ describe('project utils', () => {
   });
 
   it('builds project-scoped delivery board intake routes', () => {
-    expect(projectDeliveryIntakeHref(42)).toBe(
-      '/console/projects/42/codingcto?board=intake&new=requirement'
-    );
+    expect(projectDeliveryIntakeHref(42)).toBe('/console/projects/42/requirements/new');
   });
 
   it('builds project-scoped plan review routes', () => {
