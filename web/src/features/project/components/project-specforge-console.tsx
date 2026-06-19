@@ -5,10 +5,6 @@ import Link from 'next/link';
 import { useParams } from 'next/navigation';
 import {
   ArrowRight,
-  CheckCircle2,
-  Circle,
-  CircleAlert,
-  GitPullRequest,
   Sparkles,
 } from 'lucide-react';
 
@@ -16,11 +12,7 @@ import { Alert, AlertDescription, AlertTitle } from '@/components/ui/alert';
 import { Badge } from '@/components/ui/badge';
 import { Button } from '@/components/ui/button';
 import { Card, CardContent, CardDescription, CardHeader, CardTitle } from '@/components/ui/card';
-import { ROUTES, buildRoute } from '@/constants/routes';
-import { Input } from '@/components/ui/input';
 import { Label } from '@/components/ui/label';
-import { Switch } from '@/components/ui/switch';
-import { Textarea } from '@/components/ui/textarea';
 import {
   Select,
   SelectContent,
@@ -28,15 +20,6 @@ import {
   SelectTrigger,
   SelectValue,
 } from '@/components/ui/select';
-import {
-  Dialog,
-  DialogBody,
-  DialogContent,
-  DialogDescription,
-  DialogFooter,
-  DialogHeader,
-  DialogTitle,
-} from '@/components/ui/dialog';
 import { useLocale } from '@/hooks/use-locale';
 import { useT } from '@/i18n';
 import {
@@ -46,15 +29,20 @@ import {
 } from '@/features/project/hooks/use-projects';
 import { primaryRepositoryContext } from '@/features/project/project-context';
 import {
+  projectContextHref,
   projectPlanHref,
   projectPRReviewHref,
   projectRequirementNewHref,
   projectSpecForgeHref,
 } from '@/features/project/project-utils';
 import {
-  projectDeliverySetupChecklist,
-  type ProjectDeliverySetupItem,
-} from '@/features/project/project-delivery-setup';
+  ProjectAdvancedDetails,
+  ProjectCommandHeader,
+  ProjectReadinessStrip,
+  ProjectWorkflowStepper,
+  type ProjectReadinessStripItem,
+  type ProjectWorkflowStep,
+} from '@/features/project/components/project-flow-primitives';
 import {
   githubReadinessRecoveryActions,
   githubReadinessRecoveryDiagnostics,
@@ -69,24 +57,17 @@ import type {
   ProjectRepositoryContextDTO,
 } from '@/features/project/services/project-service';
 import {
-  useApproveSpecForgePlan,
-  useCreateGitHubIssue,
-  useCreateSpecForgeProjectIdea,
   useDispatchExecutionRun,
   useGitHubRepositoryReadiness,
   useLatestPlanRun,
   useLatestProjectPlan,
   useRepoArchitectureStatus,
   useSpecForgeRuntimes,
-  useStartExecutionRun,
 } from '@/features/specforge/hooks/use-specforge';
 import { executionRunFromDTO, planBundleFromDTO } from '@/features/specforge/plan-adapter';
 import { summarizeDeliveryRun } from '@/features/specforge/delivery-status';
 import type { ExecutionRun, PlanBundle, PRNode } from '@/features/specforge/types';
-import {
-  specForgeService,
-  type GitHubRepositoryReadinessCheckDTO,
-} from '@/features/specforge/services/specforge-service';
+import type { GitHubRepositoryReadinessCheckDTO } from '@/features/specforge/services/specforge-service';
 import { hasFreshDispatchRuntime } from '@/features/specforge/runtime-dispatch-readiness';
 import { cn } from '@/utils';
 
@@ -145,7 +126,7 @@ export function ProjectSpecForgeConsole() {
           <ProjectRepositoryBindPanel projectId={projectId} />
         </div>
       ) : (
-        <ProjectMvpBoard
+        <ProjectDeliveryBoard
           projectId={validProjectId}
           context={loadedContext}
           repository={selectedRepository}
@@ -155,54 +136,18 @@ export function ProjectSpecForgeConsole() {
   );
 }
 
-type MvpBoardColumnId = 'setup' | 'intake' | 'approve' | 'delivery';
+type ProjectDeliveryTone = 'ready' | 'waiting' | 'blocked' | 'running';
 
-interface MvpBoardCard {
-  id: string;
-  column: MvpBoardColumnId;
+interface ProjectDeliveryNextAction {
   title: string;
-  summary: string;
-  status: string;
-  tone: 'ready' | 'waiting' | 'blocked' | 'running';
-  details: string[];
-  actionLabel?: string;
-  actionHref?: string;
-  actionDisabled?: boolean;
+  description: string;
+  label: string;
+  href?: string;
+  disabled?: boolean;
+  onClick?: () => void;
 }
 
-const mvpBoardColumns: Array<{
-  id: MvpBoardColumnId;
-  title: string;
-  hint: string;
-  emptyLabel: string;
-}> = [
-  {
-    id: 'setup',
-    title: '准备',
-    hint: '确认项目能交付 PR',
-    emptyLabel: '仓库、上下文和运行器都准备好后进入需求录入。',
-  },
-  {
-    id: 'intake',
-    title: '需求',
-    hint: '输入一个产品目标',
-    emptyLabel: '新需求会出现在这里。',
-  },
-  {
-    id: 'approve',
-    title: '审批',
-    hint: '只做一次人工决策',
-    emptyLabel: '生成计划后在这里审批 PR 拆分。',
-  },
-  {
-    id: 'delivery',
-    title: '交付',
-    hint: '查看 PR、CI 和阻塞项',
-    emptyLabel: '审批后 PR 进度会出现在这里。',
-  },
-];
-
-function ProjectMvpBoard({
+function ProjectDeliveryBoard({
   projectId,
   context,
   repository,
@@ -213,7 +158,6 @@ function ProjectMvpBoard({
 }) {
   const repoId = repository?.repository.repository_id ?? '';
   const [runtimeNow] = useState(() => Date.now());
-  const [selectedCardId, setSelectedCardId] = useState<string | undefined>();
   const [deliveryActionMessage, setDeliveryActionMessage] = useState('');
   const runtimesQuery = useSpecForgeRuntimes({ status: 'online', limit: 20 });
   const dispatchRun = useDispatchExecutionRun();
@@ -248,9 +192,11 @@ function ProjectMvpBoard({
   const projectName = context.project.name || `Project ${projectId}`;
   const newRequirementHref = projectRequirementNewHref(projectId);
   const latestPlanHref = latestPlan?.planId ? projectPlanHref(projectId, latestPlan.planId) : undefined;
+  const planApproved = latestPlan?.implementationPlan.status === 'approved';
+  const activeTask = deliveryTasks.find(task => task.status === 'running' || task.status === 'ci_running');
   const runningTask = deliveryTasks.find(task => task.status === 'running');
   const reviewableTask = deliveryTasks.find(task =>
-    ['pr_opened', 'ready_for_review'].includes(task.status)
+    ['pr_opened', 'ready_for_review', 'completed'].includes(task.status)
   );
   const blockedTask = deliveryTasks.find(task =>
     ['blocked', 'failed', 'cancelled'].includes(task.status)
@@ -276,151 +222,115 @@ function ProjectMvpBoard({
     }
   }
 
-  const cards: MvpBoardCard[] = [
+  const nextAction = projectDeliveryNextAction({
+    latestPlan,
+    latestPlanHref,
+    reviewableTask,
+    blockedTask,
+    queuedTask,
+    activeTask,
+    newRequirementHref,
+    dispatchQueuedTask,
+    isDispatching: dispatchRun.isPending,
+    projectId,
+  });
+  const readinessStrip: ProjectReadinessStripItem[] = [
+    {
+      label: '主仓库',
+      value: repoId || '未绑定',
+      helper: repoReady ? '项目交付目标已确定' : '先绑定 primary repository',
+      tone: repoReady ? 'ready' : 'blocked',
+    },
+    {
+      label: '仓库上下文',
+      value: wikiReady ? '可用' : '待生成',
+      helper: wikiReady ? '计划可使用 repo profile 或架构快照' : '建议在执行前补齐上下文',
+      tone: wikiReady ? 'ready' : 'waiting',
+    },
+    {
+      label: '运行器',
+      value: localAgentReady ? '在线' : '未在线',
+      helper: localAgentReady ? '可派发本地执行' : '可以先审计划，执行前再启动',
+      tone: localAgentReady ? 'ready' : 'waiting',
+    },
+    {
+      label: 'GitHub',
+      value: githubReady ? 'Ready' : '需检查',
+      helper: githubReady ? '连接和权限检查通过' : '执行前可能需要恢复 GitHub 配置',
+      tone: githubReady ? 'ready' : 'waiting',
+    },
+  ];
+  const workflowSteps: ProjectWorkflowStep[] = [
     {
       id: 'setup',
-      column: 'setup',
-      title: '项目准备',
-      summary: repoReady ? '主仓库已绑定，可以生成计划。' : '先绑定一个 primary repository。',
-      status: repoReady && localAgentReady ? '可交付' : '需检查',
-      tone: repoReady && localAgentReady ? 'ready' : 'blocked',
-      details: [
-        `项目：${projectName}`,
-        repoReady ? `目标仓库：${repoId}` : '还没有选择主仓库',
-        wikiReady ? '仓库上下文已可用，可用于计划生成。' : '仓库上下文还不完整，建议先生成或更新。',
-        localAgentReady
-          ? '本地 ccto agent 已在线并匹配目标仓库。'
-          : '本地 ccto agent 未就绪；可以先生成计划，执行前再处理。',
-        githubReady ? 'GitHub readiness 检查通过。' : 'GitHub readiness 还需要检查。',
-      ],
-      actionLabel: repoReady ? '新建需求' : '检查项目',
-      actionHref: repoReady ? newRequirementHref : undefined,
-      actionDisabled: !repoReady,
+      label: '准备',
+      description: repoReady ? '主仓库已绑定' : '绑定主仓库',
+      status: repoReady ? 'complete' : 'blocked',
     },
     {
       id: 'requirement',
-      column: 'intake',
-      title: latestPlan ? `需求 #${latestPlan.ideaId ?? latestPlan.planId}` : '新建需求',
-      summary: latestPlan?.idea || '描述一个功能、bugfix、重构或测试目标。',
-      status: latestPlan ? '已生成计划' : '等待输入',
-      tone: latestPlan ? 'ready' : repoReady ? 'waiting' : 'blocked',
-      details: [
-        latestPlan ? `计划：#${latestPlan.planId}` : '只需要输入产品目标、约束和非目标。',
-        latestPlan
-          ? `PR 节点：${latestPlan.prNodes.length} 个`
-          : 'CodingCTO 会生成产品计划、技术计划和 1-5 个 PR 节点。',
-        latestPlan
-          ? `审批状态：${latestPlan.implementationPlan.status === 'approved' ? '已审批' : '待审批'}`
-          : '不会在计划审批前执行代码。',
-      ],
-      actionLabel: latestPlan ? '查看计划' : '新建需求',
-      actionHref: latestPlanHref ?? (repoReady ? newRequirementHref : undefined),
-      actionDisabled: !repoReady,
+      label: '需求',
+      description: latestPlan ? '已有计划来源' : '输入产品目标',
+      status: latestPlan ? 'complete' : repoReady ? 'current' : 'blocked',
     },
     {
       id: 'approval',
-      column: 'approve',
-      title: '计划审批',
-      summary: latestPlan
-        ? latestPlan.implementationPlan.technicalSummary
-        : '检查 PR 边界、依赖、风险和测试命令。',
-      status: latestPlan
-        ? latestPlan.implementationPlan.status === 'approved'
-          ? '已审批'
-          : '待审批'
-        : '等待计划',
-      tone: latestPlan
-        ? latestPlan.implementationPlan.status === 'approved'
-          ? 'ready'
-          : 'waiting'
-        : 'waiting',
-      details: [
-        latestPlan ? `计划 #${latestPlan.planId}` : '这是用户必须做的一次决策。',
-        latestPlan
-          ? `PR DAG：${latestPlan.prNodes.map(node => node.nodeKey).join(' -> ')}`
-          : '审批后系统按 PR 依赖顺序执行。',
-        latestRun ? `Run #${latestRun.runId}：${latestRun.status}` : 'Prompt、Skill 和运行日志只作为高级详情展示。',
-      ],
-      actionLabel: latestPlan ? '查看计划' : '先生成计划',
-      actionHref: latestPlanHref ?? (repoReady ? newRequirementHref : undefined),
-      actionDisabled: !repoReady,
+      label: '审批',
+      description: latestPlan ? '检查 PR DAG' : '等待计划生成',
+      status: latestPlan ? (planApproved ? 'complete' : 'current') : 'waiting',
     },
     {
       id: 'delivery',
-      column: 'delivery',
-      title: runningTask
-        ? `${runningTask.nodeKey} 执行中`
-        : reviewableTask
-          ? `${reviewableTask.nodeKey} 可评审`
-          : blockedTask
-            ? `${blockedTask.nodeKey} 已阻塞`
-            : 'PR 交付',
-      summary:
-        deliverySummary?.headline ??
-        (latestPlan?.implementationPlan.status === 'approved'
-          ? '等待 runtime 认领或回传执行结果。'
-          : '跟踪 PR、CI、自动修复和需要人工判断的阻塞项。'),
-      status: latestRun
-        ? latestRun.status
-        : latestPlan?.implementationPlan.status === 'approved'
-          ? '等待派发'
-          : '等待审批',
-      tone: blockedTask
-        ? 'blocked'
-        : runningTask
-          ? 'running'
-          : reviewableTask || deliverySummary?.ready
-            ? 'ready'
-            : 'waiting',
-      details: [
-        deliverySummary?.nextAction ?? '交付单位是 GitHub PR，不是 agent 任务。',
-        latestRun ? `Run #${latestRun.runId}，任务数：${latestRun.tasks.length}` : '还没有执行 run。',
-        runningTask
-          ? `当前阶段：${runningTask.currentPhase ?? runningTask.processStatus ?? 'running'}`
-          : 'CI 失败会先自动分类和尝试修复。',
-      ],
-      actionLabel: reviewableTask?.taskId ? '查看 PR' : latestPlan ? '查看计划' : '等待审批',
-      actionHref: reviewableTask?.taskId
-        ? projectPRReviewHref(projectId, Number(reviewableTask.id))
-        : latestPlanHref,
-      actionDisabled: !reviewableTask?.taskId && !latestPlanHref,
+      label: '交付',
+      description: deliverySummary?.headline ?? '跟踪 PR 节点',
+      status: blockedTask ? 'blocked' : planApproved || activeTask || reviewableTask ? 'current' : 'waiting',
     },
   ];
 
-  const selectedCard = cards.find(card => card.id === selectedCardId);
-
   return (
-    <main className="mx-auto flex w-full max-w-[1500px] flex-col gap-4 px-4 py-4 md:px-6">
-      <section className="rounded-lg border border-border-subtle bg-bg-surface p-4">
-        <div className="flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <div className="flex flex-wrap items-center gap-2">
-              <h1 className="text-xl font-semibold text-text-main">{projectName}</h1>
-              <Badge variant="outline">CodingCTO Delivery</Badge>
-            </div>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-text-muted">
-              从一个需求开始，审批一次计划，然后跟踪 GitHub PR。仓库上下文、Prompt 和运行器是后台能力，不作为主流程步骤。
-            </p>
-          </div>
-          <div className="flex flex-wrap gap-2">
-            <Button type="button" asChild>
-              <Link href={newRequirementHref}>
-                新建需求
-                <Sparkles className="ml-1.5 h-4 w-4" />
-              </Link>
-            </Button>
-          </div>
-        </div>
-        <div className="mt-4 grid gap-2 md:grid-cols-4">
-          <MvpStatusMetric label="主仓库" value={repoId || '未绑定'} state={repoReady ? 'ready' : 'blocked'} />
-          <MvpStatusMetric label="仓库上下文" value={wikiReady ? '可用' : '待生成'} state={wikiReady ? 'ready' : 'waiting'} />
-          <MvpStatusMetric label="运行器" value={localAgentReady ? '在线' : '未在线'} state={localAgentReady ? 'ready' : 'blocked'} />
-          <MvpStatusMetric label="GitHub" value={githubReady ? 'Ready' : '需检查'} state={githubReady ? 'ready' : 'waiting'} />
-        </div>
-        <div className="mt-3 rounded-md border border-border-subtle bg-bg-subtle px-3 py-2 text-sm leading-6 text-text-muted">
-          交付状态以 PR 节点为单位显示。运行器和 agent 是执行证据，不再藏在单独入口里。
-        </div>
-      </section>
+    <main className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-5 md:px-8">
+      <ProjectCommandHeader
+        title={projectName}
+        description="从一个需求开始，审批一次计划，然后跟踪 GitHub PR。运行器、Prompt 和诊断证据默认收进高级详情。"
+        badges={[
+          { label: 'CodingCTO Delivery' },
+          {
+            label: blockedTask ? '阻塞' : runningTask ? '执行中' : reviewableTask ? '可评审' : latestPlan ? '计划中' : '待需求',
+            tone: blockedTask ? 'blocked' : runningTask ? 'running' : reviewableTask ? 'ready' : 'waiting',
+          },
+        ]}
+        primaryAction={
+          nextAction.href
+            ? {
+                label: nextAction.label,
+                href: nextAction.href,
+                disabled: nextAction.disabled,
+                icon: <ArrowRight className="ml-1.5 h-3.5 w-3.5" />,
+              }
+            : undefined
+        }
+        secondaryActions={[
+          {
+            label: '新建需求',
+            href: newRequirementHref,
+            variant: 'outline',
+            icon: <Sparkles className="ml-1.5 h-3.5 w-3.5" />,
+          },
+          {
+            label: '项目上下文',
+            href: projectContextHref(projectId),
+            variant: 'outline',
+          },
+        ]}
+      />
+
+      <ProjectReadinessStrip items={readinessStrip} />
+      <ProjectWorkflowStepper steps={workflowSteps} />
+
+      <ProjectDeliveryNextActionPanel
+        action={nextAction}
+        isDispatching={dispatchRun.isPending}
+      />
 
       <DeliveryMonitorPanel
         projectId={projectId}
@@ -433,121 +343,273 @@ function ProjectMvpBoard({
         onDispatchQueuedTask={dispatchQueuedTask}
       />
 
-      <section className="grid gap-3 xl:grid-cols-4">
-        {mvpBoardColumns.map(column => {
-          const columnCards = cards.filter(card => card.column === column.id);
-          return (
-            <div key={column.id} className="min-h-[360px] rounded-lg border border-border-subtle bg-bg-subtle p-3">
-              <div className="flex items-start justify-between gap-2">
-                <div>
-                  <div className="text-sm font-semibold text-text-main">{column.title}</div>
-                  <div className="mt-1 text-xs leading-5 text-text-muted">{column.hint}</div>
-                </div>
-                <span className="rounded-full bg-bg-surface px-2 py-0.5 text-xs text-text-muted">
-                  {columnCards.length}
-                </span>
-              </div>
-              <div className="mt-3 space-y-2">
-                {columnCards.length ? (
-                  columnCards.map(card => (
-                    <button
-                      key={card.id}
-                      type="button"
-                      onClick={() => setSelectedCardId(card.id)}
-                      className="w-full rounded-md border border-border-subtle bg-bg-surface p-3 text-left shadow-sm transition hover:border-primary/50"
-                    >
-                      <div className="flex items-center justify-between gap-2">
-                        <span className="text-sm font-medium text-text-main">{card.title}</span>
-                        <MvpToneIcon tone={card.tone} />
-                      </div>
-                      <p className="mt-2 line-clamp-3 text-xs leading-5 text-text-muted">{card.summary}</p>
-                      <div className="mt-3 flex items-center justify-between gap-2 text-xs">
-                        <Badge variant="outline" className={mvpToneClassName(card.tone)}>
-                          {card.status}
-                        </Badge>
-                        <span className="text-primary">查看</span>
-                      </div>
-                    </button>
-                  ))
-                ) : (
-                  <div className="flex min-h-32 items-center rounded-md border border-dashed border-border-subtle bg-bg-surface/60 px-3 py-4 text-sm leading-6 text-text-muted">
-                    {column.emptyLabel}
-                  </div>
-                )}
-              </div>
-            </div>
-          );
-        })}
-      </section>
-
-      <Dialog open={Boolean(selectedCard)} onOpenChange={open => !open && setSelectedCardId(undefined)}>
-        <DialogContent size="lg">
-          {selectedCard ? (
-            <>
-              <DialogHeader className="pr-8">
-                <DialogTitle>{selectedCard.title}</DialogTitle>
-                <DialogDescription>{selectedCard.summary}</DialogDescription>
-              </DialogHeader>
-              <DialogBody className="space-y-4">
-                <div className="grid gap-2 sm:grid-cols-2">
-                  <MvpDetailMetric
-                    label="当前状态"
-                    value={selectedCard.status}
-                    helper={mvpBoardColumns.find(column => column.id === selectedCard.column)?.title ?? ''}
-                    tone={selectedCard.tone}
-                  />
-                  <MvpDetailMetric
-                    label="下一步"
-                    value={selectedCard.actionLabel ?? '继续'}
-                    helper={selectedCard.actionDisabled ? '等待前置产物' : '可以继续推进'}
-                    tone={selectedCard.actionDisabled ? 'waiting' : selectedCard.tone}
-                  />
-                </div>
-
-                <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
-                  <div className="text-sm font-medium text-text-main">产物</div>
-                  <div className="mt-3 grid gap-2 sm:grid-cols-2">
-                    {['产品计划', '技术计划', 'PR 拆分', '执行记录', 'GitHub PR'].map(item => (
-                      <div key={item} className="flex items-center justify-between rounded-md bg-bg-surface px-3 py-2 text-sm">
-                        <span className="text-text-main">{item}</span>
-                        <Badge variant="outline" className="text-text-muted">待生成</Badge>
-                      </div>
-                    ))}
-                  </div>
-                </div>
-
-                <div className="space-y-2">
-                  <div className="text-sm font-medium text-text-main">说明</div>
-                  {selectedCard.details.map(detail => (
-                    <div key={detail} className="rounded-md border border-border-subtle bg-bg-surface px-3 py-2 text-sm leading-6 text-text-muted">
-                      {detail}
-                    </div>
-                  ))}
-                </div>
-              </DialogBody>
-              <DialogFooter>
-                {selectedCard.actionHref ? (
-                  <Button type="button" asChild>
-                    <Link href={selectedCard.actionHref}>
-                      {selectedCard.actionLabel ?? '继续'}
-                      <ArrowRight className="ml-1.5 h-4 w-4" />
-                    </Link>
-                  </Button>
-                ) : (
-                  <Button type="button" disabled={selectedCard.actionDisabled}>
-                    {selectedCard.actionLabel ?? '继续'}
-                    <ArrowRight className="ml-1.5 h-4 w-4" />
-                  </Button>
-                )}
-                <Button type="button" variant="outline" onClick={() => setSelectedCardId(undefined)}>
-                  关闭
-                </Button>
-              </DialogFooter>
-            </>
-          ) : null}
-        </DialogContent>
-      </Dialog>
+      <ProjectAdvancedDetails
+        title="运行器、Prompt 和诊断详情"
+        description="这些信息用于排错和审计，不作为默认交付视图。"
+      >
+        <DeliveryDiagnosticsPanel
+          repoId={repoId}
+          context={context}
+          latestPlan={latestPlan}
+          latestRun={latestRun}
+          tasks={deliveryTasks}
+          localAgentReady={localAgentReady}
+          githubReady={githubReady}
+          wikiReady={wikiReady}
+          readiness={readiness}
+          isCheckingReadiness={readinessQuery.isFetching}
+          onRefreshReadiness={() => readinessQuery.refetch()}
+          projectId={projectId}
+        />
+      </ProjectAdvancedDetails>
     </main>
+  );
+}
+
+function projectDeliveryNextAction({
+  latestPlan,
+  latestPlanHref,
+  reviewableTask,
+  blockedTask,
+  queuedTask,
+  activeTask,
+  newRequirementHref,
+  dispatchQueuedTask,
+  isDispatching,
+  projectId,
+}: {
+  latestPlan?: PlanBundle;
+  latestPlanHref?: string;
+  reviewableTask?: PRNode;
+  blockedTask?: PRNode;
+  queuedTask?: PRNode;
+  activeTask?: PRNode;
+  newRequirementHref: string;
+  dispatchQueuedTask: () => void;
+  isDispatching: boolean;
+  projectId: number;
+}): ProjectDeliveryNextAction {
+  if (!latestPlan) {
+    return {
+      title: '还没有需求计划',
+      description: '先创建一个需求，生成产品计划、技术计划和 PR DAG。',
+      label: '新建需求',
+      href: newRequirementHref,
+    };
+  }
+  if (latestPlan.implementationPlan.status !== 'approved') {
+    return {
+      title: '计划等待审批',
+      description: '审批 PR DAG 后，CodingCTO 才会开始派发执行任务。',
+      label: '查看计划',
+      href: latestPlanHref,
+      disabled: !latestPlanHref,
+    };
+  }
+  if (blockedTask) {
+    return {
+      title: `${blockedTask.nodeKey} 需要处理`,
+      description: blockedTask.failureReason || '该 PR 节点已阻塞。打开评审页查看失败原因和修复动作。',
+      label: '打开评审',
+      href: projectPRReviewHref(projectId, Number(blockedTask.id)),
+    };
+  }
+  if (reviewableTask) {
+    return {
+      title: `${reviewableTask.nodeKey} 可评审`,
+      description: '已有可检查的 PR 节点。进入评审页查看 PR、CI 和验证证据。',
+      label: '打开评审',
+      href: projectPRReviewHref(projectId, Number(reviewableTask.id)),
+    };
+  }
+  if (queuedTask && !activeTask) {
+    return {
+      title: `${queuedTask.nodeKey} 等待派发`,
+      description: '有任务已排队。确认本地运行器在线后继续执行下一个 PR 节点。',
+      label: isDispatching ? '派发中' : `继续执行 ${queuedTask.nodeKey}`,
+      onClick: dispatchQueuedTask,
+      disabled: isDispatching,
+    };
+  }
+  if (activeTask) {
+    return {
+      title: `${activeTask.nodeKey} 执行中`,
+      description: '运行器正在处理当前 PR 节点。默认视图只显示交付状态，详细进度在高级详情中查看。',
+      label: latestPlanHref ? '查看计划' : '等待执行',
+      href: latestPlanHref,
+      disabled: !latestPlanHref,
+    };
+  }
+  return {
+    title: '等待执行结果',
+    description: '计划已审批，等待任务创建、运行器认领或 PR 状态回传。',
+    label: latestPlanHref ? '查看计划' : '等待执行',
+    href: latestPlanHref,
+    disabled: !latestPlanHref,
+  };
+}
+
+function ProjectDeliveryNextActionPanel({
+  action,
+  isDispatching,
+}: {
+  action: ProjectDeliveryNextAction;
+  isDispatching: boolean;
+}) {
+  return (
+    <section className="rounded-[4px] border border-border-subtle bg-bg-surface p-4">
+      <div className="flex flex-col gap-3 lg:flex-row lg:items-start lg:justify-between">
+        <div className="min-w-0">
+          <div className="text-sm font-semibold text-text-main">下一步</div>
+          <h2 className="mt-1 text-lg font-semibold tracking-tight text-text-main">{action.title}</h2>
+          <p className="mt-1 max-w-3xl text-sm leading-6 text-text-muted">{action.description}</p>
+        </div>
+        <div className="flex shrink-0 flex-wrap gap-2">
+          {action.onClick ? (
+            <Button
+              type="button"
+              disabled={action.disabled || isDispatching}
+              onClick={action.onClick}
+            >
+              {action.label}
+              <ArrowRight className="ml-1.5 h-4 w-4" />
+            </Button>
+          ) : action.href ? (
+            <Button asChild disabled={action.disabled}>
+              <Link href={action.href}>
+                {action.label}
+                <ArrowRight className="ml-1.5 h-4 w-4" />
+              </Link>
+            </Button>
+          ) : (
+            <Button type="button" disabled>
+              {action.label}
+              <ArrowRight className="ml-1.5 h-4 w-4" />
+            </Button>
+          )}
+        </div>
+      </div>
+    </section>
+  );
+}
+
+function DeliveryDiagnosticsPanel({
+  repoId,
+  context,
+  latestPlan,
+  latestRun,
+  tasks,
+  localAgentReady,
+  githubReady,
+  wikiReady,
+  readiness,
+  isCheckingReadiness,
+  onRefreshReadiness,
+  projectId,
+}: {
+  repoId: string;
+  context: ProjectContextDTO;
+  latestPlan?: PlanBundle;
+  latestRun?: ExecutionRun;
+  tasks: PRNode[];
+  localAgentReady: boolean;
+  githubReady: boolean;
+  wikiReady: boolean;
+  readiness?: {
+    ready: boolean;
+    github_owner?: string;
+    github_repo?: string;
+    checks: GitHubRepositoryReadinessCheckDTO[];
+  };
+  isCheckingReadiness: boolean;
+  onRefreshReadiness: () => void;
+  projectId: number;
+}) {
+  const blockingChecks = readiness?.checks.filter(check => check.required && check.status !== 'ok') ?? [];
+
+  return (
+    <div className="grid gap-4 lg:grid-cols-[minmax(0,0.9fr)_minmax(0,1.1fr)]">
+      <div className="space-y-3">
+        <div className="rounded-[4px] border border-border-subtle bg-bg-subtle p-3">
+          <div className="text-sm font-medium text-text-main">交付诊断</div>
+          <div className="mt-3 grid gap-2 text-sm">
+            <DiagnosticsRow label="项目" value={context.project.name} />
+            <DiagnosticsRow label="仓库" value={repoId || '未绑定'} />
+            <DiagnosticsRow label="计划" value={latestPlan?.planId ? `#${latestPlan.planId}` : '无'} />
+            <DiagnosticsRow label="Run" value={latestRun?.runId ? `#${latestRun.runId}` : '无'} />
+            <DiagnosticsRow label="运行器" value={localAgentReady ? '在线' : '未在线'} />
+            <DiagnosticsRow label="GitHub" value={githubReady ? 'ready' : 'needs check'} />
+            <DiagnosticsRow label="仓库上下文" value={wikiReady ? '可用' : '待生成'} />
+          </div>
+        </div>
+        {readiness?.checks.length ? (
+          <div className="rounded-[4px] border border-border-subtle bg-bg-subtle p-3">
+            <div className="text-sm font-medium text-text-main">GitHub readiness checks</div>
+            <div className="mt-3 grid gap-2">
+              {readiness.checks.map(check => (
+                <ReadinessCheckRow key={check.key} check={check} />
+              ))}
+            </div>
+            {blockingChecks.length > 0 ? (
+              <ReadinessRecoveryActions
+                checks={blockingChecks}
+                repositoryId={repoId}
+                githubOwner={readiness.github_owner}
+                githubRepo={readiness.github_repo}
+                returnTo={projectSpecForgeHref(projectId)}
+                isChecking={isCheckingReadiness}
+                onRefresh={onRefreshReadiness}
+              />
+            ) : null}
+          </div>
+        ) : null}
+      </div>
+      <div className="rounded-[4px] border border-border-subtle bg-bg-subtle p-3">
+        <div className="text-sm font-medium text-text-main">PR 节点技术详情</div>
+        <div className="mt-3 space-y-2">
+          {tasks.length ? (
+            tasks.map(task => (
+              <div key={`${task.id}-${task.taskId ?? 'planned'}`} className="rounded-[4px] border border-border-subtle bg-bg-surface px-3 py-2">
+                <div className="flex flex-wrap items-center gap-2">
+                  <Badge variant="outline" className="font-mono text-[10px]">
+                    {task.nodeKey}
+                  </Badge>
+                  <Badge variant="outline" className={deliveryTaskStatusClassName(task.status)}>
+                    {deliveryTaskStatusLabel(task.status)}
+                  </Badge>
+                  {task.taskId ? <Badge variant="outline">task #{task.taskId}</Badge> : null}
+                </div>
+                <div className="mt-2 text-sm font-medium text-text-main">{task.title}</div>
+                <div className="mt-1 grid gap-1 text-xs leading-5 text-text-muted sm:grid-cols-2">
+                  <span>phase: {task.currentPhase ?? task.processStatus ?? 'not started'}</span>
+                  <span>runtime: {task.runtimeId || 'unassigned'}</span>
+                  <span>last: {task.lastProgressAt ? formatDeliveryTime(task.lastProgressAt) : 'n/a'}</span>
+                  <span className="truncate">dir: {task.workdir || 'n/a'}</span>
+                </div>
+                {task.failureReason ? (
+                  <div className="mt-2 rounded-[4px] border border-error/30 bg-error-subtle px-3 py-2 text-xs leading-5 text-error">
+                    {task.failureReason}
+                  </div>
+                ) : null}
+              </div>
+            ))
+          ) : (
+            <div className="rounded-[4px] border border-dashed border-border-subtle bg-bg-surface px-3 py-4 text-sm text-text-muted">
+              暂无 PR 节点详情。
+            </div>
+          )}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+function DiagnosticsRow({ label, value }: { label: string; value: string }) {
+  return (
+    <div className="flex items-center justify-between gap-3 rounded-[4px] border border-border-subtle bg-bg-surface px-3 py-2">
+      <span className="text-text-muted">{label}</span>
+      <span className="min-w-0 truncate font-medium text-text-main">{value}</span>
+    </div>
   );
 }
 
@@ -584,7 +646,7 @@ function DeliveryMonitorPanel({
         <div className="min-w-0">
           <div className="flex flex-wrap items-center gap-2">
             <h2 className="text-base font-semibold text-text-main">当前交付</h2>
-            <Badge variant="outline" className={latestRun ? mvpToneClassName(activeTask ? 'running' : 'ready') : 'text-text-muted'}>
+            <Badge variant="outline" className={latestRun ? deliveryToneClassName(activeTask ? 'running' : 'ready') : 'text-text-muted'}>
               {latestRun ? `Run #${latestRun.runId}` : latestPlan ? `Plan #${latestPlan.planId}` : '暂无计划'}
             </Badge>
             {isLoading ? (
@@ -667,30 +729,15 @@ function DeliveryMonitorPanel({
                       <Badge variant="outline" className={deliveryTaskStatusClassName(task.status)}>
                         {deliveryTaskStatusLabel(task.status)}
                       </Badge>
-                      {task.taskId ? (
-                        <Badge variant="outline" className="text-text-muted">
-                          task #{task.taskId}
-                        </Badge>
-                      ) : null}
                     </div>
                     <div className="mt-2 truncate text-sm font-medium text-text-main">
                       {task.title}
                     </div>
-                    <div className="mt-1 flex flex-wrap gap-x-4 gap-y-1 text-xs leading-5 text-text-muted">
-                      <span>phase: {task.currentPhase ?? task.processStatus ?? 'not started'}</span>
-                      {task.runtimeId ? (
-                        <Link
-                          href={`${buildRoute(ROUTES.CONSOLE.AGENT, {
-                            agentId: encodeURIComponent(task.runtimeId),
-                          })}?projectId=${projectId}`}
-                          className="text-primary hover:underline"
-                        >
-                          runtime: {task.runtimeId}
-                        </Link>
-                      ) : null}
-                      {task.lastProgressAt ? <span>last: {formatDeliveryTime(task.lastProgressAt)}</span> : null}
-                      {task.workdir ? <span className="truncate">dir: {task.workdir}</span> : null}
-                    </div>
+                    {task.failureReason ? (
+                      <div className="mt-2 rounded-[4px] border border-error/30 bg-error-subtle px-3 py-2 text-xs leading-5 text-error">
+                        {task.failureReason}
+                      </div>
+                    ) : null}
                   </div>
                   <div className="flex flex-wrap justify-start gap-2 lg:justify-end">
                     {task.status === 'queued' && !activeTask ? (
@@ -733,64 +780,7 @@ function DeliveryMonitorPanel({
   );
 }
 
-function MvpStatusMetric({
-  label,
-  value,
-  state,
-}: {
-  label: string;
-  value: string;
-  state: 'ready' | 'waiting' | 'blocked';
-}) {
-  return (
-    <div className="rounded-md border border-border-subtle bg-bg-subtle px-3 py-2">
-      <div className="text-xs text-text-muted">{label}</div>
-      <div className="mt-1 flex items-center justify-between gap-2">
-        <span className="truncate text-sm font-medium text-text-main">{value}</span>
-        <span className={cn('h-2 w-2 shrink-0 rounded-full', state === 'ready' ? 'bg-success' : state === 'blocked' ? 'bg-error' : 'bg-warning')} />
-      </div>
-    </div>
-  );
-}
-
-function MvpDetailMetric({
-  label,
-  value,
-  helper,
-  tone,
-}: {
-  label: string;
-  value: string;
-  helper: string;
-  tone: MvpBoardCard['tone'];
-}) {
-  return (
-    <div className="rounded-md border border-border-subtle bg-bg-subtle px-3 py-2">
-      <div className="text-xs text-text-muted">{label}</div>
-      <div className="mt-1 flex items-center justify-between gap-2">
-        <span className="text-sm font-medium text-text-main">{value}</span>
-        <Badge variant="outline" className={mvpToneClassName(tone)}>
-          {helper}
-        </Badge>
-      </div>
-    </div>
-  );
-}
-
-function MvpToneIcon({ tone }: { tone: MvpBoardCard['tone'] }) {
-  if (tone === 'ready') {
-    return <CheckCircle2 className="h-4 w-4 text-success" />;
-  }
-  if (tone === 'blocked') {
-    return <CircleAlert className="h-4 w-4 text-warning" />;
-  }
-  if (tone === 'running') {
-    return <CheckCircle2 className="h-4 w-4 text-primary" />;
-  }
-  return <Circle className="h-4 w-4 text-text-muted" />;
-}
-
-function mvpToneClassName(tone: MvpBoardCard['tone']) {
+function deliveryToneClassName(tone: ProjectDeliveryTone) {
   switch (tone) {
     case 'ready':
       return 'border-success/30 text-success';
@@ -1073,401 +1063,6 @@ function repositorySourceLabel(repository: {
   return `${source} · ${repository.access.visibility || 'repository'}`;
 }
 
-type FlowStepStatus = 'pending' | 'running' | 'success' | 'error';
-
-type FlowStep = {
-  id: string;
-  title: string;
-  status: FlowStepStatus;
-  detail?: string;
-  href?: string;
-};
-
-function ProjectE2ERunPanel({
-  projectId,
-  projectName,
-  repository,
-}: {
-  projectId: number;
-  projectName?: string;
-  repository?: ProjectRepositoryContextDTO['repository'];
-}) {
-  const t = useT('dashboard.projectDelivery.e2e');
-  const { locale } = useLocale();
-  const createIssue = useCreateGitHubIssue();
-  const createRequirement = useCreateSpecForgeProjectIdea(projectId);
-  const approvePlan = useApproveSpecForgePlan();
-  const startRun = useStartExecutionRun();
-  const dispatchRun = useDispatchExecutionRun();
-  const readinessQuery = useGitHubRepositoryReadiness(repository?.repository_id);
-  const [issueTitle, setIssueTitle] = useState(t('defaultIssueTitle'));
-  const [issueBody, setIssueBody] = useState(t('defaultIssueBody'));
-  const [steps, setSteps] = useState<FlowStep[]>([]);
-  const [running, setRunning] = useState(false);
-  const [impactAcknowledged, setImpactAcknowledged] = useState(false);
-  const copy = (key: string, fallback: string) => {
-    const translated = t(key);
-    return translated.startsWith('dashboard.projectDelivery.e2e.') ? fallback : translated;
-  };
-  const readiness = readinessQuery.data;
-  const readinessBlockingChecks =
-    readiness?.checks.filter(check => check.required && check.status !== 'ok') ?? [];
-  const readinessChecking = Boolean(repository?.repository_id) && readinessQuery.isFetching && !readiness;
-  const readinessBlocked = Boolean(readiness && !readiness.ready);
-  const setupChecklist = projectDeliverySetupChecklist({
-    hasRepository: Boolean(repository?.repository_id),
-    githubReady: readiness?.ready,
-    githubChecking: readinessChecking,
-    githubBlockingCheckCount: readinessBlockingChecks.length,
-    issueTitle,
-    issueBody,
-    impactAcknowledged,
-  });
-
-  function setStep(next: FlowStep) {
-    setSteps(current => {
-      const index = current.findIndex(step => step.id === next.id);
-      if (index === -1) {
-        return [...current, next];
-      }
-      const copy = [...current];
-      copy[index] = { ...copy[index], ...next };
-      return copy;
-    });
-  }
-
-  async function runFlow() {
-    if (!repository?.repository_id) {
-      setSteps([
-        {
-          id: 'repository',
-          title: t('steps.repository.title'),
-          status: 'error',
-          detail: t('errors.noRepository'),
-        },
-      ]);
-      return;
-    }
-    if (readinessBlocked) {
-      setSteps([
-        {
-          id: 'readiness',
-          title: t('readiness.title'),
-          status: 'error',
-          detail: readinessProblemSummary(readinessBlockingChecks, t('readiness.noChecks'), locale),
-        },
-      ]);
-      return;
-    }
-    if (!impactAcknowledged) {
-      setSteps([
-        {
-          id: 'impact',
-          title: copy('impact.title', '正式试跑影响'),
-          status: 'error',
-          detail: copy('impact.required', '请先确认正式试跑影响，再开始端到端试跑。'),
-        },
-      ]);
-      return;
-    }
-    setRunning(true);
-    setSteps([]);
-    try {
-      setStep({ id: 'repository', title: t('steps.repository.title'), status: 'success', detail: repository.repository_id });
-
-      setStep({ id: 'issue', title: t('steps.issue.title'), status: 'running' });
-      const issue = await createIssue.mutateAsync({
-        repository_id: repository.repository_id,
-        title: issueTitle,
-        body: issueBody,
-      });
-      setStep({
-        id: 'issue',
-        title: t('steps.issue.title'),
-        status: 'success',
-        detail: `#${issue.number} ${issue.title}`,
-        href: issue.html_url,
-      });
-
-      setStep({ id: 'plan', title: t('steps.plan.title'), status: 'running' });
-      const planBundle = await createRequirement.mutateAsync({
-        type: 'docs',
-        input: [
-          `GitHub Issue: #${issue.number}`,
-          `Issue URL: ${issue.html_url}`,
-          `项目：${projectName || '未命名项目'}`,
-          '',
-          issueTitle,
-          issueBody,
-        ].join('\n'),
-      });
-      setStep({
-        id: 'plan',
-        title: t('steps.plan.title'),
-        status: 'success',
-        detail: t('steps.plan.detail', { count: planBundle.pr_nodes.length }),
-      });
-
-      const firstNode = planBundle.pr_nodes.find(node => node.depends_on.length === 0) ?? planBundle.pr_nodes[0];
-      if (!firstNode) {
-        throw new Error(t('errors.noExecutableNode'));
-      }
-
-      setStep({ id: 'approve', title: t('steps.approve.title'), status: 'running' });
-      const approved = await approvePlan.mutateAsync({
-        planId: planBundle.implementation_plan.id,
-        payload: { approved: true },
-      });
-      setStep({
-        id: 'approve',
-        title: t('steps.approve.title'),
-        status: 'success',
-        detail: t('steps.approve.detail', { id: approved.implementation_plan.id }),
-      });
-
-      setStep({ id: 'run', title: t('steps.run.title'), status: 'running' });
-      const run = await startRun.mutateAsync({
-        planId: approved.implementation_plan.id,
-        payload: { executor: 'codex_cli', pr_node_ids: [firstNode.id] },
-      });
-      setStep({
-        id: 'run',
-        title: t('steps.run.title'),
-        status: 'success',
-        detail: `Run #${run.run.id}`,
-      });
-
-      setStep({ id: 'dispatch', title: t('steps.dispatch.title'), status: 'running' });
-      const dispatched = await dispatchRun.mutateAsync({
-        runId: run.run.id,
-        payload: { max_tasks: 1, require_runtime_ready: true },
-      });
-      const task = dispatched.tasks.find(candidate => candidate.status === 'dispatched');
-      if (!task) {
-        throw new Error(t('errors.noDispatchedTask'));
-      }
-      setStep({
-        id: 'dispatch',
-        title: t('steps.dispatch.title'),
-        status: 'success',
-        detail: `Task #${task.id}`,
-      });
-
-      setStep({
-        id: 'codex',
-        title: t('steps.codexWaiting.title'),
-        status: 'running',
-        detail: t('steps.codexWaiting.detail'),
-      });
-      const executed = await waitForRuntimeTaskCompletion(run.run.id, task.id, t('errors.timeout'));
-      const executedTask = executed.tasks.find(candidate => candidate.id === task.id);
-      if (!executedTask || executedTask.status !== 'completed') {
-        throw new Error(executedTask?.failure_reason || executedTask?.error_log || t('errors.codexFailed'));
-      }
-      setStep({
-        id: 'codex',
-        title: t('steps.codexDone.title'),
-        status: 'success',
-        detail: t('steps.codexDone.detail'),
-      });
-
-      const prNode = executed.plan?.pr_nodes.find(node => node.id === task.pr_node_id);
-      setStep({
-        id: 'pr',
-        title: t('steps.pr.title'),
-        status: prNode?.github_pr_url ? 'success' : 'error',
-        detail: prNode?.github_pr_url ? t('steps.pr.detail', { number: prNode.github_pr_number ?? '' }) : t('steps.pr.missing'),
-        href: prNode?.github_pr_url,
-      });
-    } catch (error) {
-      const detail = error instanceof Error ? error.message : t('errors.flowFailed');
-      setStep({ id: 'error', title: t('steps.error.title'), status: 'error', detail });
-    } finally {
-      setRunning(false);
-    }
-  }
-
-  return (
-    <section className="mx-auto w-full max-w-7xl px-4 pt-4 md:px-8">
-      <Card>
-        <CardHeader>
-          <CardTitle className="text-base">{t('title')}</CardTitle>
-          <CardDescription>
-            {t('description')}
-          </CardDescription>
-        </CardHeader>
-        <CardContent className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_360px]">
-          <div className="space-y-3">
-            <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3">
-              <div className="flex flex-wrap items-center justify-between gap-2">
-                <div>
-                  <div className="text-sm font-medium text-text-main">{t('readiness.title')}</div>
-                  <div className="mt-1 text-xs leading-5 text-text-muted">
-                    {t('readiness.description')}
-                  </div>
-                </div>
-                <Badge
-                  variant="outline"
-                  className={
-                    readiness?.ready
-                      ? 'border-success/30 text-success'
-                      : readinessBlocked || readinessQuery.isError
-                        ? 'border-error/30 text-error'
-                        : 'border-primary/30 text-primary'
-                  }
-                >
-                  {readiness?.ready
-                    ? t('readiness.status.ready')
-                    : readinessBlocked || readinessQuery.isError
-                      ? t('readiness.status.blocked')
-                      : t('readiness.status.checking')}
-                </Badge>
-              </div>
-              {readinessQuery.isError ? (
-                <div className="mt-3 rounded-md border border-error/30 bg-error-subtle px-3 py-2 text-xs leading-5 text-error">
-                  {t('readiness.error')}
-                </div>
-              ) : readiness ? (
-                <>
-                  <div className="mt-3 grid gap-2 md:grid-cols-2">
-                    {readiness.checks.map(check => (
-                      <ReadinessCheckRow key={check.key} check={check} />
-                    ))}
-                  </div>
-                  {readinessBlocked ? (
-                    <ReadinessRecoveryActions
-                      checks={readinessBlockingChecks}
-                      repositoryId={repository?.repository_id ?? ''}
-                      githubOwner={readiness.github_owner}
-                      githubRepo={readiness.github_repo}
-                      returnTo={projectSpecForgeHref(projectId)}
-                      isChecking={readinessQuery.isFetching}
-                      onRefresh={() => readinessQuery.refetch()}
-                    />
-                  ) : null}
-                </>
-              ) : (
-                <div className="mt-3 text-xs leading-5 text-text-muted">{t('readiness.checkingRepository')}</div>
-              )}
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="e2e-issue-title">{t('issueTitleLabel')}</Label>
-              <Input
-                id="e2e-issue-title"
-                value={issueTitle}
-                onChange={event => setIssueTitle(event.target.value)}
-              />
-            </div>
-            <div className="space-y-2">
-              <Label htmlFor="e2e-issue-body">{t('issueBodyLabel')}</Label>
-              <Textarea
-                id="e2e-issue-body"
-                value={issueBody}
-                rows={4}
-                onChange={event => setIssueBody(event.target.value)}
-              />
-            </div>
-            <div className="rounded-lg border border-warning/30 bg-warning-subtle p-3">
-              <div className="text-sm font-medium text-warning">
-                {copy('impact.title', '正式试跑影响')}
-              </div>
-              <p className="mt-1 text-sm leading-6 text-warning">
-                {copy(
-                  'impact.description',
-                  '这不是只读验证。开始后会创建 GitHub Issue、生成并审批计划、派发 Codex 任务；成功后会提交代码、推送分支并尝试打开 PR。'
-                )}
-              </p>
-              <div className="mt-3 flex items-start justify-between gap-3 rounded-md bg-bg-surface px-3 py-2">
-                <div>
-                  <div className="text-sm font-medium text-text-main">
-                    {copy('impact.confirmTitle', '我确认要运行真实端到端试跑')}
-                  </div>
-                  <p className="mt-1 text-xs leading-5 text-text-muted">
-                    {copy(
-                      'impact.confirmDescription',
-                      '已理解该动作会修改目标仓库，并可能创建 Issue、分支和 PR。'
-                    )}
-                  </p>
-                </div>
-                <Switch checked={impactAcknowledged} onCheckedChange={setImpactAcknowledged} />
-              </div>
-            </div>
-            <ProjectDeliverySetupChecklistPanel summary={setupChecklist} />
-            <Button
-              type="button"
-              onClick={runFlow}
-              disabled={
-                running ||
-                !setupChecklist.canStart
-              }
-            >
-              {running
-                ? t('button.running')
-                : readinessBlocked
-                  ? t('button.blocked')
-                  : t('button.start')}
-            </Button>
-          </div>
-          <div className="space-y-2 rounded-lg border border-border-subtle bg-bg-subtle p-3">
-            <div className="text-sm font-medium text-text-main">{t('timeline.title')}</div>
-            {steps.length === 0 ? (
-              <div className="text-sm leading-6 text-text-muted">
-                {t('timeline.empty')}
-              </div>
-            ) : (
-              <div className="space-y-2">
-                {steps.map(step => (
-                  <FlowStepRow key={step.id} step={step} />
-                ))}
-              </div>
-            )}
-          </div>
-        </CardContent>
-      </Card>
-    </section>
-  );
-}
-
-function FlowStepRow({ step }: { step: FlowStep }) {
-  const t = useT('dashboard.projectDelivery.e2e');
-  const tone =
-    step.status === 'success'
-      ? 'border-success/30 text-success'
-      : step.status === 'error'
-        ? 'border-error/30 text-error'
-        : step.status === 'running'
-          ? 'border-primary/30 text-primary'
-          : 'border-border-subtle text-text-muted';
-
-  return (
-    <div className="rounded-md border border-border-subtle bg-bg-surface px-3 py-2 text-sm">
-      <div className="flex items-center justify-between gap-2">
-        <span className="font-medium text-text-main">{step.title}</span>
-        <Badge variant="outline" className={tone}>
-          {step.status === 'running'
-            ? t('stepStatus.running')
-            : step.status === 'success'
-              ? t('stepStatus.success')
-              : step.status === 'error'
-                ? t('stepStatus.error')
-                : t('stepStatus.pending')}
-        </Badge>
-      </div>
-      {step.detail ? <div className="mt-1 text-xs leading-5 text-text-muted">{step.detail}</div> : null}
-      {step.href ? (
-        <a
-          href={step.href}
-          target="_blank"
-          rel="noreferrer"
-          className="mt-1 inline-flex text-xs font-medium text-primary hover:underline"
-        >
-          {t('linkLabel')}
-        </a>
-      ) : null}
-    </div>
-  );
-}
-
 function ReadinessCheckRow({ check }: { check: GitHubRepositoryReadinessCheckDTO }) {
   const t = useT('dashboard.projectDelivery.e2e');
   const { locale } = useLocale();
@@ -1586,92 +1181,6 @@ function ProjectRepositoryIdentityDiagnostic({
   );
 }
 
-function ProjectDeliverySetupChecklistPanel({
-  summary,
-}: {
-  summary: ReturnType<typeof projectDeliverySetupChecklist>;
-}) {
-  return (
-    <div className="rounded-lg border border-border-subtle bg-bg-subtle p-3">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <div className="text-sm font-medium text-text-main">真实试跑启动清单</div>
-          <p className="mt-1 text-xs leading-5 text-text-muted">
-            {summary.headline} {summary.nextAction}
-          </p>
-        </div>
-        <Badge
-          variant="outline"
-          className={summary.canStart ? 'border-success/30 text-success' : 'border-warning/30 text-warning'}
-        >
-          {summary.readyCount}/{summary.totalCount} 就绪
-        </Badge>
-      </div>
-      <div className="mt-3 grid gap-2 md:grid-cols-2">
-        {summary.items.map(item => (
-          <ProjectDeliverySetupChecklistRow key={item.id} item={item} />
-        ))}
-      </div>
-    </div>
-  );
-}
-
-function ProjectDeliverySetupChecklistRow({
-  item,
-}: {
-  item: ProjectDeliverySetupItem;
-}) {
-  return (
-    <div className="rounded-md border border-border-subtle bg-bg-surface px-3 py-2">
-      <div className="flex items-start justify-between gap-2">
-        <div className="text-xs font-medium leading-5 text-text-main">{item.label}</div>
-        <Badge variant="outline" className={projectDeliverySetupStateClassName(item.state)}>
-          {projectDeliverySetupStateLabel(item.state)}
-        </Badge>
-      </div>
-      <div className="mt-1 text-xs leading-5 text-text-muted">{item.detail}</div>
-    </div>
-  );
-}
-
-function projectDeliverySetupStateLabel(state: ProjectDeliverySetupItem['state']) {
-  switch (state) {
-    case 'ready':
-      return '就绪';
-    case 'waiting':
-      return '检查中';
-    default:
-      return '阻塞';
-  }
-}
-
-function projectDeliverySetupStateClassName(state: ProjectDeliverySetupItem['state']) {
-  switch (state) {
-    case 'ready':
-      return 'border-success/30 text-success';
-    case 'waiting':
-      return 'border-primary/30 text-primary';
-    default:
-      return 'border-error/30 text-error';
-  }
-}
-
-function readinessProblemSummary(
-  checks: GitHubRepositoryReadinessCheckDTO[],
-  emptyMessage: string,
-  locale: string
-) {
-  if (checks.length === 0) {
-    return emptyMessage;
-  }
-  return checks
-    .map(check => {
-      const localizedCheck = localizeGitHubReadinessCheck(check, locale);
-      return `${localizedCheck.message}${localizedCheck.detail ? `: ${localizedCheck.detail}` : ''}`;
-    })
-    .join(locale.startsWith('zh') ? '；' : '; ');
-}
-
 function localizeGitHubReadinessCheck(
   check: GitHubRepositoryReadinessCheckDTO,
   locale: string
@@ -1734,27 +1243,4 @@ function localizeGitHubReadinessDetail(detail?: string) {
     return `Current permission: ${permissionDetail[1]}; required: ${permissionDetail[2]}`;
   }
   return detail;
-}
-
-async function waitForRuntimeTaskCompletion(runId: number, taskId: number, timeoutMessage: string) {
-  const terminalStatuses = new Set([
-    'completed',
-    'failed',
-    'cancelled',
-    'blocked',
-    'dependency_closed',
-  ]);
-  for (let attempt = 0; attempt < 90; attempt += 1) {
-    const bundle = await specForgeService.getRun(runId);
-    const task = bundle.tasks.find(candidate => candidate.id === taskId);
-    if (task && terminalStatuses.has(task.status)) {
-      return bundle;
-    }
-    await sleep(2000);
-  }
-  throw new Error(timeoutMessage);
-}
-
-function sleep(ms: number) {
-  return new Promise(resolve => window.setTimeout(resolve, ms));
 }
