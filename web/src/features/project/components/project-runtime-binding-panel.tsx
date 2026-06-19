@@ -198,8 +198,8 @@ function ProjectRuntimeBindingForm({
       </CardHeader>
       <CardContent>
         <form className="space-y-4" onSubmit={handleSubmit}>
-          <div className="grid gap-4 lg:grid-cols-3">
-            <div className="space-y-2">
+          <div className="grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)_minmax(0,1fr)]">
+            <div className="min-w-0 space-y-2">
               <Label htmlFor="runtime-binding-repository">Primary repository</Label>
               <Input
                 id="runtime-binding-repository"
@@ -207,7 +207,7 @@ function ProjectRuntimeBindingForm({
                 readOnly
               />
             </div>
-            <div className="space-y-2">
+            <div className="min-w-0 space-y-2">
               <Label htmlFor="runtime-binding-runtime">Runtime</Label>
               <Select
                 value={form.runtimeId}
@@ -223,25 +223,34 @@ function ProjectRuntimeBindingForm({
                   }));
                 }}
               >
-                <SelectTrigger id="runtime-binding-runtime">
+                <SelectTrigger
+                  id="runtime-binding-runtime"
+                  className="w-full min-w-0 overflow-hidden [&_[data-slot=select-value]]:min-w-0 [&_[data-slot=select-value]]:max-w-full [&_[data-slot=select-value]]:truncate"
+                >
                   <SelectValue placeholder="Select runtime" />
                 </SelectTrigger>
-                <SelectContent>
+                <SelectContent className="max-w-[min(720px,calc(100vw-2rem))]">
                   {runtimeOptions.map(runtime => {
                     const health = deriveRuntimeHealth(runtime, runtimeNow);
                     const detail = runtime.hostname
                       ? `${runtime.hostname} · ${runtime.executor}`
                       : runtime.executor;
                     return (
-                      <SelectItem key={runtime.runtimeId} value={runtime.runtimeId}>
-                        {runtime.runtimeId} - {detail} - {runtimeHealthLabel(health)}
+                      <SelectItem
+                        key={runtime.runtimeId}
+                        value={runtime.runtimeId}
+                        className="min-w-0"
+                      >
+                        <span className="block min-w-0 truncate">
+                          {runtime.runtimeId} - {detail} - {runtimeHealthLabel(health)}
+                        </span>
                       </SelectItem>
                     );
                   })}
                 </SelectContent>
               </Select>
             </div>
-            <div className="space-y-2">
+            <div className="min-w-0 space-y-2">
               <Label htmlFor="runtime-binding-repo-dir">Repository directory</Label>
               <Input
                 id="runtime-binding-repo-dir"
@@ -255,29 +264,29 @@ function ProjectRuntimeBindingForm({
           </div>
 
           <div className="grid gap-4 lg:grid-cols-4">
-            <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+            <div className="min-w-0 rounded-md border border-border-subtle bg-bg-subtle p-3">
               <div className="text-xs text-text-muted">Executor</div>
-              <div className="mt-1 text-sm font-medium text-text-main">
+              <div className="mt-1 truncate text-sm font-medium text-text-main">
                 {selectedRuntime?.executor || binding?.binding.executor || 'Not selected'}
               </div>
             </div>
-            <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+            <div className="min-w-0 rounded-md border border-border-subtle bg-bg-subtle p-3">
               <div className="text-xs text-text-muted">Hostname</div>
-              <div className="mt-1 text-sm font-medium text-text-main">
+              <div className="mt-1 truncate text-sm font-medium text-text-main">
                 {selectedRuntime?.hostname || binding?.runtime?.hostname || 'Unknown'}
               </div>
             </div>
-            <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+            <div className="min-w-0 rounded-md border border-border-subtle bg-bg-subtle p-3">
               <div className="text-xs text-text-muted">Writable sandbox</div>
-              <div className="mt-1 text-sm font-medium text-text-main">
+              <div className="mt-1 truncate text-sm font-medium text-text-main">
                 {(selectedRuntime?.sandbox?.writable ?? binding?.runtime?.sandbox?.writable)
                   ? 'Yes'
                   : 'No / unknown'}
               </div>
             </div>
-            <div className="rounded-md border border-border-subtle bg-bg-subtle p-3">
+            <div className="min-w-0 rounded-md border border-border-subtle bg-bg-subtle p-3">
               <div className="text-xs text-text-muted">Last heartbeat</div>
-              <div className="mt-1 text-sm font-medium text-text-main">
+              <div className="mt-1 truncate text-sm font-medium text-text-main">
                 {binding?.runtime?.last_seen_at
                   ? new Date(binding.runtime.last_seen_at).toLocaleString()
                   : 'Not observed'}
@@ -344,12 +353,12 @@ function ProjectRuntimeBindingForm({
             </div>
           ) : null}
 
-          <div className="flex flex-wrap items-center gap-3">
-            <Button type="submit" disabled={saving || !canSubmit}>
+          <div className="flex min-w-0 flex-wrap items-center gap-3">
+            <Button type="submit" disabled={saving || !canSubmit} className="shrink-0">
               {saving ? 'Saving' : binding ? 'Update runtime binding' : 'Save runtime binding'}
             </Button>
             {binding ? (
-              <span className="text-xs text-text-muted">
+              <span className="min-w-0 truncate text-xs text-text-muted">
                 Last updated {new Date(binding.binding.updated_at).toLocaleString()}
               </span>
             ) : null}
