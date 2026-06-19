@@ -26,14 +26,8 @@ import {
   SelectValue,
 } from '@/components/ui/select';
 import { ToggleGroup, ToggleGroupItem } from '@/components/ui/toggle-group';
-import {
-  ProjectAdvancedDetails,
-  ProjectCommandHeader,
-  ProjectReadinessStrip,
-  ProjectWorkflowStepper,
-  type ProjectReadinessStripItem,
-  type ProjectWorkflowStep,
-} from '@/features/project/components/project-flow-primitives';
+import { ProjectPlanningFlowCard } from '@/features/project/components/project-planning-flow-card';
+import { projectPlanningStages } from '@/features/project/project-planning-flow';
 import { projectContextHref, projectSpecForgeHref } from '@/features/project/project-utils';
 import { executionRunFromDTO, planBundleFromDTO } from '@/features/specforge/plan-adapter';
 import { buildPromptPreview } from '@/features/specforge/prompt-preview';
@@ -177,61 +171,13 @@ function ProjectPlanReview({
   const boardHref = `${projectSpecForgeHref(projectId)}#project-delivery`;
   const selectedPromptNode =
     plan.prNodes.find(node => node.id === selectedPromptNodeId) ?? plan.prNodes[0];
-  const workflowSteps: ProjectWorkflowStep[] = [
-    {
-      id: 'context',
-      label: 'Context',
-      description: plan.repoProfile.repositoryId || 'Repository context',
-      status: 'complete',
-    },
-    {
-      id: 'requirement',
-      label: 'Requirement',
-      description: 'Product goal captured',
-      status: 'complete',
-    },
-    {
-      id: 'plan',
-      label: 'Review plan',
-      description: approved ? 'Approved for execution' : 'Approve PR DAG and scope',
-      status: approved ? 'complete' : 'current',
-    },
-    {
-      id: 'delivery',
-      label: 'Delivery',
-      description: 'Runtime opens reviewable PRs',
-      status: approved ? 'current' : 'waiting',
-    },
-  ];
-  const readinessStrip: ProjectReadinessStripItem[] = [
-    {
-      label: 'Plan status',
-      value: approved ? 'Approved' : 'Awaiting approval',
-      helper: approved ? 'Execution can continue' : 'Human approval is required before dispatch',
-      tone: approved ? 'ready' : 'waiting',
-    },
-    {
-      label: 'Repository',
-      value: plan.repoProfile.repositoryId,
-      helper: plan.repoProfile.defaultBranch,
-      tone: 'ready',
-    },
-    {
-      label: 'PR nodes',
-      value: String(plan.prNodes.length),
-      helper: `${selectedExecutionNodeIds.length} selected for execution`,
-      tone: selectedExecutionNodeIds.length > 0 ? 'ready' : 'blocked',
-    },
-    {
-      label: 'Runtime',
-      value:
-        executionReadiness.healthyRuntimeCount > 0
-          ? `${executionReadiness.healthyRuntimeCount} ready`
-          : 'Not ready',
-      helper: executionReadiness.reason,
-      tone: executionReadiness.canDispatch ? 'ready' : 'waiting',
-    },
-  ];
+  const planningStages = projectPlanningStages({
+    hasPrimaryRepository: Boolean(plan.repoProfile.repositoryId),
+    hasRequirementInput: Boolean(plan.idea.trim()),
+    hasPlan: Boolean(plan.planId),
+    prNodeCount: plan.prNodes.length,
+    hasCompiledPrompt: Boolean(compiledPrompt),
+  });
 
   function selectPromptNode(nodeId: string) {
     setSelectedPromptNodeId(nodeId);
@@ -315,35 +261,64 @@ function ProjectPlanReview({
   return (
     <main className="h-full min-h-0 overflow-y-auto bg-bg-canvas">
       <div className="mx-auto flex w-full max-w-7xl flex-col gap-5 px-4 py-6 md:px-8">
-        <ProjectCommandHeader
-          title="Review plan before execution"
-          description="Confirm product understanding, technical scope, PR DAG, risks, and execution range before CodingCTO dispatches a runtime."
-          badges={[
-            { label: 'Plan review' },
-            {
-              label: approved ? 'Approved' : 'Awaiting approval',
-              tone: approved ? 'ready' : 'waiting',
-            },
-          ]}
-          secondaryActions={[
-            {
-              label: 'Review context',
-              href: projectContextHref(projectId),
-              variant: 'outline',
-            },
-            {
-              label: 'Open delivery',
-              href: boardHref,
-              variant: 'outline',
-              icon: <GitPullRequest className="ml-1.5 h-4 w-4" />,
-            },
-          ]}
-        />
+        <header className="flex flex-col gap-4 border-b border-border-subtle pb-5 lg:flex-row lg:items-end lg:justify-between">
+          <div className="min-w-0">
+            <div className="flex flex-wrap items-center gap-2">
+              <Badge variant="outline">Plan review</Badge>
+              <Badge
+                variant="outline"
+                className={
+                  approved ? 'border-success/30 text-success' : 'border-warning/30 text-warning'
+                }
+              >
+                {approved ? 'Approved' : 'Awaiting approval'}
+              </Badge>
+            </div>
+            <h1 className="mt-3 text-2xl font-semibold tracking-tight text-text-main">
+              Review plan before execution
+            </h1>
+            <p className="mt-2 max-w-3xl text-sm leading-6 text-text-muted">
+              Confirm product understanding, decisions, technical scope, PR DAG, risks, skill
+              pipeline, and execution range before CodingCTO dispatches a runtime.
+            </p>
+          </div>
+          <div className="flex flex-wrap gap-2">
+            <Button asChild variant="outline">
+              <Link href={projectContextHref(projectId)}>Review context</Link>
+            </Button>
+            <Button asChild variant="outline">
+              <Link href={boardHref}>
+                Open board
+                <GitPullRequest className="ml-1.5 h-4 w-4" />
+              </Link>
+            </Button>
+          </div>
+        </header>
 
-        <ProjectReadinessStrip items={readinessStrip} />
-        <ProjectWorkflowStepper steps={workflowSteps} />
+        <ProjectPlanningFlowCard
+          stages={planningStages}
+          title="Requirement-to-prompt flow"
+          description="Project ready -> create requirement -> generate plan -> review PR DAG -> preview prompts."
+        />
         <PlanMetaCard plan={plan} runtimeCount={executionReadiness.healthyRuntimeCount} />
         <PRDagReviewCard nodes={plan.prNodes} />
+        <PromptPreviewWorkbench
+          plan={plan}
+          node={selectedPromptNode}
+          promptMode={promptMode}
+          compiledPrompt={compiledPrompt}
+          message={promptMessage}
+          skillRuns={skillRuns}
+          isSkillRunsLoading={skillRunsQuery.isLoading}
+          isCompiling={compilePrompt.isPending}
+          onPromptModeChange={mode => {
+            setPromptMode(mode);
+            setCompiledPrompt(undefined);
+            setPromptMessage('');
+          }}
+          onNodeChange={selectPromptNode}
+          onCompilePrompt={compileSelectedPrompt}
+        />
 
         {message ? (
           <Alert>
@@ -371,36 +346,12 @@ function ProjectPlanReview({
           showSkillPipeline={false}
         />
 
-        <ProjectAdvancedDetails
-          title="Prompt, runtime, and verification details"
-          description="These details are useful for debugging and manual inspection, but approval should primarily depend on the plan, PR DAG, and execution readiness above."
-        >
-          <div className="space-y-5">
-            <PromptPreviewWorkbench
-              plan={plan}
-              node={selectedPromptNode}
-              promptMode={promptMode}
-              compiledPrompt={compiledPrompt}
-              message={promptMessage}
-              skillRuns={skillRuns}
-              isSkillRunsLoading={skillRunsQuery.isLoading}
-              isCompiling={compilePrompt.isPending}
-              onPromptModeChange={mode => {
-                setPromptMode(mode);
-                setCompiledPrompt(undefined);
-                setPromptMessage('');
-              }}
-              onNodeChange={selectPromptNode}
-              onCompilePrompt={compileSelectedPrompt}
-            />
-            <RuntimeSetupCard
-              plan={plan}
-              readyRuntimeCount={executionReadiness.healthyRuntimeCount}
-              readinessReason={executionReadiness.reason}
-            />
-            <VerificationReviewCard plan={plan} />
-          </div>
-        </ProjectAdvancedDetails>
+        <RuntimeSetupCard
+          plan={plan}
+          readyRuntimeCount={executionReadiness.healthyRuntimeCount}
+          readinessReason={executionReadiness.reason}
+        />
+        <VerificationReviewCard plan={plan} />
       </div>
     </main>
   );
