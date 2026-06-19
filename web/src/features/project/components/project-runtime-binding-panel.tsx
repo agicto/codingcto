@@ -75,6 +75,37 @@ function runtimeHealthLabel(health: string) {
   }
 }
 
+function executorDisplayName(executor?: string) {
+  switch (executor) {
+    case 'codex_cli':
+      return 'Codex CLI';
+    case 'kimi_cli':
+      return 'Kimi CLI';
+    case 'claude_code_cli':
+      return 'Claude Code CLI';
+    default:
+      return executor || 'Unknown executor';
+  }
+}
+
+function runtimeDisplayName({
+  hostname,
+  executor,
+  health,
+}: {
+  hostname?: string;
+  executor?: string;
+  health?: string | null;
+}) {
+  return [
+    hostname || 'Local machine',
+    executorDisplayName(executor),
+    health ? runtimeHealthLabel(health) : '',
+  ]
+    .filter(Boolean)
+    .join(' · ');
+}
+
 export function ProjectRuntimeBindingPanel({ context }: { context: ProjectContextDTO }) {
   const projectId = context.project.id;
   const bindingsQuery = useProjectRuntimeBindings(projectId);
@@ -156,7 +187,15 @@ function ProjectRuntimeBindingForm({
         ? await updateBinding.mutateAsync({ bindingId: binding.binding.id, payload })
         : await createBinding.mutateAsync(payload);
       setForm(projectRuntimeBindingForm(response.binding));
-      setMessage(`Runtime binding for ${response.binding.binding.runtime_id} is now active.`);
+      const savedRuntime = response.binding.runtime ? runtimeFromDTO(response.binding.runtime) : selectedRuntime;
+      const savedHealth = savedRuntime ? deriveRuntimeHealth(savedRuntime, runtimeNow) : null;
+      setMessage(
+        `Runtime binding for ${runtimeDisplayName({
+          hostname: savedRuntime?.hostname,
+          executor: savedRuntime?.executor || response.binding.binding.executor,
+          health: savedHealth,
+        })} is now active.`
+      );
     } catch (error) {
       setMessage(
         error instanceof ApiError
@@ -232,9 +271,6 @@ function ProjectRuntimeBindingForm({
                 <SelectContent className="max-w-[min(720px,calc(100vw-2rem))]">
                   {runtimeOptions.map(runtime => {
                     const health = deriveRuntimeHealth(runtime, runtimeNow);
-                    const detail = runtime.hostname
-                      ? `${runtime.hostname} · ${runtime.executor}`
-                      : runtime.executor;
                     return (
                       <SelectItem
                         key={runtime.runtimeId}
@@ -242,7 +278,11 @@ function ProjectRuntimeBindingForm({
                         className="min-w-0"
                       >
                         <span className="block min-w-0 truncate">
-                          {runtime.runtimeId} - {detail} - {runtimeHealthLabel(health)}
+                          {runtimeDisplayName({
+                            hostname: runtime.hostname,
+                            executor: runtime.executor,
+                            health,
+                          })}
                         </span>
                       </SelectItem>
                     );
@@ -267,7 +307,7 @@ function ProjectRuntimeBindingForm({
             <div className="min-w-0 rounded-md border border-border-subtle bg-bg-subtle p-3">
               <div className="text-xs text-text-muted">Executor</div>
               <div className="mt-1 truncate text-sm font-medium text-text-main">
-                {selectedRuntime?.executor || binding?.binding.executor || 'Not selected'}
+                {executorDisplayName(selectedRuntime?.executor || binding?.binding.executor)}
               </div>
             </div>
             <div className="min-w-0 rounded-md border border-border-subtle bg-bg-subtle p-3">
