@@ -534,6 +534,7 @@ const messages: DashboardMessages = {
       selectPlaceholder: 'Select workspace',
       empty: 'No workspace yet. Create one to unlock project and CodingCTO flows.',
       noDescription: 'No workspace description yet.',
+      selected: 'Workspace: {name}',
       id: 'ID: {id}',
     },
     projects: {
@@ -593,6 +594,7 @@ const messages: DashboardMessages = {
       workspaceCreateFailed: 'Workspace could not be created. Check the API connection and slug uniqueness.',
       projectSpaceCreateFailed: 'Projects are not ready yet. Check the API connection and try again.',
       selectWorkspaceFirst: 'Projects are getting ready. Try again in a moment.',
+      selectProjectFirst: 'Select a project before binding a repository.',
       projectUnauthorized: 'Project creation needs a backend session. Sign out, sign in again, then retry.',
       projectRequired: 'Project name and slug are required.',
       slugInvalid: 'Slug must be at least 2 characters and use lowercase letters, numbers, or hyphens.',

@@ -277,49 +277,6 @@ export function projectOverviewDecision(context?: ProjectContextDTO): ProjectOve
   };
 }
 
-export function localizeProjectContextText(text?: string) {
-  if (!text) {
-    return '';
-  }
-
-  let next = text;
-  const replacements: Array<[RegExp, string]> = [
-    [/^No active repositories are bound to this project yet\.$/, '当前项目还没有绑定启用中的仓库。'],
-    [
-      /^(\d+) active repositories are bound, but none is the primary execution repository\.$/,
-      '已绑定 $1 个启用中的仓库，但还没有主执行仓库。',
-    ],
-    [
-      /^Execution will modify (.+); other active repositories are read-only planning context\.$/,
-      '执行只会修改 $1；其他启用仓库仅作为只读规划上下文。',
-    ],
-    [/^Review repository context warnings before approving execution\.$/, '审批执行前请先查看仓库上下文警告。'],
-    [/^Bind one active primary repository before generating a plan\.$/, '生成计划前请先绑定一个启用的主仓库。'],
-    [/^Add project or repo skills to reduce prompt ambiguity\.$/, '添加项目或仓库技能，减少提示词歧义。'],
-    [/^Generate a requirement plan from this project context\.$/, '基于当前项目上下文生成需求计划。'],
-    [/^MVP execution is primary-repository only\.$/, '当前 MVP 仅支持主仓库执行。'],
-    [
-      /^Planner may read dependency, docs, and infra repositories as context\.$/,
-      '规划器可以读取依赖、文档和基础设施仓库作为上下文。',
-    ],
-    [
-      /^Executor must modify only (.+); other bound repositories are read-only context\.$/,
-      '执行器只能修改 $1；其他已绑定仓库是只读上下文。',
-    ],
-    [
-      /^Project currently has (\d+) active repositories bound; maximum supported is (\d+)\.$/,
-      '当前项目已绑定 $1 个启用仓库；最多支持 $2 个。',
-    ],
-    [/^Repo profile has not been generated yet\.$/, '仓库画像尚未生成。'],
-  ];
-
-  for (const [pattern, replacement] of replacements) {
-    next = next.replace(pattern, replacement);
-  }
-
-  return next;
-}
-
 function readinessSummary(activeRepositoryCount: number, primaryRepositoryID?: string) {
   if (!activeRepositoryCount) {
     return 'No active repositories are bound to this project yet.';
