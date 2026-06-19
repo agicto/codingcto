@@ -24,7 +24,8 @@ export function hasFreshDispatchRuntime(
     }
     if (repositoryId && (mapped.repositories?.length ?? 0) > 0) {
       const hasRepository = mapped.repositories?.some(
-        repository => repository.repositoryId === repositoryId && Boolean(repository.repoDir)
+        repository =>
+          repositoryIdMatches(repositoryId, repository.repositoryId) && Boolean(repository.repoDir)
       );
       if (!hasRepository) {
         return false;
@@ -45,4 +46,14 @@ export function executorCommand(executor: string) {
     default:
       return 'codex';
   }
+}
+
+function repositoryIdMatches(projectRepositoryId: string, runtimeRepositoryId?: string) {
+  const projectID = normalizeRepositoryId(projectRepositoryId);
+  const runtimeID = normalizeRepositoryId(runtimeRepositoryId);
+  return projectID !== '' && projectID === runtimeID;
+}
+
+function normalizeRepositoryId(repositoryId?: string) {
+  return (repositoryId ?? '').trim().toLowerCase().replace(/^github_/, '');
 }

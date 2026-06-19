@@ -72,11 +72,22 @@ export function runtimeCanDispatch(
   const targetRepositoryId = repositoryId?.trim();
   if (targetRepositoryId && (runtime.repositories?.length ?? 0) > 0) {
     return runtime.repositories?.some(
-      repository => repository.repositoryId === targetRepositoryId && Boolean(repository.repoDir)
+      repository =>
+        repositoryIdMatches(targetRepositoryId, repository.repositoryId) && Boolean(repository.repoDir)
     );
   }
 
   return true;
+}
+
+function repositoryIdMatches(projectRepositoryId: string, runtimeRepositoryId?: string) {
+  const projectID = normalizeRepositoryId(projectRepositoryId);
+  const runtimeID = normalizeRepositoryId(runtimeRepositoryId);
+  return projectID !== '' && projectID === runtimeID;
+}
+
+function normalizeRepositoryId(repositoryId?: string) {
+  return (repositoryId ?? '').trim().toLowerCase().replace(/^github_/, '');
 }
 
 function executorCommand(executor: string) {

@@ -110,6 +110,28 @@ describe('executionReadinessForExecutor', () => {
     expect(result.canDispatch).toBe(true);
   });
 
+  it('matches GitHub project repository ids against locally discovered repository ids', () => {
+    const result = executionReadinessForExecutor({
+      runtimes: [
+        runtime({
+          repositories: [
+            {
+              repositoryId: 'canadaell__vpnmanage-system',
+              repoDir: '/Users/example/VPNManage-System',
+              dirty: false,
+            },
+          ],
+        }),
+      ],
+      executor: 'codex_cli',
+      now,
+      allowFallback: false,
+      repositoryId: 'github_canadaell__VPNManage-System',
+    });
+
+    expect(result.canDispatch).toBe(true);
+  });
+
   it('blocks dispatch when discovered repositories do not match the plan repo', () => {
     const result = executionReadinessForExecutor({
       runtimes: [

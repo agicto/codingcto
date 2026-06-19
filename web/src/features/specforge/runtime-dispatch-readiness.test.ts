@@ -75,6 +75,27 @@ describe('hasFreshCodexDispatchRuntime', () => {
     ).toBe(true);
   });
 
+  it('matches project GitHub repository ids with local runtime repository ids', () => {
+    expect(
+      hasFreshDispatchRuntime(
+        [
+          runtime({
+            repositories: [
+              {
+                repository_id: 'canadaell__vpnmanage-system',
+                repo_dir: '/Users/example/VPNManage-System',
+                dirty: false,
+              },
+            ],
+          }),
+        ],
+        now,
+        'codex_cli',
+        'github_canadaell__VPNManage-System'
+      )
+    ).toBe(true);
+  });
+
   it('rejects executor-specific runtimes with mismatched discovered repository', () => {
     expect(
       hasFreshDispatchRuntime(
