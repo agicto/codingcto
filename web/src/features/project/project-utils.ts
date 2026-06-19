@@ -25,6 +25,10 @@ export function projectRequirementNewHref(projectId: number): string {
   return buildRoute(ROUTES.CONSOLE.PROJECT_REQUIREMENT_NEW, { projectId });
 }
 
+export function projectDeliveryIntakeHref(projectId: number): string {
+  return projectRequirementNewHref(projectId);
+}
+
 export function projectPlanHref(projectId: number, planId: number): string {
   return buildRoute(ROUTES.CONSOLE.PROJECT_PLAN, { projectId, planId });
 }

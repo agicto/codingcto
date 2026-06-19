@@ -2,6 +2,7 @@ import { describe, expect, it } from 'vitest';
 
 import {
   projectContextHref,
+  projectDeliveryIntakeHref,
   projectIdFromConsolePathname,
   projectPlanHref,
   projectRequirementNewHref,
@@ -26,6 +27,10 @@ describe('project utils', () => {
 
   it('builds project-scoped requirement intake routes', () => {
     expect(projectRequirementNewHref(42)).toBe('/console/projects/42/requirements/new');
+  });
+
+  it('builds project-scoped delivery board intake routes', () => {
+    expect(projectDeliveryIntakeHref(42)).toBe('/console/projects/42/requirements/new');
   });
 
   it('builds project-scoped plan review routes', () => {

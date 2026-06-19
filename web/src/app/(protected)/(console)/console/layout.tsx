@@ -44,8 +44,9 @@ import { useAuthStore } from '@/features/auth/store/auth-store';
 import { useCreateWorkspace } from '@/features/project/hooks/use-projects';
 import { useSelectedWorkspace } from '@/features/project/hooks/use-selected-workspace';
 import {
+  projectDeliveryIntakeHref,
   projectIdFromConsolePathname,
-  projectRequirementNewHref,
+  projectSpecForgeHref,
   slugFromProjectName,
 } from '@/features/project/project-utils';
 import { useSpecForgeRuntimes } from '@/features/specforge/hooks/use-specforge';
@@ -91,14 +92,18 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
     [runtimesQuery.data?.runtimes]
   );
   const currentProjectId = projectIdFromConsolePathname(pathname);
+  const boardHref = currentProjectId
+    ? projectSpecForgeHref(currentProjectId)
+    : ROUTES.CONSOLE.PROJECTS;
+  const agentsHref = `${ROUTES.CONSOLE.AGENTS}?return_to=${encodeURIComponent(boardHref)}`;
   const newRequirementHref = currentProjectId
-    ? projectRequirementNewHref(currentProjectId)
-    : ROUTES.CONSOLE.SPECFORGE;
+    ? projectDeliveryIntakeHref(currentProjectId)
+    : ROUTES.CONSOLE.PROJECTS;
 
   const deliveryNavItems: WorkspaceNavItem[] = [
     {
       title: sidebarT('items.delivery.title'),
-      href: ROUTES.CONSOLE.SPECFORGE,
+      href: boardHref,
       icon: ListChecks,
       description: sidebarT('items.delivery.description'),
       badge: sidebarT('badges.live'),
@@ -113,7 +118,7 @@ export default function ConsoleLayout({ children }: { children: React.ReactNode 
     },
     {
       title: sidebarT('items.agents.title'),
-      href: ROUTES.CONSOLE.AGENTS,
+      href: agentsHref,
       icon: Bot,
       description: sidebarT('items.agents.description'),
       badge: codexDispatchReady ? sidebarT('badges.codexReady') : undefined,
