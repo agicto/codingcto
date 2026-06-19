@@ -49,7 +49,7 @@ export function projectRequirementNewHref(projectId: number): string {
 }
 
 export function projectDeliveryIntakeHref(projectId: number): string {
-  return `${projectSpecForgeHref(projectId)}?board=intake&new=requirement`;
+  return projectRequirementNewHref(projectId);
 }
 
 export function projectPlanHref(projectId: number, planId: number): string {

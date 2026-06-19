@@ -34,7 +34,7 @@ export default async function ConsoleHomePage() {
     {
       title: t("cards.delivery.title"),
       description: t("cards.delivery.description"),
-      href: ROUTES.CONSOLE.SPECFORGE,
+      href: ROUTES.CONSOLE.PROJECTS,
       icon: GitPullRequest,
       action: t("cards.delivery.action"),
       disabled: false,
@@ -72,7 +72,7 @@ export default async function ConsoleHomePage() {
         </div>
         <div className="flex flex-wrap gap-2">
           <Button asChild>
-            <Link href={ROUTES.CONSOLE.SPECFORGE}>
+            <Link href={ROUTES.CONSOLE.PROJECTS}>
               {t("openDelivery")}
               <ArrowUpRight className="ml-1.5 h-4 w-4" />
             </Link>
