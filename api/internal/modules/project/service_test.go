@@ -1031,6 +1031,86 @@ func TestServiceProjectReadinessRequiresRuntimeBindingBeforeExpertPolicy(t *test
 	require.Equal(t, domain.ProjectReadinessStatusReady, readinessCheckStatusByKey(t, readiness, "runtime_dispatch"))
 }
 
+func TestServiceProjectReadinessAcceptsDiscoveredGitHubRuntimeRepository(t *testing.T) {
+	store := newMemoryProjectStore()
+	workspaces := newMemoryWorkspaceStore("workspace_1")
+	github := &memoryGitHubRepositoryStore{
+		repositories: map[string]*domain.Repository{
+			"github_canadaell__VPNManage-System": {
+				RepositoryID: "github_canadaell__VPNManage-System",
+				WorkspaceID:  "workspace_1",
+			},
+		},
+	}
+	profiles := &memoryRepoProfileStore{
+		profiles: map[string]*domain.SpecForgeRepoProfile{
+			"github_canadaell__VPNManage-System": {
+				RepositoryID:  "github_canadaell__VPNManage-System",
+				DefaultBranch: "main",
+				Summary:       "Primary repo ready.",
+			},
+		},
+		snapshots: map[string]*domain.SpecForgeRepoArchitectureSnapshot{
+			"github_canadaell__VPNManage-System": {
+				RepositoryID: "github_canadaell__VPNManage-System",
+				CommitSHA:    "abc123",
+				CreatedAt:    nowUTC(),
+			},
+		},
+	}
+	projectSkills := &fakeProjectSkillStore{
+		skills: map[uint][]*domain.SpecForgeProjectSkill{
+			1: {
+				{ID: 10, ProjectID: 1, RepositoryID: "github_canadaell__VPNManage-System", SkillID: 50, Active: true},
+			},
+		},
+	}
+	githubReadiness := &fakeGitHubReadinessChecker{
+		response: &githubintegration.GitHubRepositoryReadinessResponse{
+			RepositoryID: "github_canadaell__VPNManage-System",
+			Ready:        true,
+		},
+	}
+	runtimes := &fakeRuntimeReadinessStore{
+		runtimes: []*domain.SpecForgeRuntime{
+			{
+				RuntimeID:  "runtime_1",
+				Executor:   "codex_cli",
+				Status:     domain.RuntimeStatusOnline,
+				LastSeenAt: nowUTC(),
+				Sandbox:    &domain.SpecForgeRuntimeSandbox{Writable: true},
+				AvailableCLIs: []domain.SpecForgeRuntimeCLI{
+					{Name: "Codex CLI", Command: "codex", Available: true},
+				},
+				Repositories: []domain.SpecForgeRuntimeRepository{
+					{
+						RepositoryID: "canadaell__vpnmanage-system",
+						RepoDir:      "/Users/mingde/item/VPNManage-System",
+					},
+				},
+			},
+		},
+	}
+	svc := NewService(store, workspaces, github, profiles, &memorySkillStore{}, projectSkills, githubReadiness, runtimes, nil)
+
+	project, err := svc.CreateProject(context.Background(), 42, &CreateProjectRequest{
+		WorkspaceID: "workspace_1",
+		Name:        "VPNManage-System",
+		Slug:        "vpnmanage-system",
+	})
+	require.NoError(t, err)
+	_, err = svc.BindRepository(context.Background(), 42, project.ID, &BindRepositoryRequest{
+		RepositoryID: "github_canadaell__VPNManage-System",
+		Role:         domain.ProjectRepositoryRolePrimary,
+	})
+	require.NoError(t, err)
+
+	readiness, err := svc.GetProjectReadiness(context.Background(), project.ID)
+	require.NoError(t, err)
+	require.Equal(t, domain.ProjectReadinessStatusReady, readinessCheckStatusByKey(t, readiness, "runtime_dispatch"))
+	require.Contains(t, readinessCheckDetailByKey(t, readiness, "runtime_dispatch"), "discovered local runtime")
+}
+
 func TestServiceProjectReadinessRequiresExpertPolicyBeforeRequirement(t *testing.T) {
 	store := newMemoryProjectStore()
 	workspaces := newMemoryWorkspaceStore("workspace_1")
@@ -1901,6 +1981,20 @@ func readinessCheckStatusByKey(t *testing.T, readiness *domain.SpecForgeProjectR
 	for _, check := range readiness.Checks {
 		if check.Key == key {
 			return check.Status
+		}
+	}
+	require.Failf(t, "missing readiness check", "key %s not found", key)
+	return ""
+}
+
+func readinessCheckDetailByKey(t *testing.T, readiness *domain.SpecForgeProjectReadiness, key string) string {
+	t.Helper()
+	if readiness == nil {
+		require.Fail(t, "missing readiness")
+	}
+	for _, check := range readiness.Checks {
+		if check.Key == key {
+			return check.Detail
 		}
 	}
 	require.Failf(t, "missing readiness check", "key %s not found", key)

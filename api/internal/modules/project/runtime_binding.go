@@ -115,11 +115,23 @@ func runtimeMatchesDiscoveredRepository(now time.Time, primaryRepositoryID strin
 		return false
 	}
 	for _, repository := range runtime.Repositories {
-		if strings.TrimSpace(repository.RepositoryID) == primaryRepositoryID && strings.TrimSpace(repository.RepoDir) != "" {
+		if runtimeRepositoryIDMatches(primaryRepositoryID, repository.RepositoryID) && strings.TrimSpace(repository.RepoDir) != "" {
 			return true
 		}
 	}
 	return false
+}
+
+func runtimeRepositoryIDMatches(projectRepositoryID, runtimeRepositoryID string) bool {
+	projectRepositoryID = normalizeRuntimeRepositoryID(projectRepositoryID)
+	runtimeRepositoryID = normalizeRuntimeRepositoryID(runtimeRepositoryID)
+	return projectRepositoryID != "" && projectRepositoryID == runtimeRepositoryID
+}
+
+func normalizeRuntimeRepositoryID(repositoryID string) string {
+	repositoryID = strings.ToLower(strings.TrimSpace(repositoryID))
+	repositoryID = strings.TrimPrefix(repositoryID, "github_")
+	return repositoryID
 }
 
 func runtimeRequiredCLICommand(executor string) string {
