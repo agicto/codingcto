@@ -25,6 +25,12 @@ import {
   DialogTrigger,
 } from '@/components/ui/dialog';
 import {
+  ProjectAdvancedDetails,
+  ProjectCommandHeader,
+  ProjectReadinessStrip,
+  type ProjectReadinessStripItem,
+} from '@/features/project/components/project-flow-primitives';
+import {
   useBindProjectRepository,
   useProjectContext,
   useProjectReadiness,
@@ -40,7 +46,6 @@ import {
   projectRequirementNewHref,
 } from '@/features/project/project-utils';
 import {
-  projectReadinessBadgeClass,
   projectReadinessDecision,
 } from '@/features/project/project-readiness';
 import type {
@@ -118,72 +123,91 @@ function ProjectDetailPage({
     architectureReadyCount > 0,
     skills.effectiveSkillNames.length > 0,
   ].filter(Boolean).length;
+  const readyRequiredChecks = requiredChecks.filter(check => check.status === 'ready').length;
+  const readinessStrip: ProjectReadinessStripItem[] = [
+    {
+      label: t('identity.status'),
+      value: readinessStatusLabel(t, readiness?.readiness_status),
+      helper: decision.title,
+      tone: overviewReadinessTone(readiness?.readiness_status),
+    },
+    {
+      label: t('identity.primaryRepo'),
+      value: primaryRepository?.repository.repository_id || t('primaryRepository.notConnected'),
+      helper: primaryRepository ? t('roles.primary') : t('status.notReady'),
+      tone: primaryRepository ? 'ready' : 'blocked',
+    },
+    {
+      label: t('next.requiredChecks'),
+      value: `${readyRequiredChecks}/${requiredChecks.length || 0}`,
+      helper: requiredChecks.length > 0 ? t('next.description') : t('next.noRequiredChecks'),
+      tone:
+        requiredChecks.length === 0 || readyRequiredChecks === requiredChecks.length
+          ? 'ready'
+          : 'waiting',
+    },
+    {
+      label: t('knowledge.title'),
+      value: t('knowledge.ready', { ready: knowledgeReadyCount, total: 4 }),
+      helper: t('knowledge.description'),
+      tone: knowledgeReadyCount >= 3 ? 'ready' : 'waiting',
+    },
+  ];
 
   return (
     <main className="mx-auto flex w-full max-w-7xl flex-col gap-6 px-4 py-6 md:px-8 md:py-8">
-      <header className="border-b border-border-subtle pb-5">
-        <div className="flex flex-wrap items-center gap-2">
-          <Badge variant="outline" className="rounded-[4px] px-2 py-0.5 text-[11px]">
-            {t('badges.project')}
-          </Badge>
-          <Badge
-            variant="outline"
-            className={cn(
-              'rounded-[4px] px-2 py-0.5 text-[11px]',
-              projectReadinessBadgeClass(readiness?.readiness_status)
-            )}
-          >
-            {readinessStatusLabel(t, readiness?.readiness_status)}
-          </Badge>
-          <Badge variant="outline" className="rounded-[4px] px-2 py-0.5 text-[11px]">
-            {projectStatusLabel(context.project.status, t)}
-          </Badge>
-        </div>
-        <div className="mt-4 flex flex-col gap-4 lg:flex-row lg:items-start lg:justify-between">
-          <div className="min-w-0">
-            <h1 className="text-2xl font-semibold tracking-tight text-text-main">
-              {context.project.name}
-            </h1>
-            <p className="mt-2 max-w-3xl text-sm leading-6 text-text-muted">
-              {context.project.description || t('brief.empty')}
-            </p>
-          </div>
-          <div className="flex shrink-0 flex-wrap items-center gap-2">
-            <Button asChild variant="outline" size="sm">
-              <Link href={projectContextHref(context.project.id)}>{t('actions.context')}</Link>
-            </Button>
-            <Button
-              asChild
-              size="sm"
-              disabled={readiness?.next_step !== 'create_requirement'}
-              className="rounded-[4px]"
-            >
-              <Link href={projectRequirementNewHref(context.project.id)}>
-                {t('actions.newRequirement')}
-              </Link>
-            </Button>
-          </div>
-        </div>
-      </header>
+      <ProjectCommandHeader
+        title={context.project.name}
+        description={context.project.description || t('brief.empty')}
+        badges={[
+          { label: t('badges.project') },
+          {
+            label: readinessStatusLabel(t, readiness?.readiness_status),
+            tone: overviewReadinessTone(readiness?.readiness_status),
+          },
+          { label: projectStatusLabel(context.project.status, t) },
+        ]}
+        primaryAction={{
+          label: decision.actionLabel,
+          href: normalizeProjectActionHref(context.project.id, decision.actionHref),
+          icon: <ArrowRight className="ml-1.5 h-3.5 w-3.5" />,
+        }}
+        secondaryActions={[
+          {
+            label: t('actions.context'),
+            href: projectContextHref(context.project.id),
+            variant: 'outline',
+          },
+        ]}
+      />
+
+      <ProjectReadinessStrip items={readinessStrip} />
 
       <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_320px]">
         <div className="space-y-6">
-          <ProjectIdentitySection context={context} primaryRepository={primaryRepository} />
-          <ProjectRepositoriesSection context={context} />
-          <ProjectRecentWorkSection projectId={context.project.id} readyForRequirement={readiness?.next_step === 'create_requirement'} />
-        </div>
-        <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
           <ProjectNextActionSection
             projectId={context.project.id}
             decision={decision}
             requiredChecks={requiredChecks}
             optionalChecks={optionalChecks}
           />
-          <ProjectKnowledgeSection
-            context={context}
-            knowledgeReadyCount={knowledgeReadyCount}
-            architectureReadyCount={architectureReadyCount}
-          />
+          <ProjectRepositoriesSection context={context} />
+          <ProjectRecentWorkSection projectId={context.project.id} readyForRequirement={readiness?.next_step === 'create_requirement'} />
+        </div>
+        <aside className="space-y-6 xl:sticky xl:top-6 xl:self-start">
+          <ProjectAdvancedDetails
+            title={t('identity.title')}
+            description={t('knowledge.description')}
+          >
+            <div className="space-y-4">
+              <ProjectIdentitySection context={context} primaryRepository={primaryRepository} />
+              <ProjectKnowledgeSection
+                context={context}
+                knowledgeReadyCount={knowledgeReadyCount}
+                architectureReadyCount={architectureReadyCount}
+              />
+            </div>
+          </ProjectAdvancedDetails>
         </aside>
       </div>
     </main>
@@ -870,6 +894,17 @@ function readinessStatusLabel(
       return t('status.blocked');
     default:
       return t('status.attention');
+  }
+}
+
+function overviewReadinessTone(status?: string): ProjectReadinessStripItem['tone'] {
+  switch (status) {
+    case 'ready':
+      return 'ready';
+    case 'blocked':
+      return 'blocked';
+    default:
+      return 'waiting';
   }
 }
 
