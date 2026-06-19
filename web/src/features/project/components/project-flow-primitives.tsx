@@ -71,8 +71,11 @@ export function ProjectCommandHeader({
         </div>
         {actions.length > 0 ? (
           <div className="flex shrink-0 flex-wrap items-center gap-2">
-            {actions.map(action => (
-              <ProjectCommandAction key={`${action.label}-${action.href ?? 'button'}`} action={action} />
+            {actions.map((action, index) => (
+              <ProjectCommandAction
+                key={`${index}-${action.label}-${action.href ?? 'button'}`}
+                action={action}
+              />
             ))}
           </div>
         ) : null}
